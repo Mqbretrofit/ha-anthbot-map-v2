@@ -100,35 +100,23 @@ and documentation in one package.
 
 ### 2. Install the map card
 
-Copy the repository folder:
-
-```text
-www/anthbot-map/
-```
-
-to:
-
-```text
-/config/www/anthbot-map/
-```
-
-The resulting main file must be:
-
-```text
-/config/www/anthbot-map/anthbot-map-card.js
-```
+The card is bundled with the integration, so HACS installs and updates it
+automatically. No files need to be copied to `/config/www`.
 
 Add the Lovelace JavaScript resource:
 
 ```text
-/local/anthbot-map/anthbot-map-card.js?v=200b2
+/anthbot-map-v2/anthbot-map-card.js
 ```
 
-Resource type: **JavaScript module**.
+Resource type: **JavaScript module**. This is a one-time setup.
 
 The resource editor is normally available under **Settings → Dashboards →
 three-dot menu → Resources**. Restart Home Assistant and hard-refresh the
 browser after changing the files (`Ctrl+Shift+R`).
+
+The former `/local/anthbot-map-v2/` resource can remain available for rollback,
+but only one Anthbot Map card resource should be enabled at a time.
 
 ### Manual integration installation
 
@@ -309,7 +297,7 @@ After updating the card files, increment the query string in the Lovelace
 resource URL to avoid browser caching, for example:
 
 ```text
-/local/anthbot-map/anthbot-map-card.js?v=200b2
+/anthbot-map-v2/anthbot-map-card.js
 ```
 
 Then restart Home Assistant and hard-refresh the browser.
@@ -320,7 +308,7 @@ Then restart Home Assistant and hard-refresh the browser.
 
 - confirm the resource is a JavaScript module
 - confirm `/config/www/anthbot-map/anthbot-map-card.js` exists
-- open `/local/anthbot-map/anthbot-map-card.js?v=200b2` directly in the browser
+- open `/anthbot-map-v2/anthbot-map-card.js` directly in the browser
 - hard-refresh with `Ctrl+Shift+R`
 
 ### Map or robot is missing

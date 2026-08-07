@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.0-beta.8 — 2026-08-07
+
+### Changed
+
+- A frontend kártya az integráció része lett, és a HACS-frissítésekkel együtt
+  automatikusan frissül.
+- Az új, gyorsítótárazás nélküli erőforrás URL:
+  `/anthbot-map-v2/anthbot-map-card.js`.
+
 ## 2.0.0-beta.7 — 2026-08-07
 
 ### Fixed

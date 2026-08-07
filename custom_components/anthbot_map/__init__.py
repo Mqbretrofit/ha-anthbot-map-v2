@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 import logging
+from pathlib import Path
 
 import voluptuous as vol
 
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
@@ -584,6 +586,10 @@ def _async_cleanup_legacy_entities(
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the Anthbot Genie integration."""
+    frontend_path = Path(__file__).parent / "frontend"
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig("/anthbot-map-v2", str(frontend_path), False)]
+    )
     return True
 
 

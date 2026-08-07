@@ -99,28 +99,23 @@ a dokumentációt egyben tartalmazza.
 
 ## A térképkártya telepítése
 
-Másold a repository `www/anthbot-map/` mappáját ide:
-
-```text
-/config/www/anthbot-map/
-```
-
-A fő fájl végleges helye:
-
-```text
-/config/www/anthbot-map/anthbot-map-card.js
-```
+A kártya az integráció része, ezért a HACS automatikusan telepíti és frissíti.
+Nem kell fájlokat másolni a `/config/www` mappába.
 
 Add hozzá ezt a Lovelace JavaScript-erőforrást:
 
 ```text
-/local/anthbot-map/anthbot-map-card.js?v=200b2
+/anthbot-map-v2/anthbot-map-card.js
 ```
 
 Az erőforrás típusa: **JavaScript module**. Az erőforráskezelő általában a
 **Beállítások → Irányítópultok → jobb felső hárompontos menü → Erőforrások**
-oldalon található. Ezután indítsd újra a Home Assistantot, majd nyomj
+oldalon található. Ezt csak egyszer kell beállítani. Ezután indítsd újra a Home Assistantot, majd nyomj
 `Ctrl+Shift+R`-t a böngészőben.
+
+A korábbi `/local/anthbot-map-v2/` erőforrás megtartható visszaállítási
+lehetőségként, de egyszerre csak az egyik Anthbot Map kártyaerőforrás legyen
+engedélyezve.
 
 ## Kézi integrációtelepítés
 
@@ -295,7 +290,7 @@ Home Assistantot és nyomj `Ctrl+Shift+R`-t.
 
 - ellenőrizd, hogy az erőforrás típusa JavaScript module
 - ellenőrizd a `/config/www/anthbot-map/anthbot-map-card.js` fájlt
-- nyisd meg közvetlenül a `/local/anthbot-map/anthbot-map-card.js?v=200b2` címet
+- nyisd meg közvetlenül az `/anthbot-map-v2/anthbot-map-card.js` címet
 - frissítsd az oldalt `Ctrl+Shift+R` használatával
 
 ### Nem látható a térkép vagy a robot
