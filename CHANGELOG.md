@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.0-beta.5 — 2026-08-07
+
+### Fixed
+
+- Helyreállt az integráció betöltése azokon a Home Assistant verziókon, amelyek
+  még csak a korábbi `TrackerEntity` importútvonalat támogatják.
+
 ## 2.0.0-beta.4 — 2026-08-07
 
 ### Fixed
