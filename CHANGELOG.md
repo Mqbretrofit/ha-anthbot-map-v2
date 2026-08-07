@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.0-beta.6 — 2026-08-07
+
+### Fixed
+
+- A kiadási csomagban megsérült `coordinator.py` fájl tiszta UTF-8 forrásból
+  újra felkerült, így az integráció ismét importálható.
+
 ## 2.0.0-beta.5 — 2026-08-07
 
 ### Fixed
