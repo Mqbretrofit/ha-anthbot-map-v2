@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.0-beta.4 — 2026-08-07
+
+### Fixed
+
+- A zónanyírási csempék kapcsolatkimaradás alatt is láthatók maradnak.
+- Ha a YAML-ban megadott számozott térképentitás elérhetetlenné válik, a kártya
+  automatikusan megkeresi az ugyanahhoz a robothoz tartozó aktív változatot.
+
 ## 2.0.0-beta.3 — 2026-08-07
 
 ### Fixed

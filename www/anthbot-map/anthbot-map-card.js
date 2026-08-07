@@ -137,7 +137,8 @@ class AnthbotMapCard extends HTMLElement {
   set hass(hass) {
     const previousLanguage = this.language;
     this._hass = hass;
-    this.entity = hass.states[this.config.entity];
+    this._activeEntityId = this.resolveMapEntityId();
+    this.entity = hass.states[this._activeEntityId];
     this.startRefreshTimer();
     if (previousLanguage !== this.language) {
       this.render();
@@ -885,7 +886,8 @@ class AnthbotMapCard extends HTMLElement {
     const pattern = new RegExp(`^button\\.${base}_zone_zone_(\\d+)(?:_\\d+)?$`);
     return Object.entries(this._hass?.states || {})
       .map(([entityId, state]) => ({ entityId, state, match: entityId.match(pattern) }))
-      .filter(({ state, match }) => match && state.state !== "unavailable")
+      // Keep the configured zones visible during a temporary cloud outage.
+      .filter(({ match }) => match)
       .map(({ entityId, state, match }) => ({
         id: Number(match[1]),
         name: state.attributes?.friendly_name || `Zone ${match[1]}`,
@@ -993,7 +995,8 @@ class AnthbotMapCard extends HTMLElement {
     if (!this._hass || !this.config?.entity) {
       return;
     }
-    const latestEntity = this._hass.states[this.config.entity];
+    this._activeEntityId = this.resolveMapEntityId();
+    const latestEntity = this._hass.states[this._activeEntityId];
     if (latestEntity) {
       this.entity = latestEntity;
       this.updateRenderer();
@@ -1002,7 +1005,7 @@ class AnthbotMapCard extends HTMLElement {
 
   refreshEntityIds() {
     return [
-      this.config.entity,
+      this._activeEntityId || this.config.entity,
       this.getRelatedEntity("status")?.entity_id,
       this.getRelatedEntity("battery")?.entity_id,
       this.getRelatedEntity("charging")?.entity_id,
@@ -1071,7 +1074,7 @@ class AnthbotMapCard extends HTMLElement {
     try {
       await this._hass.callService("anthbot_map", service, {
         ...data,
-        entity_id: this.config.entity,
+        entity_id: this._activeEntityId || this.config.entity,
       });
       this.notify(this.feedback("commandSentWaiting", this.commandLabel(service)));
       this.scheduleRefresh(200);
@@ -1282,7 +1285,7 @@ class AnthbotMapCard extends HTMLElement {
   async connectCloudQuietly() {
     try {
       await this._hass.callService("anthbot_map", "connect_cloud", {
-        entity_id: this.config.entity,
+        entity_id: this._activeEntityId || this.config.entity,
       });
     } catch (error) {
       console.warn("Anthbot cloud connect failed before setting update", error);
@@ -1599,9 +1602,26 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   entityBase() {
-    return String(this.config.entity || "")
+    return String(this._activeEntityId || this.config.entity || "")
       .replace(/^sensor\./, "")
       .replace(/_map(?:_\d+)?$/, "");
+  }
+
+  resolveMapEntityId() {
+    const configured = String(this.config?.entity || "");
+    const configuredState = this._hass?.states?.[configured];
+    if (configuredState && configuredState.state !== "unavailable") {
+      return configured;
+    }
+
+    const root = configured.replace(/_map(?:_\d+)?$/, "_map");
+    const escapedRoot = root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(`^${escapedRoot}(?:_(\\d+))?$`);
+    const active = Object.entries(this._hass?.states || {})
+      .map(([entityId, state]) => ({ entityId, state, match: entityId.match(pattern) }))
+      .filter(({ state, match }) => match && state.state !== "unavailable")
+      .sort((left, right) => Number(right.match?.[1] || 1) - Number(left.match?.[1] || 1));
+    return active[0]?.entityId || configured;
   }
 
   formatEntity(entity, key = "") {

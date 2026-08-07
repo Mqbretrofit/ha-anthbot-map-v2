@@ -26,6 +26,11 @@ class TestCardControls(unittest.TestCase):
         self.assertIn("return this.discoverZoneButtons()", self.source)
         self.assertIn("_zone_zone_", self.source)
         self.assertIn("zone.entity_id", self.source)
+        self.assertIn(".filter(({ match }) => match)", self.source)
+
+    def test_unavailable_configured_map_falls_back_to_active_suffix(self) -> None:
+        self.assertIn("this.resolveMapEntityId()", self.source)
+        self.assertIn("this._activeEntityId || this.config.entity", self.source)
 
     def test_numbered_entity_suffixes_are_discovered_automatically(self) -> None:
         self.assertIn("const pattern = new RegExp", self.source)
