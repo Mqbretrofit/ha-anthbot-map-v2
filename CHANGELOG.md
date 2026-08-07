@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.0-beta.9 — 2026-08-07
+
+### Fixed
+
+- Az automatikus frontend-kiszolgáláshoz használt Home Assistant `http`
+  komponens deklarált integrációs függőség lett; a hassfest ellenőrzés zöld.
+
 ## 2.0.0-beta.8 — 2026-08-07
 
 ### Changed
