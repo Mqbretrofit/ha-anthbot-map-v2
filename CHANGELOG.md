@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.0-beta.7 — 2026-08-07
+
+### Fixed
+
+- Automatikus módban a kártya az `anthbot_map` szolgáltatásokat használja az
+  indításhoz, leállításhoz, dokkoláshoz és zónanyíráshoz a bizonytalan
+  automatikusan felismert `button` entitások helyett.
+
 ## 2.0.0-beta.6 — 2026-08-07
 
 ### Fixed

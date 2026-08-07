@@ -1022,9 +1022,9 @@ class AnthbotMapCard extends HTMLElement {
       return;
     }
 
-    const controlButton = this.getControlEntity(command);
-    if (controlButton) {
-      await this.pressButtonEntity(controlButton, command);
+    const configuredButton = this.config.controls?.[command];
+    if (configuredButton && this._hass.states[configuredButton]) {
+      await this.pressButtonEntity(configuredButton, command);
       return;
     }
 
@@ -1043,11 +1043,6 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   async startZone(zone) {
-    const zoneButton = this.getZoneButtonEntity(zone);
-    if (zoneButton) {
-      await this.pressButtonEntity(zoneButton, "zone");
-      return;
-    }
     await this.callAnthbotService("start_zone_mow", { zones: String(zone.id ?? zone.name) });
   }
 

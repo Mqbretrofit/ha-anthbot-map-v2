@@ -15,12 +15,12 @@ class TestCardControls(unittest.TestCase):
         cls.source = CARD_PATH.read_text(encoding="utf-8-sig")
 
     def test_configured_controls_use_button_press(self) -> None:
-        self.assertIn("this.getControlEntity(command)", self.source)
+        self.assertIn("this.config.controls?.[command]", self.source)
         self.assertIn('callService("button", "press"', self.source)
 
-    def test_zone_controls_prefer_zone_button_entity(self) -> None:
-        self.assertIn("const zoneButton = this.getZoneButtonEntity(zone)", self.source)
-        self.assertIn('pressButtonEntity(zoneButton, "zone")', self.source)
+    def test_zone_controls_use_integration_service(self) -> None:
+        self.assertIn('callAnthbotService("start_zone_mow"', self.source)
+        self.assertNotIn("const zoneButton = this.getZoneButtonEntity(zone)", self.source)
 
     def test_zone_tiles_survive_temporarily_unavailable_map_entity(self) -> None:
         self.assertIn("return this.discoverZoneButtons()", self.source)
