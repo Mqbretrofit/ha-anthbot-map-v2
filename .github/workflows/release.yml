@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[release v2.0.0-beta.1]')
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v2.0.0-beta.1' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build complete installer
+        run: |
+          zip -r "anthbot-map-${RELEASE_TAG}.zip" \
+            custom_components \
+            www \
+            examples \
+            README.md \
+            README_HU.md \
+            CHANGELOG.md \
+            CHANGELOG_v1.0.59_HU.md \
+            CHANGELOG_v1.0.60_HU.md \
+            CHANGELOG_v1.0.61_HU.md \
+            CHANGELOG_v1.0.62_HU.md \
+            CHANGELOG_v1.0.63_HU.md \
+            CHANGELOG_v1.0.64_HU.md \
+            CHANGELOG_v1.0.65_HU.md \
+            CHANGELOG_v1.0.66_HU.md \
+            CHANGELOG_v1.0.67_HU.md \
+            CHANGELOG_v1.0.68_HU.md \
+            CHANGELOG_v1.0.69_HU.md \
+            CHANGELOG_v1.0.70_HU.md \
+            CHANGELOG_v2.0.0-beta.1_HU.md \
+            LICENSE \
+            NOTICE.md \
+            hacs.json
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${RELEASE_TAG}" \
+            "anthbot-map-${RELEASE_TAG}.zip" \
+            --target "${GITHUB_SHA}" \
+            --title "Anthbot Map ${RELEASE_TAG}" \
+            --prerelease \
+            --latest=false \
+            --generate-notes
