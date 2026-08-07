@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.0-beta.11 — 2026-08-07
+
+- Sorted every manifest key in the exact order required by Home Assistant hassfest.
+
 ## 2.0.0-beta.10 — 2026-08-07
 
 - Fixed manifest key ordering required by Home Assistant hassfest.
