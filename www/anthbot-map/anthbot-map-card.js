@@ -870,7 +870,28 @@ class AnthbotMapCard extends HTMLElement {
 
   currentZones(areaDefinition = this.entity?.attributes?.area_definition || {}) {
     const zones = Array.isArray(areaDefinition?.custom_areas) ? areaDefinition.custom_areas : [];
-    return zones.filter((zone) => zone?.id !== undefined && zone?.id !== null);
+    const validZones = zones.filter((zone) => zone?.id !== undefined && zone?.id !== null);
+    if (validZones.length) {
+      return validZones;
+    }
+
+    // The map entity can temporarily be unavailable while the native zone
+    // buttons are already present. Rebuild the tiles directly from them.
+    return this.discoverZoneButtons();
+  }
+
+  discoverZoneButtons() {
+    const base = this.entityBase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(`^button\\.${base}_zone_zone_(\\d+)(?:_\\d+)?$`);
+    return Object.entries(this._hass?.states || {})
+      .map(([entityId, state]) => ({ entityId, state, match: entityId.match(pattern) }))
+      .filter(({ state, match }) => match && state.state !== "unavailable")
+      .map(({ entityId, state, match }) => ({
+        id: Number(match[1]),
+        name: state.attributes?.friendly_name || `Zone ${match[1]}`,
+        entity_id: entityId,
+      }))
+      .sort((left, right) => left.id - right.id);
   }
 
   rendererOptions() {
@@ -1447,6 +1468,10 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   getZoneButtonEntity(zone) {
+    if (zone.entity_id && this._hass.states[zone.entity_id]) {
+      return zone.entity_id;
+    }
+
     const configured = this.config.zoneButtons?.[zone.id] || this.config.zoneButtons?.[zone.name];
     if (configured && this._hass.states[configured]) {
       return configured;

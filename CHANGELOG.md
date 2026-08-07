@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.0-beta.3 — 2026-08-07
+
+### Fixed
+
+- A zónanyírási csempék akkor is megmaradnak, amikor a térképérzékelő
+  átmenetileg `unavailable` állapotú.
+- A kártya közvetlenül a natív Home Assistant zónagombokból építi fel a
+  zónanyírási lehetőségeket.
+
 ## 2.0.0-beta.2 — 2026-08-07
 
 ### Fixed

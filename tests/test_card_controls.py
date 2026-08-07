@@ -22,6 +22,11 @@ class TestCardControls(unittest.TestCase):
         self.assertIn("const zoneButton = this.getZoneButtonEntity(zone)", self.source)
         self.assertIn('pressButtonEntity(zoneButton, "zone")', self.source)
 
+    def test_zone_tiles_survive_temporarily_unavailable_map_entity(self) -> None:
+        self.assertIn("return this.discoverZoneButtons()", self.source)
+        self.assertIn("_zone_zone_", self.source)
+        self.assertIn("zone.entity_id", self.source)
+
     def test_numbered_entity_suffixes_are_discovered_automatically(self) -> None:
         self.assertIn("const pattern = new RegExp", self.source)
         self.assertIn("Number(right.match?.[1] || 1)", self.source)
