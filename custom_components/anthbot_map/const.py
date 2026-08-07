@@ -15,7 +15,7 @@ CONF_SCAN_INTERVAL = "scan_interval"
 
 DEFAULT_NAME = "Anthbot Genie"
 DEFAULT_API_HOST = "api.anthbot.com"
-DEFAULT_AREA_CODE = "32"
+DEFAULT_AREA_CODE = "36"
 
 # Known category_id values (as reported by /api/v1.8.2/device/bindList).
 # The app uses these as human-readable model names; mapping them keeps the
@@ -114,7 +114,7 @@ RTK_BASE_STATE_OPTIONS: dict[int, str] = {
     4: "error",
 }
 
-DEFAULT_SCAN_INTERVAL = 5
+DEFAULT_SCAN_INTERVAL = 10
 DEFAULT_SCAN_INTERVAL_DELTA = timedelta(seconds=DEFAULT_SCAN_INTERVAL)
 
 # Service names and attributes.

@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.0.0-beta.2 — 2026-08-07
+
+### Fixed
+
+- A kártya vezérlőgombjai a YAML-ban megadott natív `button` entitásokat
+  használják, a zónagombok pedig a hozzájuk tartozó Home Assistant
+  zónagombot nyomják meg.
+- A kártya automatikusan felismeri az aktív `_2`, `_3` vagy későbbi
+  entitásváltozatot, és kihagyja az árva `unavailable` entitásokat.
+- Az alapértelmezett országkód Magyarország (`+36`), a frissítési idő pedig
+  az engedélyezett minimumhoz igazodva 10 másodperc.
+- Az Anthbot `YYYYMMDDHHMMSS` időbélyegek helyesen, UTC+8 forrásidőzónából
+  kerülnek UTC-re átszámításra.
+- A bejelentkezési és eszközfelderítési hibák valódi oka bekerül a naplóba.
+- Megszűnt a `TrackerEntity` elavult importjára vonatkozó figyelmeztetés.
+- A nagy térkép-, útvonal- és területdiagnosztika csak debug szinten naplózódik.
+
 ## 2.0.0-beta.1 — 2026-08-07
 
 ### Changed

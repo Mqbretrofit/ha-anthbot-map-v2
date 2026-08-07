@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import voluptuous as vol
 
 from homeassistant import config_entries
@@ -24,6 +26,8 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class AnthbotGenieConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -58,7 +62,8 @@ class AnthbotGenieConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         title=user_input[CONF_NAME],
                         data=user_input,
                     )
-            except AnthbotGenieApiError:
+            except AnthbotGenieApiError as err:
+                _LOGGER.warning("Anthbot login or device discovery failed: %s", err)
                 errors["base"] = "cannot_connect"
             except Exception:  # noqa: BLE001
                 errors["base"] = "unknown"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -87,8 +87,11 @@ def _as_datetime(value: Any) -> datetime | None:
             return None
     if isinstance(value, str) and len(value) == 14 and value.isdigit():
         try:
-            return datetime.strptime(value, "%Y%m%d%H%M%S").replace(
-                tzinfo=timezone.utc
+            anthbot_timezone = timezone(timedelta(hours=8))
+            return (
+                datetime.strptime(value, "%Y%m%d%H%M%S")
+                .replace(tzinfo=anthbot_timezone)
+                .astimezone(timezone.utc)
             )
         except ValueError:
             return None

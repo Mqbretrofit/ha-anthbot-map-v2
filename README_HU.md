@@ -21,7 +21,7 @@ Anthbot-integráció mellett is telepítve maradhat.
 > Anthbot Map bekapcsolása előtt tiltsd le a régi integráció konfigurációs
 > bejegyzését a **Beállítások → Eszközök és szolgáltatások** oldalon. Egyidejű
 > futtatásuk egymással versengő felhőkapcsolatokat és ütköző robotparancsokat
-> okozhat. Teszteléskor az új entitásazonosítók `_2` végződést kaphatnak, mert a
+> okozhat. Teszteléskor az új entitásazonosítók `_2`, `_3` vagy későbbi végződést kaphatnak, mert a
 > letiltott integráció nyilvántartási bejegyzései megmaradnak; így viszont
 > újratelepítés nélkül vissza lehet kapcsolni a régi integrációt.
 
@@ -114,7 +114,7 @@ A fő fájl végleges helye:
 Add hozzá ezt a Lovelace JavaScript-erőforrást:
 
 ```text
-/local/anthbot-map/anthbot-map-card.js?v=140
+/local/anthbot-map/anthbot-map-card.js?v=200b2
 ```
 
 Az erőforrás típusa: **JavaScript module**. Az erőforráskezelő általában a
@@ -295,7 +295,7 @@ Home Assistantot és nyomj `Ctrl+Shift+R`-t.
 
 - ellenőrizd, hogy az erőforrás típusa JavaScript module
 - ellenőrizd a `/config/www/anthbot-map/anthbot-map-card.js` fájlt
-- nyisd meg közvetlenül a `/local/anthbot-map/anthbot-map-card.js?v=140` címet
+- nyisd meg közvetlenül a `/local/anthbot-map/anthbot-map-card.js?v=200b2` címet
 - frissítsd az oldalt `Ctrl+Shift+R` használatával
 
 ### Nem látható a térkép vagy a robot

@@ -20,7 +20,7 @@ testing and quick rollback.
 > the old integration under **Settings → Devices & services** before enabling
 > Anthbot Map. Running both can open competing cloud sessions and send
 > conflicting commands to the same mower. During testing the new entity IDs may
-> receive an `_2` suffix because the disabled integration keeps its entity
+> receive an `_2`, `_3`, or later suffix because disabled integrations keep their entity
 > registry entries; this makes switching back possible without reinstalling.
 
 ### Testing beside an existing Anthbot integration
@@ -121,7 +121,7 @@ The resulting main file must be:
 Add the Lovelace JavaScript resource:
 
 ```text
-/local/anthbot-map/anthbot-map-card.js?v=140
+/local/anthbot-map/anthbot-map-card.js?v=200b2
 ```
 
 Resource type: **JavaScript module**.
@@ -309,7 +309,7 @@ After updating the card files, increment the query string in the Lovelace
 resource URL to avoid browser caching, for example:
 
 ```text
-/local/anthbot-map/anthbot-map-card.js?v=140
+/local/anthbot-map/anthbot-map-card.js?v=200b2
 ```
 
 Then restart Home Assistant and hard-refresh the browser.
@@ -320,7 +320,7 @@ Then restart Home Assistant and hard-refresh the browser.
 
 - confirm the resource is a JavaScript module
 - confirm `/config/www/anthbot-map/anthbot-map-card.js` exists
-- open `/local/anthbot-map/anthbot-map-card.js?v=140` directly in the browser
+- open `/local/anthbot-map/anthbot-map-card.js?v=200b2` directly in the browser
 - hard-refresh with `Ctrl+Shift+R`
 
 ### Map or robot is missing

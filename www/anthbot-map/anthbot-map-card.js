@@ -998,6 +998,12 @@ class AnthbotMapCard extends HTMLElement {
       return;
     }
 
+    const controlButton = this.getControlEntity(command);
+    if (controlButton) {
+      await this.pressButtonEntity(controlButton, command);
+      return;
+    }
+
     const serviceByCommand = {
       connect: "connect_cloud",
       start: "start_full_mow",
@@ -1013,7 +1019,31 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   async startZone(zone) {
+    const zoneButton = this.getZoneButtonEntity(zone);
+    if (zoneButton) {
+      await this.pressButtonEntity(zoneButton, "zone");
+      return;
+    }
     await this.callAnthbotService("start_zone_mow", { zones: String(zone.id ?? zone.name) });
+  }
+
+  async pressButtonEntity(entityId, command) {
+    try {
+      await this._hass.callService("button", "press", { entity_id: entityId });
+      const service = command === "zone" ? "start_zone_mow" : ({
+        start: "start_full_mow",
+        stop: "stop_mow",
+        dock: "return_to_dock",
+      })[command];
+      this.notify(this.feedback("commandSentWaiting", this.commandLabel(service || command)));
+      this.scheduleRefresh(200);
+      if (service) {
+        void this.waitForCommandConfirmation(service);
+      }
+    } catch (error) {
+      this.notify(this.feedback("commandFailed", this.commandLabel(command)));
+      throw error;
+    }
   }
 
   async callAnthbotService(service, data = {}) {
@@ -1430,6 +1460,9 @@ class AnthbotMapCard extends HTMLElement {
       if (!entityId.startsWith("button.")) {
         continue;
       }
+      if (state.state === "unavailable") {
+        continue;
+      }
       const attrs = state.attributes || {};
       if (attrs.zone_type && zoneId !== null && String(attrs.id) === zoneId) {
         return entityId;
@@ -1506,13 +1539,17 @@ class AnthbotMapCard extends HTMLElement {
   findEntity(domain, suffixes) {
     const base = this.entityBase();
     for (const suffix of suffixes) {
-      for (const candidate of [
-        `${domain}.${base}_${suffix}`,
-        `${domain}.${base}_${suffix}_2`,
-      ]) {
-        if (this._hass.states[candidate]) {
-          return candidate;
-        }
+      const escapedBase = base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const escapedSuffix = suffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const pattern = new RegExp(`^${domain}\\.${escapedBase}_${escapedSuffix}(?:_(\\d+))?$`);
+      const matches = Object.entries(this._hass.states || {})
+        .map(([entityId, state]) => ({ entityId, state, match: entityId.match(pattern) }))
+        // Button entities normally have an `unknown` state in Home Assistant,
+        // but they are still pressable. Only discard truly unavailable ones.
+        .filter(({ state, match }) => match && state.state !== "unavailable")
+        .sort((left, right) => Number(right.match?.[1] || 1) - Number(left.match?.[1] || 1));
+      if (matches.length) {
+        return matches[0].entityId;
       }
     }
 
@@ -1520,6 +1557,9 @@ class AnthbotMapCard extends HTMLElement {
       const wanted = slugify(`${base}_${suffix}`);
       for (const [entityId, state] of Object.entries(this._hass.states || {})) {
         if (!entityId.startsWith(`${domain}.`)) {
+          continue;
+        }
+        if (state.state === "unavailable") {
           continue;
         }
         const entitySlug = slugify(entityId.slice(domain.length + 1));
@@ -1536,7 +1576,7 @@ class AnthbotMapCard extends HTMLElement {
   entityBase() {
     return String(this.config.entity || "")
       .replace(/^sensor\./, "")
-      .replace(/_map$/, "");
+      .replace(/_map(?:_\d+)?$/, "");
   }
 
   formatEntity(entity, key = "") {
