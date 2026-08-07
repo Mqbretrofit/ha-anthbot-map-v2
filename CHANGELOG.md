@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.0-beta.10 — 2026-08-07
+
+- Fixed manifest key ordering required by Home Assistant hassfest.
+- Keeps the integration-served frontend introduced in beta.8, so future HACS updates no longer require manual `/config/www` copying.
+
 ## 2.0.0-beta.9 — 2026-08-07
 
 ### Fixed
