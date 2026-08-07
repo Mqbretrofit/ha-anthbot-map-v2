@@ -1,0 +1,13 @@
+{
+  "domain": "anthbot_map",
+  "name": "Anthbot Map",
+  "codeowners": [
+    "@Mqbretrofit"
+  ],
+  "config_flow": true,
+  "documentation": "https://github.com/Mqbretrofit/ha-anthbot-map-v2",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/Mqbretrofit/ha-anthbot-map-v2/issues",
+  "requirements": [],
+  "version": "2.0.0-beta.1"
+}

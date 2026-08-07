@@ -1,0 +1,40 @@
+type: custom:anthbot-map-card
+entity: sensor.YOUR_MOWER_map
+name: Anthbot Map
+image: /local/anthbot-map-card/your-garden.png
+mowed_path_color: rgba(255, 235, 59, 0.82)
+mowed_path_width: 10
+fit: cover
+refresh_interval: 3
+entities:
+  battery: sensor.YOUR_MOWER_battery_level
+  status: sensor.YOUR_MOWER_mower_status
+  charging: binary_sensor.YOUR_MOWER_charging
+controls:
+  start: button.YOUR_MOWER_start_full_mow
+  stop: button.YOUR_MOWER_stop_mow
+  dock: button.YOUR_MOWER_return_to_dock
+calibration:
+  offsetX: 0
+  offsetY: 0
+  scaleX: 1
+  scaleY: 1
+  rotation: 0
+robotCalibration:
+  offsetX: 0
+  offsetY: 0
+  scaleX: 1
+  rotation: 0
+decodedBoundaryCalibration:
+  offsetX: 0
+  offsetY: 0
+  scaleX: 1
+  scaleY: 1
+  rotation: 0
+boundary_width: 3
+boundary_color: rgba(74, 101, 255, 0.9)
+show_decoded_boundary: false
+show_zones: false
+show_no_go_zones: true
+show_no_go_labels: true
+robot_heading_source: cloud

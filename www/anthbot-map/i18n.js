@@ -1,0 +1,219 @@
+import { TRANSLATION_COMPLEMENTS } from "./i18n-complements.js?v=138";
+
+export const LANGUAGES = [
+  ["auto", "Automatic / Automatikus"],
+  ["en", "English"], ["hu", "Magyar"], ["de", "Deutsch"],
+  ["fr", "Français"], ["es", "Español"], ["it", "Italiano"],
+  ["pt", "Português"], ["nl", "Nederlands"], ["pl", "Polski"],
+  ["cs", "Čeština"], ["sk", "Slovenčina"], ["ro", "Română"],
+  ["da", "Dansk"], ["sv", "Svenska"], ["no", "Norsk"],
+  ["fi", "Suomi"], ["zh-CN", "简体中文"], ["zh-TW", "繁體中文"],
+  ["tr", "Türkçe"], ["th", "ไทย"], ["vi", "Tiếng Việt"],
+  ["ko", "한국어"], ["km", "ខ្មែរ"],
+];
+
+const en = {
+  language: "Language", automatic: "Automatic", waiting: "Waiting for map entity",
+  status: "Status", control: "Control", settings: "Settings", robotSettings: "Robot settings",
+  interfaceSettings: "Interface settings", diagnostics: "Diagnostics",
+  map: "Map", expand: "Click for large view", close: "Close", zoomIn: "Zoom in", zoomOut: "Zoom out",
+  zones: "Zones", zone: "Zone", forbidden: "No-go", position: "Position", heading: "Direction",
+  start: "START", startLabel: "Start", startSub: "Mow entire area",
+  stop: "STOP", stopLabel: "Stop", stopSub: "Stop all tasks",
+  home: "HOME", homeLabel: "Dock", homeSub: "Return to dock", zoneStart: "Start zone mowing",
+  outerEdgeLabel: "Outer edge", outerEdgeSub: "Mow the outer lawn boundary",
+  dockEdgeLabel: "Dock surroundings", dockEdgeSub: "Mow around the charging dock",
+  cloud: "Cloud connection", cloudSub: "Refresh data and commands",
+  customDirection: "Custom direction", rainDelay: "Delay after rain", volume: "Volume",
+  rainDetection: "Rain detection", customCutDirection: "Custom mowing direction",
+  showZones: "Show zones", showBoundary: "Show boundary", showNoGoZones: "Show no-go zones", showNoGoLabels: "Show no-go labels", mapOnly: "Map only",
+  themeBackground: "Use Home Assistant theme", glassBackground: "Glass background", transparentBackground: "Transparent background", battery: "Battery",
+  charging: "Charging", connection: "Connection", cutHeight: "Cutting height",
+  mowedArea: "Mowed area", mowingTime: "Mowing time", totalArea: "Total area", error: "Error",
+  bladeLife: "Cutting components life", lineLife: "Cutting line life", dockContact: "Dock contact life",
+  lastUpdate: "Last update", firmware: "Firmware", gpsLatitude: "GPS latitude", gpsLongitude: "GPS longitude",
+  calibration: "Calibration", mapFit: "Map alignment",
+  robotFit: "Robot alignment", robotDirection: "Robot direction", boundaryFit: "Boundary alignment", yamlCopy: "Copy YAML",
+  up: "Up", left: "Left", right: "Right", down: "Down", narrower: "Narrower",
+  wider: "Wider", shorter: "Shorter", taller: "Taller", rotation: "Rotation", reset: "Reset",
+  switchMissing: "Switch entity not found", operationFailed: "Operation failed",
+  settingFailed: "Setting failed", status_on: "on", status_off: "off", status_standby: "standby",
+  status_paused: "paused", status_charging: "charging", status_mowing: "mowing",
+  status_returning_to_dock: "returning to dock", status_mapping: "mapping",
+  status_positioning: "positioning", status_sleeping: "sleeping", status_unknown: "unknown",
+};
+
+const translations = {
+  en,
+  hu: {
+    language: "Nyelv", automatic: "Automatikus", waiting: "Várakozás a térkép entitásra",
+    status: "Állapot", control: "Vezérlés", settings: "Beállítások", robotSettings: "Robot beállítások",
+    interfaceSettings: "Felület beállítások", diagnostics: "Diagnosztika",
+    map: "Térkép", expand: "Kattints a nagy nézethez", close: "Bezárás", zoomIn: "Nagyítás", zoomOut: "Kicsinyítés",
+    zones: "Zónák", forbidden: "Tiltott", position: "Pozíció", heading: "Irány",
+    start: "INDÍTÁS", startLabel: "Indítás", startSub: "Teljes terület nyírása",
+    stop: "LEÁLLÍTÁS", stopLabel: "Leállítás", stopSub: "Minden feladat leállítása",
+    home: "TÖLTŐ", homeLabel: "Töltő", homeSub: "Vissza a töltőre", zoneStart: "Zónavágás indítása",
+    outerEdgeLabel: "Külső szegély", outerEdgeSub: "A gyep külső határának körbevágása",
+    dockEdgeLabel: "Töltő környéke", dockEdgeSub: "A töltőállomás körüli nyírás",
+    cloud: "Felhőkapcsolat", cloudSub: "Adatok és parancsok frissítése",
+    customDirection: "Egyedi irány", rainDelay: "Eső utáni várakozás", volume: "Hangerő",
+    rainDetection: "Esőérzékelés", customCutDirection: "Egyedi vágási irány",
+    showZones: "Zónák megjelenítése", showBoundary: "Határvonal megjelenítése", showNoGoZones: "Tiltott zónák megjelenítése", showNoGoLabels: "Tiltott zóna feliratok", mapOnly: "Csak térkép",
+    themeBackground: "HA téma használata", glassBackground: "Üveg háttér", transparentBackground: "Átlátszó háttér", battery: "Akkumulátor",
+    charging: "Töltés", connection: "Kapcsolat", cutHeight: "Vágási magasság", mowedArea: "Nyírt terület",
+    mowingTime: "Nyírási idő", totalArea: "Összterület", error: "Hiba",
+    bladeLife: "Vágókések élettartama", lineLife: "Damilszál élettartama", dockContact: "Töltőérintkező élettartama",
+    lastUpdate: "Utolsó frissítés", calibration: "Kalibrálás", mapFit: "Térkép illesztése",
+    robotFit: "Robot illesztése", robotDirection: "Robot iránya", boundaryFit: "Határvonal illesztése", yamlCopy: "YAML másolása",
+    up: "Fel", left: "Balra", right: "Jobbra", down: "Le", narrower: "Keskenyebb",
+    wider: "Szélesebb", shorter: "Alacsonyabb", taller: "Magasabb", rotation: "Forgatás", reset: "Alaphelyzet",
+    switchMissing: "Nem található kapcsoló entitás", operationFailed: "A művelet sikertelen",
+    settingFailed: "A beállítás sikertelen", status_on: "be", status_off: "ki", status_standby: "készenlét",
+    status_paused: "szünet", status_charging: "töltés", status_mowing: "nyírás",
+    status_returning_to_dock: "vissza a töltőre", status_mapping: "térképezés",
+    status_positioning: "pozicionálás", status_sleeping: "alvás", status_unknown: "ismeretlen",
+  },
+  de: { language:"Sprache", automatic:"Automatisch", status:"Status", control:"Steuerung", settings:"Einstellungen", diagnostics:"Diagnose", map:"Karte", zones:"Zonen", forbidden:"Sperrgebiet", position:"Position", heading:"Richtung", startLabel:"Start", startSub:"Gesamte Fläche mähen", stopLabel:"Stopp", stopSub:"Alle Aufgaben stoppen", homeLabel:"Ladestation", homeSub:"Zur Ladestation", zoneStart:"Zonenmähen starten", cloud:"Cloud-Verbindung", customDirection:"Benutzerdefinierte Richtung", rainDelay:"Wartezeit nach Regen", volume:"Lautstärke", rainDetection:"Regenerkennung", showZones:"Zonen anzeigen", showBoundary:"Grenze anzeigen", battery:"Akku", charging:"Laden", connection:"Verbindung", cutHeight:"Schnitthöhe", mowedArea:"Gemähte Fläche", mowingTime:"Mähzeit", totalArea:"Gesamtfläche", error:"Fehler", calibration:"Kalibrierung", yamlCopy:"YAML kopieren" },
+  fr: { language:"Langue", automatic:"Automatique", status:"État", control:"Commande", settings:"Réglages", diagnostics:"Diagnostic", map:"Carte", zones:"Zones", forbidden:"Zone interdite", position:"Position", heading:"Direction", startLabel:"Démarrer", startSub:"Tondre toute la zone", stopLabel:"Arrêter", stopSub:"Arrêter toutes les tâches", homeLabel:"Station", homeSub:"Retour à la station", zoneStart:"Démarrer la tonte de zone", cloud:"Connexion cloud", customDirection:"Direction personnalisée", rainDelay:"Délai après pluie", volume:"Volume", rainDetection:"Détection de pluie", showZones:"Afficher les zones", showBoundary:"Afficher la limite", battery:"Batterie", charging:"Charge", connection:"Connexion", cutHeight:"Hauteur de coupe", mowedArea:"Surface tondue", mowingTime:"Temps de tonte", totalArea:"Surface totale", error:"Erreur", calibration:"Étalonnage", yamlCopy:"Copier le YAML" },
+  es: { language:"Idioma", automatic:"Automático", status:"Estado", control:"Control", settings:"Ajustes", diagnostics:"Diagnóstico", map:"Mapa", zones:"Zonas", forbidden:"Zona prohibida", position:"Posición", heading:"Dirección", startLabel:"Iniciar", startSub:"Cortar toda el área", stopLabel:"Detener", stopSub:"Detener todas las tareas", homeLabel:"Base", homeSub:"Volver a la base", zoneStart:"Iniciar corte de zona", cloud:"Conexión a la nube", customDirection:"Dirección personalizada", rainDelay:"Espera tras lluvia", volume:"Volumen", rainDetection:"Detección de lluvia", showZones:"Mostrar zonas", showBoundary:"Mostrar límite", battery:"Batería", charging:"Cargando", connection:"Conexión", cutHeight:"Altura de corte", mowedArea:"Área cortada", mowingTime:"Tiempo de corte", totalArea:"Área total", error:"Error", calibration:"Calibración", yamlCopy:"Copiar YAML" },
+  it: { language:"Lingua", automatic:"Automatico", status:"Stato", control:"Controllo", settings:"Impostazioni", diagnostics:"Diagnostica", map:"Mappa", zones:"Zone", forbidden:"Zona vietata", position:"Posizione", heading:"Direzione", startLabel:"Avvia", startSub:"Taglia tutta l'area", stopLabel:"Stop", stopSub:"Ferma tutte le attività", homeLabel:"Base", homeSub:"Ritorna alla base", zoneStart:"Avvia taglio zona", cloud:"Connessione cloud", customDirection:"Direzione personalizzata", rainDelay:"Attesa dopo pioggia", volume:"Volume", rainDetection:"Rilevamento pioggia", showZones:"Mostra zone", showBoundary:"Mostra confine", battery:"Batteria", charging:"Ricarica", connection:"Connessione", cutHeight:"Altezza di taglio", mowedArea:"Area tagliata", mowingTime:"Tempo di taglio", totalArea:"Area totale", error:"Errore", calibration:"Calibrazione", yamlCopy:"Copia YAML" },
+  pt: { language:"Idioma", automatic:"Automático", status:"Estado", control:"Controlo", settings:"Definições", diagnostics:"Diagnóstico", map:"Mapa", zones:"Zonas", forbidden:"Zona proibida", position:"Posição", heading:"Direção", startLabel:"Iniciar", startSub:"Cortar toda a área", stopLabel:"Parar", stopSub:"Parar todas as tarefas", homeLabel:"Base", homeSub:"Voltar à base", zoneStart:"Iniciar corte da zona", cloud:"Ligação à nuvem", customDirection:"Direção personalizada", rainDelay:"Espera após chuva", volume:"Volume", rainDetection:"Deteção de chuva", showZones:"Mostrar zonas", showBoundary:"Mostrar limite", battery:"Bateria", charging:"A carregar", connection:"Ligação", cutHeight:"Altura de corte", mowedArea:"Área cortada", mowingTime:"Tempo de corte", totalArea:"Área total", error:"Erro", calibration:"Calibração", yamlCopy:"Copiar YAML" },
+  nl: { language:"Taal", automatic:"Automatisch", status:"Status", control:"Bediening", settings:"Instellingen", diagnostics:"Diagnose", map:"Kaart", zones:"Zones", forbidden:"Verboden zone", position:"Positie", heading:"Richting", startLabel:"Start", startSub:"Hele gebied maaien", stopLabel:"Stop", stopSub:"Alle taken stoppen", homeLabel:"Laadstation", homeSub:"Terug naar laadstation", zoneStart:"Zonemaaien starten", cloud:"Cloudverbinding", customDirection:"Aangepaste richting", rainDelay:"Wachttijd na regen", volume:"Volume", rainDetection:"Regendetectie", showZones:"Zones tonen", showBoundary:"Grens tonen", battery:"Accu", charging:"Laden", connection:"Verbinding", cutHeight:"Maaihoogte", mowedArea:"Gemaaid gebied", mowingTime:"Maaiduur", totalArea:"Totale oppervlakte", error:"Fout", calibration:"Kalibratie", yamlCopy:"YAML kopiëren" },
+  pl: {
+    language: "Język", automatic: "Automatycznie", waiting: "Oczekiwanie na encję mapy",
+    status: "Stan", control: "Sterowanie", settings: "Ustawienia",
+    robotSettings: "Ustawienia robota", interfaceSettings: "Ustawienia interfejsu",
+    diagnostics: "Diagnostyka", map: "Mapa", expand: "Kliknij, aby powiększyć",
+    close: "Zamknij", zoomIn: "Powiększ", zoomOut: "Pomniejsz",
+    zones: "Strefy", forbidden: "Strefa zakazana", position: "Pozycja", heading: "Kierunek",
+    start: "START", startLabel: "Start", startSub: "Koś cały obszar",
+    stop: "STOP", stopLabel: "Stop", stopSub: "Zatrzymaj wszystkie zadania",
+    home: "BAZA", homeLabel: "Stacja", homeSub: "Powrót do stacji",
+    zoneStart: "Rozpocznij koszenie strefy",
+    outerEdgeLabel: "Zewnętrzna krawędź", outerEdgeSub: "Koszenie zewnętrznej granicy trawnika",
+    dockEdgeLabel: "Otoczenie stacji", dockEdgeSub: "Koszenie wokół stacji ładującej",
+    cloud: "Połączenie z chmurą", cloudSub: "Odśwież dane i polecenia",
+    customDirection: "Własny kierunek", rainDelay: "Opóźnienie po deszczu", volume: "Głośność",
+    rainDetection: "Wykrywanie deszczu", customCutDirection: "Własny kierunek koszenia",
+    showZones: "Pokaż strefy", showBoundary: "Pokaż granicę",
+    showNoGoZones: "Pokaż strefy zakazane", showNoGoLabels: "Pokaż etykiety stref zakazanych",
+    mapOnly: "Tylko mapa", themeBackground: "Użyj motywu Home Assistant",
+    glassBackground: "Szklane tło", transparentBackground: "Przezroczyste tło",
+    battery: "Bateria", charging: "Ładowanie", connection: "Połączenie",
+    cutHeight: "Wysokość koszenia", mowedArea: "Skoszony obszar",
+    mowingTime: "Czas koszenia", totalArea: "Całkowity obszar", error: "Błąd",
+    bladeLife: "Zużycie elementów tnących", lineLife: "Zużycie żyłki tnącej",
+    dockContact: "Zużycie styków stacji", lastUpdate: "Ostatnia aktualizacja",
+    calibration: "Kalibracja", mapFit: "Dopasowanie mapy", robotFit: "Dopasowanie robota",
+    robotDirection: "Kierunek robota", boundaryFit: "Dopasowanie granicy",
+    yamlCopy: "Kopiuj YAML", up: "Góra", left: "Lewo", right: "Prawo", down: "Dół",
+    narrower: "Węziej", wider: "Szerzej", shorter: "Niżej", taller: "Wyżej",
+    rotation: "Obrót", reset: "Resetuj",
+    switchMissing: "Nie znaleziono encji przełącznika",
+    operationFailed: "Operacja nie powiodła się", settingFailed: "Nie udało się zmienić ustawienia",
+    status_on: "włączony", status_off: "wyłączony", status_standby: "oczekiwanie",
+    status_paused: "wstrzymany", status_charging: "ładowanie", status_mowing: "koszenie",
+    status_returning_to_dock: "powrót do stacji", status_mapping: "mapowanie",
+    status_positioning: "pozycjonowanie", status_sleeping: "uśpiony", status_unknown: "nieznany",
+  },
+  cs: { language:"Jazyk", automatic:"Automaticky", status:"Stav", control:"Ovládání", settings:"Nastavení", diagnostics:"Diagnostika", map:"Mapa", zones:"Zóny", forbidden:"Zakázaná zóna", position:"Poloha", heading:"Směr", startLabel:"Spustit", stopLabel:"Zastavit", homeLabel:"Stanice", homeSub:"Návrat do stanice", zoneStart:"Spustit sečení zóny", cloud:"Cloudové připojení", customDirection:"Vlastní směr", rainDelay:"Čekání po dešti", volume:"Hlasitost", rainDetection:"Detekce deště", showZones:"Zobrazit zóny", showBoundary:"Zobrazit hranici", battery:"Baterie", charging:"Nabíjení", connection:"Připojení", cutHeight:"Výška sečení", mowedArea:"Posečená plocha", mowingTime:"Doba sečení", totalArea:"Celková plocha", error:"Chyba", calibration:"Kalibrace", yamlCopy:"Kopírovat YAML" },
+  sk: { language:"Jazyk", automatic:"Automaticky", status:"Stav", control:"Ovládanie", settings:"Nastavenia", diagnostics:"Diagnostika", map:"Mapa", zones:"Zóny", forbidden:"Zakázaná zóna", position:"Poloha", heading:"Smer", startLabel:"Spustiť", stopLabel:"Zastaviť", homeLabel:"Stanica", homeSub:"Návrat do stanice", zoneStart:"Spustiť kosenie zóny", cloud:"Cloudové pripojenie", customDirection:"Vlastný smer", rainDelay:"Čakanie po daždi", volume:"Hlasitosť", rainDetection:"Detekcia dažďa", showZones:"Zobraziť zóny", showBoundary:"Zobraziť hranicu", battery:"Batéria", charging:"Nabíjanie", connection:"Pripojenie", cutHeight:"Výška kosenia", mowedArea:"Pokosená plocha", mowingTime:"Čas kosenia", totalArea:"Celková plocha", error:"Chyba", calibration:"Kalibrácia", yamlCopy:"Kopírovať YAML" },
+  ro: { language:"Limbă", automatic:"Automat", status:"Stare", control:"Control", settings:"Setări", diagnostics:"Diagnostic", map:"Hartă", zones:"Zone", forbidden:"Zonă interzisă", position:"Poziție", heading:"Direcție", startLabel:"Pornire", stopLabel:"Oprire", homeLabel:"Stație", homeSub:"Înapoi la stație", zoneStart:"Pornește tunderea zonei", cloud:"Conexiune cloud", customDirection:"Direcție personalizată", rainDelay:"Așteptare după ploaie", volume:"Volum", rainDetection:"Detectare ploaie", showZones:"Afișează zonele", showBoundary:"Afișează limita", battery:"Baterie", charging:"Încărcare", connection:"Conexiune", cutHeight:"Înălțime de tăiere", mowedArea:"Suprafață tunsă", mowingTime:"Timp de tundere", totalArea:"Suprafață totală", error:"Eroare", calibration:"Calibrare", yamlCopy:"Copiază YAML" },
+  da: { language:"Sprog", automatic:"Automatisk", status:"Status", control:"Styring", settings:"Indstillinger", diagnostics:"Diagnostik", map:"Kort", zones:"Zoner", forbidden:"Forbudszone", position:"Position", heading:"Retning", startLabel:"Start", stopLabel:"Stop", homeLabel:"Ladestation", homeSub:"Tilbage til ladestation", zoneStart:"Start zoneklipning", cloud:"Cloudforbindelse", customDirection:"Tilpasset retning", rainDelay:"Ventetid efter regn", volume:"Lydstyrke", rainDetection:"Regnregistrering", showZones:"Vis zoner", showBoundary:"Vis grænse", battery:"Batteri", charging:"Opladning", connection:"Forbindelse", cutHeight:"Klippehøjde", mowedArea:"Klippet område", mowingTime:"Klippetid", totalArea:"Samlet område", error:"Fejl", calibration:"Kalibrering", yamlCopy:"Kopiér YAML" },
+  sv: { language:"Språk", automatic:"Automatiskt", status:"Status", control:"Styrning", settings:"Inställningar", diagnostics:"Diagnostik", map:"Karta", zones:"Zoner", forbidden:"Förbjuden zon", position:"Position", heading:"Riktning", startLabel:"Start", stopLabel:"Stopp", homeLabel:"Laddstation", homeSub:"Tillbaka till laddstation", zoneStart:"Starta zonklippning", cloud:"Molnanslutning", customDirection:"Anpassad riktning", rainDelay:"Väntetid efter regn", volume:"Volym", rainDetection:"Regndetektering", showZones:"Visa zoner", showBoundary:"Visa gräns", battery:"Batteri", charging:"Laddning", connection:"Anslutning", cutHeight:"Klipphöjd", mowedArea:"Klippt område", mowingTime:"Klipptid", totalArea:"Total yta", error:"Fel", calibration:"Kalibrering", yamlCopy:"Kopiera YAML" },
+  no: { language:"Språk", automatic:"Automatisk", status:"Status", control:"Styring", settings:"Innstillinger", diagnostics:"Diagnostikk", map:"Kart", zones:"Soner", forbidden:"Forbudssone", position:"Posisjon", heading:"Retning", startLabel:"Start", stopLabel:"Stopp", homeLabel:"Ladestasjon", homeSub:"Tilbake til ladestasjon", zoneStart:"Start soneklipping", cloud:"Skytilkobling", customDirection:"Tilpasset retning", rainDelay:"Ventetid etter regn", volume:"Volum", rainDetection:"Regndeteksjon", showZones:"Vis soner", showBoundary:"Vis grense", battery:"Batteri", charging:"Lading", connection:"Tilkobling", cutHeight:"Klippehøyde", mowedArea:"Klippet område", mowingTime:"Klippetid", totalArea:"Totalt område", error:"Feil", calibration:"Kalibrering", yamlCopy:"Kopier YAML" },
+  fi: { language:"Kieli", automatic:"Automaattinen", status:"Tila", control:"Ohjaus", settings:"Asetukset", diagnostics:"Diagnostiikka", map:"Kartta", zones:"Alueet", forbidden:"Kielletty alue", position:"Sijainti", heading:"Suunta", startLabel:"Käynnistä", stopLabel:"Pysäytä", homeLabel:"Latausasema", homeSub:"Palaa latausasemalle", zoneStart:"Aloita alueen leikkuu", cloud:"Pilviyhteys", customDirection:"Mukautettu suunta", rainDelay:"Odotus sateen jälkeen", volume:"Äänenvoimakkuus", rainDetection:"Sateen tunnistus", showZones:"Näytä alueet", showBoundary:"Näytä raja", battery:"Akku", charging:"Lataus", connection:"Yhteys", cutHeight:"Leikkuukorkeus", mowedArea:"Leikattu alue", mowingTime:"Leikkuuaika", totalArea:"Kokonaisalue", error:"Virhe", calibration:"Kalibrointi", yamlCopy:"Kopioi YAML" },
+  "zh-CN": { language:"语言", automatic:"自动", waiting:"等待地图实体", status:"状态", control:"控制", settings:"设置", diagnostics:"诊断", map:"地图", expand:"点击查看大图", close:"关闭", zoomIn:"放大", zoomOut:"缩小", zones:"区域", forbidden:"禁区", position:"位置", heading:"方向", startLabel:"开始", startSub:"修剪整个区域", stopLabel:"停止", stopSub:"停止所有任务", homeLabel:"充电座", homeSub:"返回充电座", zoneStart:"开始区域修剪", cloud:"云连接", cloudSub:"刷新数据和命令", customDirection:"自定义方向", rainDelay:"雨后等待", volume:"音量", rainDetection:"雨水检测", customCutDirection:"自定义修剪方向", showZones:"显示区域", showBoundary:"显示边界", battery:"电池", charging:"充电", connection:"连接", cutHeight:"割草高度", mowedArea:"已修剪面积", mowingTime:"修剪时间", totalArea:"总面积", error:"错误", bladeLife:"刀片寿命", lineLife:"割草线寿命", dockContact:"充电触点寿命", lastUpdate:"最后更新", calibration:"校准", mapFit:"地图校准", robotFit:"机器人校准", boundaryFit:"边界校准", yamlCopy:"复制 YAML", up:"上", left:"左", right:"右", down:"下", narrower:"变窄", wider:"变宽", shorter:"变短", taller:"变高", rotation:"旋转", reset:"重置", status_on:"开", status_off:"关", status_standby:"待机", status_paused:"暂停", status_charging:"充电中", status_mowing:"修剪中", status_returning_to_dock:"返回充电座", status_mapping:"建图中", status_positioning:"定位中", status_sleeping:"休眠", status_unknown:"未知" },
+  "zh-TW": { language:"語言", automatic:"自動", waiting:"等待地圖實體", status:"狀態", control:"控制", settings:"設定", diagnostics:"診斷", map:"地圖", expand:"點擊查看大圖", close:"關閉", zoomIn:"放大", zoomOut:"縮小", zones:"區域", forbidden:"禁區", position:"位置", heading:"方向", startLabel:"開始", startSub:"修剪整個區域", stopLabel:"停止", stopSub:"停止所有任務", homeLabel:"充電座", homeSub:"返回充電座", zoneStart:"開始區域修剪", cloud:"雲端連線", cloudSub:"重新整理資料和命令", customDirection:"自訂方向", rainDelay:"雨後等待", volume:"音量", rainDetection:"雨水偵測", customCutDirection:"自訂修剪方向", showZones:"顯示區域", showBoundary:"顯示邊界", battery:"電池", charging:"充電", connection:"連線", cutHeight:"割草高度", mowedArea:"已修剪面積", mowingTime:"修剪時間", totalArea:"總面積", error:"錯誤", bladeLife:"刀片壽命", lineLife:"割草線壽命", dockContact:"充電接點壽命", lastUpdate:"最後更新", calibration:"校準", mapFit:"地圖校準", robotFit:"機器人校準", boundaryFit:"邊界校準", yamlCopy:"複製 YAML", up:"上", left:"左", right:"右", down:"下", narrower:"變窄", wider:"變寬", shorter:"變短", taller:"變高", rotation:"旋轉", reset:"重設", status_on:"開", status_off:"關", status_standby:"待機", status_paused:"暫停", status_charging:"充電中", status_mowing:"修剪中", status_returning_to_dock:"返回充電座", status_mapping:"建圖中", status_positioning:"定位中", status_sleeping:"休眠", status_unknown:"未知" },
+  tr: { language:"Dil", automatic:"Otomatik", waiting:"Harita varlığı bekleniyor", status:"Durum", control:"Kontrol", settings:"Ayarlar", diagnostics:"Tanılama", map:"Harita", expand:"Büyük görünüm için tıklayın", close:"Kapat", zoomIn:"Yakınlaştır", zoomOut:"Uzaklaştır", zones:"Bölgeler", forbidden:"Yasak bölge", position:"Konum", heading:"Yön", startLabel:"Başlat", startSub:"Tüm alanı biç", stopLabel:"Durdur", stopSub:"Tüm görevleri durdur", homeLabel:"İstasyon", homeSub:"İstasyona dön", zoneStart:"Bölge biçmeyi başlat", cloud:"Bulut bağlantısı", customDirection:"Özel yön", rainDelay:"Yağmur sonrası bekleme", volume:"Ses", rainDetection:"Yağmur algılama", showZones:"Bölgeleri göster", showBoundary:"Sınırı göster", battery:"Pil", charging:"Şarj", connection:"Bağlantı", cutHeight:"Kesim yüksekliği", mowedArea:"Biçilen alan", mowingTime:"Biçme süresi", totalArea:"Toplam alan", error:"Hata", calibration:"Kalibrasyon", yamlCopy:"YAML kopyala", status_standby:"beklemede", status_paused:"duraklatıldı", status_charging:"şarj oluyor", status_mowing:"biçiyor", status_returning_to_dock:"istasyona dönüyor", status_unknown:"bilinmiyor" },
+  th: { language:"ภาษา", automatic:"อัตโนมัติ", waiting:"กำลังรอเอนทิตีแผนที่", status:"สถานะ", control:"ควบคุม", settings:"การตั้งค่า", diagnostics:"การวินิจฉัย", map:"แผนที่", close:"ปิด", zoomIn:"ซูมเข้า", zoomOut:"ซูมออก", zones:"โซน", forbidden:"เขตห้ามเข้า", position:"ตำแหน่ง", heading:"ทิศทาง", startLabel:"เริ่ม", startSub:"ตัดหญ้าทั้งพื้นที่", stopLabel:"หยุด", stopSub:"หยุดงานทั้งหมด", homeLabel:"แท่นชาร์จ", homeSub:"กลับแท่นชาร์จ", zoneStart:"เริ่มตัดหญ้าในโซน", cloud:"การเชื่อมต่อคลาวด์", customDirection:"ทิศทางกำหนดเอง", rainDelay:"หน่วงเวลาหลังฝน", volume:"ระดับเสียง", rainDetection:"ตรวจจับฝน", showZones:"แสดงโซน", showBoundary:"แสดงขอบเขต", battery:"แบตเตอรี่", charging:"กำลังชาร์จ", connection:"การเชื่อมต่อ", cutHeight:"ความสูงการตัด", mowedArea:"พื้นที่ตัดแล้ว", mowingTime:"เวลาตัดหญ้า", totalArea:"พื้นที่ทั้งหมด", error:"ข้อผิดพลาด", calibration:"การปรับเทียบ", yamlCopy:"คัดลอก YAML", status_standby:"พร้อมใช้งาน", status_paused:"หยุดชั่วคราว", status_mowing:"กำลังตัดหญ้า", status_unknown:"ไม่ทราบ" },
+  vi: { language:"Ngôn ngữ", automatic:"Tự động", waiting:"Đang chờ thực thể bản đồ", status:"Trạng thái", control:"Điều khiển", settings:"Cài đặt", diagnostics:"Chẩn đoán", map:"Bản đồ", close:"Đóng", zoomIn:"Phóng to", zoomOut:"Thu nhỏ", zones:"Khu vực", forbidden:"Vùng cấm", position:"Vị trí", heading:"Hướng", startLabel:"Bắt đầu", startSub:"Cắt toàn bộ khu vực", stopLabel:"Dừng", stopSub:"Dừng mọi tác vụ", homeLabel:"Trạm sạc", homeSub:"Trở về trạm sạc", zoneStart:"Bắt đầu cắt theo khu vực", cloud:"Kết nối đám mây", customDirection:"Hướng tùy chỉnh", rainDelay:"Chờ sau mưa", volume:"Âm lượng", rainDetection:"Phát hiện mưa", showZones:"Hiện khu vực", showBoundary:"Hiện ranh giới", battery:"Pin", charging:"Đang sạc", connection:"Kết nối", cutHeight:"Chiều cao cắt", mowedArea:"Diện tích đã cắt", mowingTime:"Thời gian cắt", totalArea:"Tổng diện tích", error:"Lỗi", calibration:"Hiệu chỉnh", yamlCopy:"Sao chép YAML", status_standby:"chờ", status_paused:"tạm dừng", status_mowing:"đang cắt", status_returning_to_dock:"đang về trạm", status_unknown:"không xác định" },
+  ko: { language:"언어", automatic:"자동", waiting:"지도 엔티티를 기다리는 중", status:"상태", control:"제어", settings:"설정", diagnostics:"진단", map:"지도", close:"닫기", zoomIn:"확대", zoomOut:"축소", zones:"구역", forbidden:"금지 구역", position:"위치", heading:"방향", startLabel:"시작", startSub:"전체 구역 잔디 깎기", stopLabel:"정지", stopSub:"모든 작업 정지", homeLabel:"충전소", homeSub:"충전소로 복귀", zoneStart:"구역 잔디 깎기 시작", cloud:"클라우드 연결", customDirection:"사용자 지정 방향", rainDelay:"비 온 뒤 대기", volume:"음량", rainDetection:"비 감지", showZones:"구역 표시", showBoundary:"경계 표시", battery:"배터리", charging:"충전 중", connection:"연결", cutHeight:"절단 높이", mowedArea:"깎은 면적", mowingTime:"작업 시간", totalArea:"전체 면적", error:"오류", calibration:"보정", yamlCopy:"YAML 복사", status_standby:"대기", status_paused:"일시 정지", status_mowing:"잔디 깎는 중", status_returning_to_dock:"충전소로 복귀 중", status_unknown:"알 수 없음" },
+  km: { language:"ភាសា", automatic:"ស្វ័យប្រវត្តិ", waiting:"កំពុងរង់ចាំធាតុផែនទី", status:"ស្ថានភាព", control:"ការគ្រប់គ្រង", settings:"ការកំណត់", diagnostics:"ការវិនិច្ឆ័យ", map:"ផែនទី", close:"បិទ", zoomIn:"ពង្រីក", zoomOut:"បង្រួម", zones:"តំបន់", forbidden:"តំបន់ហាមឃាត់", position:"ទីតាំង", heading:"ទិសដៅ", startLabel:"ចាប់ផ្តើម", startSub:"កាត់ស្មៅពេញតំបន់", stopLabel:"បញ្ឈប់", stopSub:"បញ្ឈប់កិច្ចការទាំងអស់", homeLabel:"ស្ថានីយសាក", homeSub:"ត្រឡប់ទៅស្ថានីយសាក", zoneStart:"ចាប់ផ្តើមកាត់ស្មៅតាមតំបន់", cloud:"ការតភ្ជាប់ក្លោដ", customDirection:"ទិសដៅផ្ទាល់ខ្លួន", rainDelay:"រង់ចាំក្រោយភ្លៀង", volume:"កម្រិតសំឡេង", rainDetection:"ការរកឃើញភ្លៀង", showZones:"បង្ហាញតំបន់", showBoundary:"បង្ហាញព្រំដែន", battery:"ថ្ម", charging:"កំពុងសាក", connection:"ការតភ្ជាប់", cutHeight:"កម្ពស់កាត់", mowedArea:"ផ្ទៃដែលបានកាត់", mowingTime:"ពេលវេលាកាត់", totalArea:"ផ្ទៃសរុប", error:"កំហុស", calibration:"ការក្រិត", yamlCopy:"ចម្លង YAML", status_standby:"រង់ចាំ", status_paused:"បានផ្អាក", status_mowing:"កំពុងកាត់ស្មៅ", status_unknown:"មិនស្គាល់" },
+};
+
+for (const [language, complement] of Object.entries(TRANSLATION_COMPLEMENTS)) {
+  Object.assign(translations[language], complement);
+}
+
+const feedbackTranslations = {
+  en: { cloudChecking:"☁ Cloud: checking…", cloudDisconnected:"☁ Cloud: disconnected", cloudRobotOnline:"☁ Cloud: active · Robot: online", cloudRobotNoResponse:"☁ Cloud: active · Robot: not responding", commandSentWaiting:"{command}: command sent, waiting for confirmation.", commandConfirmed:"{command}: confirmed by the robot.", commandNotConfirmed:"{command}: accepted by the cloud, but not confirmed by the robot.", commandFailed:"Operation failed: {command}" },
+  hu: { cloudChecking:"☁ Felhő: ellenőrzés…", cloudDisconnected:"☁ Felhő: nincs kapcsolat", cloudRobotOnline:"☁ Felhő: aktív · Robot: online", cloudRobotNoResponse:"☁ Felhő: aktív · Robot: nem válaszol", commandSentWaiting:"{command}: parancs elküldve, visszaigazolásra vár.", commandConfirmed:"{command}: a robot visszaigazolta.", commandNotConfirmed:"{command}: a felhő elfogadta, de a robot nem igazolta vissza.", commandFailed:"A művelet sikertelen: {command}" },
+  de: { cloudChecking:"☁ Cloud: wird geprüft…", cloudDisconnected:"☁ Cloud: keine Verbindung", cloudRobotOnline:"☁ Cloud: aktiv · Roboter: online", cloudRobotNoResponse:"☁ Cloud: aktiv · Roboter antwortet nicht", commandSentWaiting:"{command}: Befehl gesendet, Bestätigung wird erwartet.", commandConfirmed:"{command}: vom Roboter bestätigt.", commandNotConfirmed:"{command}: von der Cloud akzeptiert, aber nicht vom Roboter bestätigt.", commandFailed:"Vorgang fehlgeschlagen: {command}" },
+  fr: { cloudChecking:"☁ Cloud : vérification…", cloudDisconnected:"☁ Cloud : déconnecté", cloudRobotOnline:"☁ Cloud : actif · Robot : en ligne", cloudRobotNoResponse:"☁ Cloud : actif · Robot sans réponse", commandSentWaiting:"{command} : commande envoyée, en attente de confirmation.", commandConfirmed:"{command} : confirmée par le robot.", commandNotConfirmed:"{command} : acceptée par le cloud, mais non confirmée par le robot.", commandFailed:"Échec de l’opération : {command}" },
+  es: { cloudChecking:"☁ Nube: comprobando…", cloudDisconnected:"☁ Nube: sin conexión", cloudRobotOnline:"☁ Nube: activa · Robot: en línea", cloudRobotNoResponse:"☁ Nube: activa · Robot sin respuesta", commandSentWaiting:"{command}: comando enviado, esperando confirmación.", commandConfirmed:"{command}: confirmado por el robot.", commandNotConfirmed:"{command}: aceptado por la nube, pero no confirmado por el robot.", commandFailed:"Error en la operación: {command}" },
+  it: { cloudChecking:"☁ Cloud: verifica…", cloudDisconnected:"☁ Cloud: disconnesso", cloudRobotOnline:"☁ Cloud: attivo · Robot: online", cloudRobotNoResponse:"☁ Cloud: attivo · Robot non risponde", commandSentWaiting:"{command}: comando inviato, in attesa di conferma.", commandConfirmed:"{command}: confermato dal robot.", commandNotConfirmed:"{command}: accettato dal cloud, ma non confermato dal robot.", commandFailed:"Operazione non riuscita: {command}" },
+  pt: { cloudChecking:"☁ Nuvem: a verificar…", cloudDisconnected:"☁ Nuvem: sem ligação", cloudRobotOnline:"☁ Nuvem: ativa · Robô: online", cloudRobotNoResponse:"☁ Nuvem: ativa · Robô sem resposta", commandSentWaiting:"{command}: comando enviado, a aguardar confirmação.", commandConfirmed:"{command}: confirmado pelo robô.", commandNotConfirmed:"{command}: aceite pela nuvem, mas não confirmado pelo robô.", commandFailed:"Falha na operação: {command}" },
+  nl: { cloudChecking:"☁ Cloud: controleren…", cloudDisconnected:"☁ Cloud: niet verbonden", cloudRobotOnline:"☁ Cloud: actief · Robot: online", cloudRobotNoResponse:"☁ Cloud: actief · Robot reageert niet", commandSentWaiting:"{command}: opdracht verzonden, wacht op bevestiging.", commandConfirmed:"{command}: bevestigd door de robot.", commandNotConfirmed:"{command}: geaccepteerd door de cloud, maar niet bevestigd door de robot.", commandFailed:"Bewerking mislukt: {command}" },
+  pl: { cloudChecking:"☁ Chmura: sprawdzanie…", cloudDisconnected:"☁ Chmura: brak połączenia", cloudRobotOnline:"☁ Chmura: aktywna · Robot: online", cloudRobotNoResponse:"☁ Chmura: aktywna · Robot nie odpowiada", commandSentWaiting:"{command}: polecenie wysłane, oczekiwanie na potwierdzenie.", commandConfirmed:"{command}: potwierdzone przez robota.", commandNotConfirmed:"{command}: zaakceptowane przez chmurę, ale niepotwierdzone przez robota.", commandFailed:"Operacja nie powiodła się: {command}" },
+  cs: { cloudChecking:"☁ Cloud: kontrola…", cloudDisconnected:"☁ Cloud: nepřipojeno", cloudRobotOnline:"☁ Cloud: aktivní · Robot: online", cloudRobotNoResponse:"☁ Cloud: aktivní · Robot neodpovídá", commandSentWaiting:"{command}: příkaz odeslán, čeká se na potvrzení.", commandConfirmed:"{command}: potvrzeno robotem.", commandNotConfirmed:"{command}: přijato cloudem, ale nepotvrzeno robotem.", commandFailed:"Operace se nezdařila: {command}" },
+  sk: { cloudChecking:"☁ Cloud: kontrola…", cloudDisconnected:"☁ Cloud: nepripojené", cloudRobotOnline:"☁ Cloud: aktívny · Robot: online", cloudRobotNoResponse:"☁ Cloud: aktívny · Robot neodpovedá", commandSentWaiting:"{command}: príkaz odoslaný, čaká sa na potvrdenie.", commandConfirmed:"{command}: potvrdené robotom.", commandNotConfirmed:"{command}: prijaté cloudom, ale nepotvrdené robotom.", commandFailed:"Operácia zlyhala: {command}" },
+  ro: { cloudChecking:"☁ Cloud: se verifică…", cloudDisconnected:"☁ Cloud: deconectat", cloudRobotOnline:"☁ Cloud: activ · Robot: online", cloudRobotNoResponse:"☁ Cloud: activ · Robotul nu răspunde", commandSentWaiting:"{command}: comandă trimisă, se așteaptă confirmarea.", commandConfirmed:"{command}: confirmată de robot.", commandNotConfirmed:"{command}: acceptată de cloud, dar neconfirmată de robot.", commandFailed:"Operațiunea a eșuat: {command}" },
+  da: { cloudChecking:"☁ Cloud: kontrollerer…", cloudDisconnected:"☁ Cloud: ikke forbundet", cloudRobotOnline:"☁ Cloud: aktiv · Robot: online", cloudRobotNoResponse:"☁ Cloud: aktiv · Robot svarer ikke", commandSentWaiting:"{command}: kommando sendt, afventer bekræftelse.", commandConfirmed:"{command}: bekræftet af robotten.", commandNotConfirmed:"{command}: accepteret af cloud, men ikke bekræftet af robotten.", commandFailed:"Handlingen mislykkedes: {command}" },
+  sv: { cloudChecking:"☁ Moln: kontrollerar…", cloudDisconnected:"☁ Moln: frånkopplat", cloudRobotOnline:"☁ Moln: aktivt · Robot: online", cloudRobotNoResponse:"☁ Moln: aktivt · Robot svarar inte", commandSentWaiting:"{command}: kommando skickat, väntar på bekräftelse.", commandConfirmed:"{command}: bekräftat av roboten.", commandNotConfirmed:"{command}: accepterat av molnet, men inte bekräftat av roboten.", commandFailed:"Åtgärden misslyckades: {command}" },
+  no: { cloudChecking:"☁ Sky: kontrollerer…", cloudDisconnected:"☁ Sky: ikke tilkoblet", cloudRobotOnline:"☁ Sky: aktiv · Robot: online", cloudRobotNoResponse:"☁ Sky: aktiv · Robot svarer ikke", commandSentWaiting:"{command}: kommando sendt, venter på bekreftelse.", commandConfirmed:"{command}: bekreftet av roboten.", commandNotConfirmed:"{command}: godtatt av skyen, men ikke bekreftet av roboten.", commandFailed:"Handlingen mislyktes: {command}" },
+  fi: { cloudChecking:"☁ Pilvi: tarkistetaan…", cloudDisconnected:"☁ Pilvi: ei yhteyttä", cloudRobotOnline:"☁ Pilvi: aktiivinen · Robotti: online", cloudRobotNoResponse:"☁ Pilvi: aktiivinen · Robotti ei vastaa", commandSentWaiting:"{command}: komento lähetetty, odotetaan vahvistusta.", commandConfirmed:"{command}: robotin vahvistama.", commandNotConfirmed:"{command}: pilvi hyväksyi, mutta robotti ei vahvistanut.", commandFailed:"Toiminto epäonnistui: {command}" },
+  "zh-CN": { cloudChecking:"☁ 云端：正在检查…", cloudDisconnected:"☁ 云端：未连接", cloudRobotOnline:"☁ 云端：已连接 · 机器人：在线", cloudRobotNoResponse:"☁ 云端：已连接 · 机器人无响应", commandSentWaiting:"{command}：命令已发送，等待确认。", commandConfirmed:"{command}：机器人已确认。", commandNotConfirmed:"{command}：云端已接受，但机器人未确认。", commandFailed:"操作失败：{command}" },
+  "zh-TW": { cloudChecking:"☁ 雲端：正在檢查…", cloudDisconnected:"☁ 雲端：未連線", cloudRobotOnline:"☁ 雲端：已連線 · 機器人：在線", cloudRobotNoResponse:"☁ 雲端：已連線 · 機器人無回應", commandSentWaiting:"{command}：指令已傳送，等待確認。", commandConfirmed:"{command}：機器人已確認。", commandNotConfirmed:"{command}：雲端已接受，但機器人未確認。", commandFailed:"操作失敗：{command}" },
+  tr: { cloudChecking:"☁ Bulut: kontrol ediliyor…", cloudDisconnected:"☁ Bulut: bağlantı yok", cloudRobotOnline:"☁ Bulut: etkin · Robot: çevrimiçi", cloudRobotNoResponse:"☁ Bulut: etkin · Robot yanıt vermiyor", commandSentWaiting:"{command}: komut gönderildi, onay bekleniyor.", commandConfirmed:"{command}: robot tarafından onaylandı.", commandNotConfirmed:"{command}: bulut tarafından kabul edildi, ancak robot onaylamadı.", commandFailed:"İşlem başarısız: {command}" },
+  th: { cloudChecking:"☁ คลาวด์: กำลังตรวจสอบ…", cloudDisconnected:"☁ คลาวด์: ไม่ได้เชื่อมต่อ", cloudRobotOnline:"☁ คลาวด์: ทำงาน · หุ่นยนต์: ออนไลน์", cloudRobotNoResponse:"☁ คลาวด์: ทำงาน · หุ่นยนต์ไม่ตอบสนอง", commandSentWaiting:"{command}: ส่งคำสั่งแล้ว กำลังรอการยืนยัน", commandConfirmed:"{command}: หุ่นยนต์ยืนยันแล้ว", commandNotConfirmed:"{command}: คลาวด์ยอมรับแล้ว แต่หุ่นยนต์ไม่ได้ยืนยัน", commandFailed:"การทำงานล้มเหลว: {command}" },
+  vi: { cloudChecking:"☁ Đám mây: đang kiểm tra…", cloudDisconnected:"☁ Đám mây: mất kết nối", cloudRobotOnline:"☁ Đám mây: hoạt động · Robot: trực tuyến", cloudRobotNoResponse:"☁ Đám mây: hoạt động · Robot không phản hồi", commandSentWaiting:"{command}: đã gửi lệnh, đang chờ xác nhận.", commandConfirmed:"{command}: robot đã xác nhận.", commandNotConfirmed:"{command}: đám mây đã chấp nhận nhưng robot chưa xác nhận.", commandFailed:"Thao tác thất bại: {command}" },
+  ko: { cloudChecking:"☁ 클라우드: 확인 중…", cloudDisconnected:"☁ 클라우드: 연결 끊김", cloudRobotOnline:"☁ 클라우드: 활성 · 로봇: 온라인", cloudRobotNoResponse:"☁ 클라우드: 활성 · 로봇 응답 없음", commandSentWaiting:"{command}: 명령을 전송했습니다. 확인 대기 중입니다.", commandConfirmed:"{command}: 로봇이 확인했습니다.", commandNotConfirmed:"{command}: 클라우드는 수락했지만 로봇이 확인하지 않았습니다.", commandFailed:"작업 실패: {command}" },
+  km: { cloudChecking:"☁ ក្លោដ៖ កំពុងពិនិត្យ…", cloudDisconnected:"☁ ក្លោដ៖ មិនបានភ្ជាប់", cloudRobotOnline:"☁ ក្លោដ៖ សកម្ម · រ៉ូបូត៖ អនឡាញ", cloudRobotNoResponse:"☁ ក្លោដ៖ សកម្ម · រ៉ូបូតមិនឆ្លើយតប", commandSentWaiting:"{command}៖ បានផ្ញើពាក្យបញ្ជា កំពុងរង់ចាំការបញ្ជាក់។", commandConfirmed:"{command}៖ រ៉ូបូតបានបញ្ជាក់។", commandNotConfirmed:"{command}៖ ក្លោដបានទទួល ប៉ុន្តែរ៉ូបូតមិនបានបញ្ជាក់។", commandFailed:"ប្រតិបត្តិការបរាជ័យ៖ {command}" },
+};
+
+const commandTranslations = {
+  en:{ commandOuterEdge:"Outer edge mowing", commandDockEdge:"Dock surroundings mowing" },
+  hu:{ commandOuterEdge:"Külső szegélynyírás", commandDockEdge:"Töltő körüli nyírás" },
+  de:{ commandOuterEdge:"Außenkantenmähen", commandDockEdge:"Mähen um die Ladestation" },
+  fr:{ commandOuterEdge:"Tonte de la bordure extérieure", commandDockEdge:"Tonte autour de la station" },
+  es:{ commandOuterEdge:"Corte del borde exterior", commandDockEdge:"Corte alrededor de la base" },
+  it:{ commandOuterEdge:"Taglio del bordo esterno", commandDockEdge:"Taglio intorno alla base" },
+  pt:{ commandOuterEdge:"Corte da borda exterior", commandDockEdge:"Corte em redor da base" },
+  nl:{ commandOuterEdge:"Buitenrand maaien", commandDockEdge:"Rond het laadstation maaien" },
+  pl:{ commandOuterEdge:"Koszenie zewnętrznej krawędzi", commandDockEdge:"Koszenie wokół stacji" },
+  cs:{ commandOuterEdge:"Sečení vnějšího okraje", commandDockEdge:"Sečení kolem stanice" },
+  sk:{ commandOuterEdge:"Kosenie vonkajšieho okraja", commandDockEdge:"Kosenie okolo stanice" },
+  ro:{ commandOuterEdge:"Tunderea marginii exterioare", commandDockEdge:"Tunderea în jurul stației" },
+  da:{ commandOuterEdge:"Klipning af yderkant", commandDockEdge:"Klipning omkring ladestationen" },
+  sv:{ commandOuterEdge:"Klippning av ytterkant", commandDockEdge:"Klippning runt laddstationen" },
+  no:{ commandOuterEdge:"Klipping av ytterkant", commandDockEdge:"Klipping rundt ladestasjonen" },
+  fi:{ commandOuterEdge:"Ulkoreunan leikkuu", commandDockEdge:"Leikkuu latausaseman ympärillä" },
+  "zh-CN":{ commandOuterEdge:"外边界修剪", commandDockEdge:"充电座周边修剪" },
+  "zh-TW":{ commandOuterEdge:"外邊界修剪", commandDockEdge:"充電座周邊修剪" },
+  tr:{ commandOuterEdge:"Dış kenar biçme", commandDockEdge:"Şarj istasyonu çevresini biçme" },
+  th:{ commandOuterEdge:"ตัดขอบด้านนอก", commandDockEdge:"ตัดรอบแท่นชาร์จ" },
+  vi:{ commandOuterEdge:"Cắt viền ngoài", commandDockEdge:"Cắt quanh trạm sạc" },
+  ko:{ commandOuterEdge:"외곽 가장자리 잔디 깎기", commandDockEdge:"충전소 주변 잔디 깎기" },
+  km:{ commandOuterEdge:"កាត់គែមខាងក្រៅ", commandDockEdge:"កាត់ជុំវិញស្ថានីយសាក" },
+};
+
+const menuTranslations = {
+  en:{ menu:"Menu" }, hu:{ menu:"Menü" }, de:{ menu:"Menü" },
+  fr:{ menu:"Menu" }, es:{ menu:"Menú" }, it:{ menu:"Menu" },
+  pt:{ menu:"Menu" }, nl:{ menu:"Menu" }, pl:{ menu:"Menu" },
+  cs:{ menu:"Nabídka" }, sk:{ menu:"Ponuka" }, ro:{ menu:"Meniu" },
+  da:{ menu:"Menu" }, sv:{ menu:"Meny" }, no:{ menu:"Meny" },
+  fi:{ menu:"Valikko" }, "zh-CN":{ menu:"菜单" }, "zh-TW":{ menu:"選單" },
+  tr:{ menu:"Menü" }, th:{ menu:"เมนู" }, vi:{ menu:"Trình đơn" },
+  ko:{ menu:"메뉴" }, km:{ menu:"ម៉ឺនុយ" },
+};
+
+export function normalizeLanguage(value) {
+  const raw = String(value || "en").replace("_", "-");
+  const lower = raw.toLowerCase();
+  if (lower.startsWith("zh")) return /tw|hk|hant/.test(lower) ? "zh-TW" : "zh-CN";
+  const short = lower.split("-")[0];
+  if (short === "nb" || short === "nn") return "no";
+  return translations[short] ? short : "en";
+}
+
+export function resolveLanguage(selection, hass) {
+  if (selection && selection !== "auto") return normalizeLanguage(selection);
+  return normalizeLanguage(hass?.locale?.language || hass?.language || navigator.language);
+}
+
+export function translate(language, key) {
+  return translations[language]?.[key] ?? feedbackTranslations[language]?.[key] ?? commandTranslations[language]?.[key] ?? menuTranslations[language]?.[key] ?? en[key] ?? feedbackTranslations.en[key] ?? commandTranslations.en[key] ?? menuTranslations.en[key] ?? key;
+}
