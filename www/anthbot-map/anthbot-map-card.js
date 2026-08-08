@@ -69,6 +69,8 @@ class AnthbotMapCard extends HTMLElement {
     this.glassBackground = false;
     this.optimisticSettings = new Map();
     this.commandConfirmationToken = 0;
+    this.commandFeedbackTimer = null;
+    this.feedbackToastId = `anthbot-command-feedback-${Math.random().toString(36).slice(2)}`;
     this.suppressMapExpandClickUntil = 0;
     this.selectedLanguage = "auto";
     this.languageOverride = false;
@@ -158,6 +160,8 @@ class AnthbotMapCard extends HTMLElement {
   disconnectedCallback() {
     this.stopRefreshTimer();
     window.clearTimeout(this.pendingRefreshTimer);
+    window.clearTimeout(this.commandFeedbackTimer);
+    document.getElementById(this.feedbackToastId)?.remove();
     this.resizeObserver?.disconnect();
     this.renderer?.destroy();
     this.renderer = null;
@@ -1052,36 +1056,36 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   async pressButtonEntity(entityId, command) {
+    const service = command === "zone" ? "start_zone_mow" : ({
+      start: "start_full_mow",
+      stop: "stop_mow",
+      dock: "return_to_dock",
+    })[command];
+    const label = this.commandLabel(service || command);
+    this.notify(this.feedback("commandSentWaiting", label));
     try {
       await this._hass.callService("button", "press", { entity_id: entityId });
-      const service = command === "zone" ? "start_zone_mow" : ({
-        start: "start_full_mow",
-        stop: "stop_mow",
-        dock: "return_to_dock",
-      })[command];
-      this.notify(this.feedback("commandSentWaiting", this.commandLabel(service || command)));
       this.scheduleRefresh(200);
-      if (service) {
-        void this.waitForCommandConfirmation(service);
-      }
+      if (service) void this.waitForCommandConfirmation(service);
     } catch (error) {
-      this.notify(this.feedback("commandFailed", this.commandLabel(command)));
+      this.notify(this.feedback("commandFailed", label));
       throw error;
     }
   }
 
   async callAnthbotService(service, data = {}) {
+    const label = this.commandLabel(service);
+    this.notify(this.feedback("commandSentWaiting", label));
     try {
       const domain = this.resolveServiceDomain(service);
       await this._hass.callService(domain, service, {
         ...data,
         entity_id: this._activeEntityId || this.config.entity,
       });
-      this.notify(this.feedback("commandSentWaiting", this.commandLabel(service)));
       this.scheduleRefresh(200);
       void this.waitForCommandConfirmation(service);
     } catch (error) {
-      this.notify(this.feedback("commandFailed", this.commandLabel(service)));
+      this.notify(this.feedback("commandFailed", label));
       throw error;
     }
   }
@@ -1259,17 +1263,20 @@ class AnthbotMapCard extends HTMLElement {
     if (typeof serviceName !== "string" || !serviceName.includes(".")) {
       throw new Error(`Invalid custom action for ${command}`);
     }
-
     const separator = serviceName.indexOf(".");
     const domain = serviceName.slice(0, separator);
     const service = serviceName.slice(separator + 1);
     const data = definition.data || definition.service_data || {};
     const target = definition.target || {};
-
+    const confirmationService = ({ start: "start_full_mow", stop: "stop_mow", dock: "return_to_dock", "outer-edge": "start_outer_edge_mow", "dock-edge": "start_dock_edge_mow" })[command];
+    const label = this.commandLabel(confirmationService || command);
+    this.notify(this.feedback("commandSentWaiting", label));
     try {
       await this._hass.callService(domain, service, data, target);
+      this.scheduleRefresh(200);
+      if (confirmationService) void this.waitForCommandConfirmation(confirmationService);
     } catch (error) {
-      this.notify(`${this.t("operationFailed")}: ${serviceName}`);
+      this.notify(this.feedback("commandFailed", label));
       throw error;
     }
   }
@@ -1686,13 +1693,33 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   notify(message) {
-    this.dispatchEvent(
-      new CustomEvent("hass-notification", {
-        detail: { message },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+    const text = String(message || "");
+    let toast = document.getElementById(this.feedbackToastId);
+    if (!toast) {
+      toast = document.createElement("div");
+      toast.id = this.feedbackToastId;
+      toast.setAttribute("role", "status");
+      toast.setAttribute("aria-live", "polite");
+      Object.assign(toast.style, {
+        position: "fixed", zIndex: "2147483647", left: "50%",
+        bottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
+        transform: "translateX(-50%)", width: "max-content",
+        maxWidth: "calc(100vw - 32px)", boxSizing: "border-box",
+        padding: "13px 18px", border: "1px solid rgba(255,255,255,.28)",
+        borderRadius: "14px", background: "rgba(18,24,31,.96)",
+        color: "#fff", boxShadow: "0 12px 38px rgba(0,0,0,.48)",
+        fontFamily: "var(--paper-font-body1_-_font-family, sans-serif)",
+        fontSize: "15px", fontWeight: "700", lineHeight: "1.35",
+        textAlign: "center", pointerEvents: "none",
+      });
+      document.body.appendChild(toast);
+    }
+    toast.textContent = text;
+    window.clearTimeout(this.commandFeedbackTimer);
+    this.commandFeedbackTimer = window.setTimeout(() => toast?.remove(), 8000);
+    this.dispatchEvent(new CustomEvent("hass-notification", {
+      detail: { message: text }, bubbles: true, composed: true,
+    }));
   }
 }
 
@@ -1739,3 +1766,5 @@ window.customCards.push({
 
 
 
+
+console.info("Anthbot Map Card beta.12 feedback test 1 loaded");
