@@ -201,7 +201,7 @@ class AnthbotMapCard extends HTMLElement {
           .cloud-status[data-state="waiting"] { color:#ffd45c; }
           .cloud-status[data-state="offline"] { color:#ff6b6b; }
           .anthbot-glass-panel .command-dock { display:block !important; position:static !important; inset:auto !important; transform:none !important; margin:8px 10px 12px; background:rgba(6,14,22,.24) !important; }
-          .command-feedback { position:absolute; z-index:60; left:50%; bottom:18px; transform:translateX(-50%); width:max-content; max-width:calc(100% - 32px); padding:11px 16px; border:1px solid rgba(255,255,255,.24); border-radius:12px; background:rgba(20,24,30,.94); color:#fff; box-shadow:0 10px 32px rgba(0,0,0,.4); font-weight:700; text-align:center; pointer-events:none; }
+          .command-feedback { position:fixed; z-index:10000; left:50%; bottom:18px; transform:translateX(-50%); width:max-content; max-width:calc(100% - 32px); padding:11px 16px; border:1px solid rgba(255,255,255,.24); border-radius:12px; background:rgba(20,24,30,.94); color:#fff; box-shadow:0 10px 32px rgba(0,0,0,.4); font-weight:700; text-align:center; pointer-events:none; }
           .command-feedback[hidden] { display:none; }
           @media (max-width:720px) { .anthbot-glass-panel { left:8px; right:8px; bottom:66px; width:auto; max-height:72%; } .anthbot-menu-toggle { right:10px; bottom:10px; } }
         </style>
@@ -1057,36 +1057,38 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   async pressButtonEntity(entityId, command) {
+    const service = command === "zone" ? "start_zone_mow" : ({
+      start: "start_full_mow",
+      stop: "stop_mow",
+      dock: "return_to_dock",
+    })[command];
+    const label = this.commandLabel(service || command);
+    this.notify(this.feedback("commandSentWaiting", label));
     try {
       await this._hass.callService("button", "press", { entity_id: entityId });
-      const service = command === "zone" ? "start_zone_mow" : ({
-        start: "start_full_mow",
-        stop: "stop_mow",
-        dock: "return_to_dock",
-      })[command];
-      this.notify(this.feedback("commandSentWaiting", this.commandLabel(service || command)));
       this.scheduleRefresh(200);
       if (service) {
         void this.waitForCommandConfirmation(service);
       }
     } catch (error) {
-      this.notify(this.feedback("commandFailed", this.commandLabel(command)));
+      this.notify(this.feedback("commandFailed", label));
       throw error;
     }
   }
 
   async callAnthbotService(service, data = {}) {
+    const label = this.commandLabel(service);
+    this.notify(this.feedback("commandSentWaiting", label));
     try {
       const domain = this.resolveServiceDomain(service);
       await this._hass.callService(domain, service, {
         ...data,
         entity_id: this._activeEntityId || this.config.entity,
       });
-      this.notify(this.feedback("commandSentWaiting", this.commandLabel(service)));
       this.scheduleRefresh(200);
       void this.waitForCommandConfirmation(service);
     } catch (error) {
-      this.notify(this.feedback("commandFailed", this.commandLabel(service)));
+      this.notify(this.feedback("commandFailed", label));
       throw error;
     }
   }
@@ -1271,10 +1273,23 @@ class AnthbotMapCard extends HTMLElement {
     const data = definition.data || definition.service_data || {};
     const target = definition.target || {};
 
+    const confirmationService = ({
+      start: "start_full_mow",
+      stop: "stop_mow",
+      dock: "return_to_dock",
+      "outer-edge": "start_outer_edge_mow",
+      "dock-edge": "start_dock_edge_mow",
+    })[command];
+    const label = this.commandLabel(confirmationService || command);
+    this.notify(this.feedback("commandSentWaiting", label));
     try {
       await this._hass.callService(domain, service, data, target);
+      this.scheduleRefresh(200);
+      if (confirmationService) {
+        void this.waitForCommandConfirmation(confirmationService);
+      }
     } catch (error) {
-      this.notify(`${this.t("operationFailed")}: ${serviceName}`);
+      this.notify(this.feedback("commandFailed", label));
       throw error;
     }
   }
