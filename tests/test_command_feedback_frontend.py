@@ -23,6 +23,11 @@ class CommandFeedbackFrontendTests(unittest.TestCase):
         self.assertIn('this.feedback("commandConfirmed"', card)
         self.assertIn('this.feedback("commandNotConfirmed"', card)
         self.assertIn('this.feedback("commandFailed"', card)
+        self.assertIn("position:fixed; z-index:10000", card)
+        sent = card.index('this.notify(this.feedback("commandSentWaiting", label));')
+        pressed = card.index('await this._hass.callService("button", "press"')
+        self.assertLess(sent, pressed)
+        self.assertIn("const confirmationService = ({", card)
 
 
 if __name__ == "__main__":
