@@ -108,7 +108,7 @@ letiltod, és a régi Anthbot-integrációt engedélyezed.
 Add hozzá ezt a Lovelace JavaScript-erőforrást:
 
 ```text
-/local/anthbot-map-v2/anthbot-map-card.js?v=beta12
+/local/anthbot-map-v2/anthbot-map-card.js?v=beta13
 ```
 
 Az erőforrás típusa: **JavaScript module**. Az erőforráskezelő általában a
