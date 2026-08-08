@@ -109,7 +109,7 @@ testing.
 Add the Lovelace JavaScript resource:
 
 ```text
-/local/anthbot-map-v2/anthbot-map-card.js?v=beta14
+/anthbot-map-v2/anthbot-map-card.js
 ```
 
 Resource type: **JavaScript module**. This is a one-time setup.
@@ -118,8 +118,9 @@ The resource editor is normally available under **Settings → Dashboards →
 three-dot menu → Resources**. Restart Home Assistant and hard-refresh the
 browser after changing the files (`Ctrl+Shift+R`).
 
-Remove or disable the former `/anthbot-map-v2/anthbot-map-card.js` resource;
-only one Anthbot Map card resource should be enabled at a time.
+Only one Anthbot Map card resource should be enabled at a time. HACS updates
+the bundled file behind this stable URL, so later releases do not require a
+resource URL change.
 
 ### Manual integration installation
 

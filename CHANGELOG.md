@@ -1,22 +1,16 @@
 # Changelog
 
-## 2.0.0-beta.14 — 2026-08-08
-
-- Command-sent feedback is now displayed immediately, before awaiting the Home
-  Assistant service call.
-- Custom `button_actions` now use the same sent, confirmed, timeout and failure
-  feedback flow as automatically discovered native buttons.
-- The in-card command message uses a fixed high-priority overlay so it remains
-  visible in panel dashboards and mobile layouts.
-
 ## 2.0.0-beta.13 — 2026-08-08
 
-- Restored visible command feedback for automatically discovered native button
-  entities.
-- The card now displays its own accessible status message for command sent,
-  robot confirmed, timeout and failure states, while keeping the existing Home
-  Assistant notification event.
-- Command feedback is visible in panel dashboards and on mobile clients.
+- Added tested three-stage command feedback: command sent, cloud accepted and
+  mower state confirmed.
+- Recognizes Hungarian mower states such as `nyírás`, `töltés`, `készenlét`
+  and `vissza a töltőre`, including zone-mowing confirmation.
+- Automatically selects available numbered Anthbot button entities when
+  switching between supported Anthbot integrations.
+- Uses a smaller, accessible feedback message on desktop and mobile.
+- Keeps the stable `/anthbot-map-v2/anthbot-map-card.js` resource URL, so HACS
+  updates do not require manual Lovelace resource changes.
 
 ## 2.0.0-beta.12 — 2026-08-08
 
