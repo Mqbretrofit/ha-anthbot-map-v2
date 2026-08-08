@@ -70,6 +70,7 @@ class AnthbotMapCard extends HTMLElement {
     this.optimisticSettings = new Map();
     this.commandConfirmationToken = 0;
     this.commandFeedbackTimer = null;
+    this.feedbackToastId = `anthbot-command-feedback-${Math.random().toString(36).slice(2)}`;
     this.suppressMapExpandClickUntil = 0;
     this.selectedLanguage = "auto";
     this.languageOverride = false;
@@ -160,6 +161,7 @@ class AnthbotMapCard extends HTMLElement {
     this.stopRefreshTimer();
     window.clearTimeout(this.pendingRefreshTimer);
     window.clearTimeout(this.commandFeedbackTimer);
+    document.getElementById(this.feedbackToastId)?.remove();
     this.resizeObserver?.disconnect();
     this.renderer?.destroy();
     this.renderer = null;
@@ -201,11 +203,8 @@ class AnthbotMapCard extends HTMLElement {
           .cloud-status[data-state="waiting"] { color:#ffd45c; }
           .cloud-status[data-state="offline"] { color:#ff6b6b; }
           .anthbot-glass-panel .command-dock { display:block !important; position:static !important; inset:auto !important; transform:none !important; margin:8px 10px 12px; background:rgba(6,14,22,.24) !important; }
-          .command-feedback { position:fixed; z-index:10000; left:50%; bottom:18px; transform:translateX(-50%); width:max-content; max-width:calc(100% - 32px); padding:11px 16px; border:1px solid rgba(255,255,255,.24); border-radius:12px; background:rgba(20,24,30,.94); color:#fff; box-shadow:0 10px 32px rgba(0,0,0,.4); font-weight:700; text-align:center; pointer-events:none; }
-          .command-feedback[hidden] { display:none; }
           @media (max-width:720px) { .anthbot-glass-panel { left:8px; right:8px; bottom:66px; width:auto; max-height:72%; } .anthbot-menu-toggle { right:10px; bottom:10px; } }
         </style>
-        <div class="command-feedback" data-role="command-feedback" role="status" aria-live="polite" hidden></div>
         <section class="app-shell">
           <div class="top-menu">
             <div>
@@ -1021,6 +1020,15 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   async handleCommand(command) {
+    const commandText = ({
+      start: "Indítás",
+      stop: "Leállítás",
+      dock: "Vissza a töltőre",
+      connect: "Felhőkapcsolat",
+      "outer-edge": "Külső szegély nyírása",
+      "dock-edge": "Töltő környékének nyírása",
+    })[command] || String(command || "parancs");
+    showAnthbotCommandToast(`Parancs elküldve: ${commandText}`);
     const customAction = this.config.button_actions?.[command] || this.config.buttonActions?.[command];
     if (customAction) {
       await this.callCustomButtonAction(command, customAction);
@@ -1048,6 +1056,7 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   async startZone(zone) {
+    showAnthbotCommandToast(`Parancs elküldve: ${zone?.name || "zónanyírás"}`);
     const zoneButton = this.getZoneButtonEntity(zone);
     if (zoneButton) {
       await this.pressButtonEntity(zoneButton, "zone");
@@ -1067,9 +1076,7 @@ class AnthbotMapCard extends HTMLElement {
     try {
       await this._hass.callService("button", "press", { entity_id: entityId });
       this.scheduleRefresh(200);
-      if (service) {
-        void this.waitForCommandConfirmation(service);
-      }
+      if (service) void this.waitForCommandConfirmation(service);
     } catch (error) {
       this.notify(this.feedback("commandFailed", label));
       throw error;
@@ -1124,17 +1131,21 @@ class AnthbotMapCard extends HTMLElement {
       attributes.robot_status_raw,
       typeof robotState === "object" ? robotState?.value : robotState,
       entity?.state,
-    ].map((value) => String(value || "").toLowerCase().replace(/[\s_-]+/g, ""));
+    ].map((value) => String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ""));
   }
 
   commandIsConfirmed(service) {
     const expected = ({
-      start_full_mow: ["mowing", "globalmowing", "working", "cutting"],
-      start_zone_mow: ["mowing", "zonemowing", "regionmowing", "working", "cutting"],
-      start_outer_edge_mow: ["mowing", "bordermowing", "edgecutting", "working"],
-      start_dock_edge_mow: ["mowing", "nestmowing", "working"],
-      stop_mow: ["paused", "pause", "standby", "idle"],
-      return_to_dock: ["returning", "backtodock", "docking", "charging", "charge"],
+      start_full_mow: ["mowing", "globalmowing", "working", "cutting", "nyiras", "funyiras"],
+      start_zone_mow: ["mowing", "zonemowing", "regionmowing", "working", "cutting", "nyiras", "zonanyiras"],
+      start_outer_edge_mow: ["mowing", "bordermowing", "edgecutting", "working", "nyiras", "szegelynyiras"],
+      start_dock_edge_mow: ["mowing", "nestmowing", "working", "nyiras", "tolto", "kornyekeneknyirasa"],
+      stop_mow: ["paused", "pause", "standby", "idle", "charging", "charge", "docked", "szunetel", "keszenlet", "toltes", "dokkolva"],
+      return_to_dock: ["returning", "backtodock", "returntodock", "docking", "charging", "charge", "docked", "visszaatoltore", "toltes", "dokkolva"],
     })[service];
     return Array.isArray(expected) && this.commandStatusValues().some((status) =>
       expected.some((value) => status.includes(value)),
@@ -1266,28 +1277,18 @@ class AnthbotMapCard extends HTMLElement {
     if (typeof serviceName !== "string" || !serviceName.includes(".")) {
       throw new Error(`Invalid custom action for ${command}`);
     }
-
     const separator = serviceName.indexOf(".");
     const domain = serviceName.slice(0, separator);
     const service = serviceName.slice(separator + 1);
     const data = definition.data || definition.service_data || {};
     const target = definition.target || {};
-
-    const confirmationService = ({
-      start: "start_full_mow",
-      stop: "stop_mow",
-      dock: "return_to_dock",
-      "outer-edge": "start_outer_edge_mow",
-      "dock-edge": "start_dock_edge_mow",
-    })[command];
+    const confirmationService = ({ start: "start_full_mow", stop: "stop_mow", dock: "return_to_dock", "outer-edge": "start_outer_edge_mow", "dock-edge": "start_dock_edge_mow" })[command];
     const label = this.commandLabel(confirmationService || command);
     this.notify(this.feedback("commandSentWaiting", label));
     try {
       await this._hass.callService(domain, service, data, target);
       this.scheduleRefresh(200);
-      if (confirmationService) {
-        void this.waitForCommandConfirmation(confirmationService);
-      }
+      if (confirmationService) void this.waitForCommandConfirmation(confirmationService);
     } catch (error) {
       this.notify(this.feedback("commandFailed", label));
       throw error;
@@ -1707,22 +1708,10 @@ class AnthbotMapCard extends HTMLElement {
 
   notify(message) {
     const text = String(message || "");
-    const feedback = this.shadowRoot?.querySelector('[data-role="command-feedback"]');
-    if (feedback) {
-      feedback.textContent = text;
-      feedback.hidden = false;
-      window.clearTimeout(this.commandFeedbackTimer);
-      this.commandFeedbackTimer = window.setTimeout(() => {
-        feedback.hidden = true;
-      }, 6000);
-    }
-    this.dispatchEvent(
-      new CustomEvent("hass-notification", {
-        detail: { message: text },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+    showAnthbotCommandToast(text);
+    this.dispatchEvent(new CustomEvent("hass-notification", {
+      detail: { message: text }, bubbles: true, composed: true,
+    }));
   }
 }
 
@@ -1769,3 +1758,252 @@ window.customCards.push({
 
 
 
+
+function showAnthbotCommandToast(message) {
+  const id = "anthbot-command-feedback-global";
+  document.getElementById(id)?.remove();
+  const toast = document.createElement("div");
+  toast.id = id;
+  toast.setAttribute("role", "status");
+  toast.setAttribute("aria-live", "assertive");
+  toast.textContent = String(message || "Anthbot parancs elküldve");
+  Object.assign(toast.style, {
+    position: "fixed",
+    zIndex: "2147483647",
+    top: "70px",
+    left: "50%",
+    transform: "translateX(-50%)",
+    width: "max-content",
+    maxWidth: "calc(100vw - 24px)",
+    boxSizing: "border-box",
+    padding: "9px 14px",
+    border: "1px solid rgba(255,255,255,.45)",
+    borderRadius: "10px",
+    background: "rgba(2, 119, 189, .92)",
+    color: "#fff",
+    boxShadow: "0 5px 18px rgba(0,0,0,.32)",
+    font: "700 14px sans-serif",
+    textAlign: "center",
+    pointerEvents: "none",
+  });
+  document.body.appendChild(toast);
+  window.setTimeout(() => {
+    if (document.getElementById(id) === toast) toast.remove();
+  }, 8000);
+}
+
+function anthbotStandaloneCommandIsConfirmed(hass, service) {
+  const currentHass = hass
+    || document.querySelector("home-assistant")?.hass
+    || document.querySelector("home-assistant")?._hass;
+  const normalize = (value) => String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+  const values = [];
+  for (const [entityId, entity] of Object.entries(currentHass?.states || {})) {
+    if (
+      entity?.state === "unavailable"
+      || !(
+        entityId.startsWith("lawn_mower.")
+        || entityId.includes("mower_status")
+        || entityId.includes("robot_status")
+        || entityId.includes("anthbot") && entityId.endsWith("_map")
+      )
+    ) continue;
+    values.push(
+      entity.state,
+      entity.attributes?.mower_status,
+      entity.attributes?.robot_status_raw,
+      entity.attributes?.robot_sta?.value,
+    );
+  }
+  const collectVisibleStatuses = (root, output = []) => {
+    if (!root?.querySelectorAll) return output;
+    root.querySelectorAll(
+      '[data-role="mower-status"], [data-role="state"], .status-copy strong'
+    ).forEach((element) => output.push(element.textContent));
+    root.querySelectorAll("*").forEach((element) => {
+      if (element.shadowRoot) collectVisibleStatuses(element.shadowRoot, output);
+    });
+    return output;
+  };
+  values.push(...collectVisibleStatuses(document));
+  const statuses = values.map(normalize).filter(Boolean);
+  const expected = ({
+    start_full_mow: ["mowing", "globalmowing", "working", "cutting", "nyiras", "funyiras"],
+    start_zone_mow: ["mowing", "zonemowing", "regionmowing", "working", "cutting", "nyiras", "funyiras", "zonanyiras"],
+    start_outer_edge_mow: ["mowing", "bordermowing", "edgecutting", "working", "szegelynyiras"],
+    start_dock_edge_mow: ["mowing", "nestmowing", "working", "tolto", "kornyekeneknyirasa"],
+    stop_mow: ["paused", "pause", "standby", "idle", "charging", "charge", "docked", "szunetel", "keszenlet", "toltes", "dokkolva"],
+    return_to_dock: ["returning", "backtodock", "returntodock", "docking", "charging", "charge", "docked", "visszaatoltore", "toltes", "dokkolva"],
+  })[service] || [];
+  return statuses.some((status) => expected.some((value) => status.includes(value)));
+}
+
+async function waitForAnthbotVisibleConfirmation(card, hass, service, label) {
+  const token = (window.__anthbotVisibleConfirmationToken || 0) + 1;
+  window.__anthbotVisibleConfirmationToken = token;
+  const deadline = Date.now() + 20000;
+  while (window.__anthbotVisibleConfirmationToken === token && Date.now() < deadline) {
+    await new Promise((resolve) => window.setTimeout(resolve, 1000));
+    try {
+      const cardConfirmed = typeof card?.commandIsConfirmed === "function"
+        && card.commandIsConfirmed(service);
+      if (cardConfirmed || anthbotStandaloneCommandIsConfirmed(hass, service)) {
+        showAnthbotCommandToast(`A robot visszaigazolta: ${label}`);
+        return;
+      }
+    } catch (error) {
+      console.debug("Anthbot confirmation state check retry", error);
+    }
+  }
+  if (window.__anthbotVisibleConfirmationToken === token) {
+    showAnthbotCommandToast(`Nem érkezett állapot-visszaigazolás: ${label}`);
+  }
+}
+
+function installAnthbotCloudFeedback(hass) {
+  if (!hass?.callService || hass.__anthbotCloudFeedbackInstalled) return;
+  const originalCallService = hass.callService.bind(hass);
+  hass.__anthbotCloudFeedbackInstalled = true;
+  hass.callService = async (domain, service, data, target) => {
+    const pending = window.__anthbotPendingCommand;
+    const isRecent = pending && Date.now() - pending.createdAt < 8000;
+    const isAnthbotCall = (
+      ["anthbot_map", "anthbot_genie_plus", "anthbot_ha"].includes(domain)
+      || (
+        domain === "button"
+        && service === "press"
+        && String(data?.entity_id || target?.entity_id || "").includes("anthbot")
+      )
+    );
+    try {
+      const result = await originalCallService(domain, service, data, target);
+      if (isRecent && isAnthbotCall && window.__anthbotPendingCommand?.token === pending.token) {
+        showAnthbotCommandToast(`A felhő elfogadta: ${pending.label}`);
+        window.__anthbotPendingCommand = null;
+        void waitForAnthbotVisibleConfirmation(
+          pending.card,
+          hass,
+          pending.expectedService,
+          pending.label,
+        );
+      }
+      return result;
+    } catch (error) {
+      if (isRecent && isAnthbotCall && window.__anthbotPendingCommand?.token === pending.token) {
+        showAnthbotCommandToast(`A felhő elutasította: ${pending.label}`);
+        window.__anthbotPendingCommand = null;
+      }
+      throw error;
+    }
+  };
+}
+
+function findAnthbotCommandTarget(hass, command, control, config = {}) {
+  const configured = config?.controls?.[command];
+  if (configured && hass?.states?.[configured]?.state !== "unavailable") return configured;
+  const suffixes = ({
+    start: ["start_full_mow"],
+    stop: ["stop_mow"],
+    dock: ["return_to_dock"],
+    "outer-edge": ["start_outer_edge_mow"],
+    "dock-edge": ["mow_around_charging_dock", "start_dock_edge_mow"],
+  })[command] || [];
+  const zoneNumber = String(control?.textContent || "").match(/\d+/)?.[0];
+  const candidates = Object.entries(hass?.states || {})
+    .filter(([entityId, state]) => {
+      if (!entityId.startsWith("button.") || state?.state === "unavailable") return false;
+      if (command === "zone") {
+        const text = `${entityId} ${state?.attributes?.friendly_name || ""}`.toLowerCase();
+        return Boolean(zoneNumber) && text.includes("zone") && new RegExp(`(?:_|\\s)${zoneNumber}(?:_|\\s|$)`).test(text);
+      }
+      return suffixes.some((suffix) =>
+        entityId.includes(`_${suffix}`)
+        || String(state?.attributes?.friendly_name || "").toLowerCase().includes(suffix.replaceAll("_", " "))
+      );
+    })
+    .sort(([left], [right]) => {
+      const leftNumber = Number(left.match(/_(\d+)$/)?.[1] || 0);
+      const rightNumber = Number(right.match(/_(\d+)$/)?.[1] || 0);
+      return rightNumber - leftNumber;
+    });
+  return candidates[0]?.[0] || null;
+}
+
+async function executeAnthbotCommand(hass, card, command, details, control, config) {
+  const entityId = findAnthbotCommandTarget(hass, command, control, config);
+  try {
+    if (entityId) {
+      await hass.callService("button", "press", { entity_id: entityId });
+    } else {
+      const domain = ["anthbot_map", "anthbot_genie_plus", "anthbot_ha"]
+        .find((name) => hass?.services?.[name]?.[details[1]]);
+      const mapEntity = Object.entries(hass?.states || {})
+        .find(([id, state]) =>
+          id.startsWith("sensor.")
+          && id.includes("anthbot")
+          && /_map(?:_\d+)?$/.test(id)
+          && state?.state !== "unavailable"
+        )?.[0];
+      if (!domain || !details[1]) throw new Error("No active Anthbot command target");
+      await hass.callService(domain, details[1], mapEntity ? { entity_id: mapEntity } : {});
+    }
+    showAnthbotCommandToast(`A felhő elfogadta: ${details[0]}`);
+    void waitForAnthbotVisibleConfirmation(card, hass, details[1], details[0]);
+  } catch (error) {
+    console.error("Anthbot command failed", error);
+    showAnthbotCommandToast(`A felhő elutasította: ${details[0]}`);
+  }
+}
+
+if (window.__anthbotFeedbackClickHandler) {
+  document.removeEventListener("click", window.__anthbotFeedbackClickHandler, true);
+}
+window.__anthbotFeedbackClickHandler = (event) => {
+    const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+    const control = path.find((item) =>
+      item instanceof HTMLElement
+      && (
+        item.matches?.("button[data-command]")
+        || item.matches?.(".command-tile")
+        || item.matches?.(".zone-tile")
+        || (item.matches?.("button") && path.some((parent) => parent?.dataset?.role === "zone-controls"))
+        || item.matches?.("[data-zone-id]")
+      )
+    );
+    if (!control) return;
+    const card = path.find((item) => item?.tagName === "ANTHBOT-MAP-CARD");
+    const hassHost = path.find((item) => item?._hass?.states || item?.hass?.states);
+    const hass = hassHost?._hass
+      || hassHost?.hass
+      || card?._hass
+      || document.querySelector("home-assistant")?.hass
+      || document.querySelector("home-assistant")?._hass;
+    const classCommand = [
+      "start", "stop", "dock", "outer-edge", "dock-edge",
+    ].find((name) => control.classList?.contains(name));
+    const command = control.dataset?.command || classCommand || "zone";
+    const details = ({
+      start: ["Indítás", "start_full_mow"],
+      stop: ["Leállítás", "stop_mow"],
+      dock: ["Vissza a töltőre", "return_to_dock"],
+      "outer-edge": ["Külső szegély nyírása", "start_outer_edge_mow"],
+      "dock-edge": ["Töltő környékének nyírása", "start_dock_edge_mow"],
+      zone: ["Zónanyírás", "start_zone_mow"],
+    })[command] || [String(command), null];
+    if (!hass?.callService) {
+      showAnthbotCommandToast(`A parancs nem küldhető: ${details[0]}`);
+      return;
+    }
+    const configHost = path.find((item) => item?.config?.controls || item?._config?.controls);
+    const config = configHost?.config || configHost?._config || card?.config || {};
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    showAnthbotCommandToast(`Parancs elküldve: ${details[0]}`);
+    void executeAnthbotCommand(hass, card, command, details, control, config);
+};
+document.addEventListener("click", window.__anthbotFeedbackClickHandler, true);
