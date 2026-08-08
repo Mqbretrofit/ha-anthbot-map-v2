@@ -109,7 +109,7 @@ testing.
 Add the Lovelace JavaScript resource:
 
 ```text
-/local/anthbot-map-v2/anthbot-map-card.js?v=beta13
+/local/anthbot-map-v2/anthbot-map-card.js?v=beta14
 ```
 
 Resource type: **JavaScript module**. This is a one-time setup.
