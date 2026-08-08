@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.0-beta.13 — 2026-08-08
+
+- Restored visible command feedback for automatically discovered native button
+  entities.
+- The card now displays its own accessible status message for command sent,
+  robot confirmed, timeout and failure states, while keeping the existing Home
+  Assistant notification event.
+- Command feedback is visible in panel dashboards and on mobile clients.
+
 ## 2.0.0-beta.12 — 2026-08-08
 
 - The map card now skips configured related entities that are `unavailable`
