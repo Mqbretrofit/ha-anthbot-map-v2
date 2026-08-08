@@ -69,6 +69,7 @@ class AnthbotMapCard extends HTMLElement {
     this.glassBackground = false;
     this.optimisticSettings = new Map();
     this.commandConfirmationToken = 0;
+    this.commandFeedbackTimer = null;
     this.suppressMapExpandClickUntil = 0;
     this.selectedLanguage = "auto";
     this.languageOverride = false;
@@ -158,6 +159,7 @@ class AnthbotMapCard extends HTMLElement {
   disconnectedCallback() {
     this.stopRefreshTimer();
     window.clearTimeout(this.pendingRefreshTimer);
+    window.clearTimeout(this.commandFeedbackTimer);
     this.resizeObserver?.disconnect();
     this.renderer?.destroy();
     this.renderer = null;
@@ -199,8 +201,11 @@ class AnthbotMapCard extends HTMLElement {
           .cloud-status[data-state="waiting"] { color:#ffd45c; }
           .cloud-status[data-state="offline"] { color:#ff6b6b; }
           .anthbot-glass-panel .command-dock { display:block !important; position:static !important; inset:auto !important; transform:none !important; margin:8px 10px 12px; background:rgba(6,14,22,.24) !important; }
+          .command-feedback { position:absolute; z-index:60; left:50%; bottom:18px; transform:translateX(-50%); width:max-content; max-width:calc(100% - 32px); padding:11px 16px; border:1px solid rgba(255,255,255,.24); border-radius:12px; background:rgba(20,24,30,.94); color:#fff; box-shadow:0 10px 32px rgba(0,0,0,.4); font-weight:700; text-align:center; pointer-events:none; }
+          .command-feedback[hidden] { display:none; }
           @media (max-width:720px) { .anthbot-glass-panel { left:8px; right:8px; bottom:66px; width:auto; max-height:72%; } .anthbot-menu-toggle { right:10px; bottom:10px; } }
         </style>
+        <div class="command-feedback" data-role="command-feedback" role="status" aria-live="polite" hidden></div>
         <section class="app-shell">
           <div class="top-menu">
             <div>
@@ -1686,9 +1691,19 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   notify(message) {
+    const text = String(message || "");
+    const feedback = this.shadowRoot?.querySelector('[data-role="command-feedback"]');
+    if (feedback) {
+      feedback.textContent = text;
+      feedback.hidden = false;
+      window.clearTimeout(this.commandFeedbackTimer);
+      this.commandFeedbackTimer = window.setTimeout(() => {
+        feedback.hidden = true;
+      }, 6000);
+    }
     this.dispatchEvent(
       new CustomEvent("hass-notification", {
-        detail: { message },
+        detail: { message: text },
         bubbles: true,
         composed: true,
       }),
