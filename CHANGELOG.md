@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.0-beta.14 — 2026-08-08
+
+- Command-sent feedback is now displayed immediately, before awaiting the Home
+  Assistant service call.
+- Custom `button_actions` now use the same sent, confirmed, timeout and failure
+  feedback flow as automatically discovered native buttons.
+- The in-card command message uses a fixed high-priority overlay so it remains
+  visible in panel dashboards and mobile layouts.
+
 ## 2.0.0-beta.13 — 2026-08-08
 
 - Restored visible command feedback for automatically discovered native button
