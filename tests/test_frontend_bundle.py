@@ -26,6 +26,12 @@ class TestFrontendBundle(unittest.TestCase):
         self.assertIn('Path(__file__).parent / "frontend"', source)
         self.assertIn('str(frontend_path), False', source)
 
+    def test_frontend_is_mirrored_to_config_www(self) -> None:
+        source = (INTEGRATION / "__init__.py").read_text(encoding="utf-8")
+        self.assertIn('hass.config.path("www", "anthbot-map-v2")', source)
+        self.assertIn("_sync_standalone_frontend", source)
+        self.assertIn("shutil.copytree", source)
+
 
 if __name__ == "__main__":
     unittest.main()

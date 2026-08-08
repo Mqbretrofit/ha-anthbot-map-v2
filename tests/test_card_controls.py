@@ -18,9 +18,10 @@ class TestCardControls(unittest.TestCase):
         self.assertIn("this.config.controls?.[command]", self.source)
         self.assertIn('callService("button", "press"', self.source)
 
-    def test_zone_controls_use_integration_service(self) -> None:
+    def test_zone_controls_prefer_discovered_button(self) -> None:
+        self.assertIn("const zoneButton = this.getZoneButtonEntity(zone)", self.source)
+        self.assertIn('pressButtonEntity(zoneButton, "zone")', self.source)
         self.assertIn('callAnthbotService("start_zone_mow"', self.source)
-        self.assertNotIn("const zoneButton = this.getZoneButtonEntity(zone)", self.source)
 
     def test_zone_tiles_survive_temporarily_unavailable_map_entity(self) -> None:
         self.assertIn("return this.discoverZoneButtons()", self.source)
@@ -37,6 +38,14 @@ class TestCardControls(unittest.TestCase):
         self.assertIn("Number(right.match?.[1] || 1)", self.source)
         self.assertIn(".replace(/_map(?:_\\d+)?$/", self.source)
         self.assertIn('state.state !== "unavailable"', self.source)
+
+    def test_unavailable_configured_related_entities_are_skipped(self) -> None:
+        self.assertIn("isEntityAvailable(entityId)", self.source)
+        self.assertIn("this.isEntityAvailable(configured)", self.source)
+
+    def test_legacy_service_domain_fallback_is_supported(self) -> None:
+        self.assertIn('"anthbot_genie_plus"', self.source)
+        self.assertIn("resolveServiceDomain(service)", self.source)
 
 
 if __name__ == "__main__":

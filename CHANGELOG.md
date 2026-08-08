@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.0.0-beta.12 — 2026-08-08
+
+- The map card now skips configured related entities that are `unavailable`
+  and automatically selects the active numbered or unnumbered Anthbot entity.
+- Start, stop, dock and zone commands prefer the automatically discovered
+  native Home Assistant button entities.
+- Service fallback supports both `anthbot_map` and the legacy
+  `anthbot_genie_plus` domain when switching integrations.
+- The integration automatically mirrors the bundled map card into
+  `/config/www/anthbot-map-v2/`, so the card remains loadable while the v2
+  config entry is disabled during legacy integration testing.
+
 ## 2.0.0-beta.11 — 2026-08-07
 
 - Sorted every manifest key in the exact order required by Home Assistant hassfest.

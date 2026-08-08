@@ -100,12 +100,15 @@ a dokumentációt egyben tartalmazza.
 ## A térképkártya telepítése
 
 A kártya az integráció része, ezért a HACS automatikusan telepíti és frissíti.
-Nem kell fájlokat másolni a `/config/www` mappába.
+Az integráció az első betöltésekor automatikusan a
+`/config/www/anthbot-map-v2/` mappába is tükrözi a frontendfájlokat. Így a
+kártya akkor is betöltődik, ha teszteléshez az Anthbot Map v2 bejegyzését
+letiltod, és a régi Anthbot-integrációt engedélyezed.
 
 Add hozzá ezt a Lovelace JavaScript-erőforrást:
 
 ```text
-/anthbot-map-v2/anthbot-map-card.js
+/local/anthbot-map-v2/anthbot-map-card.js?v=beta12
 ```
 
 Az erőforrás típusa: **JavaScript module**. Az erőforráskezelő általában a
@@ -113,9 +116,8 @@ Az erőforrás típusa: **JavaScript module**. Az erőforráskezelő általában
 oldalon található. Ezt csak egyszer kell beállítani. Ezután indítsd újra a Home Assistantot, majd nyomj
 `Ctrl+Shift+R`-t a böngészőben.
 
-A korábbi `/local/anthbot-map-v2/` erőforrás megtartható visszaállítási
-lehetőségként, de egyszerre csak az egyik Anthbot Map kártyaerőforrás legyen
-engedélyezve.
+A korábbi `/anthbot-map-v2/anthbot-map-card.js` erőforrást töröld vagy tiltsd
+le; egyszerre csak az egyik Anthbot Map kártyaerőforrás legyen engedélyezve.
 
 ## Kézi integrációtelepítés
 

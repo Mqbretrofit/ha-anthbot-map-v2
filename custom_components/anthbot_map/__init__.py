@@ -6,6 +6,7 @@ import asyncio
 from datetime import timedelta
 import logging
 from pathlib import Path
+import shutil
 
 import voluptuous as vol
 
@@ -584,9 +585,19 @@ def _async_cleanup_legacy_entities(
             entity_registry.async_remove(entry_reg.entity_id)
 
 
+def _sync_standalone_frontend(source: Path, destination: Path) -> None:
+    """Mirror the card into /config/www so it survives a disabled config entry."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source, destination, dirs_exist_ok=True)
+
+
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the Anthbot Genie integration."""
     frontend_path = Path(__file__).parent / "frontend"
+    standalone_path = Path(hass.config.path("www", "anthbot-map-v2"))
+    await hass.async_add_executor_job(
+        _sync_standalone_frontend, frontend_path, standalone_path
+    )
     await hass.http.async_register_static_paths(
         [StaticPathConfig("/anthbot-map-v2", str(frontend_path), False)]
     )

@@ -1022,9 +1022,9 @@ class AnthbotMapCard extends HTMLElement {
       return;
     }
 
-    const configuredButton = this.config.controls?.[command];
-    if (configuredButton && this._hass.states[configuredButton]) {
-      await this.pressButtonEntity(configuredButton, command);
+    const buttonEntity = this.getControlEntity(command);
+    if (buttonEntity) {
+      await this.pressButtonEntity(buttonEntity, command);
       return;
     }
 
@@ -1043,6 +1043,11 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   async startZone(zone) {
+    const zoneButton = this.getZoneButtonEntity(zone);
+    if (zoneButton) {
+      await this.pressButtonEntity(zoneButton, "zone");
+      return;
+    }
     await this.callAnthbotService("start_zone_mow", { zones: String(zone.id ?? zone.name) });
   }
 
@@ -1067,7 +1072,8 @@ class AnthbotMapCard extends HTMLElement {
 
   async callAnthbotService(service, data = {}) {
     try {
-      await this._hass.callService("anthbot_map", service, {
+      const domain = this.resolveServiceDomain(service);
+      await this._hass.callService(domain, service, {
         ...data,
         entity_id: this._activeEntityId || this.config.entity,
       });
@@ -1078,6 +1084,11 @@ class AnthbotMapCard extends HTMLElement {
       this.notify(this.feedback("commandFailed", this.commandLabel(service)));
       throw error;
     }
+  }
+
+  resolveServiceDomain(service) {
+    const domains = ["anthbot_map", "anthbot_genie_plus", "anthbot_ha"];
+    return domains.find((domain) => this._hass?.services?.[domain]?.[service]) || "anthbot_map";
   }
 
   commandLabel(service) {
@@ -1453,7 +1464,7 @@ class AnthbotMapCard extends HTMLElement {
 
   getControlEntity(command) {
     const configured = this.config.controls?.[command];
-    if (configured && this._hass.states[configured]) {
+    if (this.isEntityAvailable(configured)) {
       return configured;
     }
 
@@ -1466,12 +1477,12 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   getZoneButtonEntity(zone) {
-    if (zone.entity_id && this._hass.states[zone.entity_id]) {
+    if (this.isEntityAvailable(zone.entity_id)) {
       return zone.entity_id;
     }
 
     const configured = this.config.zoneButtons?.[zone.id] || this.config.zoneButtons?.[zone.name];
-    if (configured && this._hass.states[configured]) {
+    if (this.isEntityAvailable(configured)) {
       return configured;
     }
 
@@ -1509,7 +1520,7 @@ class AnthbotMapCard extends HTMLElement {
 
     for (const suffix of suffixes) {
       for (const candidate of [`button.${base}_${suffix}`, `button.${base}_${suffix}_2`]) {
-        if (this._hass.states[candidate]) {
+        if (this.isEntityAvailable(candidate)) {
           return candidate;
         }
       }
@@ -1530,7 +1541,7 @@ class AnthbotMapCard extends HTMLElement {
 
   getRelatedEntity(kind) {
     const configured = this.config.entities?.[kind];
-    if (configured && this._hass.states[configured]) {
+    if (this.isEntityAvailable(configured)) {
       return this._hass.states[configured];
     }
 
@@ -1544,7 +1555,7 @@ class AnthbotMapCard extends HTMLElement {
 
   getNumberEntity(kind) {
     const configured = this.config.numbers?.[kind];
-    if (configured && this._hass.states[configured]) {
+    if (this.isEntityAvailable(configured)) {
       return configured;
     }
     return this.findEntity("number", NUMBER_MAP[kind] || []);
@@ -1552,11 +1563,16 @@ class AnthbotMapCard extends HTMLElement {
 
   getSwitchEntity(kind) {
     const configured = this.config.switches?.[kind];
-    if (configured && this._hass.states[configured]) {
+    if (this.isEntityAvailable(configured)) {
       return configured;
     }
 
     return this.findEntity("switch", SWITCH_MAP[kind] || []);
+  }
+
+  isEntityAvailable(entityId) {
+    const state = entityId ? this._hass?.states?.[entityId] : null;
+    return Boolean(state && state.state !== "unavailable");
   }
 
   findEntity(domain, suffixes) {
