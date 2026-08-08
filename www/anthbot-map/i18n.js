@@ -163,6 +163,32 @@ const feedbackTranslations = {
   km: { cloudChecking:"☁ ក្លោដ៖ កំពុងពិនិត្យ…", cloudDisconnected:"☁ ក្លោដ៖ មិនបានភ្ជាប់", cloudRobotOnline:"☁ ក្លោដ៖ សកម្ម · រ៉ូបូត៖ អនឡាញ", cloudRobotNoResponse:"☁ ក្លោដ៖ សកម្ម · រ៉ូបូតមិនឆ្លើយតប", commandSentWaiting:"{command}៖ បានផ្ញើពាក្យបញ្ជា កំពុងរង់ចាំការបញ្ជាក់។", commandConfirmed:"{command}៖ រ៉ូបូតបានបញ្ជាក់។", commandNotConfirmed:"{command}៖ ក្លោដបានទទួល ប៉ុន្តែរ៉ូបូតមិនបានបញ្ជាក់។", commandFailed:"ប្រតិបត្តិការបរាជ័យ៖ {command}" },
 };
 
+const commandStageTranslations = {
+  en: { commandCloudAccepted:"Cloud accepted: {command}", commandCloudRejected:"Cloud rejected: {command}" },
+  hu: { commandCloudAccepted:"A felhő elfogadta: {command}", commandCloudRejected:"A felhő elutasította: {command}" },
+  de: { commandCloudAccepted:"Von der Cloud akzeptiert: {command}", commandCloudRejected:"Von der Cloud abgelehnt: {command}" },
+  fr: { commandCloudAccepted:"Acceptée par le cloud : {command}", commandCloudRejected:"Rejetée par le cloud : {command}" },
+  es: { commandCloudAccepted:"Aceptado por la nube: {command}", commandCloudRejected:"Rechazado por la nube: {command}" },
+  it: { commandCloudAccepted:"Accettato dal cloud: {command}", commandCloudRejected:"Rifiutato dal cloud: {command}" },
+  pt: { commandCloudAccepted:"Aceite pela nuvem: {command}", commandCloudRejected:"Rejeitado pela nuvem: {command}" },
+  nl: { commandCloudAccepted:"Geaccepteerd door de cloud: {command}", commandCloudRejected:"Geweigerd door de cloud: {command}" },
+  pl: { commandCloudAccepted:"Zaakceptowane przez chmurę: {command}", commandCloudRejected:"Odrzucone przez chmurę: {command}" },
+  cs: { commandCloudAccepted:"Přijato cloudem: {command}", commandCloudRejected:"Odmítnuto cloudem: {command}" },
+  sk: { commandCloudAccepted:"Prijaté cloudom: {command}", commandCloudRejected:"Odmietnuté cloudom: {command}" },
+  ro: { commandCloudAccepted:"Acceptată de cloud: {command}", commandCloudRejected:"Respinsă de cloud: {command}" },
+  da: { commandCloudAccepted:"Accepteret af cloud: {command}", commandCloudRejected:"Afvist af cloud: {command}" },
+  sv: { commandCloudAccepted:"Accepterat av molnet: {command}", commandCloudRejected:"Avvisat av molnet: {command}" },
+  no: { commandCloudAccepted:"Godtatt av skyen: {command}", commandCloudRejected:"Avvist av skyen: {command}" },
+  fi: { commandCloudAccepted:"Pilvi hyväksyi: {command}", commandCloudRejected:"Pilvi hylkäsi: {command}" },
+  "zh-CN": { commandCloudAccepted:"云端已接受：{command}", commandCloudRejected:"云端已拒绝：{command}" },
+  "zh-TW": { commandCloudAccepted:"雲端已接受：{command}", commandCloudRejected:"雲端已拒絕：{command}" },
+  tr: { commandCloudAccepted:"Bulut kabul etti: {command}", commandCloudRejected:"Bulut reddetti: {command}" },
+  th: { commandCloudAccepted:"คลาวด์ยอมรับแล้ว: {command}", commandCloudRejected:"คลาวด์ปฏิเสธ: {command}" },
+  vi: { commandCloudAccepted:"Đám mây đã chấp nhận: {command}", commandCloudRejected:"Đám mây đã từ chối: {command}" },
+  ko: { commandCloudAccepted:"클라우드가 수락했습니다: {command}", commandCloudRejected:"클라우드가 거부했습니다: {command}" },
+  km: { commandCloudAccepted:"ក្លោដបានទទួល៖ {command}", commandCloudRejected:"ក្លោដបានបដិសេធ៖ {command}" },
+};
+
 const commandTranslations = {
   en:{ commandOuterEdge:"Outer edge mowing", commandDockEdge:"Dock surroundings mowing" },
   hu:{ commandOuterEdge:"Külső szegélynyírás", commandDockEdge:"Töltő körüli nyírás" },
@@ -215,5 +241,5 @@ export function resolveLanguage(selection, hass) {
 }
 
 export function translate(language, key) {
-  return translations[language]?.[key] ?? feedbackTranslations[language]?.[key] ?? commandTranslations[language]?.[key] ?? menuTranslations[language]?.[key] ?? en[key] ?? feedbackTranslations.en[key] ?? commandTranslations.en[key] ?? menuTranslations.en[key] ?? key;
+  return translations[language]?.[key] ?? feedbackTranslations[language]?.[key] ?? commandStageTranslations[language]?.[key] ?? commandTranslations[language]?.[key] ?? menuTranslations[language]?.[key] ?? en[key] ?? feedbackTranslations.en[key] ?? commandStageTranslations.en[key] ?? commandTranslations.en[key] ?? menuTranslations.en[key] ?? key;
 }

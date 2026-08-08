@@ -1,5 +1,5 @@
 import { AnthbotMapRenderer } from "./renderer.js?v=140";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=138";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=140";
 import {
   adjustCalibration,
   cardToYaml,
@@ -1021,14 +1021,14 @@ class AnthbotMapCard extends HTMLElement {
 
   async handleCommand(command) {
     const commandText = ({
-      start: "Indítás",
-      stop: "Leállítás",
-      dock: "Vissza a töltőre",
-      connect: "Felhőkapcsolat",
-      "outer-edge": "Külső szegély nyírása",
-      "dock-edge": "Töltő környékének nyírása",
-    })[command] || String(command || "parancs");
-    showAnthbotCommandToast(`Parancs elküldve: ${commandText}`);
+      start: this.t("startLabel"),
+      stop: this.t("stopLabel"),
+      dock: this.t("homeLabel"),
+      connect: this.t("cloud"),
+      "outer-edge": this.t("commandOuterEdge"),
+      "dock-edge": this.t("commandDockEdge"),
+    })[command] || String(command || this.t("control"));
+    showAnthbotCommandToast(this.feedback("commandSentWaiting", commandText));
     const customAction = this.config.button_actions?.[command] || this.config.buttonActions?.[command];
     if (customAction) {
       await this.callCustomButtonAction(command, customAction);
@@ -1056,7 +1056,7 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   async startZone(zone) {
-    showAnthbotCommandToast(`Parancs elküldve: ${zone?.name || "zónanyírás"}`);
+    showAnthbotCommandToast(this.feedback("commandSentWaiting", zone?.name || this.t("zoneStart")));
     const zoneButton = this.getZoneButtonEntity(zone);
     if (zoneButton) {
       await this.pressButtonEntity(zoneButton, "zone");
@@ -1766,7 +1766,7 @@ function showAnthbotCommandToast(message) {
   toast.id = id;
   toast.setAttribute("role", "status");
   toast.setAttribute("aria-live", "assertive");
-  toast.textContent = String(message || "Anthbot parancs elküldve");
+  toast.textContent = String(message || "");
   Object.assign(toast.style, {
     position: "fixed",
     zIndex: "2147483647",
@@ -1790,6 +1790,32 @@ function showAnthbotCommandToast(message) {
   window.setTimeout(() => {
     if (document.getElementById(id) === toast) toast.remove();
   }, 8000);
+}
+
+function anthbotFeedbackLanguage(card, hass) {
+  return card?.language
+    || resolveLanguage(card?.selectedLanguage || card?.config?.language || "auto", hass);
+}
+
+function anthbotFeedback(card, hass, key, command) {
+  return translate(anthbotFeedbackLanguage(card, hass), key)
+    .replaceAll("{command}", String(command || ""));
+}
+
+function anthbotCommandLabel(card, hass, command, control) {
+  const language = anthbotFeedbackLanguage(card, hass);
+  if (command === "zone") {
+    const visibleLabel = String(control?.textContent || "").trim();
+    return visibleLabel || translate(language, "zoneStart");
+  }
+  const key = ({
+    start: "startLabel",
+    stop: "stopLabel",
+    dock: "homeLabel",
+    "outer-edge": "commandOuterEdge",
+    "dock-edge": "commandDockEdge",
+  })[command];
+  return key ? translate(language, key) : String(command || translate(language, "control"));
 }
 
 function anthbotStandaloneCommandIsConfirmed(hass, service) {
@@ -1852,7 +1878,7 @@ async function waitForAnthbotVisibleConfirmation(card, hass, service, label) {
       const cardConfirmed = typeof card?.commandIsConfirmed === "function"
         && card.commandIsConfirmed(service);
       if (cardConfirmed || anthbotStandaloneCommandIsConfirmed(hass, service)) {
-        showAnthbotCommandToast(`A robot visszaigazolta: ${label}`);
+        showAnthbotCommandToast(anthbotFeedback(card, hass, "commandConfirmed", label));
         return;
       }
     } catch (error) {
@@ -1860,7 +1886,7 @@ async function waitForAnthbotVisibleConfirmation(card, hass, service, label) {
     }
   }
   if (window.__anthbotVisibleConfirmationToken === token) {
-    showAnthbotCommandToast(`Nem érkezett állapot-visszaigazolás: ${label}`);
+    showAnthbotCommandToast(anthbotFeedback(card, hass, "commandNotConfirmed", label));
   }
 }
 
@@ -1882,7 +1908,7 @@ function installAnthbotCloudFeedback(hass) {
     try {
       const result = await originalCallService(domain, service, data, target);
       if (isRecent && isAnthbotCall && window.__anthbotPendingCommand?.token === pending.token) {
-        showAnthbotCommandToast(`A felhő elfogadta: ${pending.label}`);
+        showAnthbotCommandToast(anthbotFeedback(pending.card, hass, "commandCloudAccepted", pending.label));
         window.__anthbotPendingCommand = null;
         void waitForAnthbotVisibleConfirmation(
           pending.card,
@@ -1894,7 +1920,7 @@ function installAnthbotCloudFeedback(hass) {
       return result;
     } catch (error) {
       if (isRecent && isAnthbotCall && window.__anthbotPendingCommand?.token === pending.token) {
-        showAnthbotCommandToast(`A felhő elutasította: ${pending.label}`);
+        showAnthbotCommandToast(anthbotFeedback(pending.card, hass, "commandCloudRejected", pending.label));
         window.__anthbotPendingCommand = null;
       }
       throw error;
@@ -1951,11 +1977,11 @@ async function executeAnthbotCommand(hass, card, command, details, control, conf
       if (!domain || !details[1]) throw new Error("No active Anthbot command target");
       await hass.callService(domain, details[1], mapEntity ? { entity_id: mapEntity } : {});
     }
-    showAnthbotCommandToast(`A felhő elfogadta: ${details[0]}`);
+    showAnthbotCommandToast(anthbotFeedback(card, hass, "commandCloudAccepted", details[0]));
     void waitForAnthbotVisibleConfirmation(card, hass, details[1], details[0]);
   } catch (error) {
     console.error("Anthbot command failed", error);
-    showAnthbotCommandToast(`A felhő elutasította: ${details[0]}`);
+    showAnthbotCommandToast(anthbotFeedback(card, hass, "commandCloudRejected", details[0]));
   }
 }
 
@@ -1964,6 +1990,8 @@ if (window.__anthbotFeedbackClickHandler) {
 }
 window.__anthbotFeedbackClickHandler = (event) => {
     const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+    const card = path.find((item) => item?.tagName === "ANTHBOT-MAP-CARD");
+    if (!card) return;
     const control = path.find((item) =>
       item instanceof HTMLElement
       && (
@@ -1975,7 +2003,6 @@ window.__anthbotFeedbackClickHandler = (event) => {
       )
     );
     if (!control) return;
-    const card = path.find((item) => item?.tagName === "ANTHBOT-MAP-CARD");
     const hassHost = path.find((item) => item?._hass?.states || item?.hass?.states);
     const hass = hassHost?._hass
       || hassHost?.hass
@@ -1986,16 +2013,16 @@ window.__anthbotFeedbackClickHandler = (event) => {
       "start", "stop", "dock", "outer-edge", "dock-edge",
     ].find((name) => control.classList?.contains(name));
     const command = control.dataset?.command || classCommand || "zone";
-    const details = ({
-      start: ["Indítás", "start_full_mow"],
-      stop: ["Leállítás", "stop_mow"],
-      dock: ["Vissza a töltőre", "return_to_dock"],
-      "outer-edge": ["Külső szegély nyírása", "start_outer_edge_mow"],
-      "dock-edge": ["Töltő környékének nyírása", "start_dock_edge_mow"],
-      zone: ["Zónanyírás", "start_zone_mow"],
-    })[command] || [String(command), null];
+    const details = [anthbotCommandLabel(card, hass, command, control), ({
+      start: "start_full_mow",
+      stop: "stop_mow",
+      dock: "return_to_dock",
+      "outer-edge": "start_outer_edge_mow",
+      "dock-edge": "start_dock_edge_mow",
+      zone: "start_zone_mow",
+    })[command] || null];
     if (!hass?.callService) {
-      showAnthbotCommandToast(`A parancs nem küldhető: ${details[0]}`);
+      showAnthbotCommandToast(anthbotFeedback(card, hass, "commandFailed", details[0]));
       return;
     }
     const configHost = path.find((item) => item?.config?.controls || item?._config?.controls);
@@ -2003,7 +2030,7 @@ window.__anthbotFeedbackClickHandler = (event) => {
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
-    showAnthbotCommandToast(`Parancs elküldve: ${details[0]}`);
+    showAnthbotCommandToast(anthbotFeedback(card, hass, "commandSentWaiting", details[0]));
     void executeAnthbotCommand(hass, card, command, details, control, config);
 };
 document.addEventListener("click", window.__anthbotFeedbackClickHandler, true);
