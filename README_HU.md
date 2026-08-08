@@ -108,7 +108,7 @@ letiltod, és a régi Anthbot-integrációt engedélyezed.
 Add hozzá ezt a Lovelace JavaScript-erőforrást:
 
 ```text
-/local/anthbot-map-v2/anthbot-map-card.js?v=beta14
+/anthbot-map-v2/anthbot-map-card.js
 ```
 
 Az erőforrás típusa: **JavaScript module**. Az erőforráskezelő általában a
@@ -116,8 +116,9 @@ Az erőforrás típusa: **JavaScript module**. Az erőforráskezelő általában
 oldalon található. Ezt csak egyszer kell beállítani. Ezután indítsd újra a Home Assistantot, majd nyomj
 `Ctrl+Shift+R`-t a böngészőben.
 
-A korábbi `/anthbot-map-v2/anthbot-map-card.js` erőforrást töröld vagy tiltsd
-le; egyszerre csak az egyik Anthbot Map kártyaerőforrás legyen engedélyezve.
+Egyszerre csak az egyik Anthbot Map kártyaerőforrás legyen engedélyezve. A HACS
+a stabil URL mögötti fájlt automatikusan frissíti, ezért a későbbi kiadásoknál
+nem kell átírni az erőforrás címét.
 
 ## Kézi integrációtelepítés
 
