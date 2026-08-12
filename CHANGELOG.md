@@ -1,6 +1,9 @@
 # Changelog
 
-## 2.0.0-beta.15 — 2026-08-12
+## 2.0.0 — 2026-08-12
+
+First stable Anthbot Map v2 release, promoted from the field-tested
+`2.0.0-beta.15` source without integration-code changes.
 
 ### Highlight: faster live AWS IoT/MQTT communication
 

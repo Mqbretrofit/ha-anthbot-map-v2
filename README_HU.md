@@ -36,7 +36,7 @@ Anthbot-integráció mellett is telepítve maradhat.
    egyszerre.
 
 > [!IMPORTANT]
-> **A béta.15 legfontosabb újdonsága:** az integráció tartós AWS IoT
+> **A stabil 2.0.0 legfontosabb újdonsága:** az integráció tartós AWS IoT
 > MQTT-over-WebSocket kapcsolatot használ, ezért a robot élő adatai lényegesen
 > gyorsabban frissülnek. A parancsok ezt az élő csatornát részesítik előnyben,
 > hiba esetén pedig a hitelesített AWS IoT HTTP-küldésre váltanak vissza. A

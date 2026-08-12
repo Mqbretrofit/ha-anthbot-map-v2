@@ -12,10 +12,10 @@ permissions:
 
 jobs:
   release:
-    if: startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[release v2.0.0-beta.15]')
+    if: startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[release v2.0.0]')
     runs-on: ubuntu-latest
     env:
-      RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v2.0.0-beta.15' }}
+      RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v2.0.0' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -71,7 +71,9 @@ jobs:
             CHANGELOG_v2.0.0-beta.13_HU.md \
             CHANGELOG_v2.0.0-beta.14_HU.md \
             CHANGELOG_v2.0.0-beta.15_HU.md \
+            CHANGELOG_v2.0.0_HU.md \
             RELEASE_NOTES_v2.0.0-beta.15.md \
+            RELEASE_NOTES_v2.0.0.md \
             LICENSE \
             NOTICE.md \
             hacs.json
@@ -84,6 +86,5 @@ jobs:
             "anthbot-map-${RELEASE_TAG}.zip" \
             --target "${GITHUB_SHA}" \
             --title "Anthbot Map ${RELEASE_TAG}" \
-            --prerelease \
-            --latest=false \
-            --notes-file RELEASE_NOTES_v2.0.0-beta.15.md
+            --latest \
+            --notes-file RELEASE_NOTES_v2.0.0.md

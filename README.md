@@ -32,7 +32,7 @@ testing and quick rollback.
    restart Home Assistant. Do not enable both at once.
 
 > [!IMPORTANT]
-> **Beta.15 highlight:** the integration now keeps a persistent AWS IoT
+> **Version 2.0.0 highlight:** the integration keeps a persistent AWS IoT
 > MQTT-over-WebSocket connection for substantially faster live mower updates.
 > Commands prefer that live channel and use the signed AWS IoT HTTP publish
 > endpoint as a fallback. Rapid shadow messages are coalesced before they reach
