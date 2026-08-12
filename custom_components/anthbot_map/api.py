@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import gzip
@@ -17,7 +18,7 @@ import tarfile
 import time
 from typing import Any
 import uuid
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, quote, urlencode, urlparse
 import zlib
 
 from aiohttp import ClientError, ClientSession
@@ -39,6 +40,8 @@ _RETRYABLE_HTTP_STATUS_CODES = frozenset({500, 502, 503, 504})
 _AUTHENTICATION_HTTP_STATUS_CODES = frozenset({401, 403})
 
 _LOGGER = logging.getLogger(__name__)
+
+LiveCommandPublisher = Callable[[str, bytes], Awaitable[None]]
 
 
 class AnthbotGenieApiError(HomeAssistantError):
@@ -67,6 +70,26 @@ class AnthbotGenieApiError(HomeAssistantError):
             self.temporary
             or self.status_code in _RETRYABLE_HTTP_STATUS_CODES
         )
+
+
+class AnthbotDefinitionIntegrityError(AnthbotGenieApiError):
+    """Raised when a downloaded device file does not match its cloud MD5."""
+
+
+def _validate_definition_md5(raw_bytes: bytes, expected_md5: str | None) -> str:
+    """Return the payload MD5 and reject a valid-but-different expected MD5."""
+    actual_md5 = hashlib.md5(raw_bytes).hexdigest()  # noqa: S324 - cache identity
+    normalized_expected = (
+        expected_md5.strip().lower() if isinstance(expected_md5, str) else ""
+    )
+    if re.fullmatch(r"[0-9a-f]{32}", normalized_expected) and not hmac.compare_digest(
+        actual_md5, normalized_expected
+    ):
+        raise AnthbotDefinitionIntegrityError(
+            "Downloaded map archive MD5 mismatch "
+            f"(expected {normalized_expected}, received {actual_md5})"
+        )
+    return actual_md5
 
 
 @dataclass(frozen=True, slots=True)
@@ -1082,18 +1105,29 @@ class AnthbotCloudApiClient:
     @staticmethod
     def _parse_expiration(value: Any) -> int | None:
         """Normalize STS expiration expressed as seconds, milliseconds or ISO text."""
+        def _normalize_numeric(timestamp: int) -> int | None:
+            if timestamp <= 0:
+                return None
+            if timestamp > 10_000_000_000:
+                timestamp //= 1000
+            # Anthbot currently returns the STS lifetime (typically 3600)
+            # instead of an absolute Unix timestamp.  Treat small positive
+            # values as a duration so credentials do not appear to have
+            # expired in January 1970 and trigger an STS request loop.
+            if timestamp < 946_684_800:  # 2000-01-01 UTC
+                return int(time.time()) + timestamp
+            return timestamp
+
         if isinstance(value, bool):
             return None
         if isinstance(value, (int, float)):
-            timestamp = int(value)
-            return timestamp // 1000 if timestamp > 10_000_000_000 else timestamp
+            return _normalize_numeric(int(value))
         if isinstance(value, str):
             raw = value.strip()
             if not raw:
                 return None
             if raw.isdigit():
-                timestamp = int(raw)
-                return timestamp // 1000 if timestamp > 10_000_000_000 else timestamp
+                return _normalize_numeric(int(raw))
             try:
                 parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
                 if parsed.tzinfo is None:
@@ -1111,6 +1145,7 @@ class AnthbotCloudApiClient:
         sub_category: str,
         filename: str | None = None,
         category: str = "device",
+        expected_md5: str | None = None,
     ) -> dict[str, Any] | list[Any]:
         """Fetch a mower JSON file from the app-style presigned URL endpoint."""
         self._require_token()
@@ -1175,6 +1210,7 @@ class AnthbotCloudApiClient:
         except TimeoutError as err:
             raise AnthbotGenieApiError("Request timed out") from err
 
+        content_md5 = _validate_definition_md5(raw_bytes, expected_md5)
         definition = decode_device_definition(raw_bytes, sub_category)
 
         if not isinstance(definition, (dict, list)):
@@ -1186,6 +1222,14 @@ class AnthbotCloudApiClient:
                 "filename": params["filename"],
                 "category": category,
                 "sub_category": sub_category,
+                "content_md5": content_md5,
+                "expected_md5": expected_md5,
+                "md5_matches": (
+                    content_md5 == expected_md5.strip().lower()
+                    if isinstance(expected_md5, str)
+                    and bool(re.fullmatch(r"[0-9A-Fa-f]{32}", expected_md5.strip()))
+                    else None
+                ),
             }
 
         return definition
@@ -1234,16 +1278,27 @@ class AnthbotCloudApiClient:
 
     async def async_get_device_map_definition(
         self, serial_number: str
-    ) -> dict[str, Any] | list[Any]:
-        """Fetch the mower full-map definition file if the cloud exposes it."""
-        return await self.async_get_device_json_file(
+    ) -> dict[str, Any]:
+        """Fetch and decode the mower's live full-map raster."""
+        definition = await self.async_get_device_json_file(
             serial_number,
             file_prefix="map",
             sub_category="map",
         )
+        if not isinstance(definition, dict) or not isinstance(
+            definition.get("_map_raster"), dict
+        ):
+            raise AnthbotGenieApiError(
+                "live map definition decode produced no raster"
+            )
+        return definition
 
     async def async_get_device_map_archive(
-        self, serial_number: str, map_file_name: str | None = None
+        self,
+        serial_number: str,
+        map_file_name: str | None = None,
+        *,
+        expected_md5: str | None = None,
     ) -> dict[str, Any]:
         """Fetch the app-style multi_maps archive (tar/gzip) for M5/M9 mowers.
 
@@ -1258,6 +1313,7 @@ class AnthbotCloudApiClient:
             file_prefix="map",
             sub_category="multi_maps",
             filename=filename,
+            expected_md5=expected_md5,
         )
         if not isinstance(definition, dict) or not isinstance(
             definition.get("_map_raster"), dict
@@ -1380,6 +1436,8 @@ class AnthbotShadowApiClient:
         self._account_client = account_client
         self._credentials: AnthbotTemporaryIotCredentials | None = None
         self._credentials_acquired_at: float | None = None
+        self._credentials_generation = 0
+        self._live_command_publisher: LiveCommandPublisher | None = None
         self._credentials_lock = asyncio.Lock()
         endpoint_region = self._guess_region_from_endpoint(self._iot_endpoint)
         if (
@@ -1514,6 +1572,7 @@ class AnthbotShadowApiClient:
                     raise err
             self._credentials = creds
             self._credentials_acquired_at = time.time()
+            self._credentials_generation += 1
             # Reuse the endpoint/region the cloud sent us if available — they
             # match the policy attached to the temp creds.
             if creds.endpoint:
@@ -1523,6 +1582,29 @@ class AnthbotShadowApiClient:
             if creds.region_name:
                 self._region_name = creds.region_name
             return creds
+
+    @property
+    def iot_credential_diagnostics(self) -> str:
+        """Return non-secret metadata for diagnosing MQTT reconnects."""
+        creds = self._credentials
+        if creds is None:
+            return "credential_generation=0, credential_id=none, expiration=unknown"
+        fingerprint = hashlib.sha256(creds.access_key_id.encode("utf-8")).hexdigest()[:10]
+        expiration = (
+            datetime.fromtimestamp(creds.expiration, timezone.utc).isoformat()
+            if creds.expiration is not None
+            else "unknown"
+        )
+        return (
+            f"credential_generation={self._credentials_generation}, "
+            f"credential_id={fingerprint}, expiration={expiration}"
+        )
+
+    def set_live_command_publisher(
+        self, publisher: LiveCommandPublisher | None
+    ) -> None:
+        """Register the active MQTT transport used for service commands."""
+        self._live_command_publisher = publisher
 
     @staticmethod
     def _normalize_endpoint(iot_endpoint: str | None) -> str:
@@ -1549,6 +1631,11 @@ class AnthbotShadowApiClient:
     def serial_number(self) -> str:
         """Return the configured device serial number."""
         return self._serial_number
+
+    @property
+    def session(self) -> ClientSession:
+        """Return the shared Home Assistant HTTP session."""
+        return self._session
 
     @property
     def iot_endpoint(self) -> str:
@@ -1592,14 +1679,80 @@ class AnthbotShadowApiClient:
         self,
         date_stamp: str,
         creds: AnthbotTemporaryIotCredentials | None = None,
+        *,
+        service: str = "iotdata",
     ) -> bytes:
-        service = "iotdata"
         k_date = self._sign(
             ("AWS4" + self._secret_access_key(creds)).encode("utf-8"), date_stamp
         )
         k_region = self._sign(k_date, self.signing_region)
         k_service = self._sign(k_region, service)
         return self._sign(k_service, "aws4_request")
+
+    async def async_get_mqtt_websocket_url(
+        self,
+        *,
+        expires: int = 300,
+        force_refresh: bool = False,
+        reauthenticate: bool = False,
+    ) -> str:
+        """Return a SigV4-presigned AWS IoT MQTT-over-WebSocket URL."""
+        if reauthenticate:
+            if self._account_client is None:
+                raise AnthbotGenieApiError(
+                    "Anthbot account client is required for re-authentication"
+                )
+            await self._account_client.async_reauthenticate()
+            force_refresh = True
+        creds = await self._async_get_credentials(force_refresh=force_refresh)
+        now = datetime.now(timezone.utc)
+        amz_date = now.strftime("%Y%m%dT%H%M%SZ")
+        date_stamp = now.strftime("%Y%m%d")
+        service = "iotdevicegateway"
+        credential_scope = (
+            f"{date_stamp}/{self.signing_region}/{service}/aws4_request"
+        )
+        query: dict[str, str] = {
+            "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+            "X-Amz-Credential": f"{self._access_key_id(creds)}/{credential_scope}",
+            "X-Amz-Date": amz_date,
+            "X-Amz-Expires": str(max(60, min(int(expires), 3600))),
+            "X-Amz-SignedHeaders": "host",
+        }
+        canonical_query = urlencode(
+            sorted(query.items()), quote_via=quote, safe="-_.~"
+        )
+        payload_hash = hashlib.sha256(b"").hexdigest()
+        canonical_request = (
+            "GET\n/mqtt\n"
+            f"{canonical_query}\n"
+            f"host:{self._iot_endpoint}\n\n"
+            f"host\n{payload_hash}"
+        )
+        string_to_sign = (
+            "AWS4-HMAC-SHA256\n"
+            f"{amz_date}\n"
+            f"{credential_scope}\n"
+            f"{hashlib.sha256(canonical_request.encode('utf-8')).hexdigest()}"
+        )
+        signature = hmac.new(
+            self._signing_key(date_stamp, creds, service=service),
+            string_to_sign.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        signed_url = (
+            f"wss://{self._iot_endpoint}/mqtt?{canonical_query}"
+            f"&X-Amz-Signature={signature}"
+        )
+        # AWS IoT Core uses legacy WebSocket signing behavior for temporary
+        # credentials: append the session token after calculating the
+        # signature instead of including it in the canonical query.
+        if creds.session_token:
+            signed_url += (
+                "&X-Amz-Security-Token="
+                f"{quote(creds.session_token, safe='-_.~')}"
+            )
+        return signed_url
 
     def _build_authorization(
         self,
@@ -1699,7 +1852,9 @@ class AnthbotShadowApiClient:
                 )
                 continue
             raise AnthbotGenieApiError(
-                f"Shadow request failed ({status}): {body[:300]}"
+                f"Shadow request failed ({status}): {body[:300]}",
+                status_code=status,
+                temporary=status == 429,
             )
         raise AnthbotGenieApiError("Shadow request failed: exhausted retries")
 
@@ -1893,59 +2048,44 @@ class AnthbotShadowApiClient:
         body = {"state": {"desired": {"cmd": cmd, "data": data}}}
         payload_bytes = json.dumps(body, separators=(",", ":")).encode("utf-8")
         topic = f"$aws/things/{self._serial_number}/shadow/name/service/update"
-        request_uri_encoded = "/topics/" + quote(topic, safe="-_.~")
-        request_uri_raw = f"/topics/{topic}"
-
-        attempts = (
-            (request_uri_encoded, True, None, True),
-            (request_uri_encoded, True, request_uri_encoded, True),
-            (request_uri_encoded, True, None, False),
-            (request_uri_encoded, False, None, True),
-            (request_uri_raw, True, None, True),
-            (request_uri_raw, True, request_uri_raw, True),
-            (request_uri_raw, False, None, True),
-        )
-
+        if self._live_command_publisher is not None:
+            try:
+                await self._live_command_publisher(topic, payload_bytes)
+                return
+            except (ClientError, TimeoutError, OSError, RuntimeError) as err:
+                # A publisher that just failed must not remain the preferred
+                # transport for later commands.  The MQTT listener registers
+                # itself again automatically after a successful reconnect.
+                self._live_command_publisher = None
+                _LOGGER.warning(
+                    "Anthbot live MQTT command transport failed for %s; "
+                    "falling back to HTTP publish: %s",
+                    self._serial_number,
+                    err,
+                )
+        # Publish to the exact MQTT topic through the AWS IoT data-plane HTTP
+        # API. Updating only the named shadow's desired state is not
+        # equivalent: AWS accepts that write, but the mower does not execute
+        # it as a service command.
+        request_uri = "/topics/" + quote(topic, safe="-_.~")
         last_status = 0
         last_body = ""
         last_headers: dict[str, str] = {}
-        creds_refreshed = False
-        for attempt_index, (
-            request_uri,
-            include_sdk_headers,
-            canonical_uri_override,
-            sign_content_length,
-        ) in enumerate(attempts):
+        for attempt_index in range(2):
             status, body_text, payload, response_headers = await self._async_signed_post(
                 request_uri=request_uri,
+                # The official app constructs PublishCommand with only topic
+                # and payload.  QoS therefore uses the IoT Data Plane default
+                # without a query parameter; sign and send that exact request.
                 canonical_query="",
                 payload_bytes=payload_bytes,
-                include_sdk_headers=include_sdk_headers,
-                canonical_uri_override=canonical_uri_override,
-                sign_content_length=sign_content_length,
+                include_sdk_headers=True,
             )
-            # On 403 with temp creds, refresh STS once and retry the same attempt.
-            if (
-                status == 403
-                and not creds_refreshed
-                and self._account_client is not None
-            ):
-                creds_refreshed = True
-                await self._async_get_credentials(force_refresh=True)
-                status, body_text, payload, response_headers = (
-                    await self._async_signed_post(
-                        request_uri=request_uri,
-                        canonical_query="",
-                        payload_bytes=payload_bytes,
-                        include_sdk_headers=include_sdk_headers,
-                        canonical_uri_override=canonical_uri_override,
-                        sign_content_length=sign_content_length,
-                    )
-                )
-            if status == 200 and isinstance(payload, dict):
+            if status == 200:
                 if attempt_index > 0:
                     _LOGGER.debug(
-                        "Anthbot command publish recovered after fallback: cmd=%s sn=%s",
+                        "Anthbot HTTP IoT publish recovered after account and STS "
+                        "refresh: cmd=%s sn=%s",
                         cmd,
                         self._serial_number,
                     )
@@ -1953,17 +2093,22 @@ class AnthbotShadowApiClient:
             last_status = status
             last_body = body_text
             last_headers = response_headers
-            if status != 403:
+            if status not in (401, 403) or attempt_index > 0:
                 break
             _LOGGER.debug(
-                "Anthbot command publish attempt failed (403): cmd=%s sn=%s uri=%s errortype=%s requestid=%s",
+                "Anthbot HTTP command was rejected (%d): cmd=%s sn=%s "
+                "errortype=%s requestid=%s; re-authenticating once",
+                status,
                 cmd,
                 self._serial_number,
-                request_uri,
                 response_headers.get("x-amzn-errortype", ""),
                 response_headers.get("x-amzn-requestid", "")
                 or response_headers.get("x-amzn-request-id", ""),
             )
+            if self._account_client is None:
+                break
+            await self._account_client.async_reauthenticate()
+            await self._async_get_credentials(force_refresh=True)
 
         raise AnthbotGenieApiError(
             f"Command '{cmd}' failed ({last_status}) at endpoint '{self._iot_endpoint}' "

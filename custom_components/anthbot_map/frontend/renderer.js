@@ -561,7 +561,7 @@ export class AnthbotMapRenderer {
       return null;
     }
 
-    const key = `${width}x${height}:${raster.runs.length}:${raster.runs[0]}:${raster.runs[raster.runs.length - 1]}`;
+    const key = rasterContentKey(raster, width, height);
     if (this.rasterCanvas && this.rasterKey === key) {
       return this.rasterCanvas;
     }
@@ -609,7 +609,7 @@ export class AnthbotMapRenderer {
 
     const boundaryColor = this.options.boundaryColor || COLORS.boundaryStroke;
     const boundaryWidth = clamp(Number(this.options.boundaryWidth) || 3, 1, 12);
-    const key = `boundary:${width}x${height}:${raster.runs.length}:${raster.runs[0]}:${raster.runs[raster.runs.length - 1]}:${boundaryColor}:${boundaryWidth}`;
+    const key = `boundary:${rasterContentKey(raster, width, height)}:${boundaryColor}:${boundaryWidth}`;
     if (this.rasterBoundaryCanvas && this.rasterBoundaryKey === key) {
       return this.rasterBoundaryCanvas;
     }
@@ -1696,6 +1696,26 @@ function applyMapCalibration(geometry, calibration = {}) {
       return geometry.mapToScreen(calibrated);
     },
   };
+}
+
+function rasterContentKey(raster, width, height) {
+  // Hash every run. Boundary edits commonly keep the same dimensions, run
+  // count, and first/last run, so those values alone are not a valid cache key.
+  let hash = 2166136261;
+  for (const rawValue of raster.runs || []) {
+    let value = Number(rawValue);
+    if (!Number.isFinite(value)) value = 0;
+    value = Math.trunc(value);
+    hash ^= value & 0xff;
+    hash = Math.imul(hash, 16777619);
+    hash ^= (value >>> 8) & 0xff;
+    hash = Math.imul(hash, 16777619);
+    hash ^= (value >>> 16) & 0xff;
+    hash = Math.imul(hash, 16777619);
+    hash ^= (value >>> 24) & 0xff;
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${width}x${height}:${raster.runs?.length || 0}:${hash >>> 0}`;
 }
 
 function decodeRasterRuns(raster, width, height) {

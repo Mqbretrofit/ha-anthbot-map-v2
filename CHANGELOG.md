@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.0.0-beta.15 — 2026-08-12
+
+### Highlight: faster live AWS IoT/MQTT communication
+
+- Added a persistent AWS IoT MQTT-over-WebSocket shadow connection for much
+  faster mower state, position, heading, battery, and status updates than
+  periodic HTTP polling alone.
+- Service commands prefer the active MQTT connection and automatically fall
+  back to the signed AWS IoT HTTP publish endpoint if the live transport is
+  unavailable.
+- Added bounded reconnect, account reauthentication, and short-lived STS
+  credential refresh handling without logging signed URLs or secrets.
+- Coalesces rapid live-shadow updates before publishing them to Home Assistant,
+  preventing the WebSocket message flood seen during early field testing.
+- Keeps a five-minute HTTP safety reconciliation while MQTT is connected and a
+  conservative one-minute HTTP fallback while it is offline.
+- Exposes live MQTT diagnostics on the map entity and shows MQTT online/offline
+  status in the bundled map card.
+- Added map-definition integrity checking, refresh diagnostics, and redacted
+  Home Assistant diagnostic export.
+- Built from the field-tested `test27` package. The separately distributed
+  Hungarian voice package is intentionally not included.
+
 ## 2.0.0-beta.13 — 2026-08-08
 
 - Added tested three-stage command feedback: command sent, cloud accepted and

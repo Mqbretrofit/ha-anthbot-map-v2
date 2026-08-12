@@ -230,6 +230,101 @@ class TestIotCredentialRetry(unittest.IsolatedAsyncioTestCase):
         )
         account_client.async_reauthenticate.assert_not_awaited()
 
+    def test_sts_lifetime_is_normalized_to_absolute_expiration(self) -> None:
+        """Anthbot's duration-style STS value must not resolve to 1970."""
+        with patch.object(api.time, "time", return_value=1_700_000_000):
+            self.assertEqual(
+                api.AnthbotCloudApiClient._parse_expiration(3600),
+                1_700_003_600,
+            )
+
+    async def test_live_mqtt_transport_is_preferred_for_commands(self) -> None:
+        """An active MQTT socket should carry commands without an HTTP call."""
+        account_client = types.SimpleNamespace(
+            async_get_device_iot_credentials=AsyncMock(),
+            async_reauthenticate=AsyncMock(),
+        )
+        client = self._client(account_client)
+        publisher = AsyncMock()
+        client.set_live_command_publisher(publisher)
+
+        with patch.object(
+            client,
+            "_async_signed_post",
+            new=AsyncMock(),
+        ) as signed_post:
+            await client.async_publish_service_command(cmd="get_all_props", data=1)
+
+        publisher.assert_awaited_once()
+        topic, payload = publisher.await_args.args
+        self.assertEqual(
+            topic,
+            "$aws/things/TEST123/shadow/name/service/update",
+        )
+        self.assertEqual(
+            payload,
+            b'{"state":{"desired":{"cmd":"get_all_props","data":1}}}',
+        )
+        signed_post.assert_not_awaited()
+
+    async def test_failed_mqtt_command_falls_back_to_http_publish(self) -> None:
+        """A broken live socket must not prevent immediate command fallback."""
+        account_client = types.SimpleNamespace(
+            async_get_device_iot_credentials=AsyncMock(),
+            async_reauthenticate=AsyncMock(),
+        )
+        client = self._client(account_client)
+        publisher = AsyncMock(side_effect=RuntimeError("socket closed"))
+        client.set_live_command_publisher(publisher)
+        signed_post = AsyncMock(return_value=(200, "", None, {}))
+
+        with (
+            patch.object(client, "_async_signed_post", new=signed_post),
+            patch.object(api._LOGGER, "warning"),
+        ):
+            await client.async_publish_service_command(cmd="charge_start", data=1)
+
+        publisher.assert_awaited_once()
+        signed_post.assert_awaited_once()
+        self.assertIsNone(client._live_command_publisher)
+        self.assertEqual(
+            signed_post.await_args.kwargs["request_uri"],
+            "/topics/%24aws%2Fthings%2FTEST123%2Fshadow%2Fname%2Fservice%2Fupdate",
+        )
+
+    async def test_http_publish_reauthenticates_once_after_403(self) -> None:
+        """HTTP command fallback should recover once from rejected credentials."""
+        account_client = types.SimpleNamespace(
+            async_get_device_iot_credentials=AsyncMock(),
+            async_reauthenticate=AsyncMock(),
+        )
+        client = self._client(account_client)
+        signed_post = AsyncMock(
+            side_effect=[
+                (
+                    403,
+                    '{"message":"Forbidden"}',
+                    {"message": "Forbidden"},
+                    {"x-amzn-errortype": "ForbiddenException"},
+                ),
+                (200, "", None, {}),
+            ]
+        )
+
+        with (
+            patch.object(client, "_async_signed_post", new=signed_post),
+            patch.object(
+                client,
+                "_async_get_credentials",
+                new=AsyncMock(return_value=_credentials()),
+            ) as refresh_credentials,
+        ):
+            await client.async_publish_service_command(cmd="start", data=1)
+
+        self.assertEqual(signed_post.await_count, 2)
+        account_client.async_reauthenticate.assert_awaited_once_with()
+        refresh_credentials.assert_awaited_once_with(force_refresh=True)
+
 
 if __name__ == "__main__":
     unittest.main()

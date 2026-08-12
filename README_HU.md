@@ -35,6 +35,14 @@ Anthbot-integráció mellett is telepítve maradhat.
    korábbit, majd indítsd újra a Home Assistantot. A kettőt ne engedélyezd
    egyszerre.
 
+> [!IMPORTANT]
+> **A béta.15 legfontosabb újdonsága:** az integráció tartós AWS IoT
+> MQTT-over-WebSocket kapcsolatot használ, ezért a robot élő adatai lényegesen
+> gyorsabban frissülnek. A parancsok ezt az élő csatornát részesítik előnyben,
+> hiba esetén pedig a hitelesített AWS IoT HTTP-küldésre váltanak vissza. A
+> sűrű shadow-üzenetek összevonva jutnak el a Home Assistantig, miközben a
+> biztonsági HTTP-egyeztetés is megmarad.
+
 > Ez a projekt nem áll kapcsolatban az Anthbottal. A forrásokról és a
 > védjegyekről a [NOTICE.md](NOTICE.md) fájlban olvashatsz.
 
@@ -42,6 +50,7 @@ Anthbot-integráció mellett is telepítve maradhat.
 
 - Anthbot-felhő bejelentkezés a Home Assistant felületén
 - több fűnyíró támogatása egy Anthbot-fiókkal
+- tartós AWS IoT/MQTT élő shadow-frissítés automatikus HTTP-tartalékággal
 - natív Home Assistant `lawn_mower` entitás indítás, leállítás/szüneteltetés
   és dokkolás vezérléssel
 - akkumulátor-, állapot-, töltés-, RTK-, hálózat-, firmware-, karbantartási-,

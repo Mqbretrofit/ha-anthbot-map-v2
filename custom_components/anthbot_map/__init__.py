@@ -707,11 +707,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             account_client=account_client,
         )
         _async_cleanup_legacy_entities(hass, entry, device.serial_number)
+        # A previous clamp accidentally forced every configured value back to
+        # at most ten seconds.  That is much more aggressive than the mobile
+        # app and can make AWS IoT throttle the property shadow with HTTP 429.
         scan_interval = max(
-            1,
+            30,
             min(
                 int(entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)),
-                DEFAULT_SCAN_INTERVAL,
+                3600,
             ),
         )
         coordinator = AnthbotGenieDataUpdateCoordinator(
@@ -729,6 +732,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 device.serial_number,
                 coordinator.last_exception,
             )
+        await coordinator.async_start_live_shadow()
         coordinators.append(coordinator)
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinators
@@ -739,6 +743,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload Anthbot Genie config entry."""
+    coordinators = hass.data.get(DOMAIN, {}).get(entry.entry_id, [])
+    for coordinator in coordinators:
+        await coordinator.async_stop_live_shadow()
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
         hass.data[DOMAIN].pop(entry.entry_id)

@@ -12,13 +12,30 @@ permissions:
 
 jobs:
   release:
-    if: startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[release v2.0.0-beta.14]')
+    if: startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[release v2.0.0-beta.15]')
     runs-on: ubuntu-latest
     env:
-      RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v2.0.0-beta.14' }}
+      RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v2.0.0-beta.15' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Verify release source
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python -m unittest discover -s tests -v
+          python -m json.tool custom_components/anthbot_map/manifest.json >/dev/null
+          find custom_components www -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          cmp custom_components/anthbot_map/frontend/anthbot-map-card.js www/anthbot-map/anthbot-map-card.js
+          cmp custom_components/anthbot_map/frontend/i18n.js www/anthbot-map/i18n.js
+          cmp custom_components/anthbot_map/frontend/renderer.js www/anthbot-map/renderer.js
+          test -z "$(find custom_components -type f \( -name '*.pyc' -o -name '*.gz' \) -print -quit)"
 
       - name: Build complete installer
         run: |
@@ -53,6 +70,8 @@ jobs:
             CHANGELOG_v2.0.0-beta.11_HU.md \
             CHANGELOG_v2.0.0-beta.13_HU.md \
             CHANGELOG_v2.0.0-beta.14_HU.md \
+            CHANGELOG_v2.0.0-beta.15_HU.md \
+            RELEASE_NOTES_v2.0.0-beta.15.md \
             LICENSE \
             NOTICE.md \
             hacs.json
@@ -67,4 +86,4 @@ jobs:
             --title "Anthbot Map ${RELEASE_TAG}" \
             --prerelease \
             --latest=false \
-            --generate-notes
+            --notes-file RELEASE_NOTES_v2.0.0-beta.15.md

@@ -737,11 +737,6 @@ class AnthbotSensorEntity(
                 else None
             )
         )
-        service_reported = (
-            state.get("_service_reported")
-            if isinstance(state.get("_service_reported"), dict)
-            else None
-        )
         mowing_time = (
             state.get("mowing_time_new", {}).get("value")
             if isinstance(state.get("mowing_time_new"), dict)
@@ -783,12 +778,6 @@ class AnthbotSensorEntity(
             "voice_volume": voice_volume,
             "voice_status": voice_status,
             "rain_continue_time": rain_continue_time,
-            "last_service_command": (
-                service_reported.get("cmd") if service_reported else None
-            ),
-            "last_service_command_generation": (
-                service_reported.get("generation") if service_reported else None
-            ),
         }
         if self.entity_description.key == "zones":
             manual_zone_list = manual_zones(state)
@@ -851,6 +840,7 @@ class AnthbotMapSensorEntity(
             "path_definition_status",
             "map_raster",
             "map_definition_preview",
+            "map_archive_selection",
             "path_definition_preview",
             "path_point_types",
             "map_binary_paths",
@@ -861,6 +851,8 @@ class AnthbotMapSensorEntity(
             "cloud_last_success",
             "cloud_error",
             "robot_online",
+            "live_shadow_connected",
+            "live_shadow_error",
         }
     )
     _attr_has_entity_name = True
@@ -923,6 +915,7 @@ class AnthbotMapSensorEntity(
             "path_definition_status": _definition_status(path_definition),
             "map_raster": _definition_map_raster(map_definition),
             "map_definition_preview": _definition_preview(map_definition),
+            "map_archive_selection": state.get("_map_archive_selection"),
             "path_definition_preview": _definition_preview(path_definition),
             "path_point_types": _definition_path_type_counts(path_definition),
             "map_binary_paths": _definition_binary_paths(map_definition),
@@ -933,6 +926,8 @@ class AnthbotMapSensorEntity(
             "cloud_last_success": state.get("_cloud_last_success"),
             "cloud_error": state.get("_cloud_error"),
             "robot_online": state.get("_robot_online"),
+            "live_shadow_connected": state.get("_live_shadow_connected", False),
+            "live_shadow_error": state.get("_live_shadow_error"),
         }        
 
 

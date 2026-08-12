@@ -31,6 +31,14 @@ testing and quick rollback.
 3. To roll back, disable Anthbot Map, enable the previous integration, and
    restart Home Assistant. Do not enable both at once.
 
+> [!IMPORTANT]
+> **Beta.15 highlight:** the integration now keeps a persistent AWS IoT
+> MQTT-over-WebSocket connection for substantially faster live mower updates.
+> Commands prefer that live channel and use the signed AWS IoT HTTP publish
+> endpoint as a fallback. Rapid shadow messages are coalesced before they reach
+> Home Assistant, while periodic HTTP reconciliation remains active as a safety
+> net.
+
 The project combines cloud telemetry and mower control with a custom Lovelace
 card that can place the live Anthbot map, zones, mowing trail, charger, and
 robot on a top-down photograph of the garden.
@@ -42,6 +50,7 @@ robot on a top-down photograph of the garden.
 
 - Anthbot cloud login from the Home Assistant UI
 - support for multiple mowers on one account
+- persistent AWS IoT/MQTT live-shadow updates with automatic HTTP fallback
 - native Home Assistant `lawn_mower` entity with start, stop/pause, and dock controls
 - battery, mower status, charging, RTK, network, firmware, maintenance, map,
   zone, error, and diagnostic entities

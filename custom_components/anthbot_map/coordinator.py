@@ -18,6 +18,16 @@ from .api import (
     AnthbotShadowApiClient,
 )
 from .const import DOMAIN
+from .definition_refresh import (
+    MapArchiveSelection,
+    definition_content,
+    map_archive_diagnostics,
+    map_definition_cache_key,
+    select_map_archive,
+    should_refresh_area_definition as _should_refresh_area_definition,
+    should_refresh_map_definition,
+)
+from .mqtt_live import AnthbotLiveShadowListener
 
 _LOGGER = logging.getLogger(__name__)
 _LIVE_HISTORY_REFRESH_SECONDS = 5.0
@@ -25,7 +35,6 @@ _IDLE_PROPERTY_REFRESH_SECONDS = 60.0
 _HISTORY_PATH_REQUEST_SECONDS = 10.0
 _HISTORY_PATH_RESPONSE_TIMEOUT_SECONDS = 4.0
 _HISTORY_PATH_RESPONSE_POLL_SECONDS = 0.5
-
 _LIVE_STATUS_VALUES = {
     "globalmowing",
     "zonemowing",
@@ -83,6 +92,10 @@ def _normalize_status(value: str) -> str:
     return value.lower().replace("-", "").replace("_", "").replace(" ", "")
 
 
+_area_definition_content = definition_content
+_map_definition_content = definition_content
+
+
 def is_robot_shadow_fresh(data: dict[str, Any], max_age_seconds: int = 30) -> bool:
     """Return whether the mower shadow contains a recent device timestamp."""
     value = data.get("timestamp")
@@ -120,44 +133,6 @@ def is_robot_online(data: dict[str, Any], max_age_seconds: int = 30) -> bool:
     return is_robot_shadow_fresh(data, max_age_seconds=max_age_seconds)
 
 
-def _select_map_file(data: dict[str, Any]) -> tuple[str | None, str | None]:
-    """Return the active multi_maps archive name and md5 from the shadow.
-
-    The map file name comes from the device's ``multi_maps.map_list`` entries
-    (for example ``map_<serial>_0``). The entry whose ``map_id`` matches the
-    latest ``map_tar_time``/``map_time`` wins; otherwise the first entry is
-    used. Returns ``(map_file_name, md5)`` or ``(None, None)`` when the shadow
-    exposes no multi_maps list.
-    """
-    multi_maps = data.get("multi_maps")
-    if isinstance(multi_maps, dict):
-        map_list = multi_maps.get("map_list")
-    else:
-        map_list = None
-    if not isinstance(map_list, list):
-        return None, None
-    active_ids = [
-        str(value)
-        for key in ("map_tar_time", "map_time")
-        if isinstance((value := data.get(key)), (str, int))
-    ]
-    entries = [
-        item
-        for item in map_list
-        if isinstance(item, dict)
-        and isinstance(item.get("map_file_name"), str)
-        and item["map_file_name"]
-    ]
-    if not entries:
-        return None, None
-    entry = next(
-        (item for item in entries if str(item.get("map_id")) in active_ids),
-        entries[0],
-    )
-    md5 = entry.get("md5")
-    return entry["map_file_name"], str(md5) if isinstance(md5, str) and md5 else None
-
-
 class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator to fetch and cache Anthbot shadow state."""
 
@@ -187,19 +162,289 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._history_path_info: Any = None
         self._history_path_source: str | None = None
         self._last_area_time: str | None = None
+        self._last_area_download_monotonic = 0.0
         self._last_map_time: str | None = None
         self._last_map_key: str | None = None
+        self._last_map_download_monotonic = 0.0
+        self._map_definition_source: str | None = None
         self._last_path_time: str | None = None
         self._last_history_path_request: str | None = None
         self._last_history_path_request_monotonic = 0.0
         self._last_path_download_monotonic = 0.0
         self._last_property_request_monotonic = 0.0
         self._consecutive_cloud_failures = 0
+        self._fallback_update_interval = max(update_interval, timedelta(seconds=60))
+        self._live_listener: AnthbotLiveShadowListener | None = None
+        self._live_listener_task: asyncio.Task[None] | None = None
+        self._live_shadow_connected = False
+        self._live_shadow_error: str | None = None
+        self._pending_live_property: dict[str, Any] = {}
+        self._pending_live_service: dict[str, Any] = {}
+        self._live_flush_task: asyncio.Task[None] | None = None
 
     @property
     def reported_state(self) -> dict[str, Any]:
         """Return the latest reported state."""
         return self.data if isinstance(self.data, dict) else {}
+
+    async def async_start_live_shadow(self) -> None:
+        """Start the optional AWS IoT push listener."""
+        if self._live_listener_task is not None:
+            return
+        self._live_listener = AnthbotLiveShadowListener(
+            session=self.client.session,
+            client=self.client,
+            on_shadow=self._async_handle_live_shadow,
+            on_connection=self._async_handle_live_connection,
+        )
+        # This listener intentionally runs for the entire lifetime of the
+        # config entry.  Registering it as a normal setup task makes Home
+        # Assistant wait forever at "Finalizing startup".  A background task
+        # is lifecycle-managed without blocking startup completion.
+        self._live_listener_task = self.hass.async_create_background_task(
+            self._live_listener.async_run(),
+            f"anthbot_map_live_shadow_{self.client.serial_number}",
+        )
+
+    async def async_stop_live_shadow(self) -> None:
+        """Stop the AWS IoT push listener."""
+        if self._live_listener is not None:
+            await self._live_listener.async_stop()
+        if self._live_listener_task is not None:
+            self._live_listener_task.cancel()
+            try:
+                await self._live_listener_task
+            except asyncio.CancelledError:
+                pass
+        if self._live_flush_task is not None:
+            self._live_flush_task.cancel()
+            try:
+                await self._live_flush_task
+            except asyncio.CancelledError:
+                pass
+        self._pending_live_property.clear()
+        self._pending_live_service.clear()
+        self._live_flush_task = None
+        self._live_listener = None
+        self._live_listener_task = None
+        self._live_shadow_connected = False
+
+    async def _async_handle_live_connection(
+        self, connected: bool, error: str | None
+    ) -> None:
+        was_connected = self._live_shadow_connected
+        self._live_shadow_connected = connected
+        self._live_shadow_error = None if connected else error
+        # While push updates are flowing, HTTP is only a five-minute safety
+        # reconciliation.  If WebSocket/MQTT is unavailable, use a conservative
+        # one-minute fallback instead of the old ten-second burst polling.
+        self.update_interval = (
+            timedelta(minutes=5) if connected else self._fallback_update_interval
+        )
+        if self.reported_state:
+            state = dict(self.reported_state)
+            state["_live_shadow_connected"] = connected
+            state["_live_shadow_error"] = self._live_shadow_error
+            self.async_set_updated_data(state)
+        if was_connected and not connected:
+            # Do not wait for the previous five-minute MQTT reconciliation
+            # timer after a live socket drops.  Fetch one HTTP snapshot now;
+            # later fallback polling remains capped at one request per minute
+            # to avoid flooding Home Assistant with entity updates.
+            self.hass.async_create_background_task(
+                self.async_request_refresh(),
+                f"anthbot_map_http_fallback_{self.client.serial_number}",
+            )
+
+    async def _async_handle_live_shadow(
+        self, shadow_name: str, reported: dict[str, Any]
+    ) -> None:
+        if shadow_name == "service":
+            self._pending_live_service.update(reported)
+        else:
+            self._pending_live_property.update(reported)
+        if self._live_flush_task is None or self._live_flush_task.done():
+            self._live_flush_task = self.hass.async_create_background_task(
+                self._async_flush_live_shadow(),
+                f"anthbot_map_live_flush_{self.client.serial_number}",
+            )
+
+    async def _async_flush_live_shadow(self) -> None:
+        """Coalesce a burst of MQTT shadow fragments into one HA update."""
+        try:
+            while self._pending_live_property or self._pending_live_service:
+                await asyncio.sleep(1)
+                property_update = self._pending_live_property
+                service_update = self._pending_live_service
+                self._pending_live_property = {}
+                self._pending_live_service = {}
+
+                state = dict(self.reported_state)
+                if service_update:
+                    service = state.get("_service_reported")
+                    merged_service = (
+                        dict(service) if isinstance(service, dict) else {}
+                    )
+                    merged_service.update(service_update)
+                    state["_service_reported"] = merged_service
+                if property_update:
+                    state.update(property_update)
+                    state["_robot_online"] = is_robot_online(state)
+                    selection = select_map_archive(state)
+                    state["_map_archive_selection"] = map_archive_diagnostics(
+                        state, selection
+                    )
+                else:
+                    selection = None
+                state["_map_definition"] = self._map_definition
+                state["_map_definition_error"] = self._map_definition_error
+                state["_cloud_connected"] = True
+                state["_cloud_last_success"] = datetime.now(timezone.utc).isoformat()
+                state["_live_shadow_connected"] = True
+                state["_live_shadow_error"] = None
+                # Publish live telemetry immediately. A rare map archive
+                # download must not delay the mower's position/status update.
+                self.async_set_updated_data(state)
+
+                if selection is not None:
+                    diagnostics, attempted = await self._async_refresh_map_definition(
+                        state,
+                        time.monotonic(),
+                        allow_periodic=False,
+                    )
+                    if attempted:
+                        refreshed_state = dict(self.reported_state)
+                        refreshed_state["_map_definition"] = self._map_definition
+                        refreshed_state["_map_definition_error"] = (
+                            self._map_definition_error
+                        )
+                        refreshed_state["_map_archive_selection"] = diagnostics
+                        self.async_set_updated_data(refreshed_state)
+        finally:
+            self._live_flush_task = None
+            if self._pending_live_property or self._pending_live_service:
+                self._live_flush_task = self.hass.async_create_background_task(
+                    self._async_flush_live_shadow(),
+                    f"anthbot_map_live_flush_{self.client.serial_number}",
+                )
+
+    async def _async_refresh_map_definition(
+        self,
+        property_state: dict[str, Any],
+        now: float,
+        *,
+        allow_periodic: bool,
+    ) -> tuple[dict[str, Any], bool]:
+        """Refresh the live app map, using a saved archive only as fallback."""
+        selection: MapArchiveSelection = select_map_archive(property_state)
+        diagnostics = map_archive_diagnostics(property_state, selection)
+        diagnostics.update(
+            {
+                "preferred_source": "live_map",
+                "active_source": self._map_definition_source,
+                "live_file": f"map_{self.client.serial_number}.txt",
+                "live_map_time": selection.map_time,
+            }
+        )
+        map_key = map_definition_cache_key(
+            self.client.serial_number,
+            property_state,
+            selection,
+        )
+        should_refresh = should_refresh_map_definition(
+            has_definition=bool(self._map_definition),
+            has_error=self._map_definition_error is not None,
+            selection_key=map_key,
+            last_selection_key=self._last_map_key,
+            now=now,
+            last_download=self._last_map_download_monotonic,
+            allow_periodic=allow_periodic,
+        )
+        if not should_refresh:
+            return diagnostics, False
+
+        # Record the key and attempt before network I/O. MQTT property
+        # fragments and normal polling can otherwise create a request storm
+        # when the cloud temporarily rejects or has not uploaded the file yet.
+        self._last_map_key = map_key
+        self._last_map_time = selection.map_time
+        self._last_map_download_monotonic = now
+        try:
+            try:
+                refreshed_map_definition = (
+                    await self.account_client.async_get_device_map_definition(
+                        self.client.serial_number
+                    )
+                )
+                definition_source = "live_map"
+            except AnthbotGenieApiError as live_map_err:
+                # A temporary live-map error must never replace an already
+                # decoded live boundary with an older saved map.
+                if (
+                    self._map_definition
+                    and self._map_definition_source == "live_map"
+                ):
+                    raise
+                _LOGGER.debug(
+                    "Anthbot live map unavailable for %s (%s); falling back "
+                    "to the app-selected multi_maps archive",
+                    self.client.serial_number,
+                    live_map_err,
+                )
+                refreshed_map_definition = (
+                    await self.account_client.async_get_device_map_archive(
+                        self.client.serial_number,
+                        selection.filename,
+                        expected_md5=selection.md5,
+                    )
+                )
+                definition_source = "multi_maps_fallback"
+
+            changed = _map_definition_content(
+                refreshed_map_definition
+            ) != _map_definition_content(self._map_definition)
+            if changed:
+                _LOGGER.info(
+                    "Anthbot map definition changed for %s; refreshing raster boundary",
+                    self.client.serial_number,
+                )
+            # Keep the new download metadata even when the decoded geometry is
+            # unchanged, so diagnostics prove which MD5 was actually fetched.
+            self._map_definition = refreshed_map_definition
+            self._map_definition_source = definition_source
+            self._map_definition_error = None
+            diagnostics["active_source"] = definition_source
+            if isinstance(refreshed_map_definition, dict):
+                source = refreshed_map_definition.get("_download_source")
+                if isinstance(source, dict):
+                    diagnostics["download_source"] = {
+                        key: value
+                        for key, value in source.items()
+                        if key
+                        in {
+                            "filename",
+                            "category",
+                            "sub_category",
+                            "content_md5",
+                            "expected_md5",
+                            "md5_matches",
+                        }
+                    }
+            _LOGGER.debug(
+                "ANTHBOT MAP DEFINITION:\n%s",
+                self._map_definition,
+            )
+        except Exception as err:  # noqa: BLE001 - map probe must not break updates.
+            _LOGGER.debug(
+                "Anthbot map definition unavailable for %s: %s",
+                self.client.serial_number,
+                err,
+            )
+            self._map_definition_error = str(err)
+            if self._map_definition is None:
+                self._map_definition = {}
+
+        return diagnostics, True
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch the latest state from the cloud endpoint."""
@@ -238,29 +483,38 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             area_time = property_state.get("area_time")
             if not isinstance(area_time, str):
                 area_time = None
-            map_time = property_state.get("map_time")
-            if not isinstance(map_time, str):
-                map_time = None
-            map_tar_time = property_state.get("map_tar_time")
-            if not isinstance(map_tar_time, str):
-                map_tar_time = None
             path_time = property_state.get("path_time")
             if not isinstance(path_time, str):
                 path_time = None
             now = time.monotonic()
             is_live = _is_live_position_state(property_state)
 
-            should_refresh_area = not self._area_definition or (
-                area_time is not None and area_time != self._last_area_time
+            should_refresh_area = _should_refresh_area_definition(
+                has_definition=bool(self._area_definition),
+                area_time=area_time,
+                last_area_time=self._last_area_time,
+                now=now,
+                last_download=self._last_area_download_monotonic,
             )
             if should_refresh_area:
+                # Record the attempt as well as successful downloads so a
+                # temporary cloud error cannot cause a request on every poll.
+                self._last_area_download_monotonic = now
                 try:
-                    self._area_definition = (
+                    refreshed_area_definition = (
                         await self.account_client.async_get_device_area_definition(
                             self.client.serial_number
                         )
                     )
-                    
+                    if _area_definition_content(
+                        refreshed_area_definition
+                    ) != _area_definition_content(self._area_definition):
+                        _LOGGER.info(
+                            "Anthbot area definition changed for %s; refreshing boundary",
+                            self.client.serial_number,
+                        )
+                        self._area_definition = refreshed_area_definition
+
                     _LOGGER.debug(
                         "ANTHBOT AREA DEFINITION:\n%s",
                         self._area_definition,
@@ -270,57 +524,11 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if not self._area_definition:
                         self._area_definition = {}
 
-            map_file_name, map_md5 = _select_map_file(property_state)
-            map_key = "|".join(
-                part
-                for part in (map_tar_time, map_time, map_file_name, map_md5)
-                if part is not None
-            ) or f"map_{self.client.serial_number}_0"
-
-            should_refresh_map = (
-                self._map_definition is None
-                or self._map_definition_error is not None
-                or map_key != self._last_map_key
+            map_archive_diagnostics, _ = await self._async_refresh_map_definition(
+                property_state,
+                now,
+                allow_periodic=True,
             )
-            if should_refresh_map:
-                try:
-                    try:
-                        self._map_definition = (
-                            await self.account_client.async_get_device_map_archive(
-                                self.client.serial_number,
-                                map_file_name,
-                            )
-                        )
-                    except AnthbotGenieApiError as archive_err:
-                        _LOGGER.debug(
-                            "Anthbot multi_maps map archive unavailable for %s (%s); "
-                            "falling back to legacy map definition",
-                            self.client.serial_number,
-                            archive_err,
-                        )
-                        self._map_definition = (
-                            await self.account_client.async_get_device_map_definition(
-                                self.client.serial_number
-                            )
-                        )
-                    _LOGGER.debug(
-                        "ANTHBOT MAP DEFINITION:\n%s",
-                        self._map_definition,
-                    )
-                    self._map_definition_error = None
-                    self._last_map_time = map_time
-                    self._last_map_key = map_key
-                except Exception as err:  # noqa: BLE001 - discovery probe must never break polling.
-                    _LOGGER.debug(
-                        "Anthbot map definition unavailable for %s: %s",
-                        self.client.serial_number,
-                        err,
-                    )
-                    self._map_definition_error = str(err)
-                    if self._map_definition is None:
-                        self._map_definition = {}
-                    self._last_map_time = map_time
-                    self._last_map_key = map_key
 
             should_refresh_path = (
                 self._path_definition is None
@@ -393,10 +601,13 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             merged_state["_history_path_refresh_interval"] = _LIVE_HISTORY_REFRESH_SECONDS
             merged_state["_history_path_last_download_monotonic"] = self._last_path_download_monotonic
             merged_state["_map_definition_error"] = self._map_definition_error
+            merged_state["_map_archive_selection"] = map_archive_diagnostics
             merged_state["_path_definition_error"] = self._path_definition_error
             merged_state["_cloud_connected"] = True
             merged_state["_cloud_last_success"] = datetime.now(timezone.utc).isoformat()
             merged_state["_robot_online"] = is_robot_online(property_state)
+            merged_state["_live_shadow_connected"] = self._live_shadow_connected
+            merged_state["_live_shadow_error"] = self._live_shadow_error
             self._consecutive_cloud_failures = 0
             return merged_state
         except AnthbotGenieApiError as err:

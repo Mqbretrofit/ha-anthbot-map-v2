@@ -340,11 +340,6 @@ class AnthbotBinarySensorEntity(
                 else None
             )
         )
-        service_reported = (
-            state.get("_service_reported")
-            if isinstance(state.get("_service_reported"), dict)
-            else None
-        )
         mowing_time = (
             state.get("mowing_time_new", {}).get("value")
             if isinstance(state.get("mowing_time_new"), dict)
@@ -387,10 +382,4 @@ class AnthbotBinarySensorEntity(
             "voice_volume": voice_volume,
             "voice_status": voice_status,
             "robot_sta": robot_sta_value,
-            "last_service_command": (
-                service_reported.get("cmd") if service_reported else None
-            ),
-            "last_service_command_generation": (
-                service_reported.get("generation") if service_reported else None
-            ),
         }

@@ -114,7 +114,7 @@ RTK_BASE_STATE_OPTIONS: dict[int, str] = {
     4: "error",
 }
 
-DEFAULT_SCAN_INTERVAL = 10
+DEFAULT_SCAN_INTERVAL = 60
 DEFAULT_SCAN_INTERVAL_DELTA = timedelta(seconds=DEFAULT_SCAN_INTERVAL)
 
 # Service names and attributes.
