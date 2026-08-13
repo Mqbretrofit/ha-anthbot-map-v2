@@ -1,5 +1,5 @@
 import { AnthbotMapRenderer } from "./renderer.js?v=140";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=140";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=22104";
 import {
   adjustCalibration,
   cardToYaml,
@@ -675,7 +675,9 @@ class AnthbotMapCard extends HTMLElement {
       for (const zone of zones) {
         const title = document.createElement("h3");
         const zoneName = zone.name || zone.id;
-        title.textContent = `${kind === "auto" ? this.t("autoZone") : this.t("zone")} ${zoneName}`;
+        title.textContent = zone.name
+          ? String(zone.name)
+          : `${kind === "auto" ? this.t("autoZone") : this.t("zone")} ${zone.id}`;
         title.style.cssText = "margin:18px 4px 8px;color:inherit;font-size:18px";
         const grid = this.createPanelGrid();
         grid.append(
@@ -750,11 +752,13 @@ class AnthbotMapCard extends HTMLElement {
     tile.className = "panel-tile control-tile";
     tile.innerHTML = `<div class="control-head"><span>${this.t("visualObstacleLevel")}</span><strong>${labels[selected]}</strong></div><div class="height-options"></div>`;
     const options = tile.querySelector(".height-options");
+    options.style.cssText = "display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px";
     labels.forEach((label, level) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "height-option";
       button.textContent = label;
+      button.style.cssText = "min-width:0;width:100%;padding:8px 3px;font-size:12px;white-space:nowrap";
       button.disabled = !entityId;
       button.classList.toggle("active", level === selected);
       button.addEventListener("click", async () => {
