@@ -46,6 +46,11 @@ SWITCHES: tuple[AnthbotSwitchDescription, ...] = (
         name="Custom mowing direction enabled",
     ),
     AnthbotSwitchDescription(
+        key="visual_obstacle_detection_enabled",
+        translation_key="visual_obstacle_detection_enabled",
+        name="Visual obstacle detection",
+    ),
+    AnthbotSwitchDescription(
         key="rain_perception_enabled",
         translation_key="rain_perception_enabled",
         name="Rain perception",
@@ -100,6 +105,14 @@ class AnthbotSwitchEntity(
         state = self.coordinator.reported_state
         if self.entity_description.key == "rain_perception_enabled":
             return _coerce_enabled_value(state.get("rain_switch"))
+        if self.entity_description.key == "visual_obstacle_detection_enabled":
+            pobctl = state.get("pobctl")
+            if isinstance(pobctl, dict):
+                return _coerce_enabled_value(pobctl.get("switch"))
+            device_config = state.get("device_config")
+            if isinstance(device_config, dict):
+                return _coerce_enabled_value(device_config.get("pobctl_switch"))
+            return False
 
         param_set = state.get("param_set")
         if not isinstance(param_set, dict):
@@ -121,6 +134,32 @@ class AnthbotSwitchEntity(
                 "mow_head": mow_head,
                 "enable_adaptive_head": 0 if enabled else 1,
             },
+        )
+        await self.coordinator.client.async_request_all_properties()
+        await asyncio.sleep(1)
+        await self.coordinator.async_request_refresh()
+
+    async def _async_set_visual_obstacle_detection_enabled(
+        self, enabled: bool
+    ) -> None:
+        """Set camera-based obstacle detection."""
+        state = self.coordinator.reported_state
+        pobctl = state.get("pobctl")
+        device_config = state.get("device_config")
+        level = (
+            pobctl.get("level")
+            if isinstance(pobctl, dict)
+            else (
+                device_config.get("pobctl_level")
+                if isinstance(device_config, dict)
+                else 1
+            )
+        )
+        if not isinstance(level, int) or level < 0 or level > 2:
+            level = 1
+        await self.coordinator.client.async_publish_service_command(
+            cmd="perception_obstacle_ctl",
+            data={"switch": 1 if enabled else 0, "level": level},
         )
         await self.coordinator.client.async_request_all_properties()
         await asyncio.sleep(1)
@@ -157,11 +196,17 @@ class AnthbotSwitchEntity(
         if self.entity_description.key == "rain_perception_enabled":
             await self._async_set_rain_perception_enabled(True)
             return
+        if self.entity_description.key == "visual_obstacle_detection_enabled":
+            await self._async_set_visual_obstacle_detection_enabled(True)
+            return
         await self._async_set_custom_direction_enabled(True)
 
     async def async_turn_off(self, **kwargs) -> None:
         """Turn switch off."""
         if self.entity_description.key == "rain_perception_enabled":
             await self._async_set_rain_perception_enabled(False)
+            return
+        if self.entity_description.key == "visual_obstacle_detection_enabled":
+            await self._async_set_visual_obstacle_detection_enabled(False)
             return
         await self._async_set_custom_direction_enabled(False)
