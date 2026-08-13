@@ -500,6 +500,35 @@ for (const [language, values] of Object.entries(beta8Translations)) {
   Object.assign(settingsTranslations[language] || (settingsTranslations[language] = {}), values);
 }
 
+const beta9Translations = {
+  en:{pauseTask:"Pause task",pauseTaskSub:"Pause the current mowing task"},
+  hu:{pauseTask:"Szüneteltetés",pauseTaskSub:"Az aktuális nyírás szüneteltetése"},
+  de:{pauseTask:"Aufgabe pausieren",pauseTaskSub:"Aktuelle Mähaufgabe pausieren"},
+  fr:{pauseTask:"Mettre en pause",pauseTaskSub:"Mettre la tonte actuelle en pause"},
+  es:{pauseTask:"Pausar tarea",pauseTaskSub:"Pausar la tarea de corte actual"},
+  it:{pauseTask:"Metti in pausa",pauseTaskSub:"Metti in pausa il taglio attuale"},
+  pt:{pauseTask:"Pausar tarefa",pauseTaskSub:"Pausar a tarefa de corte atual"},
+  nl:{pauseTask:"Taak pauzeren",pauseTaskSub:"Huidige maaitaak pauzeren"},
+  pl:{pauseTask:"Wstrzymaj zadanie",pauseTaskSub:"Wstrzymaj bieżące koszenie"},
+  cs:{pauseTask:"Pozastavit úlohu",pauseTaskSub:"Pozastavit aktuální sečení"},
+  sk:{pauseTask:"Pozastaviť úlohu",pauseTaskSub:"Pozastaviť aktuálne kosenie"},
+  ro:{pauseTask:"Întrerupe sarcina",pauseTaskSub:"Întrerupe tunderea curentă"},
+  da:{pauseTask:"Sæt opgave på pause",pauseTaskSub:"Sæt den aktuelle klipning på pause"},
+  sv:{pauseTask:"Pausa uppgift",pauseTaskSub:"Pausa den aktuella klippningen"},
+  no:{pauseTask:"Sett oppgave på pause",pauseTaskSub:"Sett den aktive klippingen på pause"},
+  fi:{pauseTask:"Keskeytä tehtävä",pauseTaskSub:"Keskeytä nykyinen leikkuutehtävä"},
+  "zh-CN":{pauseTask:"暂停任务",pauseTaskSub:"暂停当前割草任务"},
+  "zh-TW":{pauseTask:"暫停任務",pauseTaskSub:"暫停目前割草任務"},
+  tr:{pauseTask:"Görevi duraklat",pauseTaskSub:"Geçerli biçme görevini duraklat"},
+  th:{pauseTask:"หยุดงานชั่วคราว",pauseTaskSub:"หยุดงานตัดหญ้าปัจจุบันชั่วคราว"},
+  vi:{pauseTask:"Tạm dừng tác vụ",pauseTaskSub:"Tạm dừng tác vụ cắt hiện tại"},
+  ko:{pauseTask:"작업 일시 중지",pauseTaskSub:"현재 잔디 깎기 작업 일시 중지"},
+  km:{pauseTask:"ផ្អាកកិច្ចការ",pauseTaskSub:"ផ្អាកកិច្ចការកាត់ស្មៅបច្ចុប្បន្ន"}
+};
+for (const [language, values] of Object.entries(beta9Translations)) {
+  Object.assign(settingsTranslations[language] || (settingsTranslations[language] = {}), values);
+}
+
 export function normalizeLanguage(value) {
   const raw = String(value || "en").replace("_", "-");
   const lower = raw.toLowerCase();
