@@ -1,5 +1,5 @@
 import { AnthbotMapRenderer } from "./renderer.js?v=140";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=22104";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=22105";
 import {
   adjustCalibration,
   cardToYaml,
@@ -206,6 +206,15 @@ class AnthbotMapCard extends HTMLElement {
           .cloud-status[data-state="waiting"] { color:#ffd45c; }
           .cloud-status[data-state="offline"] { color:#ff6b6b; }
           .anthbot-glass-panel .command-dock { display:block !important; position:static !important; inset:auto !important; transform:none !important; margin:8px 10px 12px; background:rgba(6,14,22,.24) !important; }
+          .settings-section, .zone-settings { margin:10px 0; border:1px solid rgba(255,255,255,.14); border-radius:14px; background:rgba(7,15,23,.22); overflow:hidden; }
+          .settings-section > summary, .zone-settings > summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; cursor:pointer; font-weight:800; list-style:none; user-select:none; }
+          .settings-section > summary::-webkit-details-marker, .zone-settings > summary::-webkit-details-marker { display:none; }
+          .settings-section > summary::after, .zone-settings > summary::after { content:"⌄"; font-size:20px; transition:transform .18s ease; }
+          .settings-section[open] > summary::after, .zone-settings[open] > summary::after { transform:rotate(180deg); }
+          .settings-section-body, .zone-settings-body { padding:0 10px 12px; }
+          .zone-settings { margin:8px 0; background:rgba(7,15,23,.28); }
+          .obstacle-combined .obstacle-levels { margin-top:12px; }
+          .obstacle-combined.disabled .obstacle-levels { display:none; }
           @media (max-width:720px) { .anthbot-glass-panel { left:8px; right:8px; bottom:66px; width:auto; max-height:72%; } .anthbot-menu-toggle { right:10px; bottom:10px; } }
         </style>
         <section class="app-shell">
@@ -648,6 +657,7 @@ class AnthbotMapCard extends HTMLElement {
 
   renderSettingsPanel(body) {
     body.innerHTML = "";
+    const globalSection = this.createSettingsSection(this.t("globalSettings"), "global", true);
     const grid = this.createPanelGrid();
     grid.append(
       this.createCommandTile(this.t("cloud"), this.t("cloudSub"), "connect"),
@@ -661,35 +671,73 @@ class AnthbotMapCard extends HTMLElement {
       this.createSwitchControl(this.t("rainDetection"), "rain"),
       this.createSwitchControl(this.t("customCutDirection"), "customDirection"),
     );
-    body.appendChild(grid);
+    globalSection.querySelector(".settings-section-body").appendChild(grid);
+    body.appendChild(globalSection);
     this.renderZoneSettings(body);
+  }
+
+  settingsStorageKey() {
+    return `anthbot-map-open-settings-${this.entityBase()}`;
+  }
+
+  readOpenSettingsKey() {
+    return window.localStorage.getItem(this.settingsStorageKey()) || "global";
+  }
+
+  createSettingsSection(title, key, defaultOpen = false) {
+    const details = document.createElement("details");
+    details.className = "settings-section";
+    details.dataset.settingsKey = key;
+    details.open = this.readOpenSettingsKey() === key || (defaultOpen && !window.localStorage.getItem(this.settingsStorageKey()));
+    details.innerHTML = `<summary>${title}</summary><div class="settings-section-body"></div>`;
+    details.addEventListener("toggle", () => {
+      if (!details.open) return;
+      window.localStorage.setItem(this.settingsStorageKey(), key);
+      this.shadowRoot.querySelectorAll("details.settings-section").forEach((item) => {
+        if (item !== details) item.open = false;
+      });
+    });
+    return details;
   }
 
   renderZoneSettings(body) {
     const area = this.entity?.attributes?.area_definition || {};
     const groups = [
-      ["manual", this.currentZones(area)],
-      ["auto", this.currentAutoZones(area)],
+      ["manual", this.t("manualZones"), this.currentZones(area)],
+      ["auto", this.t("autoZones"), this.currentAutoZones(area)],
     ];
-    for (const [kind, zones] of groups) {
+    for (const [kind, groupTitle, zones] of groups) {
+      if (!zones.length) continue;
+      const section = this.createSettingsSection(groupTitle, kind);
+      const sectionBody = section.querySelector(".settings-section-body");
       for (const zone of zones) {
-        const title = document.createElement("h3");
-        const zoneName = zone.name || zone.id;
-        title.textContent = zone.name
-          ? String(zone.name)
-          : `${kind === "auto" ? this.t("autoZone") : this.t("zone")} ${zone.id}`;
-        title.style.cssText = "margin:18px 4px 8px;color:inherit;font-size:18px";
+        const zoneKey = `${kind}-${zone.id}`;
+        const details = document.createElement("details");
+        details.className = "zone-settings";
+        details.open = window.localStorage.getItem(`${this.settingsStorageKey()}-zone`) === zoneKey;
+        details.innerHTML = `<summary>${zone.name ? String(zone.name) : `${kind === "auto" ? this.t("autoZone") : this.t("zone")} ${zone.id}`}</summary><div class="zone-settings-body"></div>`;
+        details.addEventListener("toggle", () => {
+          if (!details.open) return;
+          window.localStorage.setItem(`${this.settingsStorageKey()}-zone`, zoneKey);
+          section.querySelectorAll("details.zone-settings").forEach((item) => {
+            if (item !== details) item.open = false;
+          });
+        });
         const grid = this.createPanelGrid();
+        const obstacleSwitch = this.findZoneSettingEntity("switch", kind, zone, "Visual obstacle detection");
+        const obstacleLevel = this.findZoneSettingEntity("number", kind, zone, "Obstacle sensitivity");
         grid.append(
           this.createDirectNumberControl(this.t("mowCount"), this.findZoneSettingEntity("number", kind, zone, "Mowing passes"), 1, 3, 1, "×"),
           this.createDirectNumberControl(this.t("cutHeight"), this.findZoneSettingEntity("number", kind, zone, "Cutting height"), 30, 70, 5, "mm"),
-          this.createDirectSwitchControl(this.t("visualObstacle"), this.findZoneSettingEntity("switch", kind, zone, "Visual obstacle detection")),
-          this.createDirectObstacleLevelControl(this.findZoneSettingEntity("number", kind, zone, "Obstacle sensitivity")),
+          this.createDirectObstacleControl(obstacleSwitch, obstacleLevel),
+          this.createDirectSwitchControl(this.t("edgeCutting"), this.findZoneSettingEntity("switch", kind, zone, "Edge cutting")),
           this.createDirectSwitchControl(this.t("customCutDirection"), this.findZoneSettingEntity("switch", kind, zone, "Custom mowing direction")),
           this.createDirectNumberControl(this.t("customDirection"), this.findZoneSettingEntity("number", kind, zone, "Mowing direction"), 0, 180, 1, "deg"),
         );
-        body.append(title, grid);
+        details.querySelector(".zone-settings-body").appendChild(grid);
+        sectionBody.appendChild(details);
       }
+      body.appendChild(section);
     }
   }
 
@@ -741,6 +789,26 @@ class AnthbotMapCard extends HTMLElement {
       await this._hass.callService("switch", input.checked ? "turn_on" : "turn_off", {entity_id: entityId});
       this.scheduleRefresh();
     });
+    return tile;
+  }
+
+  createDirectObstacleControl(switchEntityId, levelEntityId) {
+    const enabled = switchEntityId && this._hass.states[switchEntityId]?.state === "on";
+    const tile = document.createElement("div");
+    tile.className = `panel-tile obstacle-combined ${enabled ? "" : "disabled"}`;
+    const row = document.createElement("label");
+    row.className = "switch-tile";
+    row.innerHTML = `<span>${this.t("visualObstacle")}</span><input type="checkbox" ${enabled ? "checked" : ""} ${switchEntityId ? "" : "disabled"}>`;
+    const levels = document.createElement("div");
+    levels.className = "obstacle-levels";
+    levels.appendChild(this.createDirectObstacleLevelControl(levelEntityId));
+    const input = row.querySelector("input");
+    input.addEventListener("change", async () => {
+      await this._hass.callService("switch", input.checked ? "turn_on" : "turn_off", {entity_id: switchEntityId});
+      tile.classList.toggle("disabled", !input.checked);
+      this.scheduleRefresh();
+    });
+    tile.append(row, levels);
     return tile;
   }
 
