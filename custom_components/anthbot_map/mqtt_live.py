@@ -132,7 +132,7 @@ class AnthbotLiveShadowListener:
         self._on_connection = on_connection
         self._stop = asyncio.Event()
         self._consecutive_failures = 0
-        # A single rejected WebSocket upgrade may be caused by stale STS
+        # A rejected WebSocket upgrade may be caused by stale STS
         # credentials.  Recovery is deliberately bounded per outage: first
         # refresh STS, then re-authenticate the Anthbot account and refresh
         # STS once.  Repeating those two operations forever only churns
@@ -229,7 +229,11 @@ class AnthbotLiveShadowListener:
 
     def _schedule_credential_recovery(self, err: Exception) -> None:
         """Schedule at most two credential recovery steps per MQTT outage."""
-        if not isinstance(err, ClientResponseError) or err.status != 403:
+        # AWS IoT has returned both 403 and 404 for expired/rejected
+        # presigned WebSocket sessions.  Treat both as authentication
+        # recovery signals; otherwise a 404 retries the same cached STS
+        # credentials forever and the integration remains on HTTP fallback.
+        if not isinstance(err, ClientResponseError) or err.status not in (403, 404):
             return
         if self._credential_recovery_stage == 0:
             self._force_credential_refresh = True
