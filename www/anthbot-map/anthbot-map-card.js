@@ -1,5 +1,5 @@
 import { AnthbotMapRenderer } from "./renderer.js?v=140";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=22107";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=22108";
 import {
   adjustCalibration,
   cardToYaml,
@@ -45,6 +45,8 @@ const SWITCH_MAP = {
   rain: ["rain_perception", "rain_perception_enabled", "rain perception"],
   visualObstacle: ["visual_obstacle_detection", "visual_obstacle_detection_enabled", "visual obstacle detection"],
   customDirection: ["custom_mowing_direction_enabled", "custom mowing direction"],
+  edgeReturn: ["edge_following_return_enabled", "edge-following return"],
+  autoDockMow: ["automatic_dock_mowing_enabled", "automatic dock-area mowing"],
 };
 
 class AnthbotMapCard extends HTMLElement {
@@ -655,6 +657,7 @@ class AnthbotMapCard extends HTMLElement {
       this.createCommandTile(this.t("homeLabel"), this.t("homeSub"), "dock"),
       this.createCommandTile(this.t("outerEdgeLabel"), this.t("outerEdgeSub"), "outer-edge"),
       this.createCommandTile(this.t("dockEdgeLabel"), this.t("dockEdgeSub"), "dock-edge"),
+      this.createCommandTile(this.t("resumeTask"), this.t("resumeTaskSub"), "resume"),
     );
 
     for (const zone of this.currentZones()) {
@@ -686,9 +689,20 @@ class AnthbotMapCard extends HTMLElement {
       this.createNumberControl(this.t("volume"), "voiceVolume", 0, 100, 1, "%"),
       this.createSwitchControl(this.t("rainDetection"), "rain"),
       this.createSwitchControl(this.t("customCutDirection"), "customDirection"),
+      this.createSwitchControl(this.t("edgeReturn"), "edgeReturn"),
+      this.createSwitchControl(this.t("autoDockMow"), "autoDockMow"),
     );
     globalSection.querySelector(".settings-section-body").appendChild(grid);
     body.appendChild(globalSection);
+    const maintenance = this.createSettingsSection(this.t("maintenance"), "maintenance");
+    const maintenanceGrid = this.createPanelGrid();
+    maintenanceGrid.append(
+      this.createCommandTile(this.t("resetBlade"), this.t("resetCounterWarning"), "reset-blade"),
+      this.createCommandTile(this.t("resetCamera"), this.t("resetCounterWarning"), "reset-camera"),
+      this.createCommandTile(this.t("resetDockContact"), this.t("resetCounterWarning"), "reset-contact"),
+    );
+    maintenance.querySelector(".settings-section-body").appendChild(maintenanceGrid);
+    body.appendChild(maintenance);
     this.renderZoneSettings(body);
   }
 
@@ -910,6 +924,15 @@ class AnthbotMapCard extends HTMLElement {
       grid.appendChild(this.createInfoTile(item[0], item[1]));
     }
     body.appendChild(grid);
+    const attrs = this.entity?.attributes || {};
+    const records = attrs.mowing_records?.data || attrs.mowing_records || [];
+    const errors = attrs.error_history || [];
+    const history = this.createSettingsSection(this.t("mowingHistory"), "mowing-history");
+    history.querySelector(".settings-section-body").innerHTML = `<pre>${escapeHtml(JSON.stringify(records, null, 2))}</pre>`;
+    body.appendChild(history);
+    const errorHistory = this.createSettingsSection(this.t("errorHistory"), "error-history");
+    errorHistory.querySelector(".settings-section-body").innerHTML = `<pre>${escapeHtml(JSON.stringify(errors, null, 2))}</pre>`;
+    body.appendChild(errorHistory);
   }
 
   createPanelGrid() {
@@ -1258,6 +1281,9 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   async handleCommand(command) {
+    if (String(command).startsWith("reset-") && !window.confirm(this.t("resetCounterWarning"))) {
+      return;
+    }
     const commandText = ({
       start: this.t("startLabel"),
       stop: this.t("stopLabel"),
@@ -1265,6 +1291,10 @@ class AnthbotMapCard extends HTMLElement {
       connect: this.t("cloud"),
       "outer-edge": this.t("commandOuterEdge"),
       "dock-edge": this.t("commandDockEdge"),
+      resume: this.t("resumeTask"),
+      "reset-blade": this.t("resetBlade"),
+      "reset-camera": this.t("resetCamera"),
+      "reset-contact": this.t("resetDockContact"),
     })[command] || String(command || this.t("control"));
     showAnthbotCommandToast(this.feedback("commandSentWaiting", commandText));
     const customAction = this.config.button_actions?.[command] || this.config.buttonActions?.[command];
@@ -1286,6 +1316,10 @@ class AnthbotMapCard extends HTMLElement {
       dock: "return_to_dock",
       "outer-edge": "start_outer_edge_mow",
       "dock-edge": "start_dock_edge_mow",
+      resume: "resume_mow",
+      "reset-blade": "reset_blade_maintenance",
+      "reset-camera": "reset_camera_maintenance",
+      "reset-contact": "reset_dock_contact_maintenance",
     };
     const service = serviceByCommand[command];
     if (service) {
@@ -1732,6 +1766,10 @@ class AnthbotMapCard extends HTMLElement {
       start: ["start_full_mow"],
       stop: ["stop_mow"],
       dock: ["return_to_dock"],
+      resume: ["resume_mow"],
+      "reset-blade": ["reset_blade_maintenance"],
+      "reset-camera": ["reset_camera_maintenance"],
+      "reset-contact": ["reset_dock_contact_maintenance"],
     };
     return this.findEntity("button", suffixByCommand[command] || []);
   }
@@ -1980,6 +2018,12 @@ function slugify(value) {
     .replace(/^_+|_+$/g, "");
 }
 
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;",
+  })[char]);
+}
+
 customElements.define("anthbot-map-card", AnthbotMapCard);
 
 window.customCards = window.customCards || [];
@@ -2176,6 +2220,10 @@ function findAnthbotCommandTarget(hass, command, control, config = {}) {
     dock: ["return_to_dock"],
     "outer-edge": ["start_outer_edge_mow"],
     "dock-edge": ["mow_around_charging_dock", "start_dock_edge_mow"],
+    resume: ["resume_mow"],
+    "reset-blade": ["reset_blade_maintenance"],
+    "reset-camera": ["reset_camera_maintenance"],
+    "reset-contact": ["reset_dock_contact_maintenance"],
   })[command] || [];
   const zoneNumber = String(control?.textContent || "").match(/\d+/)?.[0];
   const candidates = Object.entries(hass?.states || {})
@@ -2249,7 +2297,7 @@ window.__anthbotFeedbackClickHandler = (event) => {
       || document.querySelector("home-assistant")?.hass
       || document.querySelector("home-assistant")?._hass;
     const classCommand = [
-      "start", "stop", "dock", "outer-edge", "dock-edge",
+      "start", "stop", "dock", "outer-edge", "dock-edge", "resume", "reset-blade", "reset-camera", "reset-contact",
     ].find((name) => control.classList?.contains(name));
     const command = control.dataset?.command || classCommand || "zone";
     const details = [anthbotCommandLabel(card, hass, command, control), ({
@@ -2258,6 +2306,10 @@ window.__anthbotFeedbackClickHandler = (event) => {
       dock: "return_to_dock",
       "outer-edge": "start_outer_edge_mow",
       "dock-edge": "start_dock_edge_mow",
+      resume: "resume_mow",
+      "reset-blade": "reset_blade_maintenance",
+      "reset-camera": "reset_camera_maintenance",
+      "reset-contact": "reset_dock_contact_maintenance",
       zone: "start_zone_mow",
     })[command] || null];
     if (!hass?.callService) {
