@@ -205,7 +205,7 @@ class AnthbotNumberEntity(
                 raise ValueError("Mow height must be 30..70 in 5 mm steps")
             await self.coordinator.client.async_publish_service_command(
                 cmd="param_set",
-                data={"cutter_height": int_value, "rid_switch": 0},
+                data={"cutter_height": int_value},
             )
         elif key == "mow_count_setting":
             if int_value < 1 or int_value > 3:
