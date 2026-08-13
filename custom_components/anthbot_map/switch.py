@@ -15,6 +15,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .api import AnthbotGenieApiError
 from .const import DOMAIN
 from .coordinator import AnthbotGenieDataUpdateCoordinator
+from .zones import async_update_zone_settings, auto_zones, manual_zones
 
 
 def _coerce_enabled_value(value: object) -> bool:
@@ -46,10 +47,17 @@ SWITCHES: tuple[AnthbotSwitchDescription, ...] = (
         name="Custom mowing direction enabled",
     ),
     AnthbotSwitchDescription(
+        key="visual_obstacle_detection_enabled",
+        translation_key="visual_obstacle_detection_enabled",
+        name="Visual obstacle detection",
+    ),
+    AnthbotSwitchDescription(
         key="rain_perception_enabled",
         translation_key="rain_perception_enabled",
         name="Rain perception",
     ),
+    AnthbotSwitchDescription(key="edge_following_return_enabled", name="Edge-following return"),
+    AnthbotSwitchDescription(key="automatic_dock_mowing_enabled", name="Automatic dock-area mowing"),
 )
 
 
@@ -62,11 +70,34 @@ async def async_setup_entry(
     coordinators: list[AnthbotGenieDataUpdateCoordinator] = hass.data[DOMAIN][
         entry.entry_id
     ]
-    async_add_entities(
+    entities: list[SwitchEntity] = [
         AnthbotSwitchEntity(coordinator, description)
         for coordinator in coordinators
         for description in SWITCHES
-    )
+    ]
+    for coordinator in coordinators:
+        for zone_kind, zones in (
+            ("manual", manual_zones(coordinator.reported_state)),
+            ("auto", auto_zones(coordinator.reported_state)),
+        ):
+            for zone in zones:
+                zone_id = zone.get("id")
+                if not isinstance(zone_id, int):
+                    continue
+                entities.extend(
+                    (
+                        AnthbotZoneSwitchEntity(
+                            coordinator, zone_kind, zone_id, "visual_obstacle"
+                        ),
+                        AnthbotZoneSwitchEntity(
+                            coordinator, zone_kind, zone_id, "custom_direction"
+                        ),
+                        AnthbotZoneSwitchEntity(
+                            coordinator, zone_kind, zone_id, "edge_cutting"
+                        ),
+                    )
+                )
+    async_add_entities(entities)
 
 
 class AnthbotSwitchEntity(
@@ -100,11 +131,31 @@ class AnthbotSwitchEntity(
         state = self.coordinator.reported_state
         if self.entity_description.key == "rain_perception_enabled":
             return _coerce_enabled_value(state.get("rain_switch"))
+        if self.entity_description.key == "visual_obstacle_detection_enabled":
+            pobctl = state.get("pobctl")
+            if isinstance(pobctl, dict):
+                return _coerce_enabled_value(pobctl.get("switch"))
+            device_config = state.get("device_config")
+            if isinstance(device_config, dict):
+                return _coerce_enabled_value(device_config.get("pobctl_switch"))
+            return False
 
         param_set = state.get("param_set")
         if not isinstance(param_set, dict):
             return False
+        if self.entity_description.key == "edge_following_return_enabled":
+            return _coerce_enabled_value(param_set.get("rid_switch"))
+        if self.entity_description.key == "automatic_dock_mowing_enabled":
+            return _coerce_enabled_value(param_set.get("nest_switch"))
         return _is_custom_direction_enabled(param_set.get("enable_adaptive_head"))
+
+    async def _async_set_param_toggle(self, field: str, enabled: bool) -> None:
+        await self.coordinator.client.async_publish_service_command(
+            cmd="param_set", data={field: 1 if enabled else 0}
+        )
+        await self.coordinator.client.async_request_all_properties()
+        await asyncio.sleep(1)
+        await self.coordinator.async_request_refresh()
 
     async def _async_set_custom_direction_enabled(self, enabled: bool) -> None:
         """Set custom mowing direction toggle."""
@@ -121,6 +172,32 @@ class AnthbotSwitchEntity(
                 "mow_head": mow_head,
                 "enable_adaptive_head": 0 if enabled else 1,
             },
+        )
+        await self.coordinator.client.async_request_all_properties()
+        await asyncio.sleep(1)
+        await self.coordinator.async_request_refresh()
+
+    async def _async_set_visual_obstacle_detection_enabled(
+        self, enabled: bool
+    ) -> None:
+        """Set camera-based obstacle detection."""
+        state = self.coordinator.reported_state
+        pobctl = state.get("pobctl")
+        device_config = state.get("device_config")
+        level = (
+            pobctl.get("level")
+            if isinstance(pobctl, dict)
+            else (
+                device_config.get("pobctl_level")
+                if isinstance(device_config, dict)
+                else 1
+            )
+        )
+        if not isinstance(level, int) or level < 0 or level > 2:
+            level = 1
+        await self.coordinator.client.async_publish_service_command(
+            cmd="perception_obstacle_ctl",
+            data={"switch": 1 if enabled else 0, "level": level},
         )
         await self.coordinator.client.async_request_all_properties()
         await asyncio.sleep(1)
@@ -157,6 +234,15 @@ class AnthbotSwitchEntity(
         if self.entity_description.key == "rain_perception_enabled":
             await self._async_set_rain_perception_enabled(True)
             return
+        if self.entity_description.key == "visual_obstacle_detection_enabled":
+            await self._async_set_visual_obstacle_detection_enabled(True)
+            return
+        if self.entity_description.key == "edge_following_return_enabled":
+            await self._async_set_param_toggle("rid_switch", True)
+            return
+        if self.entity_description.key == "automatic_dock_mowing_enabled":
+            await self._async_set_param_toggle("nest_switch", True)
+            return
         await self._async_set_custom_direction_enabled(True)
 
     async def async_turn_off(self, **kwargs) -> None:
@@ -164,4 +250,95 @@ class AnthbotSwitchEntity(
         if self.entity_description.key == "rain_perception_enabled":
             await self._async_set_rain_perception_enabled(False)
             return
+        if self.entity_description.key == "visual_obstacle_detection_enabled":
+            await self._async_set_visual_obstacle_detection_enabled(False)
+            return
+        if self.entity_description.key == "edge_following_return_enabled":
+            await self._async_set_param_toggle("rid_switch", False)
+            return
+        if self.entity_description.key == "automatic_dock_mowing_enabled":
+            await self._async_set_param_toggle("nest_switch", False)
+            return
         await self._async_set_custom_direction_enabled(False)
+
+
+
+class AnthbotZoneSwitchEntity(
+    CoordinatorEntity[AnthbotGenieDataUpdateCoordinator], SwitchEntity
+):
+    """Editable app-compatible toggle for one manual or automatic zone."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: AnthbotGenieDataUpdateCoordinator,
+        zone_kind: str,
+        zone_id: int,
+        setting: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self._zone_kind = zone_kind
+        self._zone_id = zone_id
+        self._setting = setting
+        self._attr_unique_id = (
+            f"{coordinator.client.serial_number}_{zone_kind}_zone_"
+            f"{zone_id}_{setting}_enabled"
+        )
+        zone = self._find_zone()
+        zone_name = zone.get("name") if isinstance(zone, dict) else None
+        kind_label = "Auto zone" if zone_kind == "auto" else "Zone"
+        prefix = f"{kind_label} {zone_name or zone_id}"
+        label = {
+            "visual_obstacle": "Visual obstacle detection",
+            "custom_direction": "Custom mowing direction",
+            "edge_cutting": "Edge cutting",
+        }[setting]
+        self._attr_name = f"{prefix} {label}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, coordinator.client.serial_number)},
+            manufacturer="Anthbot",
+            model=coordinator.device.model,
+            name=coordinator.device.alias,
+        )
+
+    def _find_zone(self) -> dict | None:
+        zones = (
+            manual_zones(self.coordinator.reported_state)
+            if self._zone_kind == "manual"
+            else auto_zones(self.coordinator.reported_state)
+        )
+        return next((zone for zone in zones if zone.get("id") == self._zone_id), None)
+
+    @property
+    def is_on(self) -> bool:
+        zone = self._find_zone()
+        if not isinstance(zone, dict):
+            return False
+        if self._setting == "visual_obstacle":
+            return _coerce_enabled_value(
+                zone.get("visual_ignore_obstacle_switch")
+            )
+        if self._setting == "edge_cutting":
+            return _coerce_enabled_value(zone.get("mow_mode"))
+        return _is_custom_direction_enabled(zone.get("enable_adaptive_head"))
+
+    async def _async_set_enabled(self, enabled: bool) -> None:
+        if self._setting == "visual_obstacle":
+            updates = {"visual_ignore_obstacle_switch": 1 if enabled else 0}
+        elif self._setting == "edge_cutting":
+            updates = {"mow_mode": 1 if enabled else 0}
+        else:
+            updates = {"enable_adaptive_head": 0 if enabled else 1}
+        await async_update_zone_settings(
+            self.coordinator,
+            zone_kind=self._zone_kind,
+            zone_id=self._zone_id,
+            updates=updates,
+        )
+
+    async def async_turn_on(self, **kwargs) -> None:
+        await self._async_set_enabled(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        await self._async_set_enabled(False)

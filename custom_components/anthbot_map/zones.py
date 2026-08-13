@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+from copy import deepcopy
 from typing import Any
+
+from .api import AnthbotGenieApiError
 
 
 def _list_of_dicts(value: Any) -> list[dict[str, Any]]:
@@ -85,3 +89,51 @@ def zone_attribute_payload(zones: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 item[key] = value
         payload.append(item)
     return payload
+
+
+def _coerce_zone_id(value: Any) -> int | None:
+    """Return a zone id accepted by the mower."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+        return int(value)
+    return None
+
+
+async def async_update_zone_settings(
+    coordinator: Any,
+    *,
+    zone_kind: str,
+    zone_id: int,
+    updates: dict[str, Any],
+) -> None:
+    """Persist one zone using the app-compatible full area_set payload."""
+    state = coordinator.reported_state
+    source = manual_zones(state) if zone_kind == "manual" else auto_zones(state)
+    if not source:
+        raise AnthbotGenieApiError("No zone definition is available")
+
+    zones = deepcopy(source)
+    matched = False
+    for zone in zones:
+        if _coerce_zone_id(zone.get("id")) != zone_id:
+            continue
+        zone.update(updates)
+        matched = True
+        break
+    if not matched:
+        raise AnthbotGenieApiError(f"Zone {zone_id} was not found")
+
+    if zone_kind == "manual":
+        data = {"custom_areas": zones, "delete_custom_areas": []}
+    elif zone_kind == "auto":
+        data = {"region_areas": zones}
+    else:
+        raise AnthbotGenieApiError(f"Unsupported zone kind: {zone_kind}")
+
+    await coordinator.client.async_publish_service_command(cmd="area_set", data=data)
+    await asyncio.sleep(2)
+    await coordinator.client.async_request_all_properties()
+    await coordinator.async_request_refresh()

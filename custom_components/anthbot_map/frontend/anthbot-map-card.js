@@ -1,5 +1,5 @@
 import { AnthbotMapRenderer } from "./renderer.js?v=140";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=140";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=22110";
 import {
   adjustCalibration,
   cardToYaml,
@@ -34,6 +34,8 @@ const ENTITY_MAP = {
 
 const NUMBER_MAP = {
   mowHeight: ["mow_height", "mow_height_setting", "mow height"],
+  mowCount: ["mow_count", "mow_count_setting", "mowing passes"],
+  visualObstacleLevel: ["visual_obstacle_level", "visual_obstacle_level_setting", "visual obstacle sensitivity"],
   mowDirection: ["custom_mowing_direction", "custom_mowing_direction_setting", "custom mowing direction"],
   rainContinue: ["rain_continue_time", "rain_continue_time_setting", "rain continue time"],
   voiceVolume: ["voice_volume", "voice_volume_setting", "voice volume"],
@@ -41,7 +43,10 @@ const NUMBER_MAP = {
 
 const SWITCH_MAP = {
   rain: ["rain_perception", "rain_perception_enabled", "rain perception"],
+  visualObstacle: ["visual_obstacle_detection", "visual_obstacle_detection_enabled", "visual obstacle detection"],
   customDirection: ["custom_mowing_direction_enabled", "custom mowing direction"],
+  edgeReturn: ["edge_following_return_enabled", "edge-following return"],
+  autoDockMow: ["automatic_dock_mowing_enabled", "automatic dock-area mowing"],
 };
 
 class AnthbotMapCard extends HTMLElement {
@@ -203,6 +208,18 @@ class AnthbotMapCard extends HTMLElement {
           .cloud-status[data-state="waiting"] { color:#ffd45c; }
           .cloud-status[data-state="offline"] { color:#ff6b6b; }
           .anthbot-glass-panel .command-dock { display:block !important; position:static !important; inset:auto !important; transform:none !important; margin:8px 10px 12px; background:rgba(6,14,22,.24) !important; }
+          .settings-section, .zone-settings { margin:10px 0; border:1px solid rgba(255,255,255,.14); border-radius:14px; background:rgba(7,15,23,.22); overflow:hidden; }
+          .settings-section > summary, .zone-settings > summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; cursor:pointer; font-weight:800; list-style:none; user-select:none; }
+          .settings-section > summary::-webkit-details-marker, .zone-settings > summary::-webkit-details-marker { display:none; }
+          .settings-section > summary::after, .zone-settings > summary::after { content:"⌄"; font-size:20px; transition:transform .18s ease; }
+          .settings-section[open] > summary::after, .zone-settings[open] > summary::after { transform:rotate(180deg); }
+          .settings-section-body, .zone-settings-body { padding:0 10px 12px; }
+          .zone-settings { margin:8px 0; background:rgba(7,15,23,.28); }
+          .obstacle-combined .obstacle-levels { margin-top:12px; }
+          .obstacle-combined.disabled .obstacle-levels { display:none; }
+          .maintenance-tile { display:flex; flex-direction:column; align-items:stretch; gap:10px; }
+          .maintenance-value { font-size:22px; font-weight:900; color:#55e58a; }
+          .maintenance-reset { min-height:42px; border:1px solid rgba(255,255,255,.18); border-radius:12px; background:rgba(255,255,255,.10); color:#fff; font:inherit; font-weight:800; cursor:pointer; }
           @media (max-width:720px) { .anthbot-glass-panel { left:8px; right:8px; bottom:66px; width:auto; max-height:72%; } .anthbot-menu-toggle { right:10px; bottom:10px; } }
         </style>
         <section class="app-shell">
@@ -227,6 +244,7 @@ class AnthbotMapCard extends HTMLElement {
             <button type="button" data-panel="settings">${this.t("robotSettings")}</button>
             <button type="button" data-panel="interface">${this.t("interfaceSettings")}</button>
             <button type="button" data-panel="status">${this.t("status")}</button>
+            <button type="button" data-panel="maintenance">${this.t("maintenance")}</button>
             <button type="button" data-panel="diagnostics">${this.t("diagnostics")}</button>
           </div>
         </section>
@@ -438,6 +456,17 @@ class AnthbotMapCard extends HTMLElement {
       return;
     }
 
+    // Keep the complete visual tree stable while the user edits zone
+    // settings. Map, zone-button and status refreshes share the same
+    // scrollable glass panel and can otherwise trigger browser scroll
+    // anchoring even when the settings DOM itself is not rebuilt.
+    if (
+      this.activePanel === "settings"
+      && this.shadowRoot?.querySelector('[data-role="panel-body"]')?.childElementCount
+    ) {
+      return;
+    }
+
     const attributes = this.entity.attributes || {};
     const rawPose = attributes.pose && typeof attributes.pose === "object" ? attributes.pose : {};
     const coordinatePose = [attributes.cur_pose, attributes.map_scan_pose, rawPose].find((candidate) =>
@@ -503,7 +532,10 @@ class AnthbotMapCard extends HTMLElement {
     this.updateMapBadges(attributes);
     this.updateBatteryAndStatus();
     this.renderZoneControls(attributes.area_definition);
-    if (!this.isPanelControlActive()) {
+    // Do not rebuild the settings DOM on every cloud refresh. Replacing
+    // an open <details> tree resets the panel scroll position and makes the
+    // zone the user just opened jump back to the top.
+    if (this.activePanel !== "settings" && !this.isPanelControlActive()) {
       this.renderAppPanel();
     }
     this.updateYaml();
@@ -613,6 +645,8 @@ class AnthbotMapCard extends HTMLElement {
       this.renderInterfacePanel(body);
     } else if (this.activePanel === "status") {
       this.renderStatusPanel(body);
+    } else if (this.activePanel === "maintenance") {
+      this.renderMaintenancePanel(body);
     } else if (this.activePanel === "diagnostics") {
       this.renderDiagnosticsPanel(body);
     } else {
@@ -629,6 +663,8 @@ class AnthbotMapCard extends HTMLElement {
       this.createCommandTile(this.t("homeLabel"), this.t("homeSub"), "dock"),
       this.createCommandTile(this.t("outerEdgeLabel"), this.t("outerEdgeSub"), "outer-edge"),
       this.createCommandTile(this.t("dockEdgeLabel"), this.t("dockEdgeSub"), "dock-edge"),
+      this.createCommandTile(this.t("pauseTask"), this.t("pauseTaskSub"), "pause"),
+      this.createCommandTile(this.t("resumeTask"), this.t("resumeTaskSub"), "resume"),
     );
 
     for (const zone of this.currentZones()) {
@@ -645,17 +681,231 @@ class AnthbotMapCard extends HTMLElement {
 
   renderSettingsPanel(body) {
     body.innerHTML = "";
+    const globalSection = this.createSettingsSection(this.t("globalSettings"), "global", true);
     const grid = this.createPanelGrid();
     grid.append(
       this.createCommandTile(this.t("cloud"), this.t("cloudSub"), "connect"),
       this.createMowHeightControl(),
+      this.createNumberControl(this.t("mowCount"), "mowCount", 1, 3, 1, "×"),
+      this.createDirectObstacleControl(
+        this.getSwitchEntity("visualObstacle"),
+        this.getNumberEntity("visualObstacleLevel"),
+      ),
       this.createNumberControl(this.t("customDirection"), "mowDirection", 0, 180, 1, "deg"),
       this.createNumberControl(this.t("rainDelay"), "rainContinue", 0, 8, 1, "h"),
       this.createNumberControl(this.t("volume"), "voiceVolume", 0, 100, 1, "%"),
       this.createSwitchControl(this.t("rainDetection"), "rain"),
       this.createSwitchControl(this.t("customCutDirection"), "customDirection"),
+      this.createSwitchControl(this.t("edgeReturn"), "edgeReturn"),
+      this.createSwitchControl(this.t("autoDockMow"), "autoDockMow"),
     );
-    body.appendChild(grid);
+    globalSection.querySelector(".settings-section-body").appendChild(grid);
+    body.appendChild(globalSection);
+    this.renderZoneSettings(body);
+  }
+
+  renderMaintenancePanel(body) {
+    body.innerHTML = "";
+    const maintenanceGrid = this.createPanelGrid();
+    maintenanceGrid.append(
+      this.createMaintenanceTile(this.t("bladeMaintenance"), "blade", this.t("resetBlade"), "reset-blade"),
+      this.createMaintenanceTile(this.t("cameraMaintenance"), "camera", this.t("resetCamera"), "reset-camera"),
+      this.createMaintenanceTile(this.t("dockContactMaintenance"), "contact", this.t("resetDockContact"), "reset-contact"),
+    );
+    body.appendChild(maintenanceGrid);
+  }
+
+  maintenanceValue(kind) {
+    const raw = this.entity?.attributes?.maintenance || {};
+    const aliases = {
+      blade: ["rc_pecent", "rc_percent", "blade", "cutting_components_life"],
+      camera: ["cl_pecent", "cl_percent", "camera", "camera_life"],
+      contact: ["ccp_pecent", "ccp_percent", "charging_contact", "recharge_contact_life"],
+    }[kind] || [];
+    const value = aliases.map((key) => raw?.[key]).find((item) => item !== undefined && item !== null && item !== "");
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return this.t("maintenanceUnavailable");
+    const percent = Math.max(0, Math.min(100, numeric));
+    const maximumHours = kind === "camera" ? 480 : kind === "contact" ? 720 : null;
+    const hours = maximumHours === null ? "" : ` · ${Math.floor(percent * maximumHours / 100)} h`;
+    return `${Math.round(percent)}%${hours}`;
+  }
+
+  createMaintenanceTile(title, kind, resetLabel, command) {
+    const tile = document.createElement("div");
+    tile.className = "panel-tile maintenance-tile";
+    tile.innerHTML = `<strong>${title}</strong><span>${this.t("remainingLife")}</span><span class="maintenance-value">${this.maintenanceValue(kind)}</span>`;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `maintenance-reset ${command}`;
+    button.textContent = resetLabel;
+    button.addEventListener("click", () => this.handleCommand(command));
+    tile.appendChild(button);
+    return tile;
+  }
+
+  settingsStorageKey() {
+    return `anthbot-map-open-settings-${this.entityBase()}`;
+  }
+
+  readOpenSettingsKey() {
+    return window.localStorage.getItem(this.settingsStorageKey()) || "global";
+  }
+
+  createSettingsSection(title, key, defaultOpen = false) {
+    const details = document.createElement("details");
+    details.className = "settings-section";
+    details.dataset.settingsKey = key;
+    details.open = this.readOpenSettingsKey() === key || (defaultOpen && !window.localStorage.getItem(this.settingsStorageKey()));
+    details.innerHTML = `<summary>${title}</summary><div class="settings-section-body"></div>`;
+    details.addEventListener("toggle", () => {
+      if (!details.open) return;
+      window.localStorage.setItem(this.settingsStorageKey(), key);
+      this.shadowRoot.querySelectorAll("details.settings-section").forEach((item) => {
+        if (item !== details) item.open = false;
+      });
+    });
+    return details;
+  }
+
+  renderZoneSettings(body) {
+    const area = this.entity?.attributes?.area_definition || {};
+    const groups = [
+      ["manual", this.t("manualZones"), this.currentZones(area)],
+      ["auto", this.t("autoZones"), this.currentAutoZones(area)],
+    ];
+    for (const [kind, groupTitle, zones] of groups) {
+      if (!zones.length) continue;
+      const section = this.createSettingsSection(groupTitle, kind);
+      const sectionBody = section.querySelector(".settings-section-body");
+      for (const zone of zones) {
+        const zoneKey = `${kind}-${zone.id}`;
+        const details = document.createElement("details");
+        details.className = "zone-settings";
+        details.open = window.localStorage.getItem(`${this.settingsStorageKey()}-zone`) === zoneKey;
+        details.innerHTML = `<summary>${zone.name ? String(zone.name) : `${kind === "auto" ? this.t("autoZone") : this.t("zone")} ${zone.id}`}</summary><div class="zone-settings-body"></div>`;
+        details.addEventListener("toggle", () => {
+          if (!details.open) return;
+          window.localStorage.setItem(`${this.settingsStorageKey()}-zone`, zoneKey);
+          section.querySelectorAll("details.zone-settings").forEach((item) => {
+            if (item !== details) item.open = false;
+          });
+        });
+        const grid = this.createPanelGrid();
+        const obstacleSwitch = this.findZoneSettingEntity("switch", kind, zone, "Visual obstacle detection");
+        const obstacleLevel = this.findZoneSettingEntity("number", kind, zone, "Obstacle sensitivity");
+        grid.append(
+          this.createDirectNumberControl(this.t("mowCount"), this.findZoneSettingEntity("number", kind, zone, "Mowing passes"), 1, 3, 1, "×"),
+          this.createDirectNumberControl(this.t("cutHeight"), this.findZoneSettingEntity("number", kind, zone, "Cutting height"), 30, 70, 5, "mm"),
+          this.createDirectObstacleControl(obstacleSwitch, obstacleLevel),
+          this.createDirectSwitchControl(this.t("edgeCutting"), this.findZoneSettingEntity("switch", kind, zone, "Edge cutting")),
+          this.createDirectSwitchControl(this.t("customCutDirection"), this.findZoneSettingEntity("switch", kind, zone, "Custom mowing direction")),
+          this.createDirectNumberControl(this.t("customDirection"), this.findZoneSettingEntity("number", kind, zone, "Mowing direction"), 0, 180, 1, "deg"),
+        );
+        details.querySelector(".zone-settings-body").appendChild(grid);
+        sectionBody.appendChild(details);
+      }
+      body.appendChild(section);
+    }
+  }
+
+  currentAutoZones(areaDefinition = this.entity?.attributes?.area_definition || {}) {
+    for (const key of ["region_areas", "regionAreas", "auto_regions", "auto_zones"]) {
+      if (Array.isArray(areaDefinition?.[key])) return areaDefinition[key];
+    }
+    return [];
+  }
+
+  findZoneSettingEntity(domain, kind, zone, settingLabel) {
+    const kindLabel = kind === "auto" ? "auto zone" : "zone";
+    const zoneLabel = String(zone.name || zone.id).toLowerCase();
+    const setting = settingLabel.toLowerCase();
+    for (const [entityId, state] of Object.entries(this._hass.states || {})) {
+      if (!entityId.startsWith(`${domain}.`) || state.state === "unavailable") continue;
+      const name = String(state.attributes?.friendly_name || "").toLowerCase();
+      if (name.includes(kindLabel) && name.includes(zoneLabel) && name.includes(setting)) return entityId;
+    }
+    return null;
+  }
+
+  createDirectNumberControl(label, entityId, min, max, step, unit) {
+    const value = Number(entityId ? this._hass.states[entityId]?.state : NaN);
+    const tile = document.createElement("div");
+    tile.className = "panel-tile control-tile";
+    tile.innerHTML = `
+      <div class="control-head"><span>${label}</span><strong>${Number.isFinite(value) ? value : "-"} ${unit}</strong></div>
+      <input type="range" min="${min}" max="${max}" step="${step}" value="${Number.isFinite(value) ? value : min}" ${entityId ? "" : "disabled"}>
+    `;
+    const input = tile.querySelector("input");
+    input.addEventListener("input", () => {
+      tile.querySelector("strong").textContent = `${input.value} ${unit}`;
+    });
+    input.addEventListener("change", async () => {
+      await this._hass.callService("number", "set_value", {entity_id: entityId, value: Number(input.value)});
+      this.scheduleRefresh();
+    });
+    return tile;
+  }
+
+  createDirectSwitchControl(label, entityId) {
+    const checked = entityId && this._hass.states[entityId]?.state === "on";
+    const tile = document.createElement("label");
+    tile.className = "panel-tile switch-tile";
+    tile.innerHTML = `<span>${label}</span><input type="checkbox" ${checked ? "checked" : ""} ${entityId ? "" : "disabled"}>`;
+    const input = tile.querySelector("input");
+    input.addEventListener("change", async () => {
+      await this._hass.callService("switch", input.checked ? "turn_on" : "turn_off", {entity_id: entityId});
+      this.scheduleRefresh();
+    });
+    return tile;
+  }
+
+  createDirectObstacleControl(switchEntityId, levelEntityId) {
+    const enabled = switchEntityId && this._hass.states[switchEntityId]?.state === "on";
+    const tile = document.createElement("div");
+    tile.className = `panel-tile obstacle-combined ${enabled ? "" : "disabled"}`;
+    const row = document.createElement("label");
+    row.className = "switch-tile";
+    row.innerHTML = `<span>${this.t("visualObstacle")}</span><input type="checkbox" ${enabled ? "checked" : ""} ${switchEntityId ? "" : "disabled"}>`;
+    const levels = document.createElement("div");
+    levels.className = "obstacle-levels";
+    levels.appendChild(this.createDirectObstacleLevelControl(levelEntityId));
+    const input = row.querySelector("input");
+    input.addEventListener("change", async () => {
+      await this._hass.callService("switch", input.checked ? "turn_on" : "turn_off", {entity_id: switchEntityId});
+      tile.classList.toggle("disabled", !input.checked);
+      this.scheduleRefresh();
+    });
+    tile.append(row, levels);
+    return tile;
+  }
+
+  createDirectObstacleLevelControl(entityId) {
+    const value = Number(entityId ? this._hass.states[entityId]?.state : 1);
+    const selected = Number.isFinite(value) ? Math.max(0, Math.min(2, Math.round(value))) : 1;
+    const labels = [this.t("low"), this.t("medium"), this.t("high")];
+    const tile = document.createElement("div");
+    tile.className = "panel-tile control-tile";
+    tile.innerHTML = `<div class="control-head"><span>${this.t("visualObstacleLevel")}</span><strong>${labels[selected]}</strong></div><div class="height-options"></div>`;
+    const options = tile.querySelector(".height-options");
+    options.style.cssText = "display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px";
+    labels.forEach((label, level) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "height-option";
+      button.textContent = label;
+      button.style.cssText = "min-width:0;width:100%;padding:8px 3px;font-size:12px;white-space:nowrap";
+      button.disabled = !entityId;
+      button.classList.toggle("active", level === selected);
+      button.addEventListener("click", async () => {
+        options.querySelectorAll(".height-option").forEach((item) => item.classList.toggle("active", item === button));
+        tile.querySelector("strong").textContent = label;
+        await this._hass.callService("number", "set_value", {entity_id: entityId, value: level});
+        this.scheduleRefresh();
+      });
+      options.appendChild(button);
+    });
+    return tile;
   }
 
   renderInterfacePanel(body) {
@@ -712,6 +962,15 @@ class AnthbotMapCard extends HTMLElement {
       grid.appendChild(this.createInfoTile(item[0], item[1]));
     }
     body.appendChild(grid);
+    const attrs = this.entity?.attributes || {};
+    const records = attrs.mowing_records?.data || attrs.mowing_records || [];
+    const errors = attrs.error_history || [];
+    const history = this.createSettingsSection(this.t("mowingHistory"), "mowing-history");
+    history.querySelector(".settings-section-body").innerHTML = `<pre>${escapeHtml(JSON.stringify(records, null, 2))}</pre>`;
+    body.appendChild(history);
+    const errorHistory = this.createSettingsSection(this.t("errorHistory"), "error-history");
+    errorHistory.querySelector(".settings-section-body").innerHTML = `<pre>${escapeHtml(JSON.stringify(errors, null, 2))}</pre>`;
+    body.appendChild(errorHistory);
   }
 
   createPanelGrid() {
@@ -793,6 +1052,41 @@ class AnthbotMapCard extends HTMLElement {
       });
       options.appendChild(button);
     }
+    return tile;
+  }
+
+  createObstacleLevelControl() {
+    const key = "visualObstacleLevel";
+    const entityId = this.getNumberEntity(key);
+    const entity = entityId ? this._hass.states[entityId] : null;
+    const value = this.displayedNumberValue(key, Number(entity?.state));
+    const selected = Number.isFinite(value) ? Math.max(0, Math.min(2, Math.round(value))) : 1;
+    const labels = [this.t("low"), this.t("medium"), this.t("high")];
+    const tile = document.createElement("div");
+    tile.className = "panel-tile control-tile";
+    tile.innerHTML = `
+      <div class="control-head">
+        <span>${this.t("visualObstacleLevel")}</span>
+        <strong>${labels[selected]}</strong>
+      </div>
+      <div class="height-options" role="group" aria-label="${this.t("visualObstacleLevel")}"></div>
+    `;
+    const options = tile.querySelector(".height-options");
+    labels.forEach((label, level) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "height-option";
+      button.textContent = label;
+      button.classList.toggle("active", level === selected);
+      button.disabled = !entityId;
+      button.addEventListener("click", () => {
+        options.querySelectorAll(".height-option").forEach((item) => item.classList.toggle("active", item === button));
+        tile.querySelector(".control-head strong").textContent = label;
+        this.applyOptimisticNumber(key, level, button);
+        this.setNumberEntity(key, entityId, level, button);
+      });
+      options.appendChild(button);
+    });
     return tile;
   }
 
@@ -1025,6 +1319,9 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   async handleCommand(command) {
+    if (String(command).startsWith("reset-") && !window.confirm(this.t("resetCounterWarning"))) {
+      return;
+    }
     const commandText = ({
       start: this.t("startLabel"),
       stop: this.t("stopLabel"),
@@ -1032,6 +1329,11 @@ class AnthbotMapCard extends HTMLElement {
       connect: this.t("cloud"),
       "outer-edge": this.t("commandOuterEdge"),
       "dock-edge": this.t("commandDockEdge"),
+      pause: this.t("pauseTask"),
+      resume: this.t("resumeTask"),
+      "reset-blade": this.t("resetBlade"),
+      "reset-camera": this.t("resetCamera"),
+      "reset-contact": this.t("resetDockContact"),
     })[command] || String(command || this.t("control"));
     showAnthbotCommandToast(this.feedback("commandSentWaiting", commandText));
     const customAction = this.config.button_actions?.[command] || this.config.buttonActions?.[command];
@@ -1051,8 +1353,13 @@ class AnthbotMapCard extends HTMLElement {
       start: "start_full_mow",
       stop: "stop_mow",
       dock: "return_to_dock",
+      pause: "pause_mow",
+      resume: "resume_mow",
       "outer-edge": "start_outer_edge_mow",
       "dock-edge": "start_dock_edge_mow",
+      "reset-blade": "reset_blade_maintenance",
+      "reset-camera": "reset_camera_maintenance",
+      "reset-contact": "reset_dock_contact_maintenance",
     };
     const service = serviceByCommand[command];
     if (service) {
@@ -1075,6 +1382,8 @@ class AnthbotMapCard extends HTMLElement {
       start: "start_full_mow",
       stop: "stop_mow",
       dock: "return_to_dock",
+      pause: "pause_mow",
+      resume: "resume_mow",
     })[command];
     const label = this.commandLabel(service || command);
     this.notify(this.feedback("commandSentWaiting", label));
@@ -1119,6 +1428,8 @@ class AnthbotMapCard extends HTMLElement {
       stop_mow: this.t("stopLabel"),
       return_to_dock: this.t("homeLabel"),
       connect_cloud: this.t("cloud"),
+      pause_mow: this.t("pauseTask"),
+      resume_mow: this.t("resumeTask"),
     })[service] || service;
   }
 
@@ -1150,6 +1461,8 @@ class AnthbotMapCard extends HTMLElement {
       start_outer_edge_mow: ["mowing", "bordermowing", "edgecutting", "working", "nyiras", "szegelynyiras"],
       start_dock_edge_mow: ["mowing", "nestmowing", "working", "nyiras", "tolto", "kornyekeneknyirasa"],
       stop_mow: ["paused", "pause", "standby", "idle", "charging", "charge", "docked", "szunetel", "keszenlet", "toltes", "dokkolva"],
+      pause_mow: ["paused", "pause", "szunetel", "szuneteltetve"],
+      resume_mow: ["mowing", "globalmowing", "zonemowing", "regionmowing", "working", "cutting", "nyiras", "funyiras"],
       return_to_dock: ["returning", "backtodock", "returntodock", "docking", "charging", "charge", "docked", "visszaatoltore", "toltes", "dokkolva"],
     })[service];
     return Array.isArray(expected) && this.commandStatusValues().some((status) =>
@@ -1270,6 +1583,7 @@ class AnthbotMapCard extends HTMLElement {
       mowDirection: "deg",
       rainContinue: "h",
       voiceVolume: "%",
+      mowCount: "×",
     };
     if (valueLabel) {
       valueLabel.textContent = `${value} ${units[kind] || ""}`.trim();
@@ -1287,7 +1601,7 @@ class AnthbotMapCard extends HTMLElement {
     const service = serviceName.slice(separator + 1);
     const data = definition.data || definition.service_data || {};
     const target = definition.target || {};
-    const confirmationService = ({ start: "start_full_mow", stop: "stop_mow", dock: "return_to_dock", "outer-edge": "start_outer_edge_mow", "dock-edge": "start_dock_edge_mow" })[command];
+    const confirmationService = ({ start: "start_full_mow", stop: "stop_mow", dock: "return_to_dock", "outer-edge": "start_outer_edge_mow", "dock-edge": "start_dock_edge_mow", pause: "pause_mow", resume: "resume_mow" })[command];
     const label = this.commandLabel(confirmationService || command);
     this.notify(this.feedback("commandSentWaiting", label));
     try {
@@ -1498,6 +1812,11 @@ class AnthbotMapCard extends HTMLElement {
       start: ["start_full_mow"],
       stop: ["stop_mow"],
       dock: ["return_to_dock"],
+      pause: ["pause_mow"],
+      resume: ["resume_mow"],
+      "reset-blade": ["reset_blade_maintenance"],
+      "reset-camera": ["reset_camera_maintenance"],
+      "reset-contact": ["reset_dock_contact_maintenance"],
     };
     return this.findEntity("button", suffixByCommand[command] || []);
   }
@@ -1746,6 +2065,12 @@ function slugify(value) {
     .replace(/^_+|_+$/g, "");
 }
 
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;",
+  })[char]);
+}
+
 customElements.define("anthbot-map-card", AnthbotMapCard);
 
 window.customCards = window.customCards || [];
@@ -1819,6 +2144,8 @@ function anthbotCommandLabel(card, hass, command, control) {
     dock: "homeLabel",
     "outer-edge": "commandOuterEdge",
     "dock-edge": "commandDockEdge",
+    pause: "pauseTask",
+    resume: "resumeTask",
   })[command];
   return key ? translate(language, key) : String(command || translate(language, "control"));
 }
@@ -1868,6 +2195,8 @@ function anthbotStandaloneCommandIsConfirmed(hass, service) {
     start_outer_edge_mow: ["mowing", "bordermowing", "edgecutting", "working", "szegelynyiras"],
     start_dock_edge_mow: ["mowing", "nestmowing", "working", "tolto", "kornyekeneknyirasa"],
     stop_mow: ["paused", "pause", "standby", "idle", "charging", "charge", "docked", "szunetel", "keszenlet", "toltes", "dokkolva"],
+    pause_mow: ["paused", "pause", "szunetel", "szuneteltetve"],
+    resume_mow: ["mowing", "globalmowing", "zonemowing", "regionmowing", "working", "cutting", "nyiras", "funyiras"],
     return_to_dock: ["returning", "backtodock", "returntodock", "docking", "charging", "charge", "docked", "visszaatoltore", "toltes", "dokkolva"],
   })[service] || [];
   return statuses.some((status) => expected.some((value) => status.includes(value)));
@@ -1942,6 +2271,11 @@ function findAnthbotCommandTarget(hass, command, control, config = {}) {
     dock: ["return_to_dock"],
     "outer-edge": ["start_outer_edge_mow"],
     "dock-edge": ["mow_around_charging_dock", "start_dock_edge_mow"],
+    pause: ["pause_mow"],
+    resume: ["resume_mow"],
+    "reset-blade": ["reset_blade_maintenance"],
+    "reset-camera": ["reset_camera_maintenance"],
+    "reset-contact": ["reset_dock_contact_maintenance"],
   })[command] || [];
   const zoneNumber = String(control?.textContent || "").match(/\d+/)?.[0];
   const candidates = Object.entries(hass?.states || {})
@@ -2015,7 +2349,7 @@ window.__anthbotFeedbackClickHandler = (event) => {
       || document.querySelector("home-assistant")?.hass
       || document.querySelector("home-assistant")?._hass;
     const classCommand = [
-      "start", "stop", "dock", "outer-edge", "dock-edge",
+      "start", "stop", "dock", "outer-edge", "dock-edge", "pause", "resume", "reset-blade", "reset-camera", "reset-contact",
     ].find((name) => control.classList?.contains(name));
     const command = control.dataset?.command || classCommand || "zone";
     const details = [anthbotCommandLabel(card, hass, command, control), ({
@@ -2024,6 +2358,11 @@ window.__anthbotFeedbackClickHandler = (event) => {
       dock: "return_to_dock",
       "outer-edge": "start_outer_edge_mow",
       "dock-edge": "start_dock_edge_mow",
+      pause: "pause_mow",
+      resume: "resume_mow",
+      "reset-blade": "reset_blade_maintenance",
+      "reset-camera": "reset_camera_maintenance",
+      "reset-contact": "reset_dock_contact_maintenance",
       zone: "start_zone_mow",
     })[command] || null];
     if (!hass?.callService) {

@@ -26,6 +26,8 @@ const en = {
   cloud: "Cloud connection", cloudSub: "Refresh data and commands",
   mqttOnline: "📡 MQTT: online", mqttOffline: "📡 MQTT: offline",
   customDirection: "Custom direction", rainDelay: "Delay after rain", volume: "Volume",
+  mowCount: "Mowing passes", visualObstacle: "Visual obstacle detection",
+  visualObstacleLevel: "Obstacle sensitivity", low: "Low", medium: "Medium", high: "High",
   rainDetection: "Rain detection", customCutDirection: "Custom mowing direction",
   showZones: "Show zones", showBoundary: "Show boundary", showNoGoZones: "Show no-go zones", showNoGoLabels: "Show no-go labels", mapOnly: "Map only",
   themeBackground: "Use Home Assistant theme", glassBackground: "Glass background", transparentBackground: "Transparent background", battery: "Battery",
@@ -60,6 +62,8 @@ const translations = {
     cloud: "Felhőkapcsolat", cloudSub: "Adatok és parancsok frissítése",
     mqttOnline: "📡 MQTT: online", mqttOffline: "📡 MQTT: offline",
     customDirection: "Egyedi irány", rainDelay: "Eső utáni várakozás", volume: "Hangerő",
+    mowCount: "Nyírások száma", visualObstacle: "Vizuális akadályérzékelés",
+    visualObstacleLevel: "Akadályérzékelés szintje", low: "Alacsony", medium: "Közepes", high: "Magas",
     rainDetection: "Esőérzékelés", customCutDirection: "Egyedi vágási irány",
     showZones: "Zónák megjelenítése", showBoundary: "Határvonal megjelenítése", showNoGoZones: "Tiltott zónák megjelenítése", showNoGoLabels: "Tiltott zóna feliratok", mapOnly: "Csak térkép",
     themeBackground: "HA téma használata", glassBackground: "Üveg háttér", transparentBackground: "Átlátszó háttér", battery: "Akkumulátor",
@@ -228,6 +232,332 @@ const menuTranslations = {
   ko:{ menu:"메뉴" }, km:{ menu:"ម៉ឺនុយ" },
 };
 
+const settingsTranslations = {
+  "en": {
+    "autoZone": "Auto zone",
+    "mowCount": "Mowing passes",
+    "visualObstacle": "Visual obstacle detection",
+    "visualObstacleLevel": "Obstacle sensitivity",
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High"
+  },
+  "hu": {
+    "autoZone": "Automatikus zóna",
+    "mowCount": "Nyírások száma",
+    "visualObstacle": "Vizuális akadályérzékelés",
+    "visualObstacleLevel": "Akadályérzékelés szintje",
+    "low": "Alacsony",
+    "medium": "Közepes",
+    "high": "Magas"
+  },
+  "de": {
+    "autoZone": "Automatische Zone",
+    "mowCount": "Mähdurchgänge",
+    "visualObstacle": "Visuelle Hinderniserkennung",
+    "visualObstacleLevel": "Hindernisempfindlichkeit",
+    "low": "Niedrig",
+    "medium": "Mittel",
+    "high": "Hoch"
+  },
+  "fr": {
+    "autoZone": "Zone automatique",
+    "mowCount": "Passages de tonte",
+    "visualObstacle": "Détection visuelle des obstacles",
+    "visualObstacleLevel": "Sensibilité aux obstacles",
+    "low": "Faible",
+    "medium": "Moyenne",
+    "high": "Élevée"
+  },
+  "es": {
+    "autoZone": "Zona automática",
+    "mowCount": "Pasadas de corte",
+    "visualObstacle": "Detección visual de obstáculos",
+    "visualObstacleLevel": "Sensibilidad a obstáculos",
+    "low": "Baja",
+    "medium": "Media",
+    "high": "Alta"
+  },
+  "it": {
+    "autoZone": "Zona automatica",
+    "mowCount": "Passaggi di taglio",
+    "visualObstacle": "Rilevamento visivo ostacoli",
+    "visualObstacleLevel": "Sensibilità agli ostacoli",
+    "low": "Bassa",
+    "medium": "Media",
+    "high": "Alta"
+  },
+  "pt": {
+    "autoZone": "Zona automática",
+    "mowCount": "Passagens de corte",
+    "visualObstacle": "Deteção visual de obstáculos",
+    "visualObstacleLevel": "Sensibilidade a obstáculos",
+    "low": "Baixa",
+    "medium": "Média",
+    "high": "Alta"
+  },
+  "nl": {
+    "autoZone": "Automatische zone",
+    "mowCount": "Maaibeurten",
+    "visualObstacle": "Visuele obstakeldetectie",
+    "visualObstacleLevel": "Obstakelgevoeligheid",
+    "low": "Laag",
+    "medium": "Gemiddeld",
+    "high": "Hoog"
+  },
+  "pl": {
+    "autoZone": "Strefa automatyczna",
+    "mowCount": "Liczba przejazdów",
+    "visualObstacle": "Wizualne wykrywanie przeszkód",
+    "visualObstacleLevel": "Czułość na przeszkody",
+    "low": "Niska",
+    "medium": "Średnia",
+    "high": "Wysoka"
+  },
+  "cs": {
+    "autoZone": "Automatická zóna",
+    "mowCount": "Počet přejezdů",
+    "visualObstacle": "Vizuální detekce překážek",
+    "visualObstacleLevel": "Citlivost na překážky",
+    "low": "Nízká",
+    "medium": "Střední",
+    "high": "Vysoká"
+  },
+  "sk": {
+    "autoZone": "Automatická zóna",
+    "mowCount": "Počet prejazdov",
+    "visualObstacle": "Vizuálna detekcia prekážok",
+    "visualObstacleLevel": "Citlivosť na prekážky",
+    "low": "Nízka",
+    "medium": "Stredná",
+    "high": "Vysoká"
+  },
+  "ro": {
+    "autoZone": "Zonă automată",
+    "mowCount": "Treceri de tundere",
+    "visualObstacle": "Detectare vizuală a obstacolelor",
+    "visualObstacleLevel": "Sensibilitate la obstacole",
+    "low": "Scăzută",
+    "medium": "Medie",
+    "high": "Ridicată"
+  },
+  "da": {
+    "autoZone": "Automatisk zone",
+    "mowCount": "Klipninger",
+    "visualObstacle": "Visuel forhindringsregistrering",
+    "visualObstacleLevel": "Følsomhed for forhindringer",
+    "low": "Lav",
+    "medium": "Mellem",
+    "high": "Høj"
+  },
+  "sv": {
+    "autoZone": "Automatisk zon",
+    "mowCount": "Klippass",
+    "visualObstacle": "Visuell hinderdetektering",
+    "visualObstacleLevel": "Hinderkänslighet",
+    "low": "Låg",
+    "medium": "Medel",
+    "high": "Hög"
+  },
+  "no": {
+    "autoZone": "Automatisk sone",
+    "mowCount": "Klippepasseringer",
+    "visualObstacle": "Visuell hinderdeteksjon",
+    "visualObstacleLevel": "Hinderfølsomhet",
+    "low": "Lav",
+    "medium": "Middels",
+    "high": "Høy"
+  },
+  "fi": {
+    "autoZone": "Automaattinen alue",
+    "mowCount": "Leikkuukerrat",
+    "visualObstacle": "Visuaalinen esteentunnistus",
+    "visualObstacleLevel": "Esteherkkyys",
+    "low": "Matala",
+    "medium": "Keskitaso",
+    "high": "Korkea"
+  },
+  "zh-CN": {
+    "autoZone": "自动区域",
+    "mowCount": "割草遍数",
+    "visualObstacle": "视觉障碍物检测",
+    "visualObstacleLevel": "障碍物检测灵敏度",
+    "low": "低",
+    "medium": "中",
+    "high": "高"
+  },
+  "zh-TW": {
+    "autoZone": "自動區域",
+    "mowCount": "割草遍數",
+    "visualObstacle": "視覺障礙物偵測",
+    "visualObstacleLevel": "障礙物偵測靈敏度",
+    "low": "低",
+    "medium": "中",
+    "high": "高"
+  },
+  "tr": {
+    "autoZone": "Otomatik bölge",
+    "mowCount": "Biçme geçişleri",
+    "visualObstacle": "Görsel engel algılama",
+    "visualObstacleLevel": "Engel hassasiyeti",
+    "low": "Düşük",
+    "medium": "Orta",
+    "high": "Yüksek"
+  },
+  "th": {
+    "autoZone": "โซนอัตโนมัติ",
+    "mowCount": "จำนวนรอบการตัด",
+    "visualObstacle": "การตรวจจับสิ่งกีดขวางด้วยภาพ",
+    "visualObstacleLevel": "ความไวต่อสิ่งกีดขวาง",
+    "low": "ต่ำ",
+    "medium": "ปานกลาง",
+    "high": "สูง"
+  },
+  "vi": {
+    "autoZone": "Vùng tự động",
+    "mowCount": "Số lượt cắt",
+    "visualObstacle": "Phát hiện chướng ngại vật bằng hình ảnh",
+    "visualObstacleLevel": "Độ nhạy chướng ngại vật",
+    "low": "Thấp",
+    "medium": "Trung bình",
+    "high": "Cao"
+  },
+  "ko": {
+    "autoZone": "자동 구역",
+    "mowCount": "잔디 깎기 횟수",
+    "visualObstacle": "시각 장애물 감지",
+    "visualObstacleLevel": "장애물 감도",
+    "low": "낮음",
+    "medium": "중간",
+    "high": "높음"
+  },
+  "km": {
+    "autoZone": "តំបន់ស្វ័យប្រវត្តិ",
+    "mowCount": "ចំនួនជុំកាត់ស្មៅ",
+    "visualObstacle": "ការរកឃើញឧបសគ្គដោយរូបភាព",
+    "visualObstacleLevel": "កម្រិតភាពរសើបឧបសគ្គ",
+    "low": "ទាប",
+    "medium": "មធ្យម",
+    "high": "ខ្ពស់"
+  }
+};
+
+const beta5SettingsTranslations = {
+  "en": { globalSettings:"Global settings", manualZones:"Manual zones", autoZones:"Automatic zones", edgeCutting:"Edge cutting" },
+  "hu": { globalSettings:"Globális beállítások", manualZones:"Kézi zónák", autoZones:"Automatikus zónák", edgeCutting:"Szegélyvágás" },
+  "de": { globalSettings:"Globale Einstellungen", manualZones:"Manuelle Zonen", autoZones:"Automatische Zonen", edgeCutting:"Kantenschnitt" },
+  "fr": { globalSettings:"Paramètres globaux", manualZones:"Zones manuelles", autoZones:"Zones automatiques", edgeCutting:"Coupe des bordures" },
+  "es": { globalSettings:"Ajustes globales", manualZones:"Zonas manuales", autoZones:"Zonas automáticas", edgeCutting:"Corte de bordes" },
+  "it": { globalSettings:"Impostazioni globali", manualZones:"Zone manuali", autoZones:"Zone automatiche", edgeCutting:"Taglio bordi" },
+  "pt": { globalSettings:"Definições globais", manualZones:"Zonas manuais", autoZones:"Zonas automáticas", edgeCutting:"Corte de bordas" },
+  "nl": { globalSettings:"Algemene instellingen", manualZones:"Handmatige zones", autoZones:"Automatische zones", edgeCutting:"Rand maaien" },
+  "pl": { globalSettings:"Ustawienia globalne", manualZones:"Strefy ręczne", autoZones:"Strefy automatyczne", edgeCutting:"Koszenie krawędzi" },
+  "cs": { globalSettings:"Globální nastavení", manualZones:"Ruční zóny", autoZones:"Automatické zóny", edgeCutting:"Sečení okrajů" },
+  "sk": { globalSettings:"Globálne nastavenia", manualZones:"Ručné zóny", autoZones:"Automatické zóny", edgeCutting:"Kosenie okrajov" },
+  "ro": { globalSettings:"Setări globale", manualZones:"Zone manuale", autoZones:"Zone automate", edgeCutting:"Tunderea marginilor" },
+  "da": { globalSettings:"Globale indstillinger", manualZones:"Manuelle zoner", autoZones:"Automatiske zoner", edgeCutting:"Kantklipning" },
+  "sv": { globalSettings:"Globala inställningar", manualZones:"Manuella zoner", autoZones:"Automatiska zoner", edgeCutting:"Kantklippning" },
+  "no": { globalSettings:"Globale innstillinger", manualZones:"Manuelle soner", autoZones:"Automatiske soner", edgeCutting:"Kantklipping" },
+  "fi": { globalSettings:"Yleiset asetukset", manualZones:"Manuaaliset alueet", autoZones:"Automaattiset alueet", edgeCutting:"Reunaleikkuu" },
+  "zh-CN": { globalSettings:"全局设置", manualZones:"手动区域", autoZones:"自动区域", edgeCutting:"边缘修剪" },
+  "zh-TW": { globalSettings:"全域設定", manualZones:"手動區域", autoZones:"自動區域", edgeCutting:"邊緣修剪" },
+  "tr": { globalSettings:"Genel ayarlar", manualZones:"Manuel bölgeler", autoZones:"Otomatik bölgeler", edgeCutting:"Kenar biçme" },
+  "th": { globalSettings:"การตั้งค่าทั่วไป", manualZones:"โซนแบบกำหนดเอง", autoZones:"โซนอัตโนมัติ", edgeCutting:"การตัดขอบ" },
+  "vi": { globalSettings:"Cài đặt chung", manualZones:"Vùng thủ công", autoZones:"Vùng tự động", edgeCutting:"Cắt mép" },
+  "ko": { globalSettings:"전체 설정", manualZones:"수동 구역", autoZones:"자동 구역", edgeCutting:"가장자리 깎기" },
+  "km": { globalSettings:"ការកំណត់ទូទៅ", manualZones:"តំបន់ដោយដៃ", autoZones:"តំបន់ស្វ័យប្រវត្តិ", edgeCutting:"ការកាត់គែម" }
+};
+for (const [language, values] of Object.entries(beta5SettingsTranslations)) {
+  Object.assign(settingsTranslations[language] || (settingsTranslations[language] = {}), values);
+}
+
+const beta8Translations = {
+  en:{resumeTask:"Resume task",resumeTaskSub:"Continue the paused mowing task",edgeReturn:"Edge-following return",autoDockMow:"Mow around dock after each task",maintenance:"Maintenance",resetBlade:"Reset blade counter",resetCamera:"Reset camera counter",resetDockContact:"Reset charging-contact counter",resetCounterWarning:"Reset only after servicing",mowingHistory:"Previous mowing tasks",errorHistory:"Detailed error history"},
+  hu:{resumeTask:"Feladat folytatása",resumeTaskSub:"A szüneteltetett nyírás folytatása",edgeReturn:"Szegély mentén visszatérés",autoDockMow:"Automatikus töltőkörnyéki nyírás",maintenance:"Karbantartás",resetBlade:"Késszámláló nullázása",resetCamera:"Kameraszámláló nullázása",resetDockContact:"Töltőérintkező számlálójának nullázása",resetCounterWarning:"Csak karbantartás után nullázd",mowingHistory:"Korábbi nyírási feladatok",errorHistory:"Részletes hibakód-előzmények"},
+  de:{resumeTask:"Aufgabe fortsetzen",resumeTaskSub:"Pausierte Mähaufgabe fortsetzen",edgeReturn:"Rückkehr entlang der Kante",autoDockMow:"Nach jeder Aufgabe um die Station mähen",maintenance:"Wartung",resetBlade:"Messerzähler zurücksetzen",resetCamera:"Kamerazähler zurücksetzen",resetDockContact:"Ladekontaktzähler zurücksetzen",resetCounterWarning:"Nur nach Wartung zurücksetzen",mowingHistory:"Frühere Mähaufgaben",errorHistory:"Detaillierter Fehlerverlauf"},
+  fr:{resumeTask:"Reprendre la tâche",resumeTaskSub:"Continuer la tonte en pause",edgeReturn:"Retour le long de la bordure",autoDockMow:"Tondre autour de la station après chaque tâche",maintenance:"Entretien",resetBlade:"Réinitialiser le compteur de lame",resetCamera:"Réinitialiser le compteur caméra",resetDockContact:"Réinitialiser le compteur de contact",resetCounterWarning:"Réinitialiser après entretien seulement",mowingHistory:"Tontes précédentes",errorHistory:"Historique détaillé des erreurs"},
+  es:{resumeTask:"Reanudar tarea",resumeTaskSub:"Continuar la tarea de corte pausada",edgeReturn:"Regreso siguiendo el borde",autoDockMow:"Cortar alrededor de la base tras cada tarea",maintenance:"Mantenimiento",resetBlade:"Restablecer contador de cuchilla",resetCamera:"Restablecer contador de cámara",resetDockContact:"Restablecer contador de contacto",resetCounterWarning:"Restablecer solo tras mantenimiento",mowingHistory:"Tareas de corte anteriores",errorHistory:"Historial detallado de errores"},
+  it:{resumeTask:"Riprendi attività",resumeTaskSub:"Continua il taglio in pausa",edgeReturn:"Ritorno lungo il bordo",autoDockMow:"Taglia intorno alla base dopo ogni attività",maintenance:"Manutenzione",resetBlade:"Azzera contatore lama",resetCamera:"Azzera contatore fotocamera",resetDockContact:"Azzera contatore contatti",resetCounterWarning:"Azzerare solo dopo la manutenzione",mowingHistory:"Attività di taglio precedenti",errorHistory:"Cronologia dettagliata errori"},
+  pt:{resumeTask:"Retomar tarefa",resumeTaskSub:"Continuar a tarefa de corte pausada",edgeReturn:"Regresso pela borda",autoDockMow:"Cortar à volta da base após cada tarefa",maintenance:"Manutenção",resetBlade:"Repor contador da lâmina",resetCamera:"Repor contador da câmara",resetDockContact:"Repor contador do contacto",resetCounterWarning:"Repor apenas após manutenção",mowingHistory:"Tarefas de corte anteriores",errorHistory:"Histórico detalhado de erros"},
+  nl:{resumeTask:"Taak hervatten",resumeTaskSub:"Gepauzeerde maaitaak voortzetten",edgeReturn:"Terugkeer langs de rand",autoDockMow:"Na elke taak rond het laadstation maaien",maintenance:"Onderhoud",resetBlade:"Mesteller resetten",resetCamera:"Camerateller resetten",resetDockContact:"Contactteller resetten",resetCounterWarning:"Alleen na onderhoud resetten",mowingHistory:"Eerdere maaitaken",errorHistory:"Gedetailleerde foutgeschiedenis"},
+  pl:{resumeTask:"Wznów zadanie",resumeTaskSub:"Kontynuuj wstrzymane koszenie",edgeReturn:"Powrót wzdłuż krawędzi",autoDockMow:"Koszenie wokół stacji po każdym zadaniu",maintenance:"Konserwacja",resetBlade:"Wyzeruj licznik ostrza",resetCamera:"Wyzeruj licznik kamery",resetDockContact:"Wyzeruj licznik styku",resetCounterWarning:"Zeruj tylko po konserwacji",mowingHistory:"Poprzednie zadania koszenia",errorHistory:"Szczegółowa historia błędów"},
+  cs:{resumeTask:"Pokračovat v úloze",resumeTaskSub:"Pokračovat v pozastaveném sečení",edgeReturn:"Návrat podél okraje",autoDockMow:"Po každé úloze posekat kolem stanice",maintenance:"Údržba",resetBlade:"Vynulovat počítadlo nože",resetCamera:"Vynulovat počítadlo kamery",resetDockContact:"Vynulovat počítadlo kontaktu",resetCounterWarning:"Nulovat pouze po údržbě",mowingHistory:"Předchozí úlohy sečení",errorHistory:"Podrobná historie chyb"},
+  sk:{resumeTask:"Pokračovať v úlohe",resumeTaskSub:"Pokračovať v pozastavenom kosení",edgeReturn:"Návrat pozdĺž okraja",autoDockMow:"Po každej úlohe kosiť okolo stanice",maintenance:"Údržba",resetBlade:"Vynulovať počítadlo noža",resetCamera:"Vynulovať počítadlo kamery",resetDockContact:"Vynulovať počítadlo kontaktu",resetCounterWarning:"Nulovať iba po údržbe",mowingHistory:"Predchádzajúce úlohy kosenia",errorHistory:"Podrobná história chýb"},
+  ro:{resumeTask:"Reluare sarcină",resumeTaskSub:"Continuă tunderea întreruptă",edgeReturn:"Revenire de-a lungul marginii",autoDockMow:"Tundere în jurul stației după fiecare sarcină",maintenance:"Întreținere",resetBlade:"Resetare contor lamă",resetCamera:"Resetare contor cameră",resetDockContact:"Resetare contor contact",resetCounterWarning:"Resetați numai după întreținere",mowingHistory:"Sarcini de tundere anterioare",errorHistory:"Istoric detaliat al erorilor"},
+  da:{resumeTask:"Fortsæt opgave",resumeTaskSub:"Fortsæt den pausede klipning",edgeReturn:"Retur langs kanten",autoDockMow:"Klip omkring stationen efter hver opgave",maintenance:"Vedligeholdelse",resetBlade:"Nulstil knivtæller",resetCamera:"Nulstil kameratæller",resetDockContact:"Nulstil kontakttæller",resetCounterWarning:"Nulstil kun efter service",mowingHistory:"Tidligere klippeopgaver",errorHistory:"Detaljeret fejlhistorik"},
+  sv:{resumeTask:"Fortsätt uppgift",resumeTaskSub:"Fortsätt den pausade klippningen",edgeReturn:"Återgång längs kanten",autoDockMow:"Klipp runt stationen efter varje uppgift",maintenance:"Underhåll",resetBlade:"Nollställ knivräknare",resetCamera:"Nollställ kameraräknare",resetDockContact:"Nollställ kontakträknare",resetCounterWarning:"Nollställ endast efter service",mowingHistory:"Tidigare klippuppgifter",errorHistory:"Detaljerad felhistorik"},
+  no:{resumeTask:"Fortsett oppgave",resumeTaskSub:"Fortsett den pausede klippingen",edgeReturn:"Retur langs kanten",autoDockMow:"Klipp rundt stasjonen etter hver oppgave",maintenance:"Vedlikehold",resetBlade:"Nullstill knivteller",resetCamera:"Nullstill kamerateller",resetDockContact:"Nullstill kontaktteller",resetCounterWarning:"Nullstill bare etter service",mowingHistory:"Tidligere klippeoppgaver",errorHistory:"Detaljert feilhistorikk"},
+  fi:{resumeTask:"Jatka tehtävää",resumeTaskSub:"Jatka keskeytettyä leikkuuta",edgeReturn:"Paluu reunaa pitkin",autoDockMow:"Leikkaa aseman ympäriltä jokaisen tehtävän jälkeen",maintenance:"Huolto",resetBlade:"Nollaa terälaskuri",resetCamera:"Nollaa kameralaskuri",resetDockContact:"Nollaa kosketinlaskuri",resetCounterWarning:"Nollaa vain huollon jälkeen",mowingHistory:"Aiemmat leikkuutehtävät",errorHistory:"Yksityiskohtainen virhehistoria"},
+  "zh-CN":{resumeTask:"继续任务",resumeTaskSub:"继续已暂停的割草任务",edgeReturn:"沿边返回",autoDockMow:"每次任务后修剪充电座周围",maintenance:"维护",resetBlade:"重置刀片计数器",resetCamera:"重置摄像头计数器",resetDockContact:"重置充电触点计数器",resetCounterWarning:"仅在维护后重置",mowingHistory:"以前的割草任务",errorHistory:"详细错误历史"},
+  "zh-TW":{resumeTask:"繼續任務",resumeTaskSub:"繼續已暫停的割草任務",edgeReturn:"沿邊返回",autoDockMow:"每次任務後修剪充電座周圍",maintenance:"維護",resetBlade:"重設刀片計數器",resetCamera:"重設攝影機計數器",resetDockContact:"重設充電接點計數器",resetCounterWarning:"僅在維護後重設",mowingHistory:"以前的割草任務",errorHistory:"詳細錯誤歷史"},
+  tr:{resumeTask:"Görevi sürdür",resumeTaskSub:"Duraklatılan biçme görevine devam et",edgeReturn:"Kenar boyunca dönüş",autoDockMow:"Her görevden sonra istasyon çevresini biç",maintenance:"Bakım",resetBlade:"Bıçak sayacını sıfırla",resetCamera:"Kamera sayacını sıfırla",resetDockContact:"Şarj kontağı sayacını sıfırla",resetCounterWarning:"Yalnızca bakımdan sonra sıfırla",mowingHistory:"Önceki biçme görevleri",errorHistory:"Ayrıntılı hata geçmişi"},
+  th:{resumeTask:"ทำงานต่อ",resumeTaskSub:"ทำงานตัดหญ้าที่หยุดชั่วคราวต่อ",edgeReturn:"กลับตามแนวขอบ",autoDockMow:"ตัดรอบแท่นหลังทุกงาน",maintenance:"การบำรุงรักษา",resetBlade:"รีเซ็ตตัวนับใบมีด",resetCamera:"รีเซ็ตตัวนับกล้อง",resetDockContact:"รีเซ็ตตัวนับหน้าสัมผัส",resetCounterWarning:"รีเซ็ตหลังบำรุงรักษาเท่านั้น",mowingHistory:"งานตัดหญ้าก่อนหน้า",errorHistory:"ประวัติข้อผิดพลาดโดยละเอียด"},
+  vi:{resumeTask:"Tiếp tục tác vụ",resumeTaskSub:"Tiếp tục tác vụ cắt đang tạm dừng",edgeReturn:"Trở về dọc theo mép",autoDockMow:"Cắt quanh trạm sau mỗi tác vụ",maintenance:"Bảo trì",resetBlade:"Đặt lại bộ đếm lưỡi",resetCamera:"Đặt lại bộ đếm camera",resetDockContact:"Đặt lại bộ đếm tiếp điểm",resetCounterWarning:"Chỉ đặt lại sau bảo trì",mowingHistory:"Các tác vụ cắt trước",errorHistory:"Lịch sử lỗi chi tiết"},
+  ko:{resumeTask:"작업 계속",resumeTaskSub:"일시 중지된 잔디 깎기 계속",edgeReturn:"가장자리를 따라 복귀",autoDockMow:"각 작업 후 충전소 주변 깎기",maintenance:"유지보수",resetBlade:"날 카운터 초기화",resetCamera:"카메라 카운터 초기화",resetDockContact:"충전 접점 카운터 초기화",resetCounterWarning:"정비 후에만 초기화",mowingHistory:"이전 잔디 깎기 작업",errorHistory:"상세 오류 기록"},
+  km:{resumeTask:"បន្តកិច្ចការ",resumeTaskSub:"បន្តការកាត់ស្មៅដែលបានផ្អាក",edgeReturn:"ត្រឡប់តាមគែម",autoDockMow:"កាត់ជុំវិញស្ថានីយក្រោយរាល់កិច្ចការ",maintenance:"ការថែទាំ",resetBlade:"កំណត់បញ្ជរផ្លែឡាមឡើងវិញ",resetCamera:"កំណត់បញ្ជរកាមេរ៉ាឡើងវិញ",resetDockContact:"កំណត់បញ្ជរទំនាក់ទំនងឡើងវិញ",resetCounterWarning:"កំណត់ឡើងវិញក្រោយថែទាំប៉ុណ្ណោះ",mowingHistory:"កិច្ចការកាត់ស្មៅមុន",errorHistory:"ប្រវត្តិកំហុសលម្អិត"}
+};
+for (const [language, values] of Object.entries(beta8Translations)) {
+  Object.assign(settingsTranslations[language] || (settingsTranslations[language] = {}), values);
+}
+
+const beta9Translations = {
+  en:{pauseTask:"Pause task",pauseTaskSub:"Pause the current mowing task"},
+  hu:{pauseTask:"Szüneteltetés",pauseTaskSub:"Az aktuális nyírás szüneteltetése"},
+  de:{pauseTask:"Aufgabe pausieren",pauseTaskSub:"Aktuelle Mähaufgabe pausieren"},
+  fr:{pauseTask:"Mettre en pause",pauseTaskSub:"Mettre la tonte actuelle en pause"},
+  es:{pauseTask:"Pausar tarea",pauseTaskSub:"Pausar la tarea de corte actual"},
+  it:{pauseTask:"Metti in pausa",pauseTaskSub:"Metti in pausa il taglio attuale"},
+  pt:{pauseTask:"Pausar tarefa",pauseTaskSub:"Pausar a tarefa de corte atual"},
+  nl:{pauseTask:"Taak pauzeren",pauseTaskSub:"Huidige maaitaak pauzeren"},
+  pl:{pauseTask:"Wstrzymaj zadanie",pauseTaskSub:"Wstrzymaj bieżące koszenie"},
+  cs:{pauseTask:"Pozastavit úlohu",pauseTaskSub:"Pozastavit aktuální sečení"},
+  sk:{pauseTask:"Pozastaviť úlohu",pauseTaskSub:"Pozastaviť aktuálne kosenie"},
+  ro:{pauseTask:"Întrerupe sarcina",pauseTaskSub:"Întrerupe tunderea curentă"},
+  da:{pauseTask:"Sæt opgave på pause",pauseTaskSub:"Sæt den aktuelle klipning på pause"},
+  sv:{pauseTask:"Pausa uppgift",pauseTaskSub:"Pausa den aktuella klippningen"},
+  no:{pauseTask:"Sett oppgave på pause",pauseTaskSub:"Sett den aktive klippingen på pause"},
+  fi:{pauseTask:"Keskeytä tehtävä",pauseTaskSub:"Keskeytä nykyinen leikkuutehtävä"},
+  "zh-CN":{pauseTask:"暂停任务",pauseTaskSub:"暂停当前割草任务"},
+  "zh-TW":{pauseTask:"暫停任務",pauseTaskSub:"暫停目前割草任務"},
+  tr:{pauseTask:"Görevi duraklat",pauseTaskSub:"Geçerli biçme görevini duraklat"},
+  th:{pauseTask:"หยุดงานชั่วคราว",pauseTaskSub:"หยุดงานตัดหญ้าปัจจุบันชั่วคราว"},
+  vi:{pauseTask:"Tạm dừng tác vụ",pauseTaskSub:"Tạm dừng tác vụ cắt hiện tại"},
+  ko:{pauseTask:"작업 일시 중지",pauseTaskSub:"현재 잔디 깎기 작업 일시 중지"},
+  km:{pauseTask:"ផ្អាកកិច្ចការ",pauseTaskSub:"ផ្អាកកិច្ចការកាត់ស្មៅបច្ចុប្បន្ន"}
+};
+for (const [language, values] of Object.entries(beta9Translations)) {
+  Object.assign(settingsTranslations[language] || (settingsTranslations[language] = {}), values);
+}
+
+const beta10Translations = {
+  en:{bladeMaintenance:"Blade maintenance",cameraMaintenance:"Camera cleaning",dockContactMaintenance:"Charging-contact cleaning",remainingLife:"Remaining service life",maintenanceUnavailable:"No data",resetBlade:"Reset after blade replacement",resetCamera:"Reset after camera cleaning",resetDockContact:"Reset after contact cleaning",resetCounterWarning:"Confirm only after completing the indicated maintenance."},
+  hu:{bladeMaintenance:"Kés karbantartása",cameraMaintenance:"Kamera tisztítása",dockContactMaintenance:"Töltőérintkezők tisztítása",remainingLife:"Hátralévő karbantartási idő",maintenanceUnavailable:"Nincs adat",resetBlade:"Nullázás késcsere után",resetCamera:"Nullázás kameratisztítás után",resetDockContact:"Nullázás érintkezőtisztítás után",resetCounterWarning:"Csak a jelzett karbantartás elvégzése után erősítsd meg."},
+  de:{bladeMaintenance:"Messerwartung",cameraMaintenance:"Kamerareinigung",dockContactMaintenance:"Ladekontakte reinigen",remainingLife:"Verbleibende Wartungsdauer",maintenanceUnavailable:"Keine Daten",resetBlade:"Nach Messerwechsel zurücksetzen",resetCamera:"Nach Kamerareinigung zurücksetzen",resetDockContact:"Nach Kontaktreinigung zurücksetzen",resetCounterWarning:"Nur nach der angegebenen Wartung bestätigen."},
+  fr:{bladeMaintenance:"Entretien de la lame",cameraMaintenance:"Nettoyage de la caméra",dockContactMaintenance:"Nettoyage des contacts de charge",remainingLife:"Durée d’entretien restante",maintenanceUnavailable:"Aucune donnée",resetBlade:"Réinitialiser après remplacement de la lame",resetCamera:"Réinitialiser après nettoyage de la caméra",resetDockContact:"Réinitialiser après nettoyage des contacts",resetCounterWarning:"Confirmez uniquement après l’entretien indiqué."},
+  es:{bladeMaintenance:"Mantenimiento de cuchilla",cameraMaintenance:"Limpieza de cámara",dockContactMaintenance:"Limpieza de contactos de carga",remainingLife:"Vida de mantenimiento restante",maintenanceUnavailable:"Sin datos",resetBlade:"Restablecer tras cambiar la cuchilla",resetCamera:"Restablecer tras limpiar la cámara",resetDockContact:"Restablecer tras limpiar los contactos",resetCounterWarning:"Confirma solo después del mantenimiento indicado."},
+  it:{bladeMaintenance:"Manutenzione lama",cameraMaintenance:"Pulizia fotocamera",dockContactMaintenance:"Pulizia contatti di ricarica",remainingLife:"Durata manutenzione residua",maintenanceUnavailable:"Nessun dato",resetBlade:"Azzera dopo la sostituzione della lama",resetCamera:"Azzera dopo la pulizia della fotocamera",resetDockContact:"Azzera dopo la pulizia dei contatti",resetCounterWarning:"Conferma solo dopo la manutenzione indicata."},
+  pt:{bladeMaintenance:"Manutenção da lâmina",cameraMaintenance:"Limpeza da câmara",dockContactMaintenance:"Limpeza dos contactos de carga",remainingLife:"Vida útil restante",maintenanceUnavailable:"Sem dados",resetBlade:"Repor após trocar a lâmina",resetCamera:"Repor após limpar a câmara",resetDockContact:"Repor após limpar os contactos",resetCounterWarning:"Confirme apenas após a manutenção indicada."},
+  nl:{bladeMaintenance:"Mesonderhoud",cameraMaintenance:"Camera reinigen",dockContactMaintenance:"Laadcontacten reinigen",remainingLife:"Resterende onderhoudsduur",maintenanceUnavailable:"Geen gegevens",resetBlade:"Resetten na mesvervanging",resetCamera:"Resetten na camerareiniging",resetDockContact:"Resetten na contactreiniging",resetCounterWarning:"Bevestig alleen na het aangegeven onderhoud."},
+  pl:{bladeMaintenance:"Konserwacja ostrza",cameraMaintenance:"Czyszczenie kamery",dockContactMaintenance:"Czyszczenie styków ładowania",remainingLife:"Pozostały okres konserwacji",maintenanceUnavailable:"Brak danych",resetBlade:"Wyzeruj po wymianie ostrza",resetCamera:"Wyzeruj po czyszczeniu kamery",resetDockContact:"Wyzeruj po czyszczeniu styków",resetCounterWarning:"Potwierdź dopiero po wykonaniu wskazanej konserwacji."},
+  cs:{bladeMaintenance:"Údržba nože",cameraMaintenance:"Čištění kamery",dockContactMaintenance:"Čištění nabíjecích kontaktů",remainingLife:"Zbývající servisní životnost",maintenanceUnavailable:"Žádná data",resetBlade:"Vynulovat po výměně nože",resetCamera:"Vynulovat po vyčištění kamery",resetDockContact:"Vynulovat po vyčištění kontaktů",resetCounterWarning:"Potvrďte pouze po provedení uvedené údržby."},
+  sk:{bladeMaintenance:"Údržba noža",cameraMaintenance:"Čistenie kamery",dockContactMaintenance:"Čistenie nabíjacích kontaktov",remainingLife:"Zostávajúca servisná životnosť",maintenanceUnavailable:"Žiadne údaje",resetBlade:"Vynulovať po výmene noža",resetCamera:"Vynulovať po vyčistení kamery",resetDockContact:"Vynulovať po vyčistení kontaktov",resetCounterWarning:"Potvrďte iba po vykonaní uvedenej údržby."},
+  ro:{bladeMaintenance:"Întreținerea lamei",cameraMaintenance:"Curățarea camerei",dockContactMaintenance:"Curățarea contactelor de încărcare",remainingLife:"Durată de service rămasă",maintenanceUnavailable:"Fără date",resetBlade:"Resetare după schimbarea lamei",resetCamera:"Resetare după curățarea camerei",resetDockContact:"Resetare după curățarea contactelor",resetCounterWarning:"Confirmați numai după întreținerea indicată."},
+  da:{bladeMaintenance:"Vedligeholdelse af kniv",cameraMaintenance:"Rengøring af kamera",dockContactMaintenance:"Rengøring af ladekontakter",remainingLife:"Resterende servicelevetid",maintenanceUnavailable:"Ingen data",resetBlade:"Nulstil efter knivskift",resetCamera:"Nulstil efter kamerarengøring",resetDockContact:"Nulstil efter kontaktrengøring",resetCounterWarning:"Bekræft kun efter den angivne vedligeholdelse."},
+  sv:{bladeMaintenance:"Knivunderhåll",cameraMaintenance:"Kamerarengöring",dockContactMaintenance:"Rengöring av laddkontakter",remainingLife:"Återstående servicelivslängd",maintenanceUnavailable:"Inga data",resetBlade:"Nollställ efter knivbyte",resetCamera:"Nollställ efter kamerarengöring",resetDockContact:"Nollställ efter kontaktrengöring",resetCounterWarning:"Bekräfta endast efter angivet underhåll."},
+  no:{bladeMaintenance:"Knivvedlikehold",cameraMaintenance:"Kamerarengjøring",dockContactMaintenance:"Rengjøring av ladekontakter",remainingLife:"Gjenværende servicelevetid",maintenanceUnavailable:"Ingen data",resetBlade:"Nullstill etter knivbytte",resetCamera:"Nullstill etter kamerarengjøring",resetDockContact:"Nullstill etter kontaktrengjøring",resetCounterWarning:"Bekreft bare etter angitt vedlikehold."},
+  fi:{bladeMaintenance:"Terän huolto",cameraMaintenance:"Kameran puhdistus",dockContactMaintenance:"Latauskoskettimien puhdistus",remainingLife:"Jäljellä oleva huoltoaika",maintenanceUnavailable:"Ei tietoja",resetBlade:"Nollaa terän vaihdon jälkeen",resetCamera:"Nollaa kameran puhdistuksen jälkeen",resetDockContact:"Nollaa koskettimien puhdistuksen jälkeen",resetCounterWarning:"Vahvista vasta ilmoitetun huollon jälkeen."},
+  "zh-CN":{bladeMaintenance:"刀片维护",cameraMaintenance:"摄像头清洁",dockContactMaintenance:"充电触点清洁",remainingLife:"剩余维护寿命",maintenanceUnavailable:"无数据",resetBlade:"更换刀片后重置",resetCamera:"清洁摄像头后重置",resetDockContact:"清洁触点后重置",resetCounterWarning:"仅在完成所示维护后确认。"},
+  "zh-TW":{bladeMaintenance:"刀片維護",cameraMaintenance:"攝影機清潔",dockContactMaintenance:"充電接點清潔",remainingLife:"剩餘維護壽命",maintenanceUnavailable:"無資料",resetBlade:"更換刀片後重設",resetCamera:"清潔攝影機後重設",resetDockContact:"清潔接點後重設",resetCounterWarning:"僅在完成所示維護後確認。"},
+  tr:{bladeMaintenance:"Bıçak bakımı",cameraMaintenance:"Kamera temizliği",dockContactMaintenance:"Şarj kontaklarını temizleme",remainingLife:"Kalan bakım ömrü",maintenanceUnavailable:"Veri yok",resetBlade:"Bıçak değişiminden sonra sıfırla",resetCamera:"Kamera temizliğinden sonra sıfırla",resetDockContact:"Kontak temizliğinden sonra sıfırla",resetCounterWarning:"Yalnızca belirtilen bakımdan sonra onaylayın."},
+  th:{bladeMaintenance:"การบำรุงรักษาใบมีด",cameraMaintenance:"การทำความสะอาดกล้อง",dockContactMaintenance:"การทำความสะอาดหน้าสัมผัสชาร์จ",remainingLife:"อายุการบำรุงรักษาคงเหลือ",maintenanceUnavailable:"ไม่มีข้อมูล",resetBlade:"รีเซ็ตหลังเปลี่ยนใบมีด",resetCamera:"รีเซ็ตหลังทำความสะอาดกล้อง",resetDockContact:"รีเซ็ตหลังทำความสะอาดหน้าสัมผัส",resetCounterWarning:"ยืนยันหลังจากบำรุงรักษาตามที่ระบุแล้วเท่านั้น"},
+  vi:{bladeMaintenance:"Bảo trì lưỡi cắt",cameraMaintenance:"Vệ sinh camera",dockContactMaintenance:"Vệ sinh tiếp điểm sạc",remainingLife:"Tuổi thọ bảo trì còn lại",maintenanceUnavailable:"Không có dữ liệu",resetBlade:"Đặt lại sau khi thay lưỡi",resetCamera:"Đặt lại sau khi vệ sinh camera",resetDockContact:"Đặt lại sau khi vệ sinh tiếp điểm",resetCounterWarning:"Chỉ xác nhận sau khi hoàn tất bảo trì được chỉ định."},
+  ko:{bladeMaintenance:"날 유지보수",cameraMaintenance:"카메라 청소",dockContactMaintenance:"충전 접점 청소",remainingLife:"남은 유지보수 수명",maintenanceUnavailable:"데이터 없음",resetBlade:"날 교체 후 초기화",resetCamera:"카메라 청소 후 초기화",resetDockContact:"접점 청소 후 초기화",resetCounterWarning:"표시된 유지보수를 마친 후에만 확인하십시오."},
+  km:{bladeMaintenance:"ថែទាំផ្លែឡាម",cameraMaintenance:"សម្អាតកាមេរ៉ា",dockContactMaintenance:"សម្អាតទំនាក់ទំនងសាក",remainingLife:"អាយុកាលថែទាំនៅសល់",maintenanceUnavailable:"គ្មានទិន្នន័យ",resetBlade:"កំណត់ឡើងវិញក្រោយប្តូរផ្លែឡាម",resetCamera:"កំណត់ឡើងវិញក្រោយសម្អាតកាមេរ៉ា",resetDockContact:"កំណត់ឡើងវិញក្រោយសម្អាតទំនាក់ទំនង",resetCounterWarning:"បញ្ជាក់តែក្រោយបញ្ចប់ការថែទាំដែលបានបង្ហាញ។"}
+};
+for (const [language, values] of Object.entries(beta10Translations)) {
+  Object.assign(settingsTranslations[language] || (settingsTranslations[language] = {}), values);
+}
+
 export function normalizeLanguage(value) {
   const raw = String(value || "en").replace("_", "-");
   const lower = raw.toLowerCase();
@@ -243,5 +573,5 @@ export function resolveLanguage(selection, hass) {
 }
 
 export function translate(language, key) {
-  return translations[language]?.[key] ?? feedbackTranslations[language]?.[key] ?? commandStageTranslations[language]?.[key] ?? commandTranslations[language]?.[key] ?? menuTranslations[language]?.[key] ?? en[key] ?? feedbackTranslations.en[key] ?? commandStageTranslations.en[key] ?? commandTranslations.en[key] ?? menuTranslations.en[key] ?? key;
+  return translations[language]?.[key] ?? settingsTranslations[language]?.[key] ?? feedbackTranslations[language]?.[key] ?? commandStageTranslations[language]?.[key] ?? commandTranslations[language]?.[key] ?? menuTranslations[language]?.[key] ?? en[key] ?? settingsTranslations.en[key] ?? feedbackTranslations.en[key] ?? commandStageTranslations.en[key] ?? commandTranslations.en[key] ?? menuTranslations.en[key] ?? key;
 }

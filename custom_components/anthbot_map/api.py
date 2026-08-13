@@ -979,6 +979,34 @@ class AnthbotCloudApiClient:
 
         return devices
 
+    async def async_get_mowing_records(
+        self, serial_number: str, *, page: int = 1, page_size: int = 20
+    ) -> dict[str, Any]:
+        """Fetch the same completed mowing records shown by the mobile app."""
+        self._require_token()
+        url = f"https://{self._host}/api/v1/device/v3/record/list"
+        try:
+            async with self._session.get(
+                url,
+                headers=self._auth_headers,
+                params={"sn": serial_number, "pagenum": page, "pagesize": page_size},
+                timeout=15,
+            ) as resp:
+                if resp.status != 200:
+                    body = await resp.text()
+                    raise AnthbotGenieApiError(
+                        f"Mowing record list failed ({resp.status}): {body[:300]}"
+                    )
+                payload = await resp.json(content_type=None)
+        except ClientError as err:
+            raise AnthbotGenieApiError(f"Network error: {err}") from err
+        except TimeoutError as err:
+            raise AnthbotGenieApiError("Request timed out") from err
+        if not isinstance(payload, dict) or payload.get("code") != 0:
+            raise AnthbotGenieApiError("Invalid mowing record response")
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {"data": data or []}
+
     async def async_get_device_region(self, serial_number: str) -> AnthbotDeviceRegion:
         """Fetch device cloud region metadata."""
         self._require_token()

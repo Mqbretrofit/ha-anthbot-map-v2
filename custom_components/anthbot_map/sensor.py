@@ -853,6 +853,9 @@ class AnthbotMapSensorEntity(
             "robot_online",
             "live_shadow_connected",
             "live_shadow_error",
+            "mowing_records",
+            "error_history",
+            "maintenance",
         }
     )
     _attr_has_entity_name = True
@@ -928,6 +931,13 @@ class AnthbotMapSensorEntity(
             "robot_online": state.get("_robot_online"),
             "live_shadow_connected": state.get("_live_shadow_connected", False),
             "live_shadow_error": state.get("_live_shadow_error"),
+            "mowing_records": state.get("_mowing_records", {"data": []}),
+            "error_history": state.get("_error_history", []),
+            "maintenance": state.get("robot_maintenance") or {
+                "blade": state.get("cutting_components_life"),
+                "camera": state.get("camera_life"),
+                "charging_contact": state.get("recharge_contact_life"),
+            },
         }        
 
 

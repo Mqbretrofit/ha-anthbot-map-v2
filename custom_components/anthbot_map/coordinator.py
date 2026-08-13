@@ -161,6 +161,10 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._path_definition_error: str | None = None
         self._history_path_info: Any = None
         self._history_path_source: str | None = None
+        self._mowing_records: dict[str, Any] = {"data": []}
+        self._last_record_download_monotonic = 0.0
+        self._error_history: list[dict[str, Any]] = []
+        self._last_error_signature: str | None = None
         self._last_area_time: str | None = None
         self._last_area_download_monotonic = 0.0
         self._last_map_time: str | None = None
@@ -591,7 +595,30 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self._last_path_download_monotonic = time.monotonic()
 
             merged_state = dict(property_state)
+            if now - self._last_record_download_monotonic >= 300:
+                try:
+                    self._mowing_records = await self.account_client.async_get_mowing_records(
+                        self.client.serial_number
+                    )
+                    self._last_record_download_monotonic = now
+                except AnthbotGenieApiError as err:
+                    _LOGGER.debug("Anthbot mowing records unavailable: %s", err)
+            error_snapshot = {
+                key: property_state.get(key)
+                for key in ("error", "event", "err_code", "error_code", "event_code")
+                if property_state.get(key) not in (None, 0, "", [], {})
+            }
+            signature = repr(error_snapshot)
+            if error_snapshot and signature != self._last_error_signature:
+                self._error_history.insert(0, {
+                    "time": datetime.now(timezone.utc).isoformat(),
+                    **error_snapshot,
+                })
+                del self._error_history[50:]
+                self._last_error_signature = signature
             merged_state["_service_reported"] = service_state
+            merged_state["_mowing_records"] = self._mowing_records
+            merged_state["_error_history"] = self._error_history
             merged_state["_area_definition"] = self._area_definition
             merged_state["_map_definition"] = self._map_definition
             merged_state["_path_definition"] = self._path_definition
