@@ -49,6 +49,7 @@ BUTTONS: tuple[AnthbotButtonDescription, ...] = (
         name="Return to dock",
     ),
     AnthbotButtonDescription(key="resume_mow", name="Resume paused task"),
+    AnthbotButtonDescription(key="pause_mow", name="Pause mowing task"),
     AnthbotButtonDescription(key="reset_blade_maintenance", name="Reset blade maintenance"),
     AnthbotButtonDescription(key="reset_camera_maintenance", name="Reset camera maintenance"),
     AnthbotButtonDescription(key="reset_dock_contact_maintenance", name="Reset charging contact maintenance"),
@@ -165,6 +166,11 @@ class AnthbotButtonEntity(
             await async_prepare_cloud_connection(self.coordinator)
             await self.coordinator.client.async_publish_service_command(
                 cmd="mow_continue", data=1
+            )
+        elif key == "pause_mow":
+            await async_prepare_cloud_connection(self.coordinator)
+            await self.coordinator.client.async_publish_service_command(
+                cmd="mow_pause", data=1
             )
         elif key.startswith("reset_"):
             reset_ids = {
