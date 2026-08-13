@@ -50,6 +50,38 @@ NUMBERS: tuple[AnthbotNumberDescription, ...] = (
         ),
     ),
     AnthbotNumberDescription(
+        key="mow_count_setting",
+        translation_key="mow_count_setting",
+        name="Mowing passes",
+        native_min_value=1,
+        native_max_value=3,
+        native_step=1,
+        mode=NumberMode.SLIDER,
+        getter=lambda data: (
+            data.get("param_set", {}).get("mow_count")
+            if isinstance(data.get("param_set"), dict)
+            else None
+        ),
+    ),
+    AnthbotNumberDescription(
+        key="visual_obstacle_level_setting",
+        translation_key="visual_obstacle_level_setting",
+        name="Visual obstacle sensitivity",
+        native_min_value=0,
+        native_max_value=2,
+        native_step=1,
+        mode=NumberMode.SLIDER,
+        getter=lambda data: (
+            data.get("pobctl", {}).get("level")
+            if isinstance(data.get("pobctl"), dict)
+            else (
+                data.get("device_config", {}).get("pobctl_level")
+                if isinstance(data.get("device_config"), dict)
+                else None
+            )
+        ),
+    ),
+    AnthbotNumberDescription(
         key="voice_volume_setting",
         translation_key="voice_volume_setting",
         name="Voice volume",
@@ -152,6 +184,35 @@ class AnthbotNumberEntity(
             await self.coordinator.client.async_publish_service_command(
                 cmd="param_set",
                 data={"cutter_height": int_value, "rid_switch": 0},
+            )
+        elif key == "mow_count_setting":
+            if int_value < 1 or int_value > 3:
+                raise ValueError("Mowing passes must be 1..3")
+            await self.coordinator.client.async_publish_service_command(
+                cmd="param_set",
+                data={"mow_count": int_value},
+            )
+        elif key == "visual_obstacle_level_setting":
+            if int_value < 0 or int_value > 2:
+                raise ValueError("Visual obstacle sensitivity must be 0..2")
+            state = self.coordinator.reported_state
+            pobctl = state.get("pobctl")
+            device_config = state.get("device_config")
+            switch_value = (
+                pobctl.get("switch")
+                if isinstance(pobctl, dict)
+                else (
+                    device_config.get("pobctl_switch")
+                    if isinstance(device_config, dict)
+                    else 1
+                )
+            )
+            await self.coordinator.client.async_publish_service_command(
+                cmd="perception_obstacle_ctl",
+                data={
+                    "switch": 1 if switch_value in (1, "1", True, "true", "on") else 0,
+                    "level": int_value,
+                },
             )
         elif key == "voice_volume_setting":
             if int_value < 0 or int_value > 100:
