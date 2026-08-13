@@ -234,6 +234,7 @@ const menuTranslations = {
 
 const settingsTranslations = {
   "en": {
+    "autoZone": "Auto zone",
     "mowCount": "Mowing passes",
     "visualObstacle": "Visual obstacle detection",
     "visualObstacleLevel": "Obstacle sensitivity",
@@ -242,6 +243,7 @@ const settingsTranslations = {
     "high": "High"
   },
   "hu": {
+    "autoZone": "Automatikus zóna",
     "mowCount": "Nyírások száma",
     "visualObstacle": "Vizuális akadályérzékelés",
     "visualObstacleLevel": "Akadályérzékelés szintje",
@@ -250,6 +252,7 @@ const settingsTranslations = {
     "high": "Magas"
   },
   "de": {
+    "autoZone": "Automatische Zone",
     "mowCount": "Mähdurchgänge",
     "visualObstacle": "Visuelle Hinderniserkennung",
     "visualObstacleLevel": "Hindernisempfindlichkeit",
@@ -258,6 +261,7 @@ const settingsTranslations = {
     "high": "Hoch"
   },
   "fr": {
+    "autoZone": "Zone automatique",
     "mowCount": "Passages de tonte",
     "visualObstacle": "Détection visuelle des obstacles",
     "visualObstacleLevel": "Sensibilité aux obstacles",
@@ -266,6 +270,7 @@ const settingsTranslations = {
     "high": "Élevée"
   },
   "es": {
+    "autoZone": "Zona automática",
     "mowCount": "Pasadas de corte",
     "visualObstacle": "Detección visual de obstáculos",
     "visualObstacleLevel": "Sensibilidad a obstáculos",
@@ -274,6 +279,7 @@ const settingsTranslations = {
     "high": "Alta"
   },
   "it": {
+    "autoZone": "Zona automatica",
     "mowCount": "Passaggi di taglio",
     "visualObstacle": "Rilevamento visivo ostacoli",
     "visualObstacleLevel": "Sensibilità agli ostacoli",
@@ -282,6 +288,7 @@ const settingsTranslations = {
     "high": "Alta"
   },
   "pt": {
+    "autoZone": "Zona automática",
     "mowCount": "Passagens de corte",
     "visualObstacle": "Deteção visual de obstáculos",
     "visualObstacleLevel": "Sensibilidade a obstáculos",
@@ -290,6 +297,7 @@ const settingsTranslations = {
     "high": "Alta"
   },
   "nl": {
+    "autoZone": "Automatische zone",
     "mowCount": "Maaibeurten",
     "visualObstacle": "Visuele obstakeldetectie",
     "visualObstacleLevel": "Obstakelgevoeligheid",
@@ -298,6 +306,7 @@ const settingsTranslations = {
     "high": "Hoog"
   },
   "pl": {
+    "autoZone": "Strefa automatyczna",
     "mowCount": "Liczba przejazdów",
     "visualObstacle": "Wizualne wykrywanie przeszkód",
     "visualObstacleLevel": "Czułość na przeszkody",
@@ -306,6 +315,7 @@ const settingsTranslations = {
     "high": "Wysoka"
   },
   "cs": {
+    "autoZone": "Automatická zóna",
     "mowCount": "Počet přejezdů",
     "visualObstacle": "Vizuální detekce překážek",
     "visualObstacleLevel": "Citlivost na překážky",
@@ -314,6 +324,7 @@ const settingsTranslations = {
     "high": "Vysoká"
   },
   "sk": {
+    "autoZone": "Automatická zóna",
     "mowCount": "Počet prejazdov",
     "visualObstacle": "Vizuálna detekcia prekážok",
     "visualObstacleLevel": "Citlivosť na prekážky",
@@ -322,6 +333,7 @@ const settingsTranslations = {
     "high": "Vysoká"
   },
   "ro": {
+    "autoZone": "Zonă automată",
     "mowCount": "Treceri de tundere",
     "visualObstacle": "Detectare vizuală a obstacolelor",
     "visualObstacleLevel": "Sensibilitate la obstacole",
@@ -330,6 +342,7 @@ const settingsTranslations = {
     "high": "Ridicată"
   },
   "da": {
+    "autoZone": "Automatisk zone",
     "mowCount": "Klipninger",
     "visualObstacle": "Visuel forhindringsregistrering",
     "visualObstacleLevel": "Følsomhed for forhindringer",
@@ -338,6 +351,7 @@ const settingsTranslations = {
     "high": "Høj"
   },
   "sv": {
+    "autoZone": "Automatisk zon",
     "mowCount": "Klippass",
     "visualObstacle": "Visuell hinderdetektering",
     "visualObstacleLevel": "Hinderkänslighet",
@@ -346,6 +360,7 @@ const settingsTranslations = {
     "high": "Hög"
   },
   "no": {
+    "autoZone": "Automatisk sone",
     "mowCount": "Klippepasseringer",
     "visualObstacle": "Visuell hinderdeteksjon",
     "visualObstacleLevel": "Hinderfølsomhet",
@@ -354,6 +369,7 @@ const settingsTranslations = {
     "high": "Høy"
   },
   "fi": {
+    "autoZone": "Automaattinen alue",
     "mowCount": "Leikkuukerrat",
     "visualObstacle": "Visuaalinen esteentunnistus",
     "visualObstacleLevel": "Esteherkkyys",
@@ -362,6 +378,7 @@ const settingsTranslations = {
     "high": "Korkea"
   },
   "zh-CN": {
+    "autoZone": "自动区域",
     "mowCount": "割草遍数",
     "visualObstacle": "视觉障碍物检测",
     "visualObstacleLevel": "障碍物检测灵敏度",
@@ -370,6 +387,7 @@ const settingsTranslations = {
     "high": "高"
   },
   "zh-TW": {
+    "autoZone": "自動區域",
     "mowCount": "割草遍數",
     "visualObstacle": "視覺障礙物偵測",
     "visualObstacleLevel": "障礙物偵測靈敏度",
@@ -378,6 +396,7 @@ const settingsTranslations = {
     "high": "高"
   },
   "tr": {
+    "autoZone": "Otomatik bölge",
     "mowCount": "Biçme geçişleri",
     "visualObstacle": "Görsel engel algılama",
     "visualObstacleLevel": "Engel hassasiyeti",
@@ -386,6 +405,7 @@ const settingsTranslations = {
     "high": "Yüksek"
   },
   "th": {
+    "autoZone": "โซนอัตโนมัติ",
     "mowCount": "จำนวนรอบการตัด",
     "visualObstacle": "การตรวจจับสิ่งกีดขวางด้วยภาพ",
     "visualObstacleLevel": "ความไวต่อสิ่งกีดขวาง",
@@ -394,6 +414,7 @@ const settingsTranslations = {
     "high": "สูง"
   },
   "vi": {
+    "autoZone": "Vùng tự động",
     "mowCount": "Số lượt cắt",
     "visualObstacle": "Phát hiện chướng ngại vật bằng hình ảnh",
     "visualObstacleLevel": "Độ nhạy chướng ngại vật",
@@ -402,6 +423,7 @@ const settingsTranslations = {
     "high": "Cao"
   },
   "ko": {
+    "autoZone": "자동 구역",
     "mowCount": "잔디 깎기 횟수",
     "visualObstacle": "시각 장애물 감지",
     "visualObstacleLevel": "장애물 감도",
@@ -410,6 +432,7 @@ const settingsTranslations = {
     "high": "높음"
   },
   "km": {
+    "autoZone": "តំបន់ស្វ័យប្រវត្តិ",
     "mowCount": "ចំនួនជុំកាត់ស្មៅ",
     "visualObstacle": "ការរកឃើញឧបសគ្គដោយរូបភាព",
     "visualObstacleLevel": "កម្រិតភាពរសើបឧបសគ្គ",
