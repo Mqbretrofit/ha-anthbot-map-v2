@@ -15,6 +15,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .api import AnthbotGenieApiError
 from .const import DOMAIN
 from .coordinator import AnthbotGenieDataUpdateCoordinator
+from .zones import async_update_zone_settings, auto_zones, manual_zones
 
 
 def _coerce_enabled_value(value: object) -> bool:
@@ -67,11 +68,31 @@ async def async_setup_entry(
     coordinators: list[AnthbotGenieDataUpdateCoordinator] = hass.data[DOMAIN][
         entry.entry_id
     ]
-    async_add_entities(
+    entities: list[SwitchEntity] = [
         AnthbotSwitchEntity(coordinator, description)
         for coordinator in coordinators
         for description in SWITCHES
-    )
+    ]
+    for coordinator in coordinators:
+        for zone_kind, zones in (
+            ("manual", manual_zones(coordinator.reported_state)),
+            ("auto", auto_zones(coordinator.reported_state)),
+        ):
+            for zone in zones:
+                zone_id = zone.get("id")
+                if not isinstance(zone_id, int):
+                    continue
+                entities.extend(
+                    (
+                        AnthbotZoneSwitchEntity(
+                            coordinator, zone_kind, zone_id, "visual_obstacle"
+                        ),
+                        AnthbotZoneSwitchEntity(
+                            coordinator, zone_kind, zone_id, "custom_direction"
+                        ),
+                    )
+                )
+    async_add_entities(entities)
 
 
 class AnthbotSwitchEntity(
@@ -210,3 +231,80 @@ class AnthbotSwitchEntity(
             await self._async_set_visual_obstacle_detection_enabled(False)
             return
         await self._async_set_custom_direction_enabled(False)
+
+
+
+class AnthbotZoneSwitchEntity(
+    CoordinatorEntity[AnthbotGenieDataUpdateCoordinator], SwitchEntity
+):
+    """Editable app-compatible toggle for one manual or automatic zone."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: AnthbotGenieDataUpdateCoordinator,
+        zone_kind: str,
+        zone_id: int,
+        setting: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self._zone_kind = zone_kind
+        self._zone_id = zone_id
+        self._setting = setting
+        self._attr_unique_id = (
+            f"{coordinator.client.serial_number}_{zone_kind}_zone_"
+            f"{zone_id}_{setting}_enabled"
+        )
+        zone = self._find_zone()
+        zone_name = zone.get("name") if isinstance(zone, dict) else None
+        prefix = str(zone_name or f"{'Auto ' if zone_kind == 'auto' else ''}Zone {zone_id}")
+        label = (
+            "Visual obstacle detection"
+            if setting == "visual_obstacle"
+            else "Custom mowing direction"
+        )
+        self._attr_name = f"{prefix} {label}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, coordinator.client.serial_number)},
+            manufacturer="Anthbot",
+            model=coordinator.device.model,
+            name=coordinator.device.alias,
+        )
+
+    def _find_zone(self) -> dict | None:
+        zones = (
+            manual_zones(self.coordinator.reported_state)
+            if self._zone_kind == "manual"
+            else auto_zones(self.coordinator.reported_state)
+        )
+        return next((zone for zone in zones if zone.get("id") == self._zone_id), None)
+
+    @property
+    def is_on(self) -> bool:
+        zone = self._find_zone()
+        if not isinstance(zone, dict):
+            return False
+        if self._setting == "visual_obstacle":
+            return _coerce_enabled_value(
+                zone.get("visual_ignore_obstacle_switch")
+            )
+        return _is_custom_direction_enabled(zone.get("enable_adaptive_head"))
+
+    async def _async_set_enabled(self, enabled: bool) -> None:
+        if self._setting == "visual_obstacle":
+            updates = {"visual_ignore_obstacle_switch": 1 if enabled else 0}
+        else:
+            updates = {"enable_adaptive_head": 0 if enabled else 1}
+        await async_update_zone_settings(
+            self.coordinator,
+            zone_kind=self._zone_kind,
+            zone_id=self._zone_id,
+            updates=updates,
+        )
+
+    async def async_turn_on(self, **kwargs) -> None:
+        await self._async_set_enabled(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        await self._async_set_enabled(False)
