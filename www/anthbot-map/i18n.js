@@ -232,6 +232,193 @@ const menuTranslations = {
   ko:{ menu:"메뉴" }, km:{ menu:"ម៉ឺនុយ" },
 };
 
+const settingsTranslations = {
+  "en": {
+    "mowCount": "Mowing passes",
+    "visualObstacle": "Visual obstacle detection",
+    "visualObstacleLevel": "Obstacle sensitivity",
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High"
+  },
+  "hu": {
+    "mowCount": "Nyírások száma",
+    "visualObstacle": "Vizuális akadályérzékelés",
+    "visualObstacleLevel": "Akadályérzékelés szintje",
+    "low": "Alacsony",
+    "medium": "Közepes",
+    "high": "Magas"
+  },
+  "de": {
+    "mowCount": "Mähdurchgänge",
+    "visualObstacle": "Visuelle Hinderniserkennung",
+    "visualObstacleLevel": "Hindernisempfindlichkeit",
+    "low": "Niedrig",
+    "medium": "Mittel",
+    "high": "Hoch"
+  },
+  "fr": {
+    "mowCount": "Passages de tonte",
+    "visualObstacle": "Détection visuelle des obstacles",
+    "visualObstacleLevel": "Sensibilité aux obstacles",
+    "low": "Faible",
+    "medium": "Moyenne",
+    "high": "Élevée"
+  },
+  "es": {
+    "mowCount": "Pasadas de corte",
+    "visualObstacle": "Detección visual de obstáculos",
+    "visualObstacleLevel": "Sensibilidad a obstáculos",
+    "low": "Baja",
+    "medium": "Media",
+    "high": "Alta"
+  },
+  "it": {
+    "mowCount": "Passaggi di taglio",
+    "visualObstacle": "Rilevamento visivo ostacoli",
+    "visualObstacleLevel": "Sensibilità agli ostacoli",
+    "low": "Bassa",
+    "medium": "Media",
+    "high": "Alta"
+  },
+  "pt": {
+    "mowCount": "Passagens de corte",
+    "visualObstacle": "Deteção visual de obstáculos",
+    "visualObstacleLevel": "Sensibilidade a obstáculos",
+    "low": "Baixa",
+    "medium": "Média",
+    "high": "Alta"
+  },
+  "nl": {
+    "mowCount": "Maaibeurten",
+    "visualObstacle": "Visuele obstakeldetectie",
+    "visualObstacleLevel": "Obstakelgevoeligheid",
+    "low": "Laag",
+    "medium": "Gemiddeld",
+    "high": "Hoog"
+  },
+  "pl": {
+    "mowCount": "Liczba przejazdów",
+    "visualObstacle": "Wizualne wykrywanie przeszkód",
+    "visualObstacleLevel": "Czułość na przeszkody",
+    "low": "Niska",
+    "medium": "Średnia",
+    "high": "Wysoka"
+  },
+  "cs": {
+    "mowCount": "Počet přejezdů",
+    "visualObstacle": "Vizuální detekce překážek",
+    "visualObstacleLevel": "Citlivost na překážky",
+    "low": "Nízká",
+    "medium": "Střední",
+    "high": "Vysoká"
+  },
+  "sk": {
+    "mowCount": "Počet prejazdov",
+    "visualObstacle": "Vizuálna detekcia prekážok",
+    "visualObstacleLevel": "Citlivosť na prekážky",
+    "low": "Nízka",
+    "medium": "Stredná",
+    "high": "Vysoká"
+  },
+  "ro": {
+    "mowCount": "Treceri de tundere",
+    "visualObstacle": "Detectare vizuală a obstacolelor",
+    "visualObstacleLevel": "Sensibilitate la obstacole",
+    "low": "Scăzută",
+    "medium": "Medie",
+    "high": "Ridicată"
+  },
+  "da": {
+    "mowCount": "Klipninger",
+    "visualObstacle": "Visuel forhindringsregistrering",
+    "visualObstacleLevel": "Følsomhed for forhindringer",
+    "low": "Lav",
+    "medium": "Mellem",
+    "high": "Høj"
+  },
+  "sv": {
+    "mowCount": "Klippass",
+    "visualObstacle": "Visuell hinderdetektering",
+    "visualObstacleLevel": "Hinderkänslighet",
+    "low": "Låg",
+    "medium": "Medel",
+    "high": "Hög"
+  },
+  "no": {
+    "mowCount": "Klippepasseringer",
+    "visualObstacle": "Visuell hinderdeteksjon",
+    "visualObstacleLevel": "Hinderfølsomhet",
+    "low": "Lav",
+    "medium": "Middels",
+    "high": "Høy"
+  },
+  "fi": {
+    "mowCount": "Leikkuukerrat",
+    "visualObstacle": "Visuaalinen esteentunnistus",
+    "visualObstacleLevel": "Esteherkkyys",
+    "low": "Matala",
+    "medium": "Keskitaso",
+    "high": "Korkea"
+  },
+  "zh-CN": {
+    "mowCount": "割草遍数",
+    "visualObstacle": "视觉障碍物检测",
+    "visualObstacleLevel": "障碍物检测灵敏度",
+    "low": "低",
+    "medium": "中",
+    "high": "高"
+  },
+  "zh-TW": {
+    "mowCount": "割草遍數",
+    "visualObstacle": "視覺障礙物偵測",
+    "visualObstacleLevel": "障礙物偵測靈敏度",
+    "low": "低",
+    "medium": "中",
+    "high": "高"
+  },
+  "tr": {
+    "mowCount": "Biçme geçişleri",
+    "visualObstacle": "Görsel engel algılama",
+    "visualObstacleLevel": "Engel hassasiyeti",
+    "low": "Düşük",
+    "medium": "Orta",
+    "high": "Yüksek"
+  },
+  "th": {
+    "mowCount": "จำนวนรอบการตัด",
+    "visualObstacle": "การตรวจจับสิ่งกีดขวางด้วยภาพ",
+    "visualObstacleLevel": "ความไวต่อสิ่งกีดขวาง",
+    "low": "ต่ำ",
+    "medium": "ปานกลาง",
+    "high": "สูง"
+  },
+  "vi": {
+    "mowCount": "Số lượt cắt",
+    "visualObstacle": "Phát hiện chướng ngại vật bằng hình ảnh",
+    "visualObstacleLevel": "Độ nhạy chướng ngại vật",
+    "low": "Thấp",
+    "medium": "Trung bình",
+    "high": "Cao"
+  },
+  "ko": {
+    "mowCount": "잔디 깎기 횟수",
+    "visualObstacle": "시각 장애물 감지",
+    "visualObstacleLevel": "장애물 감도",
+    "low": "낮음",
+    "medium": "중간",
+    "high": "높음"
+  },
+  "km": {
+    "mowCount": "ចំនួនជុំកាត់ស្មៅ",
+    "visualObstacle": "ការរកឃើញឧបសគ្គដោយរូបភាព",
+    "visualObstacleLevel": "កម្រិតភាពរសើបឧបសគ្គ",
+    "low": "ទាប",
+    "medium": "មធ្យម",
+    "high": "ខ្ពស់"
+  }
+};
+
 export function normalizeLanguage(value) {
   const raw = String(value || "en").replace("_", "-");
   const lower = raw.toLowerCase();
@@ -247,5 +434,5 @@ export function resolveLanguage(selection, hass) {
 }
 
 export function translate(language, key) {
-  return translations[language]?.[key] ?? feedbackTranslations[language]?.[key] ?? commandStageTranslations[language]?.[key] ?? commandTranslations[language]?.[key] ?? menuTranslations[language]?.[key] ?? en[key] ?? feedbackTranslations.en[key] ?? commandStageTranslations.en[key] ?? commandTranslations.en[key] ?? menuTranslations.en[key] ?? key;
+  return translations[language]?.[key] ?? settingsTranslations[language]?.[key] ?? feedbackTranslations[language]?.[key] ?? commandStageTranslations[language]?.[key] ?? commandTranslations[language]?.[key] ?? menuTranslations[language]?.[key] ?? en[key] ?? settingsTranslations.en[key] ?? feedbackTranslations.en[key] ?? commandStageTranslations.en[key] ?? commandTranslations.en[key] ?? menuTranslations.en[key] ?? key;
 }
