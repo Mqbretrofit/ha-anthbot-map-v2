@@ -1,5 +1,5 @@
 import { AnthbotMapRenderer } from "./renderer.js?v=140";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=22106";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=22107";
 import {
   adjustCalibration,
   cardToYaml,
@@ -447,6 +447,17 @@ class AnthbotMapCard extends HTMLElement {
 
   updateRenderer() {
     if (!this.renderer || !this.entity) {
+      return;
+    }
+
+    // Keep the complete visual tree stable while the user edits zone
+    // settings. Map, zone-button and status refreshes share the same
+    // scrollable glass panel and can otherwise trigger browser scroll
+    // anchoring even when the settings DOM itself is not rebuilt.
+    if (
+      this.activePanel === "settings"
+      && this.shadowRoot?.querySelector('[data-role="panel-body"]')?.childElementCount
+    ) {
       return;
     }
 
