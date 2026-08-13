@@ -1,5 +1,5 @@
 import { AnthbotMapRenderer } from "./renderer.js?v=140";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=22105";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=22106";
 import {
   adjustCalibration,
   cardToYaml,
@@ -515,7 +515,10 @@ class AnthbotMapCard extends HTMLElement {
     this.updateMapBadges(attributes);
     this.updateBatteryAndStatus();
     this.renderZoneControls(attributes.area_definition);
-    if (!this.isPanelControlActive()) {
+    // Do not rebuild the settings DOM on every cloud refresh. Replacing
+    // an open <details> tree resets the panel scroll position and makes the
+    // zone the user just opened jump back to the top.
+    if (this.activePanel !== "settings" && !this.isPanelControlActive()) {
       this.renderAppPanel();
     }
     this.updateYaml();
