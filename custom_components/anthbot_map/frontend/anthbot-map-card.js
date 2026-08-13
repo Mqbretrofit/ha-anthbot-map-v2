@@ -662,6 +662,110 @@ class AnthbotMapCard extends HTMLElement {
       this.createSwitchControl(this.t("customCutDirection"), "customDirection"),
     );
     body.appendChild(grid);
+    this.renderZoneSettings(body);
+  }
+
+  renderZoneSettings(body) {
+    const area = this.entity?.attributes?.area_definition || {};
+    const groups = [
+      ["manual", this.currentZones(area)],
+      ["auto", this.currentAutoZones(area)],
+    ];
+    for (const [kind, zones] of groups) {
+      for (const zone of zones) {
+        const title = document.createElement("h3");
+        const zoneName = zone.name || zone.id;
+        title.textContent = `${kind === "auto" ? this.t("autoZone") : this.t("zone")} ${zoneName}`;
+        title.style.cssText = "margin:18px 4px 8px;color:inherit;font-size:18px";
+        const grid = this.createPanelGrid();
+        grid.append(
+          this.createDirectNumberControl(this.t("mowCount"), this.findZoneSettingEntity("number", kind, zone, "Mowing passes"), 1, 3, 1, "×"),
+          this.createDirectNumberControl(this.t("cutHeight"), this.findZoneSettingEntity("number", kind, zone, "Cutting height"), 30, 70, 5, "mm"),
+          this.createDirectSwitchControl(this.t("visualObstacle"), this.findZoneSettingEntity("switch", kind, zone, "Visual obstacle detection")),
+          this.createDirectObstacleLevelControl(this.findZoneSettingEntity("number", kind, zone, "Obstacle sensitivity")),
+          this.createDirectSwitchControl(this.t("customCutDirection"), this.findZoneSettingEntity("switch", kind, zone, "Custom mowing direction")),
+          this.createDirectNumberControl(this.t("customDirection"), this.findZoneSettingEntity("number", kind, zone, "Mowing direction"), 0, 180, 1, "deg"),
+        );
+        body.append(title, grid);
+      }
+    }
+  }
+
+  currentAutoZones(areaDefinition = this.entity?.attributes?.area_definition || {}) {
+    for (const key of ["region_areas", "regionAreas", "auto_regions", "auto_zones"]) {
+      if (Array.isArray(areaDefinition?.[key])) return areaDefinition[key];
+    }
+    return [];
+  }
+
+  findZoneSettingEntity(domain, kind, zone, settingLabel) {
+    const kindLabel = kind === "auto" ? "auto zone" : "zone";
+    const zoneLabel = String(zone.name || zone.id).toLowerCase();
+    const setting = settingLabel.toLowerCase();
+    for (const [entityId, state] of Object.entries(this._hass.states || {})) {
+      if (!entityId.startsWith(`${domain}.`) || state.state === "unavailable") continue;
+      const name = String(state.attributes?.friendly_name || "").toLowerCase();
+      if (name.includes(kindLabel) && name.includes(zoneLabel) && name.includes(setting)) return entityId;
+    }
+    return null;
+  }
+
+  createDirectNumberControl(label, entityId, min, max, step, unit) {
+    const value = Number(entityId ? this._hass.states[entityId]?.state : NaN);
+    const tile = document.createElement("div");
+    tile.className = "panel-tile control-tile";
+    tile.innerHTML = `
+      <div class="control-head"><span>${label}</span><strong>${Number.isFinite(value) ? value : "-"} ${unit}</strong></div>
+      <input type="range" min="${min}" max="${max}" step="${step}" value="${Number.isFinite(value) ? value : min}" ${entityId ? "" : "disabled"}>
+    `;
+    const input = tile.querySelector("input");
+    input.addEventListener("input", () => {
+      tile.querySelector("strong").textContent = `${input.value} ${unit}`;
+    });
+    input.addEventListener("change", async () => {
+      await this._hass.callService("number", "set_value", {entity_id: entityId, value: Number(input.value)});
+      this.scheduleRefresh();
+    });
+    return tile;
+  }
+
+  createDirectSwitchControl(label, entityId) {
+    const checked = entityId && this._hass.states[entityId]?.state === "on";
+    const tile = document.createElement("label");
+    tile.className = "panel-tile switch-tile";
+    tile.innerHTML = `<span>${label}</span><input type="checkbox" ${checked ? "checked" : ""} ${entityId ? "" : "disabled"}>`;
+    const input = tile.querySelector("input");
+    input.addEventListener("change", async () => {
+      await this._hass.callService("switch", input.checked ? "turn_on" : "turn_off", {entity_id: entityId});
+      this.scheduleRefresh();
+    });
+    return tile;
+  }
+
+  createDirectObstacleLevelControl(entityId) {
+    const value = Number(entityId ? this._hass.states[entityId]?.state : 1);
+    const selected = Number.isFinite(value) ? Math.max(0, Math.min(2, Math.round(value))) : 1;
+    const labels = [this.t("low"), this.t("medium"), this.t("high")];
+    const tile = document.createElement("div");
+    tile.className = "panel-tile control-tile";
+    tile.innerHTML = `<div class="control-head"><span>${this.t("visualObstacleLevel")}</span><strong>${labels[selected]}</strong></div><div class="height-options"></div>`;
+    const options = tile.querySelector(".height-options");
+    labels.forEach((label, level) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "height-option";
+      button.textContent = label;
+      button.disabled = !entityId;
+      button.classList.toggle("active", level === selected);
+      button.addEventListener("click", async () => {
+        options.querySelectorAll(".height-option").forEach((item) => item.classList.toggle("active", item === button));
+        tile.querySelector("strong").textContent = label;
+        await this._hass.callService("number", "set_value", {entity_id: entityId, value: level});
+        this.scheduleRefresh();
+      });
+      options.appendChild(button);
+    });
+    return tile;
   }
 
   renderInterfacePanel(body) {
