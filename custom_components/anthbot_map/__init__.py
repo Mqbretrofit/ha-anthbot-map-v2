@@ -373,7 +373,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         for coordinator in targets:
             await coordinator.client.async_publish_service_command(
                 cmd="param_set",
-                data={"cutter_height": mow_height, "rid_switch": 0},
+                data={"cutter_height": mow_height},
             )
             await _async_sync_after_command(coordinator)
 
