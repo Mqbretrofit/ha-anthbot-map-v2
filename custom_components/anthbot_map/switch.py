@@ -258,7 +258,8 @@ class AnthbotZoneSwitchEntity(
         )
         zone = self._find_zone()
         zone_name = zone.get("name") if isinstance(zone, dict) else None
-        prefix = str(zone_name or f"{'Auto ' if zone_kind == 'auto' else ''}Zone {zone_id}")
+        kind_label = "Auto zone" if zone_kind == "auto" else "Zone"
+        prefix = f"{kind_label} {zone_name or zone_id}"
         label = (
             "Visual obstacle detection"
             if setting == "visual_obstacle"
