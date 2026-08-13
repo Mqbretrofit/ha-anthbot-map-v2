@@ -83,6 +83,9 @@
       "resume_mow": {
         "name": "Resume paused task"
       },
+      "pause_mow": {
+        "name": "Pause mowing task"
+      },
       "reset_blade_maintenance": {
         "name": "Reset blade maintenance"
       },
