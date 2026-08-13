@@ -183,8 +183,11 @@ class AnthbotZoneButtonEntity(
         zone_name = zone.get("name")
         if not isinstance(zone_name, str) or not zone_name.strip():
             zone_name = str(zone_id)
-        prefix = "Zone" if zone_kind == "manual" else "Auto zone"
-        self._attr_name = f"{prefix} {zone_name}"
+        # Manual zones already have a user-facing name (for example "Back" or
+        # "Zóna 1"), so do not prepend another "Zone" label. Keep automatically
+        # detected areas distinguishable without mixing the UI language into the
+        # user's zone name.
+        self._attr_name = zone_name if zone_kind == "manual" else f"Auto: {zone_name}"
         self._attr_unique_id = (
             f"{coordinator.client.serial_number}_{zone_kind}_zone_{zone_id}"
         )
