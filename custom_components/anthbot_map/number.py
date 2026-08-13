@@ -304,7 +304,8 @@ class AnthbotZoneNumberEntity(
         )
         zone = self._find_zone()
         zone_name = zone.get("name") if isinstance(zone, dict) else None
-        prefix = str(zone_name or f"{'Auto ' if zone_kind == 'auto' else ''}Zone {zone_id}")
+        kind_label = "Auto zone" if zone_kind == "auto" else "Zone"
+        prefix = f"{kind_label} {zone_name or zone_id}"
         self._attr_name = f"{prefix} {label}"
         self._attr_native_min_value = minimum
         self._attr_native_max_value = maximum
