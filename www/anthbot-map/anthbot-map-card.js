@@ -1,5 +1,5 @@
 import { AnthbotMapRenderer } from "./renderer.js?v=140";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=22109";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=22110";
 import {
   adjustCalibration,
   cardToYaml,
@@ -217,6 +217,9 @@ class AnthbotMapCard extends HTMLElement {
           .zone-settings { margin:8px 0; background:rgba(7,15,23,.28); }
           .obstacle-combined .obstacle-levels { margin-top:12px; }
           .obstacle-combined.disabled .obstacle-levels { display:none; }
+          .maintenance-tile { display:flex; flex-direction:column; align-items:stretch; gap:10px; }
+          .maintenance-value { font-size:22px; font-weight:900; color:#55e58a; }
+          .maintenance-reset { min-height:42px; border:1px solid rgba(255,255,255,.18); border-radius:12px; background:rgba(255,255,255,.10); color:#fff; font:inherit; font-weight:800; cursor:pointer; }
           @media (max-width:720px) { .anthbot-glass-panel { left:8px; right:8px; bottom:66px; width:auto; max-height:72%; } .anthbot-menu-toggle { right:10px; bottom:10px; } }
         </style>
         <section class="app-shell">
@@ -705,11 +708,40 @@ class AnthbotMapCard extends HTMLElement {
     body.innerHTML = "";
     const maintenanceGrid = this.createPanelGrid();
     maintenanceGrid.append(
-      this.createCommandTile(this.t("resetBlade"), this.t("resetCounterWarning"), "reset-blade"),
-      this.createCommandTile(this.t("resetCamera"), this.t("resetCounterWarning"), "reset-camera"),
-      this.createCommandTile(this.t("resetDockContact"), this.t("resetCounterWarning"), "reset-contact"),
+      this.createMaintenanceTile(this.t("bladeMaintenance"), "blade", this.t("resetBlade"), "reset-blade"),
+      this.createMaintenanceTile(this.t("cameraMaintenance"), "camera", this.t("resetCamera"), "reset-camera"),
+      this.createMaintenanceTile(this.t("dockContactMaintenance"), "contact", this.t("resetDockContact"), "reset-contact"),
     );
     body.appendChild(maintenanceGrid);
+  }
+
+  maintenanceValue(kind) {
+    const raw = this.entity?.attributes?.maintenance || {};
+    const aliases = {
+      blade: ["rc_pecent", "rc_percent", "blade", "cutting_components_life"],
+      camera: ["cl_pecent", "cl_percent", "camera", "camera_life"],
+      contact: ["ccp_pecent", "ccp_percent", "charging_contact", "recharge_contact_life"],
+    }[kind] || [];
+    const value = aliases.map((key) => raw?.[key]).find((item) => item !== undefined && item !== null && item !== "");
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return this.t("maintenanceUnavailable");
+    const percent = Math.max(0, Math.min(100, numeric));
+    const maximumHours = kind === "camera" ? 480 : kind === "contact" ? 720 : null;
+    const hours = maximumHours === null ? "" : ` · ${Math.floor(percent * maximumHours / 100)} h`;
+    return `${Math.round(percent)}%${hours}`;
+  }
+
+  createMaintenanceTile(title, kind, resetLabel, command) {
+    const tile = document.createElement("div");
+    tile.className = "panel-tile maintenance-tile";
+    tile.innerHTML = `<strong>${title}</strong><span>${this.t("remainingLife")}</span><span class="maintenance-value">${this.maintenanceValue(kind)}</span>`;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `maintenance-reset ${command}`;
+    button.textContent = resetLabel;
+    button.addEventListener("click", () => this.handleCommand(command));
+    tile.appendChild(button);
+    return tile;
   }
 
   settingsStorageKey() {
