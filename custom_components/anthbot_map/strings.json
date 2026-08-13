@@ -93,6 +93,12 @@
       },
       "rain_continue_time_setting": {
         "name": "Rain continue time"
+      },
+      "mow_count_setting": {
+        "name": "Mowing passes"
+      },
+      "visual_obstacle_level_setting": {
+        "name": "Visual obstacle sensitivity"
       }
     },
     "switch": {
@@ -101,6 +107,9 @@
       },
       "rain_perception_enabled": {
         "name": "Rain perception"
+      },
+      "visual_obstacle_detection_enabled": {
+        "name": "Visual obstacle detection"
       }
     }
   }
