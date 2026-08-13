@@ -442,6 +442,35 @@ const settingsTranslations = {
   }
 };
 
+const beta5SettingsTranslations = {
+  "en": { globalSettings:"Global settings", manualZones:"Manual zones", autoZones:"Automatic zones", edgeCutting:"Edge cutting" },
+  "hu": { globalSettings:"Globális beállítások", manualZones:"Kézi zónák", autoZones:"Automatikus zónák", edgeCutting:"Szegélyvágás" },
+  "de": { globalSettings:"Globale Einstellungen", manualZones:"Manuelle Zonen", autoZones:"Automatische Zonen", edgeCutting:"Kantenschnitt" },
+  "fr": { globalSettings:"Paramètres globaux", manualZones:"Zones manuelles", autoZones:"Zones automatiques", edgeCutting:"Coupe des bordures" },
+  "es": { globalSettings:"Ajustes globales", manualZones:"Zonas manuales", autoZones:"Zonas automáticas", edgeCutting:"Corte de bordes" },
+  "it": { globalSettings:"Impostazioni globali", manualZones:"Zone manuali", autoZones:"Zone automatiche", edgeCutting:"Taglio bordi" },
+  "pt": { globalSettings:"Definições globais", manualZones:"Zonas manuais", autoZones:"Zonas automáticas", edgeCutting:"Corte de bordas" },
+  "nl": { globalSettings:"Algemene instellingen", manualZones:"Handmatige zones", autoZones:"Automatische zones", edgeCutting:"Rand maaien" },
+  "pl": { globalSettings:"Ustawienia globalne", manualZones:"Strefy ręczne", autoZones:"Strefy automatyczne", edgeCutting:"Koszenie krawędzi" },
+  "cs": { globalSettings:"Globální nastavení", manualZones:"Ruční zóny", autoZones:"Automatické zóny", edgeCutting:"Sečení okrajů" },
+  "sk": { globalSettings:"Globálne nastavenia", manualZones:"Ručné zóny", autoZones:"Automatické zóny", edgeCutting:"Kosenie okrajov" },
+  "ro": { globalSettings:"Setări globale", manualZones:"Zone manuale", autoZones:"Zone automate", edgeCutting:"Tunderea marginilor" },
+  "da": { globalSettings:"Globale indstillinger", manualZones:"Manuelle zoner", autoZones:"Automatiske zoner", edgeCutting:"Kantklipning" },
+  "sv": { globalSettings:"Globala inställningar", manualZones:"Manuella zoner", autoZones:"Automatiska zoner", edgeCutting:"Kantklippning" },
+  "no": { globalSettings:"Globale innstillinger", manualZones:"Manuelle soner", autoZones:"Automatiske soner", edgeCutting:"Kantklipping" },
+  "fi": { globalSettings:"Yleiset asetukset", manualZones:"Manuaaliset alueet", autoZones:"Automaattiset alueet", edgeCutting:"Reunaleikkuu" },
+  "zh-CN": { globalSettings:"全局设置", manualZones:"手动区域", autoZones:"自动区域", edgeCutting:"边缘修剪" },
+  "zh-TW": { globalSettings:"全域設定", manualZones:"手動區域", autoZones:"自動區域", edgeCutting:"邊緣修剪" },
+  "tr": { globalSettings:"Genel ayarlar", manualZones:"Manuel bölgeler", autoZones:"Otomatik bölgeler", edgeCutting:"Kenar biçme" },
+  "th": { globalSettings:"การตั้งค่าทั่วไป", manualZones:"โซนแบบกำหนดเอง", autoZones:"โซนอัตโนมัติ", edgeCutting:"การตัดขอบ" },
+  "vi": { globalSettings:"Cài đặt chung", manualZones:"Vùng thủ công", autoZones:"Vùng tự động", edgeCutting:"Cắt mép" },
+  "ko": { globalSettings:"전체 설정", manualZones:"수동 구역", autoZones:"자동 구역", edgeCutting:"가장자리 깎기" },
+  "km": { globalSettings:"ការកំណត់ទូទៅ", manualZones:"តំបន់ដោយដៃ", autoZones:"តំបន់ស្វ័យប្រវត្តិ", edgeCutting:"ការកាត់គែម" }
+};
+for (const [language, values] of Object.entries(beta5SettingsTranslations)) {
+  Object.assign(settingsTranslations[language] || (settingsTranslations[language] = {}), values);
+}
+
 export function normalizeLanguage(value) {
   const raw = String(value || "en").replace("_", "-");
   const lower = raw.toLowerCase();
