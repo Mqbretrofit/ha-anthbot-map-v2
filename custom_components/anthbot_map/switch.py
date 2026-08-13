@@ -56,6 +56,8 @@ SWITCHES: tuple[AnthbotSwitchDescription, ...] = (
         translation_key="rain_perception_enabled",
         name="Rain perception",
     ),
+    AnthbotSwitchDescription(key="edge_following_return_enabled", name="Edge-following return"),
+    AnthbotSwitchDescription(key="automatic_dock_mowing_enabled", name="Automatic dock-area mowing"),
 )
 
 
@@ -141,7 +143,19 @@ class AnthbotSwitchEntity(
         param_set = state.get("param_set")
         if not isinstance(param_set, dict):
             return False
+        if self.entity_description.key == "edge_following_return_enabled":
+            return _coerce_enabled_value(param_set.get("rid_switch"))
+        if self.entity_description.key == "automatic_dock_mowing_enabled":
+            return _coerce_enabled_value(param_set.get("nest_switch"))
         return _is_custom_direction_enabled(param_set.get("enable_adaptive_head"))
+
+    async def _async_set_param_toggle(self, field: str, enabled: bool) -> None:
+        await self.coordinator.client.async_publish_service_command(
+            cmd="param_set", data={field: 1 if enabled else 0}
+        )
+        await self.coordinator.client.async_request_all_properties()
+        await asyncio.sleep(1)
+        await self.coordinator.async_request_refresh()
 
     async def _async_set_custom_direction_enabled(self, enabled: bool) -> None:
         """Set custom mowing direction toggle."""
@@ -223,6 +237,12 @@ class AnthbotSwitchEntity(
         if self.entity_description.key == "visual_obstacle_detection_enabled":
             await self._async_set_visual_obstacle_detection_enabled(True)
             return
+        if self.entity_description.key == "edge_following_return_enabled":
+            await self._async_set_param_toggle("rid_switch", True)
+            return
+        if self.entity_description.key == "automatic_dock_mowing_enabled":
+            await self._async_set_param_toggle("nest_switch", True)
+            return
         await self._async_set_custom_direction_enabled(True)
 
     async def async_turn_off(self, **kwargs) -> None:
@@ -232,6 +252,12 @@ class AnthbotSwitchEntity(
             return
         if self.entity_description.key == "visual_obstacle_detection_enabled":
             await self._async_set_visual_obstacle_detection_enabled(False)
+            return
+        if self.entity_description.key == "edge_following_return_enabled":
+            await self._async_set_param_toggle("rid_switch", False)
+            return
+        if self.entity_description.key == "automatic_dock_mowing_enabled":
+            await self._async_set_param_toggle("nest_switch", False)
             return
         await self._async_set_custom_direction_enabled(False)
 
