@@ -34,6 +34,8 @@ const ENTITY_MAP = {
 
 const NUMBER_MAP = {
   mowHeight: ["mow_height", "mow_height_setting", "mow height"],
+  mowCount: ["mow_count", "mow_count_setting", "mowing passes"],
+  visualObstacleLevel: ["visual_obstacle_level", "visual_obstacle_level_setting", "visual obstacle sensitivity"],
   mowDirection: ["custom_mowing_direction", "custom_mowing_direction_setting", "custom mowing direction"],
   rainContinue: ["rain_continue_time", "rain_continue_time_setting", "rain continue time"],
   voiceVolume: ["voice_volume", "voice_volume_setting", "voice volume"],
@@ -41,6 +43,7 @@ const NUMBER_MAP = {
 
 const SWITCH_MAP = {
   rain: ["rain_perception", "rain_perception_enabled", "rain perception"],
+  visualObstacle: ["visual_obstacle_detection", "visual_obstacle_detection_enabled", "visual obstacle detection"],
   customDirection: ["custom_mowing_direction_enabled", "custom mowing direction"],
 };
 
@@ -649,6 +652,9 @@ class AnthbotMapCard extends HTMLElement {
     grid.append(
       this.createCommandTile(this.t("cloud"), this.t("cloudSub"), "connect"),
       this.createMowHeightControl(),
+      this.createNumberControl(this.t("mowCount"), "mowCount", 1, 3, 1, "×"),
+      this.createSwitchControl(this.t("visualObstacle"), "visualObstacle"),
+      this.createObstacleLevelControl(),
       this.createNumberControl(this.t("customDirection"), "mowDirection", 0, 180, 1, "deg"),
       this.createNumberControl(this.t("rainDelay"), "rainContinue", 0, 8, 1, "h"),
       this.createNumberControl(this.t("volume"), "voiceVolume", 0, 100, 1, "%"),
@@ -793,6 +799,41 @@ class AnthbotMapCard extends HTMLElement {
       });
       options.appendChild(button);
     }
+    return tile;
+  }
+
+  createObstacleLevelControl() {
+    const key = "visualObstacleLevel";
+    const entityId = this.getNumberEntity(key);
+    const entity = entityId ? this._hass.states[entityId] : null;
+    const value = this.displayedNumberValue(key, Number(entity?.state));
+    const selected = Number.isFinite(value) ? Math.max(0, Math.min(2, Math.round(value))) : 1;
+    const labels = [this.t("low"), this.t("medium"), this.t("high")];
+    const tile = document.createElement("div");
+    tile.className = "panel-tile control-tile";
+    tile.innerHTML = `
+      <div class="control-head">
+        <span>${this.t("visualObstacleLevel")}</span>
+        <strong>${labels[selected]}</strong>
+      </div>
+      <div class="height-options" role="group" aria-label="${this.t("visualObstacleLevel")}"></div>
+    `;
+    const options = tile.querySelector(".height-options");
+    labels.forEach((label, level) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "height-option";
+      button.textContent = label;
+      button.classList.toggle("active", level === selected);
+      button.disabled = !entityId;
+      button.addEventListener("click", () => {
+        options.querySelectorAll(".height-option").forEach((item) => item.classList.toggle("active", item === button));
+        tile.querySelector(".control-head strong").textContent = label;
+        this.applyOptimisticNumber(key, level, button);
+        this.setNumberEntity(key, entityId, level, button);
+      });
+      options.appendChild(button);
+    });
     return tile;
   }
 
@@ -1270,6 +1311,7 @@ class AnthbotMapCard extends HTMLElement {
       mowDirection: "deg",
       rainContinue: "h",
       voiceVolume: "%",
+      mowCount: "×",
     };
     if (valueLabel) {
       valueLabel.textContent = `${value} ${units[kind] || ""}`.trim();
