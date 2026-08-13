@@ -79,6 +79,18 @@
       },
       "return_to_dock": {
         "name": "Return to dock"
+      },
+      "resume_mow": {
+        "name": "Resume paused task"
+      },
+      "reset_blade_maintenance": {
+        "name": "Reset blade maintenance"
+      },
+      "reset_camera_maintenance": {
+        "name": "Reset camera maintenance"
+      },
+      "reset_dock_contact_maintenance": {
+        "name": "Reset charging contact maintenance"
       }
     },
     "number": {
@@ -110,6 +122,12 @@
       },
       "visual_obstacle_detection_enabled": {
         "name": "Visual obstacle detection"
+      },
+      "edge_following_return_enabled": {
+        "name": "Edge-following return"
+      },
+      "automatic_dock_mowing_enabled": {
+        "name": "Automatic dock-area mowing"
       }
     }
   }
