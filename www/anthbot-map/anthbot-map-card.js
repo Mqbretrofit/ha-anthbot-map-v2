@@ -663,8 +663,10 @@ class AnthbotMapCard extends HTMLElement {
       this.createCommandTile(this.t("cloud"), this.t("cloudSub"), "connect"),
       this.createMowHeightControl(),
       this.createNumberControl(this.t("mowCount"), "mowCount", 1, 3, 1, "×"),
-      this.createSwitchControl(this.t("visualObstacle"), "visualObstacle"),
-      this.createObstacleLevelControl(),
+      this.createDirectObstacleControl(
+        this.getSwitchEntity("visualObstacle"),
+        this.getNumberEntity("visualObstacleLevel"),
+      ),
       this.createNumberControl(this.t("customDirection"), "mowDirection", 0, 180, 1, "deg"),
       this.createNumberControl(this.t("rainDelay"), "rainContinue", 0, 8, 1, "h"),
       this.createNumberControl(this.t("volume"), "voiceVolume", 0, 100, 1, "%"),
