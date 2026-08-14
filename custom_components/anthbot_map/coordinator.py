@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import logging
 import time
@@ -19,6 +18,7 @@ from .api import (
     AnthbotGenieApiError,
     AnthbotShadowApiClient,
 )
+from .zones import ridable_areas
 from .const import DOMAIN
 from .definition_refresh import (
     MapArchiveSelection,
@@ -173,6 +173,7 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._last_area_download_monotonic = 0.0
         self._last_ridable_area_time: str | None = None
         self._last_ridable_area_download_monotonic = 0.0
+        self._ridable_area_refresh_lock = asyncio.Lock()
         self._last_map_time: str | None = None
         self._last_map_key: str | None = None
         self._last_map_download_monotonic = 0.0
@@ -221,16 +222,49 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             f"anthbot_save_last_task_{self.client.serial_number}",
         )
 
-    def apply_ridable_area_settings(self, edges: list[dict[str, Any]]) -> None:
-        """Expose a successfully submitted edge definition without cache lag."""
-        definition = {"ridable_areas": deepcopy(edges)}
-        self._ridable_area_definition = definition
-        self._ridable_area_definition_error = None
-        if self.reported_state:
-            state = dict(self.reported_state)
-            state["_ridable_area_definition"] = definition
-            state["_ridable_area_definition_error"] = None
-            self.async_set_updated_data(state)
+    async def async_confirm_ridable_area_settings(
+        self,
+        *,
+        previous_time: str | None,
+        edge_id: int,
+        cutter_height: int,
+        ride_distance: int,
+        timeout: float = 30.0,
+    ) -> None:
+        """Wait for the mower to publish and persist a new edge definition."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            await asyncio.sleep(2)
+            await self.client.async_request_all_properties()
+            await self.async_request_refresh()
+
+            current_time = self.reported_state.get("ridable_area_time")
+            if not isinstance(current_time, str) or not current_time:
+                continue
+            if previous_time and current_time == previous_time:
+                continue
+
+            for edge in ridable_areas(self.reported_state):
+                try:
+                    current_id = int(edge.get("id"))
+                except (TypeError, ValueError):
+                    continue
+                if current_id != edge_id:
+                    continue
+                if (
+                    int(edge.get("cutter_height", -1)) == cutter_height
+                    and int(edge.get("ride_distance", -1)) == ride_distance
+                ):
+                    return
+
+            raise AnthbotGenieApiError(
+                "The mower published a new edge definition, but it did not contain "
+                "the requested settings"
+            )
+
+        raise AnthbotGenieApiError(
+            "The mower did not confirm the edge-settings update within 30 seconds"
+        )
 
     async def async_clear_last_mowing_task(self) -> None:
         """Forget the resumable task after Stop deletes every mower task."""
@@ -366,6 +400,27 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # Publish live telemetry immediately. A rare map archive
                 # download must not delay the mower's position/status update.
                 self.async_set_updated_data(state)
+
+                live_ridable_area_time = property_update.get("ridable_area_time")
+                if (
+                    isinstance(live_ridable_area_time, str)
+                    and live_ridable_area_time
+                    and live_ridable_area_time != self._last_ridable_area_time
+                ):
+                    # Reload app-edited edge settings immediately instead of
+                    # waiting for the five-minute ancillary refresh interval.
+                    await self._async_refresh_ridable_area_definition(
+                        live_ridable_area_time,
+                        retries=3,
+                    )
+                    refreshed_state = dict(self.reported_state)
+                    refreshed_state["_ridable_area_definition"] = (
+                        self._ridable_area_definition
+                    )
+                    refreshed_state["_ridable_area_definition_error"] = (
+                        self._ridable_area_definition_error
+                    )
+                    self.async_set_updated_data(refreshed_state)
 
                 if selection is not None:
                     diagnostics, attempted = await self._async_refresh_map_definition(
@@ -507,6 +562,55 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return diagnostics, True
 
+    async def _async_refresh_ridable_area_definition(
+        self,
+        ridable_area_time: str | None,
+        *,
+        retries: int = 1,
+    ) -> bool:
+        """Reload the editable edge definition from the app's cloud file."""
+        async with self._ridable_area_refresh_lock:
+            if (
+                ridable_area_time is not None
+                and ridable_area_time == self._last_ridable_area_time
+                and self._ridable_area_definition
+            ):
+                return False
+
+            attempts = max(1, retries)
+            previous_content = definition_content(self._ridable_area_definition)
+            for attempt in range(attempts):
+                self._last_ridable_area_download_monotonic = time.monotonic()
+                try:
+                    refreshed_definition = (
+                        await self.account_client.async_get_device_ridable_area_definition(
+                            self.client.serial_number
+                        )
+                    )
+                    if (
+                        attempt + 1 < attempts
+                        and self._ridable_area_definition
+                        and definition_content(refreshed_definition) == previous_content
+                    ):
+                        # The timestamp can reach MQTT just before the new cloud
+                        # file becomes readable. Give its publication a moment.
+                        await asyncio.sleep(1)
+                        continue
+                    self._ridable_area_definition = refreshed_definition
+                    self._ridable_area_definition_error = None
+                    self._last_ridable_area_time = ridable_area_time
+                    return True
+                except AnthbotGenieApiError as err:
+                    self._ridable_area_definition_error = str(err)
+                    _LOGGER.debug(
+                        "Anthbot editable edge definition unavailable for %s: %s",
+                        self.client.serial_number,
+                        err,
+                    )
+                    if attempt + 1 < attempts:
+                        await asyncio.sleep(1)
+            return True
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Refresh ancillary REST data while shadow state remains MQTT-only."""
         try:
@@ -578,22 +682,7 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 or now - self._last_ridable_area_download_monotonic >= 300
             )
             if should_refresh_ridable_area:
-                self._last_ridable_area_download_monotonic = now
-                try:
-                    self._ridable_area_definition = (
-                        await self.account_client.async_get_device_ridable_area_definition(
-                            self.client.serial_number
-                        )
-                    )
-                    self._ridable_area_definition_error = None
-                    self._last_ridable_area_time = ridable_area_time
-                except AnthbotGenieApiError as err:
-                    self._ridable_area_definition_error = str(err)
-                    _LOGGER.debug(
-                        "Anthbot editable edge definition unavailable for %s: %s",
-                        self.client.serial_number,
-                        err,
-                    )
+                await self._async_refresh_ridable_area_definition(ridable_area_time)
 
             map_archive_diagnostics, _ = await self._async_refresh_map_definition(
                 property_state,

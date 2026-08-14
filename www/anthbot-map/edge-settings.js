@@ -27,11 +27,11 @@ const EDGE_I18N = {
 const tr=(card,key)=>EDGE_I18N[card.language||"en"]?.[key]||EDGE_I18N.en[key]||card.t?.(key)||key;
 const esc=(value)=>String(value??"").replace(/[&<>"']/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
-function validEdges(card){
+function editableEdges(card){
   const area=card.entity?.attributes?.area_definition||{};
   let edges=Array.isArray(card.entity?.attributes?.ridable_areas)?card.entity.attributes.ridable_areas:[];
   if(!edges.length)for(const key of ["ridable_areas","ridableAreas"])if(Array.isArray(area[key])){edges=area[key];break;}
-  return edges.filter((edge)=>Array.isArray(edge?.vertexs)&&edge.vertexs.length>=2);
+  return edges.filter((edge)=>edge&&Number.isFinite(Number(edge.id)));
 }
 
 function choices(values,selected,onSelect){
@@ -77,8 +77,8 @@ function openModal(card,edge){
 }
 
 export function renderAnthbotEdgeSettings(card,body){
-  const edges=validEdges(card);if(!edges.length)return;
+  const edges=editableEdges(card);if(!edges.length)return;
   ensureStyle(card);const section=card.createSettingsSection(tr(card,"edgeSettings"),"edges");const grid=card.createPanelGrid();
-  edges.forEach((edge,index)=>{const tile=document.createElement("button");tile.type="button";tile.className="panel-tile anthbot-edge-tile";tile.innerHTML=`<strong>${esc(edge.name||`${tr(card,"edge")} ${index+1}`)}</strong><span>${esc(tr(card,"edgeSettingsHint"))}</span>`;tile.addEventListener("click",()=>openModal(card,edge));grid.appendChild(tile);});
+  edges.forEach((edge,index)=>{const tile=document.createElement("button");tile.type="button";tile.className="panel-tile anthbot-edge-tile";const edgeName=edges.length===1?tr(card,"edge"):(edge.name||`${tr(card,"edge")} ${index+1}`);tile.innerHTML=`<strong>${esc(edgeName)}</strong><span>${esc(tr(card,"edgeSettingsHint"))}</span>`;tile.addEventListener("click",()=>openModal(card,edge));grid.appendChild(tile);});
   section.querySelector(".settings-section-body").appendChild(grid);body.appendChild(section);
 }

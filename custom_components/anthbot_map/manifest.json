@@ -6,11 +6,12 @@
   ],
   "config_flow": true,
   "dependencies": [
-    "http"
+    "http",
+    "lovelace"
   ],
   "documentation": "https://github.com/Mqbretrofit/ha-anthbot-map-v2",
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/Mqbretrofit/ha-anthbot-map-v2/issues",
   "requirements": [],
-  "version": "2.1.1"
+  "version": "2.2.0"
 }

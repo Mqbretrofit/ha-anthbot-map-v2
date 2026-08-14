@@ -11,6 +11,10 @@ import shutil
 import voluptuous as vol
 
 from homeassistant.components.http import StaticPathConfig
+from homeassistant.components.lovelace.const import (
+    LOVELACE_DATA,
+    MODE_STORAGE,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
@@ -77,6 +81,8 @@ PLATFORMS = [
 ]
 _LOGGER = logging.getLogger(__name__)
 VALID_MOW_HEIGHTS = list(range(30, 75, 5))
+FRONTEND_RESOURCE_PATH = "/anthbot-map-v2/anthbot-map-card.js"
+FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.2.0"
 LEGACY_ENTITY_SUFFIXES: tuple[str, ...] = (
     "enable_custom_mowing_direction",
     "custom_mowing_direction_enable",
@@ -723,6 +729,55 @@ def _sync_standalone_frontend(source: Path, destination: Path) -> None:
     shutil.copytree(source, destination, dirs_exist_ok=True)
 
 
+async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
+    """Register the bundled card once in Lovelace storage mode."""
+    lovelace = hass.data.get(LOVELACE_DATA)
+    if lovelace is None or getattr(lovelace, "resource_mode", None) != MODE_STORAGE:
+        _LOGGER.info(
+            "Anthbot Map card resource was not created because Lovelace resources "
+            "are not stored in UI storage mode"
+        )
+        return
+
+    resources = getattr(lovelace, "resources", None)
+    if resources is None:
+        _LOGGER.warning("Lovelace resource storage is unavailable")
+        return
+
+    # async_get_info() ensures the storage collection is loaded before items
+    # are inspected or created. This preserves every existing dashboard resource.
+    await resources.async_get_info()
+    matching = [
+        item
+        for item in resources.async_items()
+        if str(item.get("url", "")).split("?", 1)[0]
+        in {
+            FRONTEND_RESOURCE_PATH,
+            f"/local{FRONTEND_RESOURCE_PATH}",
+        }
+    ]
+    if matching:
+        current = matching[0]
+        if (
+            current.get("url") != FRONTEND_RESOURCE_URL
+            or current.get("type") != "module"
+        ):
+            await resources.async_update_item(
+                current["id"],
+                {"res_type": "module", "url": FRONTEND_RESOURCE_URL},
+            )
+        if len(matching) > 1:
+            _LOGGER.warning(
+                "Multiple Anthbot Map Lovelace resources already exist; keeping "
+                "them unchanged except for the first entry"
+            )
+        return
+
+    await resources.async_create_item(
+        {"res_type": "module", "url": FRONTEND_RESOURCE_URL}
+    )
+
+
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the Anthbot Genie integration."""
     frontend_path = Path(__file__).parent / "frontend"
@@ -733,6 +788,10 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     await hass.http.async_register_static_paths(
         [StaticPathConfig("/anthbot-map-v2", str(frontend_path), False)]
     )
+    try:
+        await _async_register_lovelace_resource(hass)
+    except Exception:  # noqa: BLE001 - frontend failure must not block the mower
+        _LOGGER.exception("Unable to register the Anthbot Map Lovelace resource")
     return True
 
 

@@ -32,12 +32,11 @@ testing and quick rollback.
    restart Home Assistant. Do not enable both at once.
 
 > [!IMPORTANT]
-> **Version 2.0.0 highlight:** the integration keeps a persistent AWS IoT
+> **Version 2.2.0 highlight:** the integration keeps a persistent AWS IoT
 > MQTT-over-WebSocket connection for substantially faster live mower updates.
-> Commands prefer that live channel and use the signed AWS IoT HTTP publish
-> endpoint as a fallback. Rapid shadow messages are coalesced before they reach
-> Home Assistant, while periodic HTTP reconciliation remains active as a safety
-> net.
+> Commands use the app-compatible live service-shadow channel and wait for the
+> mower's confirmation. Rapid shadow messages are coalesced before they reach
+> Home Assistant, while persistent reconnect remains active.
 
 The project combines cloud telemetry and mower control with a custom Lovelace
 card that can place the live Anthbot map, zones, mowing trail, charger, and
@@ -50,7 +49,7 @@ robot on a top-down photograph of the garden.
 
 - Anthbot cloud login from the Home Assistant UI
 - support for multiple mowers on one account
-- persistent AWS IoT/MQTT live-shadow updates with automatic HTTP fallback
+- persistent app-compatible AWS IoT/MQTT live-shadow updates and reconnect
 - native Home Assistant `lawn_mower` entity with start, stop/pause, and dock controls
 - battery, mower status, charging, RTK, network, firmware, maintenance, map,
   zone, error, and diagnostic entities
@@ -115,7 +114,8 @@ automatically. On first load the integration also mirrors the frontend into
 v2 config entry is disabled and a legacy Anthbot integration is enabled for
 testing.
 
-Add the Lovelace JavaScript resource:
+In Lovelace storage mode the integration automatically creates or updates this
+JavaScript resource:
 
 ```text
 /anthbot-map-v2/anthbot-map-card.js
@@ -123,7 +123,8 @@ Add the Lovelace JavaScript resource:
 
 Resource type: **JavaScript module**. This is a one-time setup.
 
-The resource editor is normally available under **Settings → Dashboards →
+In YAML resource mode it must still be added manually. The resource editor is
+normally available under **Settings → Dashboards →
 three-dot menu → Resources**. Restart Home Assistant and hard-refresh the
 browser after changing the files (`Ctrl+Shift+R`).
 

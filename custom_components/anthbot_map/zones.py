@@ -184,13 +184,17 @@ async def async_update_edge_settings(
     if not matched:
         raise AnthbotGenieApiError(f"Edge {edge_id} was not found")
 
+    previous_time = coordinator.reported_state.get("ridable_area_time")
+    if not isinstance(previous_time, str):
+        previous_time = None
+
     await coordinator.client.async_publish_service_command(
         cmd="ridable_area_set",
         data={"ridable_areas": edges, "delete_ridable_area": []},
     )
-    apply_settings = getattr(coordinator, "apply_ridable_area_settings", None)
-    if callable(apply_settings):
-        apply_settings(edges)
-    await asyncio.sleep(2)
-    await coordinator.client.async_request_all_properties()
-    await coordinator.async_request_refresh()
+    await coordinator.async_confirm_ridable_area_settings(
+        previous_time=previous_time,
+        edge_id=edge_id,
+        cutter_height=cutter_height,
+        ride_distance=ride_distance,
+    )

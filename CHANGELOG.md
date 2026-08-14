@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.2.0 — 2026-08-14
+
+Stable release containing every Anthbot Map improvement since `2.0.0`, plus
+real-time app-compatible edge-definition synchronization, mower-confirmed edge
+setting saves, support for valid edge records without geometry, and automatic
+Lovelace resource registration in storage mode.
+
+See `RELEASE_NOTES_v2.2.0.md` for the complete English change list and
+`CHANGELOG_v2.2.0_HU.md` for the complete Hungarian change list.
+
 ## 2.1.0 — 2026-08-14
 
 Stable release of the field-tested `2.2.1-beta.48` feature set. Compared with

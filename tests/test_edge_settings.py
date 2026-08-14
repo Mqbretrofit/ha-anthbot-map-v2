@@ -6,7 +6,7 @@ import sys
 from types import SimpleNamespace
 import types
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -73,20 +73,15 @@ class TestEdgeSettings(unittest.IsolatedAsyncioTestCase):
                 }
             },
             client=client,
-            apply_ridable_area_settings=unittest.mock.Mock(),
-            async_request_refresh=AsyncMock(),
+            async_confirm_ridable_area_settings=AsyncMock(),
         )
 
-        with patch(
-            f"{PACKAGE}.zones.asyncio.sleep",
-            new=AsyncMock(),
-        ):
-            await async_update_edge_settings(
-                coordinator,
-                edge_id=7,
-                cutter_height=50,
-                ride_distance=10,
-            )
+        await async_update_edge_settings(
+            coordinator,
+            edge_id=7,
+            cutter_height=50,
+            ride_distance=10,
+        )
 
         client.async_publish_service_command.assert_awaited_once_with(
             cmd="ridable_area_set",
@@ -110,26 +105,12 @@ class TestEdgeSettings(unittest.IsolatedAsyncioTestCase):
                 "delete_ridable_area": [],
             },
         )
-        client.async_request_all_properties.assert_awaited_once_with()
-        coordinator.apply_ridable_area_settings.assert_called_once_with(
-            [
-                {
-                    "id": 7,
-                    "name": "North",
-                    "cutter_height": 50,
-                    "ride_distance": 10,
-                    "vertexs": [1, 2],
-                },
-                {
-                    "id": 8,
-                    "name": "South",
-                    "cutter_height": 60,
-                    "ride_distance": 20,
-                    "vertexs": [3, 4],
-                },
-            ]
+        coordinator.async_confirm_ridable_area_settings.assert_awaited_once_with(
+            previous_time=None,
+            edge_id=7,
+            cutter_height=50,
+            ride_distance=10,
         )
-        coordinator.async_request_refresh.assert_awaited_once_with()
 
     def test_frontend_prefers_fresh_separate_edge_definition(self) -> None:
         source = (

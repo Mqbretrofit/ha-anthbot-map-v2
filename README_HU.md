@@ -36,12 +36,12 @@ Anthbot-integráció mellett is telepítve maradhat.
    egyszerre.
 
 > [!IMPORTANT]
-> **A stabil 2.0.0 legfontosabb újdonsága:** az integráció tartós AWS IoT
+> **A stabil 2.2.0 legfontosabb újdonsága:** az integráció tartós AWS IoT
 > MQTT-over-WebSocket kapcsolatot használ, ezért a robot élő adatai lényegesen
-> gyorsabban frissülnek. A parancsok ezt az élő csatornát részesítik előnyben,
-> hiba esetén pedig a hitelesített AWS IoT HTTP-küldésre váltanak vissza. A
-> sűrű shadow-üzenetek összevonva jutnak el a Home Assistantig, miközben a
-> biztonsági HTTP-egyeztetés is megmarad.
+> gyorsabban frissülnek. A parancsok az alkalmazással egyező élő service-shadow
+> csatornán jutnak el a robothoz, és az integráció megvárja a robot
+> visszaigazolását. A sűrű shadow-üzenetek összevonva jutnak el a Home
+> Assistantig, a kapcsolat pedig automatikusan újracsatlakozik.
 
 > Ez a projekt nem áll kapcsolatban az Anthbottal. A forrásokról és a
 > védjegyekről a [NOTICE.md](NOTICE.md) fájlban olvashatsz.
@@ -50,7 +50,7 @@ Anthbot-integráció mellett is telepítve maradhat.
 
 - Anthbot-felhő bejelentkezés a Home Assistant felületén
 - több fűnyíró támogatása egy Anthbot-fiókkal
-- tartós AWS IoT/MQTT élő shadow-frissítés automatikus HTTP-tartalékággal
+- tartós, alkalmazáskompatibilis AWS IoT/MQTT élő shadow-frissítés és újracsatlakozás
 - natív Home Assistant `lawn_mower` entitás indítás, leállítás/szüneteltetés
   és dokkolás vezérléssel
 - akkumulátor-, állapot-, töltés-, RTK-, hálózat-, firmware-, karbantartási-,
@@ -114,15 +114,17 @@ Az integráció az első betöltésekor automatikusan a
 kártya akkor is betöltődik, ha teszteléshez az Anthbot Map v2 bejegyzését
 letiltod, és a régi Anthbot-integrációt engedélyezed.
 
-Add hozzá ezt a Lovelace JavaScript-erőforrást:
+Storage módú Lovelace használatakor az integráció ezt a JavaScript-erőforrást
+automatikusan létrehozza vagy frissíti:
 
 ```text
 /anthbot-map-v2/anthbot-map-card.js
 ```
 
-Az erőforrás típusa: **JavaScript module**. Az erőforráskezelő általában a
+Az erőforrás típusa: **JavaScript module**. YAML erőforrásmódban ezt kézzel
+kell hozzáadni. Az erőforráskezelő általában a
 **Beállítások → Irányítópultok → jobb felső hárompontos menü → Erőforrások**
-oldalon található. Ezt csak egyszer kell beállítani. Ezután indítsd újra a Home Assistantot, majd nyomj
+oldalon található. Ezután indítsd újra a Home Assistantot, majd nyomj
 `Ctrl+Shift+R`-t a böngészőben.
 
 Egyszerre csak az egyik Anthbot Map kártyaerőforrás legyen engedélyezve. A HACS
