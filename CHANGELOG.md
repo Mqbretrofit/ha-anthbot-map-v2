@@ -8,7 +8,9 @@ complete global/manual/automatic zone settings, maintenance and history views,
 editable edge overlap, the Garden Map mobile layout, 23-language localization,
 and an MQTT transport aligned with the ANTHBOT Android 2.15.15 application.
 
-See `RELEASE_NOTES_v2.1.0.md` for the complete user-facing change list.
+See `RELEASE_NOTES_v2.1.0.md` for the complete English change list and
+`CHANGELOG_v2.1.0_HU.md` for the complete Hungarian change list.
+
 
 ## 2.2.1-beta.45 — 2026-08-14
 

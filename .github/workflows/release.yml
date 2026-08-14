@@ -72,6 +72,7 @@ jobs:
             CHANGELOG_v2.0.0-beta.14_HU.md \
             CHANGELOG_v2.0.0-beta.15_HU.md \
             CHANGELOG_v2.0.0_HU.md \
+            CHANGELOG_v2.1.0_HU.md \
             RELEASE_NOTES_v2.0.0-beta.15.md \
             RELEASE_NOTES_v2.0.0.md \
             RELEASE_NOTES_v2.1.0.md \
@@ -83,9 +84,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${RELEASE_TAG}" \
-            "anthbot-map-${RELEASE_TAG}.zip" \
-            --target "${GITHUB_SHA}" \
-            --title "Anthbot Map ${RELEASE_TAG}" \
-            --latest \
-            --notes-file RELEASE_NOTES_v2.1.0.md
+          cat RELEASE_NOTES_v2.1.0.md CHANGELOG_v2.1.0_HU.md > /tmp/release-notes.md
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release edit "${RELEASE_TAG}" \
+              --title "Anthbot Map ${RELEASE_TAG}" \
+              --latest \
+              --notes-file /tmp/release-notes.md
+            gh release upload "${RELEASE_TAG}" \
+              "anthbot-map-${RELEASE_TAG}.zip" \
+              --clobber
+          else
+            gh release create "${RELEASE_TAG}" \
+              "anthbot-map-${RELEASE_TAG}.zip" \
+              --target "${GITHUB_SHA}" \
+              --title "Anthbot Map ${RELEASE_TAG}" \
+              --latest \
+              --notes-file /tmp/release-notes.md
+          fi
