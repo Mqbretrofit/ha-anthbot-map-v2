@@ -8,6 +8,7 @@ import json
 import logging
 import re
 import struct
+import uuid
 from typing import Any
 
 from aiohttp import (
@@ -19,7 +20,11 @@ from aiohttp import (
 )
 from yarl import URL
 
-from .api import AnthbotGenieApiError, AnthbotShadowApiClient
+from .api import (
+    ANDROID_APP_USER_AGENT,
+    AnthbotGenieApiError,
+    AnthbotShadowApiClient,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,11 +35,31 @@ _RECONNECT_MAX_SECONDS = 30
 def _safe_error(error: Exception) -> str:
     """Return an MQTT error without leaking the presigned AWS query string."""
     value = f"{type(error).__name__}: {error}"
-    return re.sub(
+    value = re.sub(
         r"(wss://[^?\s']+)\?[^\s']+",
         r"\1?<redacted>",
         value,
     )
+    if not isinstance(error, ClientResponseError) or not error.headers:
+        return value
+
+    # AWS usually explains a rejected WebSocket upgrade in response headers.
+    # Include only this strict allow-list: never copy arbitrary headers because
+    # the request contains temporary credentials in its presigned URL.
+    diagnostic_headers = {
+        "aws_error_type": error.headers.get("x-amzn-errortype"),
+        "aws_request_id": (
+            error.headers.get("x-amzn-requestid")
+            or error.headers.get("x-amzn-request-id")
+        ),
+        "server": error.headers.get("server"),
+    }
+    details = ", ".join(
+        f"{name}={header_value}"
+        for name, header_value in diagnostic_headers.items()
+        if header_value
+    )
+    return f"{value}; handshake={details}" if details else value
 
 ShadowCallback = Callable[[str, dict[str, Any]], Awaitable[None]]
 ConnectionCallback = Callable[[bool, str | None], Awaitable[None]]
@@ -62,8 +87,14 @@ def _packet(packet_type: int, payload: bytes) -> bytes:
 
 
 def _connect_packet(client_id: str, keepalive: int) -> bytes:
-    variable = _mqtt_string("MQTT") + bytes((4, 2)) + struct.pack("!H", keepalive)
-    return _packet(0x10, variable + _mqtt_string(client_id))
+    # aws-iot-device-sdk-js 2.2.15 defaults: clean session, 300 second
+    # keepalive and enabled SDK metrics in the MQTT username.
+    username = "?SDK=JavaScript&Version=2.2.15"
+    variable = _mqtt_string("MQTT") + bytes((4, 0x82)) + struct.pack("!H", keepalive)
+    return _packet(
+        0x10,
+        variable + _mqtt_string(client_id) + _mqtt_string(username),
+    )
 
 
 def _subscribe_packet(packet_id: int, topics: list[str]) -> bytes:
@@ -103,6 +134,33 @@ def _decode_publish(packet: bytes) -> tuple[str, bytes] | None:
     return topic, packet[index:]
 
 
+def _mqtt_packets(data: bytes) -> list[bytes]:
+    """Split all complete MQTT packets carried by one WebSocket message."""
+    packets: list[bytes] = []
+    offset = 0
+    while offset < len(data):
+        index = offset + 1
+        multiplier = 1
+        remaining = 0
+        for _ in range(4):
+            if index >= len(data):
+                return packets
+            digit = data[index]
+            index += 1
+            remaining += (digit & 0x7F) * multiplier
+            if not digit & 0x80:
+                end = index + remaining
+                if end > len(data):
+                    return packets
+                packets.append(data[offset:end])
+                offset = end
+                break
+            multiplier *= 128
+        else:
+            return packets
+    return packets
+
+
 def _reported_state(payload: dict[str, Any]) -> dict[str, Any] | None:
     """Extract reported state from shadow get/update payload variants."""
     current = payload.get("current")
@@ -132,15 +190,6 @@ class AnthbotLiveShadowListener:
         self._on_connection = on_connection
         self._stop = asyncio.Event()
         self._consecutive_failures = 0
-        # A single rejected WebSocket upgrade may be caused by stale STS
-        # credentials.  Recovery is deliberately bounded per outage: first
-        # refresh STS, then re-authenticate the Anthbot account and refresh
-        # STS once.  Repeating those two operations forever only churns
-        # credentials while AWS IoT is returning a transient 403/404.
-        self._credential_recovery_stage = 0
-        self._force_credential_refresh = False
-        self._force_account_reauthentication = False
-        self._last_recovery_action = "initial"
         self._active_ws: ClientWebSocketResponse | None = None
         self._send_lock = asyncio.Lock()
 
@@ -158,10 +207,8 @@ class AnthbotLiveShadowListener:
             try:
                 await ws.send_bytes(_packet(0x30, _mqtt_string(topic) + payload))
             except (ClientError, OSError, RuntimeError):
-                # Do not leave a failed socket registered as the primary
-                # command transport.  The caller can immediately use the
-                # signed HTTP Publish fallback, while closing the socket wakes
-                # the receive loop and starts the persistent reconnect cycle.
+                # Do not leave a failed socket registered as the command
+                # transport. Closing it wakes the persistent reconnect loop.
                 self._client.set_live_command_publisher(None)
                 await ws.close()
                 raise
@@ -189,15 +236,10 @@ class AnthbotLiveShadowListener:
                 if self._consecutive_failures == 0:
                     delay = _RECONNECT_INITIAL_SECONDS
                 error = (
-                    f"{_safe_error(err)}; recovery={self._last_recovery_action}; "
+                    f"{_safe_error(err)}; credential_lifecycle=cached_until_expiry; "
                     f"{self._client.iot_credential_diagnostics}"
                 )
                 self._consecutive_failures += 1
-                # A rejected WebSocket upgrade can leave otherwise unexpired
-                # STS credentials cached.  Retrying freshly signed URLs with
-                # the same rejected credentials only repeats the failure, so
-                # force one new STS credential request on the next attempt.
-                self._schedule_credential_recovery(err)
                 # Brief AWS IoT reconnect races can return a single 404/403
                 # and then recover on the next freshly signed URL.  Do not
                 # create a visible Home Assistant warning for a self-healing
@@ -209,7 +251,7 @@ class AnthbotLiveShadowListener:
                 )
                 log(
                     "Anthbot live shadow unavailable for %s "
-                    "(attempt %d); using HTTP fallback: %s",
+                    "(attempt %d): %s",
                     self._client.serial_number,
                     self._consecutive_failures,
                     error,
@@ -227,60 +269,41 @@ class AnthbotLiveShadowListener:
                 # leave recovery more than 30 seconds away.
                 delay = min(delay * 2, _RECONNECT_MAX_SECONDS)
 
-    def _schedule_credential_recovery(self, err: Exception) -> None:
-        """Schedule at most two credential recovery steps per MQTT outage."""
-        if not isinstance(err, ClientResponseError) or err.status != 403:
-            return
-        if self._credential_recovery_stage == 0:
-            self._force_credential_refresh = True
-            self._credential_recovery_stage = 1
-            return
-        if self._credential_recovery_stage == 1:
-            self._force_credential_refresh = True
-            self._force_account_reauthentication = True
-            self._credential_recovery_stage = 2
-
     async def _async_connected_session(self) -> None:
         # SigV4 covers the exact percent-encoded query string.  aiohttp/yarl
         # normally canonicalizes URLs before sending them, which can turn
         # signed values such as ``%2F`` back into ``/`` and make AWS reject the
         # WebSocket upgrade with HTTP 403.  Mark the presigned URL as already
         # encoded so its raw query is sent byte-for-byte unchanged.
-        if self._force_account_reauthentication:
-            recovery_action = "account_reauthentication_and_sts_refresh"
-        elif self._force_credential_refresh:
-            recovery_action = "sts_refresh"
-        elif self._credential_recovery_stage >= 2:
-            recovery_action = "cached_credentials_after_bounded_recovery"
-        else:
-            recovery_action = "initial_or_cached_credentials"
-        self._last_recovery_action = recovery_action
         url = URL(
-            await self._client.async_get_mqtt_websocket_url(
-                force_refresh=self._force_credential_refresh,
-                reauthenticate=self._force_account_reauthentication,
-            ),
+            await self._client.async_get_mqtt_websocket_url(),
             encoded=True,
         )
-        self._force_credential_refresh = False
-        self._force_account_reauthentication = False
         serial = self._client.serial_number
         base = f"$aws/things/{serial}/shadow/name"
         response_topics = [
             f"{base}/{name}/{suffix}"
             for name in ("property", "service")
+            # This is the response set accepted by the mower's IoT policy and
+            # used by the app's two named-shadow registrations.
             for suffix in ("get/accepted", "update/accepted", "update/documents")
         ]
         async with self._session.ws_connect(
             url,
-            protocols=("mqtt",),
+            headers={"User-Agent": ANDROID_APP_USER_AGENT},
+            # aws-iot-device-sdk-js used by ANTHBOT 2.15.15 explicitly sends
+            # ``Sec-WebSocket-Protocol: mqttv3.1``.  AWS performs this check
+            # during the HTTP upgrade, before the MQTT CONNECT packet.
+            protocols=("mqttv3.1",),
             autoping=False,
             heartbeat=None,
             timeout=20,
         ) as ws:
             self._active_ws = ws
             try:
-                await ws.send_bytes(_connect_packet(f"ha-anthbot-{serial[-12:]}", 45))
+                # Match the official app/AWS IoT SDK: every connection uses a
+                # fresh UUID v4 client identifier.
+                await ws.send_bytes(_connect_packet(str(uuid.uuid4()), 300))
                 message = await asyncio.wait_for(ws.receive(), timeout=15)
                 if (
                     message.type != WSMsgType.BINARY
@@ -289,10 +312,23 @@ class AnthbotLiveShadowListener:
                     or message.data[3] != 0
                 ):
                     raise ValueError("AWS IoT MQTT connection was not accepted")
-                self._credential_recovery_stage = 0
-                self._force_credential_refresh = False
-                self._force_account_reauthentication = False
                 await ws.send_bytes(_subscribe_packet(1, response_topics))
+                suback = await asyncio.wait_for(ws.receive(), timeout=15)
+                suback_packets = (
+                    _mqtt_packets(suback.data)
+                    if suback.type == WSMsgType.BINARY
+                    else []
+                )
+                accepted_suback = next(
+                    (packet for packet in suback_packets if packet[0] == 0x90),
+                    None,
+                )
+                if accepted_suback is None:
+                    raise ValueError(
+                        "AWS IoT MQTT subscriptions were not accepted "
+                        f"(message_type={suback.type.name}, "
+                        f"packet_types={[hex(packet[0]) for packet in suback_packets]})"
+                    )
                 for name in ("property", "service"):
                     await ws.send_bytes(_publish_packet(f"{base}/{name}/get"))
                 self._consecutive_failures = 0
@@ -313,21 +349,29 @@ class AnthbotLiveShadowListener:
                         )
                     if message.type != WSMsgType.BINARY:
                         continue
-                    decoded = _decode_publish(message.data)
-                    if decoded is None:
-                        continue
-                    topic, raw_payload = decoded
-                    try:
-                        payload = json.loads(raw_payload)
-                    except (UnicodeDecodeError, json.JSONDecodeError):
-                        continue
-                    if not isinstance(payload, dict):
-                        continue
-                    reported = _reported_state(payload)
-                    if reported is None:
-                        continue
-                    shadow_name = "service" if "/service/" in topic else "property"
-                    await self._on_shadow(shadow_name, reported)
+                    for packet in _mqtt_packets(message.data):
+                        decoded = _decode_publish(packet)
+                        if decoded is None:
+                            continue
+                        topic, raw_payload = decoded
+                        if topic.endswith("/rejected"):
+                            _LOGGER.debug(
+                                "Anthbot shadow request rejected for %s on %s",
+                                serial,
+                                topic,
+                            )
+                            continue
+                        try:
+                            payload = json.loads(raw_payload)
+                        except (UnicodeDecodeError, json.JSONDecodeError):
+                            continue
+                        if not isinstance(payload, dict):
+                            continue
+                        reported = _reported_state(payload)
+                        if reported is None:
+                            continue
+                        shadow_name = "service" if "/service/" in topic else "property"
+                        await self._on_shadow(shadow_name, reported)
             finally:
                 self._client.set_live_command_publisher(None)
                 if self._active_ws is ws:

@@ -9,6 +9,7 @@ import time
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import (
@@ -155,14 +156,22 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.client = client
         self.device = device
         self._area_definition: dict[str, Any] = {}
+        self._ridable_area_definition: dict[str, Any] | list[Any] = {}
+        self._ridable_area_definition_error: str | None = None
         self._map_definition: dict[str, Any] | list[Any] | None = None
         self._path_definition: dict[str, Any] | list[Any] | None = None
         self._map_definition_error: str | None = None
         self._path_definition_error: str | None = None
         self._history_path_info: Any = None
         self._history_path_source: str | None = None
+        self._mowing_records: dict[str, Any] = {"data": []}
+        self._last_record_download_monotonic = 0.0
+        self._error_history: list[dict[str, Any]] = []
+        self._last_error_signature: str | None = None
         self._last_area_time: str | None = None
         self._last_area_download_monotonic = 0.0
+        self._last_ridable_area_time: str | None = None
+        self._last_ridable_area_download_monotonic = 0.0
         self._last_map_time: str | None = None
         self._last_map_key: str | None = None
         self._last_map_download_monotonic = 0.0
@@ -181,11 +190,62 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._pending_live_property: dict[str, Any] = {}
         self._pending_live_service: dict[str, Any] = {}
         self._live_flush_task: asyncio.Task[None] | None = None
+        self._last_mowing_task: dict[str, Any] | None = None
+        self._task_store: Store[dict[str, Any]] = Store(
+            hass,
+            1,
+            f"{DOMAIN}.last_mowing_task_{client.serial_number}",
+        )
 
     @property
     def reported_state(self) -> dict[str, Any]:
         """Return the latest reported state."""
         return self.data if isinstance(self.data, dict) else {}
+
+    @property
+    def live_shadow_connected(self) -> bool:
+        """Return whether the app-style MQTT shadow session is active."""
+        return self._live_shadow_connected
+
+    def remember_mowing_task(self, task_type: str, data: Any = None) -> None:
+        """Remember and persist the task that Pause must later resume."""
+        self._last_mowing_task = {"type": task_type, "data": data}
+        if self.reported_state:
+            state = dict(self.reported_state)
+            state["_last_mowing_task"] = dict(self._last_mowing_task)
+            self.async_set_updated_data(state)
+        snapshot = dict(self._last_mowing_task)
+        self.hass.async_create_background_task(
+            self._task_store.async_save(snapshot),
+            f"anthbot_save_last_task_{self.client.serial_number}",
+        )
+
+    async def async_clear_last_mowing_task(self) -> None:
+        """Forget the resumable task after Stop deletes every mower task."""
+        self._last_mowing_task = None
+        await self._task_store.async_remove()
+        if self.reported_state:
+            state = dict(self.reported_state)
+            state["_last_mowing_task"] = None
+            self.async_set_updated_data(state)
+
+    async def async_load_last_mowing_task(self) -> None:
+        """Restore the previous mowing task after a Home Assistant restart."""
+        stored = await self._task_store.async_load()
+        if not isinstance(stored, dict):
+            return
+        task_type = stored.get("type")
+        if task_type not in {"full", "manual_zone", "auto_zone", "edge", "dock_edge"}:
+            return
+        self._last_mowing_task = {
+            "type": task_type,
+            "data": stored.get("data"),
+        }
+
+    @property
+    def last_mowing_task(self) -> dict[str, Any] | None:
+        """Return a copy of the most recently started mowing task."""
+        return dict(self._last_mowing_task) if self._last_mowing_task else None
 
     async def async_start_live_shadow(self) -> None:
         """Start the optional AWS IoT push listener."""
@@ -235,26 +295,15 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         was_connected = self._live_shadow_connected
         self._live_shadow_connected = connected
         self._live_shadow_error = None if connected else error
-        # While push updates are flowing, HTTP is only a five-minute safety
-        # reconciliation.  If WebSocket/MQTT is unavailable, use a conservative
-        # one-minute fallback instead of the old ten-second burst polling.
-        self.update_interval = (
-            timedelta(minutes=5) if connected else self._fallback_update_interval
-        )
+        # Robot shadow state is MQTT-only, exactly like the mobile app.  The
+        # coordinator timer remains solely for ancillary REST data (records,
+        # maintenance and map files), never as an IoT shadow fallback.
+        self.update_interval = timedelta(minutes=5)
         if self.reported_state:
             state = dict(self.reported_state)
             state["_live_shadow_connected"] = connected
             state["_live_shadow_error"] = self._live_shadow_error
             self.async_set_updated_data(state)
-        if was_connected and not connected:
-            # Do not wait for the previous five-minute MQTT reconciliation
-            # timer after a live socket drops.  Fetch one HTTP snapshot now;
-            # later fallback polling remains capped at one request per minute
-            # to avoid flooding Home Assistant with entity updates.
-            self.hass.async_create_background_task(
-                self.async_request_refresh(),
-                f"anthbot_map_http_fallback_{self.client.serial_number}",
-            )
 
     async def _async_handle_live_shadow(
         self, shadow_name: str, reported: dict[str, Any]
@@ -447,42 +496,26 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return diagnostics, True
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch the latest state from the cloud endpoint."""
+        """Refresh ancillary REST data while shadow state remains MQTT-only."""
         try:
-            property_state = await self.client.async_get_shadow_reported_state()
-            now = time.monotonic()
-            is_live_hint = _is_live_position_state(
-                property_state
-            ) or _is_live_position_state(self.reported_state)
-            property_refresh_seconds = (
-                _LIVE_HISTORY_REFRESH_SECONDS
-                if is_live_hint
-                else _IDLE_PROPERTY_REFRESH_SECONDS
+            current = self.reported_state
+            property_state = {
+                key: value
+                for key, value in current.items()
+                if not key.startswith("_")
+            }
+            service_value = current.get("_service_reported")
+            service_state = (
+                dict(service_value) if isinstance(service_value, dict) else {}
             )
-            if (
-                self._last_property_request_monotonic == 0.0
-                or now - self._last_property_request_monotonic
-                >= property_refresh_seconds
-            ):
-                try:
-                    await self.client.async_request_all_properties()
-                    self._last_property_request_monotonic = time.monotonic()
-                    await asyncio.sleep(0.5)
-                    property_state = await self.client.async_get_shadow_reported_state()
-                except AnthbotGenieApiError as err:
-                    _LOGGER.debug(
-                        "Anthbot property refresh request failed for %s: %s",
-                        self.client.serial_number,
-                        err,
-                    )
-            try:
-                service_state = await self.client.async_get_service_reported_state()
-            except AnthbotGenieApiError:
-                service_state = {}
+            now = time.monotonic()
 
             area_time = property_state.get("area_time")
             if not isinstance(area_time, str):
                 area_time = None
+            ridable_area_time = property_state.get("ridable_area_time")
+            if not isinstance(ridable_area_time, str):
+                ridable_area_time = None
             path_time = property_state.get("path_time")
             if not isinstance(path_time, str):
                 path_time = None
@@ -524,6 +557,32 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if not self._area_definition:
                         self._area_definition = {}
 
+            should_refresh_ridable_area = (
+                self._last_ridable_area_download_monotonic == 0
+                or (
+                    ridable_area_time is not None
+                    and ridable_area_time != self._last_ridable_area_time
+                )
+                or now - self._last_ridable_area_download_monotonic >= 300
+            )
+            if should_refresh_ridable_area:
+                self._last_ridable_area_download_monotonic = now
+                try:
+                    self._ridable_area_definition = (
+                        await self.account_client.async_get_device_ridable_area_definition(
+                            self.client.serial_number
+                        )
+                    )
+                    self._ridable_area_definition_error = None
+                    self._last_ridable_area_time = ridable_area_time
+                except AnthbotGenieApiError as err:
+                    self._ridable_area_definition_error = str(err)
+                    _LOGGER.debug(
+                        "Anthbot editable edge definition unavailable for %s: %s",
+                        self.client.serial_number,
+                        err,
+                    )
+
             map_archive_diagnostics, _ = await self._async_refresh_map_definition(
                 property_state,
                 now,
@@ -550,10 +609,6 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         refreshed_path_time = property_state.get("path_time")
                         if isinstance(refreshed_path_time, str):
                             path_time = refreshed_path_time
-                    try:
-                        service_state = await self.client.async_get_service_reported_state()
-                    except AnthbotGenieApiError:
-                        service_state = service_state or {}
                     self._history_path_info = _find_history_info(property_state, service_state)
                     history_url = _find_history_path_url(property_state, service_state)
                     if history_url:
@@ -591,8 +646,33 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self._last_path_download_monotonic = time.monotonic()
 
             merged_state = dict(property_state)
+            if now - self._last_record_download_monotonic >= 300:
+                try:
+                    self._mowing_records = await self.account_client.async_get_mowing_records(
+                        self.client.serial_number
+                    )
+                    self._last_record_download_monotonic = now
+                except AnthbotGenieApiError as err:
+                    _LOGGER.debug("Anthbot mowing records unavailable: %s", err)
+            error_snapshot = {
+                key: property_state.get(key)
+                for key in ("error", "event", "err_code", "error_code", "event_code")
+                if property_state.get(key) not in (None, 0, "", [], {})
+            }
+            signature = repr(error_snapshot)
+            if error_snapshot and signature != self._last_error_signature:
+                self._error_history.insert(0, {
+                    "time": datetime.now(timezone.utc).isoformat(),
+                    **error_snapshot,
+                })
+                del self._error_history[50:]
+                self._last_error_signature = signature
             merged_state["_service_reported"] = service_state
+            merged_state["_mowing_records"] = self._mowing_records
+            merged_state["_error_history"] = self._error_history
             merged_state["_area_definition"] = self._area_definition
+            merged_state["_ridable_area_definition"] = self._ridable_area_definition
+            merged_state["_ridable_area_definition_error"] = self._ridable_area_definition_error
             merged_state["_map_definition"] = self._map_definition
             merged_state["_path_definition"] = self._path_definition
             merged_state["_history_path_info"] = self._history_path_info
@@ -671,17 +751,12 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         latest_state: dict[str, Any] | None = None
         while time.monotonic() < deadline:
             await asyncio.sleep(_HISTORY_PATH_RESPONSE_POLL_SECONDS)
-            try:
-                latest_state = (
-                    await self.client.async_get_shadow_reported_state()
-                )
-            except AnthbotGenieApiError as err:
-                _LOGGER.debug(
-                    "Anthbot path_time check failed for %s: %s",
-                    self.client.serial_number,
-                    err,
-                )
-                continue
+            current = self.reported_state
+            latest_state = {
+                key: value
+                for key, value in current.items()
+                if not key.startswith("_")
+            }
 
             refreshed_path_time = latest_state.get("path_time")
             if (

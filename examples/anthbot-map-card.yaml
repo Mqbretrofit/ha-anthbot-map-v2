@@ -5,6 +5,9 @@ image: /local/anthbot-map-card/your-garden.png
 mowed_path_color: rgba(255, 235, 59, 0.82)
 mowed_path_width: 10
 fit: cover
+mobile_map_rotation: 90
+mobile_map_fit: contain
+mobile_robot_size: 24
 refresh_interval: 3
 entities:
   battery: sensor.YOUR_MOWER_battery_level

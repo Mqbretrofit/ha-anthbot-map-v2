@@ -427,9 +427,18 @@ function computeMapFit(size, bounds, view, aspectRatio, fit = "contain") {
   const targetRatio = Number.isFinite(Number(aspectRatio)) && Number(aspectRatio) > 0
     ? Number(aspectRatio)
     : worldRatio;
-  const canvasRatio = size.width / size.height;
-  let width = size.width;
-  let height = size.height;
+  // Fit in the coordinate system in which the map is drawn. At a quarter
+  // turn the local horizontal axis occupies the screen height and the local
+  // vertical axis occupies the screen width. Fitting against the unswapped
+  // viewport first shrinks a landscape image, then rotates that small image
+  // into the portrait canvas (the mobile 56% size bug).
+  const rotation = Number(view.rotation) || 0;
+  const quarterTurn = Math.abs(Math.sin(rotation)) > Math.abs(Math.cos(rotation));
+  const fitWidth = quarterTurn ? size.height : size.width;
+  const fitHeight = quarterTurn ? size.width : size.height;
+  const canvasRatio = fitWidth / fitHeight;
+  let width = fitWidth;
+  let height = fitHeight;
 
   if (fit === "cover") {
     if (targetRatio > canvasRatio) {
@@ -448,7 +457,7 @@ function computeMapFit(size, bounds, view, aspectRatio, fit = "contain") {
     height: Math.max(1, height * view.zoom),
     centerX: size.width / 2 + view.panX,
     centerY: size.height / 2 + view.panY,
-    rotation: Number(view.rotation) || 0,
+    rotation,
   };
 }
 

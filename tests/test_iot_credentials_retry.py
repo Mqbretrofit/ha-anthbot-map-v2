@@ -217,7 +217,7 @@ class TestIotCredentialRetry(unittest.IsolatedAsyncioTestCase):
             async_reauthenticate=AsyncMock(),
         )
         client = self._client(account_client)
-        client._credentials = _credentials(expires_in=30)
+        client._credentials = _credentials(expires_in=-1)
         client._credentials_acquired_at = time.time()
 
         with patch.object(api._LOGGER, "warning"):
@@ -267,8 +267,8 @@ class TestIotCredentialRetry(unittest.IsolatedAsyncioTestCase):
         )
         signed_post.assert_not_awaited()
 
-    async def test_failed_mqtt_command_falls_back_to_http_publish(self) -> None:
-        """A broken live socket must not prevent immediate command fallback."""
+    async def test_failed_mqtt_command_is_not_replayed_over_http(self) -> None:
+        """Match the app: a failed MQTT command has no HTTP Publish fallback."""
         account_client = types.SimpleNamespace(
             async_get_device_iot_credentials=AsyncMock(),
             async_reauthenticate=AsyncMock(),
@@ -278,52 +278,34 @@ class TestIotCredentialRetry(unittest.IsolatedAsyncioTestCase):
         client.set_live_command_publisher(publisher)
         signed_post = AsyncMock(return_value=(200, "", None, {}))
 
-        with (
-            patch.object(client, "_async_signed_post", new=signed_post),
-            patch.object(api._LOGGER, "warning"),
-        ):
-            await client.async_publish_service_command(cmd="charge_start", data=1)
+        with patch.object(client, "_async_signed_post", new=signed_post):
+            with self.assertRaisesRegex(RuntimeError, "socket closed"):
+                await client.async_publish_service_command(cmd="charge_start")
 
         publisher.assert_awaited_once()
-        signed_post.assert_awaited_once()
-        self.assertIsNone(client._live_command_publisher)
+        signed_post.assert_not_awaited()
         self.assertEqual(
-            signed_post.await_args.kwargs["request_uri"],
-            "/topics/%24aws%2Fthings%2FTEST123%2Fshadow%2Fname%2Fservice%2Fupdate",
+            publisher.await_args.args[1],
+            b'{"state":{"desired":{"cmd":"charge_start"}}}',
         )
 
-    async def test_http_publish_reauthenticates_once_after_403(self) -> None:
-        """HTTP command fallback should recover once from rejected credentials."""
+    async def test_disconnected_command_is_not_published_over_http(self) -> None:
+        """The mobile app sends service-shadow commands only over MQTT."""
         account_client = types.SimpleNamespace(
             async_get_device_iot_credentials=AsyncMock(),
             async_reauthenticate=AsyncMock(),
         )
         client = self._client(account_client)
-        signed_post = AsyncMock(
-            side_effect=[
-                (
-                    403,
-                    '{"message":"Forbidden"}',
-                    {"message": "Forbidden"},
-                    {"x-amzn-errortype": "ForbiddenException"},
-                ),
-                (200, "", None, {}),
-            ]
-        )
+        signed_post = AsyncMock()
 
         with (
             patch.object(client, "_async_signed_post", new=signed_post),
-            patch.object(
-                client,
-                "_async_get_credentials",
-                new=AsyncMock(return_value=_credentials()),
-            ) as refresh_credentials,
         ):
-            await client.async_publish_service_command(cmd="start", data=1)
+            with self.assertRaises(api.AnthbotGenieApiError):
+                await client.async_publish_service_command(cmd="start", data=1)
 
-        self.assertEqual(signed_post.await_count, 2)
-        account_client.async_reauthenticate.assert_awaited_once_with()
-        refresh_credentials.assert_awaited_once_with(force_refresh=True)
+        signed_post.assert_not_awaited()
+        account_client.async_reauthenticate.assert_not_awaited()
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+import logging
 from typing import Any
 
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
@@ -18,6 +19,8 @@ from .const import DOMAIN
 from .coordinator import AnthbotGenieDataUpdateCoordinator
 from .commands import async_prepare_cloud_connection, async_start_mowing
 from .zones import auto_zones, manual_zones
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -48,6 +51,11 @@ BUTTONS: tuple[AnthbotButtonDescription, ...] = (
         translation_key="return_to_dock",
         name="Return to dock",
     ),
+    AnthbotButtonDescription(key="resume_mow", name="Resume paused task"),
+    AnthbotButtonDescription(key="pause_mow", name="Pause mowing task"),
+    AnthbotButtonDescription(key="reset_blade_maintenance", name="Reset blade maintenance"),
+    AnthbotButtonDescription(key="reset_camera_maintenance", name="Reset camera maintenance"),
+    AnthbotButtonDescription(key="reset_dock_contact_maintenance", name="Reset charging contact maintenance"),
 )
 
 
@@ -134,28 +142,98 @@ class AnthbotButtonEntity(
                     "The mower did not confirm its cloud connection"
                 )
         elif key == "start_full_mow":
-            await async_start_mowing(self.coordinator, app_state=1)
+            if await async_start_mowing(self.coordinator, app_state=1):
+                self.coordinator.remember_mowing_task("full")
         elif key == "start_outer_edge_mow":
-            await async_start_mowing(
+            if await async_start_mowing(
                 self.coordinator,
                 app_state=2,
                 expected_modes={"bordermowing", "edgemowing", "gototarget"},
-            )
+            ):
+                self.coordinator.remember_mowing_task("edge")
         elif key == "start_dock_edge_mow":
             if not await async_prepare_cloud_connection(self.coordinator):
-                raise AnthbotGenieApiError(
-                    "The mower did not confirm its cloud connection; dock mowing was not started"
+                _LOGGER.warning(
+                    "Anthbot mower %s did not confirm the wake request; "
+                    "attempting dock mowing on the live MQTT transport",
+                    self.coordinator.client.serial_number,
                 )
             await self.coordinator.client.async_publish_service_command(cmd="nest_mow_start", data=1)
+            self.coordinator.remember_mowing_task("dock_edge")
         elif key == "stop_mow":
             await async_prepare_cloud_connection(self.coordinator)
-            await self.coordinator.client.async_publish_service_command(
-                cmd="stop_all_tasks", data=1
-            )
+            await self.coordinator.client.async_publish_service_command(cmd="stop_all_tasks")
+            await self.coordinator.async_clear_last_mowing_task()
         elif key == "return_to_dock":
             await async_prepare_cloud_connection(self.coordinator)
+            await self.coordinator.client.async_publish_service_command(cmd="charge_start")
+        elif key == "resume_mow":
+            task = self.coordinator.last_mowing_task
+            if task is None:
+                raise AnthbotGenieApiError(
+                    "There is no mowing task to resume; start a new task"
+                )
+            task_type = task["type"]
+            data = task.get("data")
+            if task_type == "full":
+                if not await async_start_mowing(self.coordinator, app_state=1):
+                    raise AnthbotGenieApiError(
+                        "The mower did not confirm resuming full-area mowing"
+                    )
+            elif task_type == "edge":
+                if not await async_start_mowing(
+                    self.coordinator,
+                    app_state=2,
+                    expected_modes={"bordermowing", "edgemowing", "gototarget"},
+                ):
+                    raise AnthbotGenieApiError(
+                        "The mower did not confirm resuming edge mowing"
+                    )
+            elif task_type == "dock_edge":
+                await async_prepare_cloud_connection(self.coordinator)
+                await self.coordinator.client.async_publish_service_command(
+                    cmd="nest_mow_start", data=1
+                )
+            else:
+                if not await async_prepare_cloud_connection(self.coordinator):
+                    raise AnthbotGenieApiError(
+                        "The mower did not confirm its cloud connection"
+                    )
+                if task_type == "manual_zone":
+                    await self.coordinator.client.async_publish_service_command(
+                        cmd="custom_area_mow_start", data=data
+                    )
+                elif task_type == "auto_zone":
+                    await self.coordinator.client.async_publish_service_command(
+                        cmd="region_mow_start", data=data
+                    )
+                else:
+                    raise AnthbotGenieApiError(
+                        f"Unsupported previous mowing task: {task_type}"
+                    )
+        elif key == "pause_mow":
+            # Also recover the current zone when mowing was started from the
+            # official app rather than from a Home Assistant button.
+            if self.coordinator.last_mowing_task is None:
+                active_zone_ids = active_manual_zone_ids(
+                    self.coordinator.reported_state
+                )
+                if active_zone_ids:
+                    self.coordinator.remember_mowing_task(
+                        "manual_zone", {"id": active_zone_ids}
+                    )
+                else:
+                    self.coordinator.remember_mowing_task("full")
+            await async_prepare_cloud_connection(self.coordinator)
+            await self.coordinator.client.async_publish_service_command(cmd="mow_pause")
+        elif key.startswith("reset_"):
+            reset_ids = {
+                "reset_blade_maintenance": 1,
+                "reset_camera_maintenance": 2,
+                "reset_dock_contact_maintenance": 0,
+            }
             await self.coordinator.client.async_publish_service_command(
-                cmd="charge_start", data=1
+                cmd="robot_maintenance_reset", data={"reset_id": reset_ids[key]}
             )
         await self.coordinator.client.async_request_all_properties()
         await asyncio.sleep(1)
@@ -244,15 +322,19 @@ class AnthbotZoneButtonEntity(
                 "The mower did not confirm its cloud connection; zone mowing was not started"
             )
         if self._zone_kind == "manual":
+            task_data = {"id": [self._zone["id"]]}
             await self.coordinator.client.async_publish_service_command(
                 cmd="custom_area_mow_start",
-                data={"id": [self._zone["id"]]},
+                data=task_data,
             )
+            self.coordinator.remember_mowing_task("manual_zone", task_data)
         else:
+            task_data = {"points": [[self._zone["x"], self._zone["y"]]]}
             await self.coordinator.client.async_publish_service_command(
                 cmd="region_mow_start",
-                data={"points": [[self._zone["x"], self._zone["y"]]]},
+                data=task_data,
             )
+            self.coordinator.remember_mowing_task("auto_zone", task_data)
         await self.coordinator.client.async_request_all_properties()
         await asyncio.sleep(1)
         await self.coordinator.async_request_refresh()

@@ -33,7 +33,7 @@ from .const import (
     RTK_STATE_OPTIONS,
 )
 from .coordinator import AnthbotGenieDataUpdateCoordinator
-from .zones import active_manual_zone_ids, auto_zones, manual_zones
+from .zones import active_manual_zone_ids, auto_zones, manual_zones, ridable_areas
 
 
 def _safe_get(data: dict[str, Any], *path: str) -> Any:
@@ -836,6 +836,8 @@ class AnthbotMapSensorEntity(
             "history_path_refresh_interval",
             "history_path_download_source",
             "area_definition",
+            "ridable_areas",
+            "ridable_area_error",
             "map_definition_status",
             "path_definition_status",
             "map_raster",
@@ -853,6 +855,10 @@ class AnthbotMapSensorEntity(
             "robot_online",
             "live_shadow_connected",
             "live_shadow_error",
+            "last_mowing_task",
+            "mowing_records",
+            "error_history",
+            "maintenance",
         }
     )
     _attr_has_entity_name = True
@@ -911,6 +917,8 @@ class AnthbotMapSensorEntity(
             "history_path_refresh_interval": state.get("_history_path_refresh_interval"),
             "history_path_download_source": path_definition.get("_download_source") if isinstance(path_definition, dict) else None,
             "area_definition": state.get("_area_definition"),
+            "ridable_areas": ridable_areas(state),
+            "ridable_area_error": state.get("_ridable_area_definition_error"),
             "map_definition_status": _definition_status(map_definition),
             "path_definition_status": _definition_status(path_definition),
             "map_raster": _definition_map_raster(map_definition),
@@ -928,6 +936,14 @@ class AnthbotMapSensorEntity(
             "robot_online": state.get("_robot_online"),
             "live_shadow_connected": state.get("_live_shadow_connected", False),
             "live_shadow_error": state.get("_live_shadow_error"),
+            "last_mowing_task": self.coordinator.last_mowing_task,
+            "mowing_records": state.get("_mowing_records", {"data": []}),
+            "error_history": state.get("_error_history", []),
+            "maintenance": state.get("robot_maintenance") or {
+                "blade": state.get("cutting_components_life"),
+                "camera": state.get("camera_life"),
+                "charging_contact": state.get("recharge_contact_life"),
+            },
         }        
 
 

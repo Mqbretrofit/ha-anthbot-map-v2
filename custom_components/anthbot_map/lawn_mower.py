@@ -99,9 +99,7 @@ class AnthbotLawnMowerEntity(
             raise AnthbotGenieApiError(
                 "The mower did not confirm its cloud connection; stop command was not sent"
             )
-        await self.coordinator.client.async_publish_service_command(
-            cmd="stop_all_tasks", data=1
-        )
+        await self.coordinator.client.async_publish_service_command(cmd="stop_all_tasks")
         await self._async_refresh_after_command()
 
     async def async_dock(self) -> None:
@@ -110,7 +108,5 @@ class AnthbotLawnMowerEntity(
             raise AnthbotGenieApiError(
                 "The mower did not confirm its cloud connection; dock command was not sent"
             )
-        await self.coordinator.client.async_publish_service_command(
-            cmd="charge_start", data=1
-        )
+        await self.coordinator.client.async_publish_service_command(cmd="charge_start")
         await self._async_refresh_after_command()

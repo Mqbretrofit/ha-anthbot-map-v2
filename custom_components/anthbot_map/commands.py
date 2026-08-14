@@ -17,8 +17,12 @@ async def async_prepare_cloud_connection(
     attempts: int = 2,
     wait_seconds: int = 4,
 ) -> bool:
-    """Emulate opening the app and wait for a fresh mower shadow response."""
+    """Request app-style MQTT properties and wait for live shadow state."""
     for attempt in range(attempts):
+        if not coordinator.live_shadow_connected:
+            await asyncio.sleep(1)
+            if not coordinator.live_shadow_connected:
+                continue
         try:
             await coordinator.client.async_request_all_properties()
         except Exception as err:  # noqa: BLE001 - retry the wake handshake.
@@ -33,12 +37,8 @@ async def async_prepare_cloud_connection(
 
         for _ in range(wait_seconds):
             await asyncio.sleep(1)
-            try:
-                state = await coordinator.client.async_get_shadow_reported_state()
-            except Exception:  # noqa: BLE001 - keep waiting within this attempt.
-                continue
+            state = coordinator.reported_state
             if is_robot_online(state, max_age_seconds=45):
-                await coordinator.async_request_refresh()
                 _LOGGER.debug(
                     "Anthbot cloud wake confirmed for %s",
                     coordinator.client.serial_number,
@@ -52,7 +52,6 @@ async def async_prepare_cloud_connection(
             attempts,
         )
 
-    await coordinator.async_request_refresh()
     return False
 
 
@@ -79,15 +78,11 @@ async def async_start_mowing(
 
         for _ in range(4):
             await asyncio.sleep(2)
-            try:
-                state = await coordinator.client.async_get_shadow_reported_state()
-            except Exception:  # noqa: BLE001 - verification is retried below.
-                continue
+            state = coordinator.reported_state
             robot_sta = state.get("robot_sta")
             mode = robot_sta.get("value") if isinstance(robot_sta, dict) else None
             mode = str(mode or state.get("mower_status") or "").lower()
             if mode in expected:
-                await coordinator.async_request_refresh()
                 return True
 
         _LOGGER.warning(
@@ -96,5 +91,4 @@ async def async_start_mowing(
             attempt + 1,
         )
 
-    await coordinator.async_request_refresh()
     return False

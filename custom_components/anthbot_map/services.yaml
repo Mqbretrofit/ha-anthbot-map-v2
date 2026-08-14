@@ -54,6 +54,32 @@ stop_mow:
       selector:
         text:
 
+pause_mow:
+  name: Pause Mowing
+  description: Pause the current Anthbot mowing task without deleting it.
+  target:
+    entity:
+      integration: anthbot_map
+  fields:
+    serial_number:
+      name: Serial number
+      description: Optional mower serial number or list of serial numbers.
+      selector:
+        text:
+
+resume_mow:
+  name: Resume Mowing
+  description: Resume the mowing task stored by Home Assistant.
+  target:
+    entity:
+      integration: anthbot_map
+  fields:
+    serial_number:
+      name: Serial number
+      description: Optional mower serial number or list of serial numbers.
+      selector:
+        text:
+
 return_to_dock:
   name: Return To Dock
   description: Send selected Anthbot mower(s) back to the charging dock.
@@ -98,6 +124,38 @@ set_mow_height:
       example: "YOUR_MOWER_SERIAL"
       selector:
         text:
+
+set_edge_settings:
+  name: Set Edge Settings
+  description: Set cutting height and boundary overlap for one editable map edge.
+  target:
+    entity:
+      integration: anthbot_map
+  fields:
+    edge_id:
+      name: Edge ID
+      description: Identifier of the editable boundary edge.
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 65535
+          step: 1
+          mode: box
+    mow_height:
+      name: Cutting height
+      description: Cutting height in millimeters.
+      required: true
+      selector:
+        select:
+          options: ["30", "35", "40", "45", "50", "55", "60", "65", "70"]
+    ride_distance:
+      name: Edge overlap
+      description: Distance the mower overlaps the boundary, in centimeters.
+      required: true
+      selector:
+        select:
+          options: ["5", "7", "10", "13", "15", "17", "20"]
 
 set_voice_volume:
   name: Set Voice Volume
@@ -234,6 +292,48 @@ start_auto_zone_mow:
       description: Auto-zone id, name, comma-separated list, or YAML list of auto-zones.
       required: true
       example: "1, Front area"
+      selector:
+        text:
+
+reset_blade_maintenance:
+  name: Reset blade maintenance
+  description: Reset the blade maintenance counter after servicing the blade.
+  target:
+    entity:
+      integration: anthbot_map
+  fields:
+    serial_number:
+      name: Serial number
+      description: Optional mower serial number or list of serial numbers.
+      example: "YOUR_MOWER_SERIAL"
+      selector:
+        text:
+
+reset_camera_maintenance:
+  name: Reset camera maintenance
+  description: Reset the camera maintenance counter after cleaning the camera.
+  target:
+    entity:
+      integration: anthbot_map
+  fields:
+    serial_number:
+      name: Serial number
+      description: Optional mower serial number or list of serial numbers.
+      example: "YOUR_MOWER_SERIAL"
+      selector:
+        text:
+
+reset_dock_contact_maintenance:
+  name: Reset charging-contact maintenance
+  description: Reset the charging-contact maintenance counter after cleaning the contacts.
+  target:
+    entity:
+      integration: anthbot_map
+  fields:
+    serial_number:
+      name: Serial number
+      description: Optional mower serial number or list of serial numbers.
+      example: "YOUR_MOWER_SERIAL"
       selector:
         text:
     serial_number:

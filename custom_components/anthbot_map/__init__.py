@@ -23,9 +23,11 @@ from .const import (
     ATTR_AUTO_ZONES,
     ATTR_ENABLE_CUSTOM_DIRECTION,
     ATTR_ENABLE_RAIN_PERCEPTION,
+    ATTR_EDGE_ID,
     ATTR_MOW_DIRECTION,
     ATTR_MOW_HEIGHT,
     ATTR_RAIN_CONTINUE_TIME,
+    ATTR_RIDE_DISTANCE,
     ATTR_SERIAL_NUMBER,
     ATTR_VOICE_VOLUME,
     ATTR_ZONES,
@@ -42,6 +44,7 @@ from .const import (
     SERVICE_RETURN_TO_DOCK,
     SERVICE_START_AUTO_ZONE_MOW,
     SERVICE_SET_CUSTOM_MOWING_DIRECTION,
+    SERVICE_SET_EDGE_SETTINGS,
     SERVICE_SET_MOW_HEIGHT,
     SERVICE_SET_RAIN_CONTINUE_TIME,
     SERVICE_SET_RAIN_PERCEPTION,
@@ -51,10 +54,15 @@ from .const import (
     SERVICE_START_DOCK_EDGE_MOW,
     SERVICE_START_ZONE_MOW,
     SERVICE_STOP_MOW,
+    SERVICE_PAUSE_MOW,
+    SERVICE_RESUME_MOW,
+    SERVICE_RESET_BLADE_MAINTENANCE,
+    SERVICE_RESET_CAMERA_MAINTENANCE,
+    SERVICE_RESET_DOCK_CONTACT_MAINTENANCE,
 )
 from .coordinator import AnthbotGenieDataUpdateCoordinator
 from .commands import async_prepare_cloud_connection, async_start_mowing
-from .zones import auto_zones, manual_zones
+from .zones import async_update_edge_settings, auto_zones, manual_zones
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -245,6 +253,16 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         },
         extra=vol.ALLOW_EXTRA,
     )
+    set_edge_settings_schema = vol.Schema(
+        {
+            vol.Required(ATTR_EDGE_ID): vol.Coerce(int),
+            vol.Required(ATTR_MOW_HEIGHT): vol.In(VALID_MOW_HEIGHTS),
+            vol.Required(ATTR_RIDE_DISTANCE): vol.In((5, 7, 10, 13, 15, 17, 20)),
+            vol.Optional(ATTR_SERIAL_NUMBER): vol.Any(cv.string, [cv.string]),
+            vol.Optional("entity_id"): vol.Any(cv.entity_id, [cv.entity_id]),
+        },
+        extra=vol.ALLOW_EXTRA,
+    )
     set_voice_volume_schema = vol.Schema(
         {
             vol.Required(ATTR_VOICE_VOLUME): vol.All(
@@ -309,25 +327,30 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         if not targets:
             raise AnthbotGenieApiError("No target Anthbot mower found")
         for coordinator in targets:
-            await async_start_mowing(coordinator, app_state=1)
+            if await async_start_mowing(coordinator, app_state=1):
+                coordinator.remember_mowing_task("full")
             await _async_sync_after_command(coordinator)
 
     async def _handle_start_outer_edge_mow(service_call) -> None:
         for coordinator in _resolve_target_coordinators(hass, service_call.data):
-            await async_start_mowing(
+            if await async_start_mowing(
                 coordinator,
                 app_state=2,
                 expected_modes={"bordermowing", "edgemowing", "gototarget"},
-            )
+            ):
+                coordinator.remember_mowing_task("edge")
             await _async_sync_after_command(coordinator)
 
     async def _handle_start_dock_edge_mow(service_call) -> None:
         for coordinator in _resolve_target_coordinators(hass, service_call.data):
             if not await async_prepare_cloud_connection(coordinator):
-                raise AnthbotGenieApiError(
-                    "The mower did not confirm its cloud connection; dock mowing was not started"
+                _LOGGER.warning(
+                    "Anthbot mower %s did not confirm the wake request; "
+                    "attempting dock mowing on the live MQTT transport",
+                    coordinator.client.serial_number,
                 )
             await coordinator.client.async_publish_service_command(cmd="nest_mow_start", data=1)
+            coordinator.remember_mowing_task("dock_edge")
             await _async_sync_after_command(coordinator)
 
     async def _handle_connect_cloud(service_call) -> None:
@@ -349,10 +372,84 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             raise AnthbotGenieApiError("No target Anthbot mower found")
         for coordinator in targets:
             await async_prepare_cloud_connection(coordinator)
+            await coordinator.client.async_publish_service_command(cmd="stop_all_tasks")
+            await coordinator.async_clear_last_mowing_task()
+            await _async_sync_after_command(coordinator)
+
+    async def _handle_pause_mow(service_call) -> None:
+        targets = _resolve_target_coordinators(hass, service_call.data)
+        if not targets:
+            raise AnthbotGenieApiError("No target Anthbot mower found")
+        for coordinator in targets:
+            await async_prepare_cloud_connection(coordinator)
+            await coordinator.client.async_publish_service_command(cmd="mow_pause")
+            await _async_sync_after_command(coordinator)
+
+    async def _handle_resume_mow(service_call) -> None:
+        targets = _resolve_target_coordinators(hass, service_call.data)
+        if not targets:
+            raise AnthbotGenieApiError("No target Anthbot mower found")
+        for coordinator in targets:
+            task = coordinator.last_mowing_task
+            if task is None:
+                raise AnthbotGenieApiError(
+                    "There is no mowing task to resume; start a new task"
+                )
+            task_type = task["type"]
+            data = task.get("data")
+            if task_type == "full":
+                started = await async_start_mowing(coordinator, app_state=1)
+            elif task_type == "edge":
+                started = await async_start_mowing(
+                    coordinator,
+                    app_state=2,
+                    expected_modes={"bordermowing", "edgemowing", "gototarget"},
+                )
+            elif task_type == "dock_edge":
+                await async_prepare_cloud_connection(coordinator)
+                await coordinator.client.async_publish_service_command(
+                    cmd="nest_mow_start", data=1
+                )
+                started = True
+            else:
+                if not await async_prepare_cloud_connection(coordinator):
+                    raise AnthbotGenieApiError(
+                        "The mower did not confirm its cloud connection"
+                    )
+                command = (
+                    "custom_area_mow_start"
+                    if task_type == "manual_zone"
+                    else "region_mow_start"
+                )
+                await coordinator.client.async_publish_service_command(
+                    cmd=command, data=data
+                )
+                started = True
+            if not started:
+                raise AnthbotGenieApiError(
+                    "The mower did not confirm resuming the mowing task"
+                )
+            await _async_sync_after_command(coordinator)
+
+    async def _handle_reset_maintenance(service_call, reset_id: int) -> None:
+        targets = _resolve_target_coordinators(hass, service_call.data)
+        if not targets:
+            raise AnthbotGenieApiError("No target Anthbot mower found")
+        for coordinator in targets:
+            await async_prepare_cloud_connection(coordinator)
             await coordinator.client.async_publish_service_command(
-                cmd="stop_all_tasks", data=1
+                cmd="robot_maintenance_reset", data={"reset_id": reset_id}
             )
             await _async_sync_after_command(coordinator)
+
+    async def _handle_reset_blade_maintenance(service_call) -> None:
+        await _handle_reset_maintenance(service_call, 1)
+
+    async def _handle_reset_camera_maintenance(service_call) -> None:
+        await _handle_reset_maintenance(service_call, 2)
+
+    async def _handle_reset_dock_contact_maintenance(service_call) -> None:
+        await _handle_reset_maintenance(service_call, 0)
 
     async def _handle_return_to_dock(service_call) -> None:
         targets = _resolve_target_coordinators(hass, service_call.data)
@@ -360,9 +457,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             raise AnthbotGenieApiError("No target Anthbot mower found")
         for coordinator in targets:
             await async_prepare_cloud_connection(coordinator)
-            await coordinator.client.async_publish_service_command(
-                cmd="charge_start", data=1
-            )
+            await coordinator.client.async_publish_service_command(cmd="charge_start")
             await _async_sync_after_command(coordinator)
 
     async def _handle_set_mow_height(service_call) -> None:
@@ -373,9 +468,22 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         for coordinator in targets:
             await coordinator.client.async_publish_service_command(
                 cmd="param_set",
-                data={"cutter_height": mow_height, "rid_switch": 0},
+                data={"cutter_height": mow_height},
             )
             await _async_sync_after_command(coordinator)
+
+    async def _handle_set_edge_settings(service_call) -> None:
+        targets = _resolve_target_coordinators(hass, service_call.data)
+        if not targets:
+            raise AnthbotGenieApiError("No target Anthbot mower found")
+        for coordinator in targets:
+            await async_prepare_cloud_connection(coordinator)
+            await async_update_edge_settings(
+                coordinator,
+                edge_id=int(service_call.data[ATTR_EDGE_ID]),
+                cutter_height=int(service_call.data[ATTR_MOW_HEIGHT]),
+                ride_distance=int(service_call.data[ATTR_RIDE_DISTANCE]),
+            )
 
     async def _handle_set_voice_volume(service_call) -> None:
         targets = _resolve_target_coordinators(hass, service_call.data)
@@ -464,6 +572,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
                 cmd="custom_area_mow_start",
                 data={"id": zone_ids},
             )
+            coordinator.remember_mowing_task("manual_zone", {"id": zone_ids})
             await _async_sync_after_command(coordinator)
 
     async def _handle_start_auto_zone_mow(service_call) -> None:
@@ -485,6 +594,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
                 cmd="region_mow_start",
                 data={"points": points},
             )
+            coordinator.remember_mowing_task("auto_zone", {"points": points})
             await _async_sync_after_command(coordinator)
 
     if not hass.services.has_service(DOMAIN, SERVICE_START_FULL_MOW):
@@ -511,6 +621,14 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         hass.services.async_register(
             DOMAIN, SERVICE_STOP_MOW, _handle_stop_mow, schema=base_schema
         )
+    if not hass.services.has_service(DOMAIN, SERVICE_PAUSE_MOW):
+        hass.services.async_register(
+            DOMAIN, SERVICE_PAUSE_MOW, _handle_pause_mow, schema=base_schema
+        )
+    if not hass.services.has_service(DOMAIN, SERVICE_RESUME_MOW):
+        hass.services.async_register(
+            DOMAIN, SERVICE_RESUME_MOW, _handle_resume_mow, schema=base_schema
+        )
     if not hass.services.has_service(DOMAIN, SERVICE_RETURN_TO_DOCK):
         hass.services.async_register(
             DOMAIN,
@@ -518,12 +636,26 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             _handle_return_to_dock,
             schema=base_schema,
         )
+    for service_name, handler in (
+        (SERVICE_RESET_BLADE_MAINTENANCE, _handle_reset_blade_maintenance),
+        (SERVICE_RESET_CAMERA_MAINTENANCE, _handle_reset_camera_maintenance),
+        (SERVICE_RESET_DOCK_CONTACT_MAINTENANCE, _handle_reset_dock_contact_maintenance),
+    ):
+        if not hass.services.has_service(DOMAIN, service_name):
+            hass.services.async_register(DOMAIN, service_name, handler, schema=base_schema)
     if not hass.services.has_service(DOMAIN, SERVICE_SET_MOW_HEIGHT):
         hass.services.async_register(
             DOMAIN,
             SERVICE_SET_MOW_HEIGHT,
             _handle_set_mow_height,
             schema=set_height_schema,
+        )
+    if not hass.services.has_service(DOMAIN, SERVICE_SET_EDGE_SETTINGS):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_SET_EDGE_SETTINGS,
+            _handle_set_edge_settings,
+            schema=set_edge_settings_schema,
         )
     if not hass.services.has_service(DOMAIN, SERVICE_SET_VOICE_VOLUME):
         hass.services.async_register(
@@ -724,6 +856,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             device=device,
             update_interval=timedelta(seconds=scan_interval),
         )
+        await coordinator.async_load_last_mowing_task()
+        # The mobile app establishes the named-shadow MQTT session first.
+        # Ancillary REST data can refresh independently afterwards.
+        await coordinator.async_start_live_shadow()
         await coordinator.async_refresh()
         if not coordinator.last_update_success:
             _LOGGER.warning(
@@ -732,7 +868,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 device.serial_number,
                 coordinator.last_exception,
             )
-        await coordinator.async_start_live_shadow()
         coordinators.append(coordinator)
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinators
@@ -757,8 +892,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 SERVICE_START_DOCK_EDGE_MOW,
                 SERVICE_START_ALL_EDGES_MOW,
                 SERVICE_STOP_MOW,
+                SERVICE_PAUSE_MOW,
+                SERVICE_RESUME_MOW,
                 SERVICE_RETURN_TO_DOCK,
                 SERVICE_SET_MOW_HEIGHT,
+                SERVICE_SET_EDGE_SETTINGS,
                 SERVICE_SET_VOICE_VOLUME,
                 SERVICE_SET_CUSTOM_MOWING_DIRECTION,
                 SERVICE_CONNECT_CLOUD,
@@ -766,6 +904,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 SERVICE_SET_RAIN_PERCEPTION,
                 SERVICE_START_ZONE_MOW,
                 SERVICE_START_AUTO_ZONE_MOW,
+                SERVICE_RESET_BLADE_MAINTENANCE,
+                SERVICE_RESET_CAMERA_MAINTENANCE,
+                SERVICE_RESET_DOCK_CONTACT_MAINTENANCE,
             ):
                 if hass.services.has_service(DOMAIN, service_name):
                     hass.services.async_remove(DOMAIN, service_name)

@@ -463,6 +463,22 @@ button:hover {
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
 }
 
+.mowing-target-grid {
+  margin-bottom: 14px;
+}
+
+.mowing-action-grid {
+  padding-top: 14px;
+  border-top: 1px solid var(--anthbot-divider);
+}
+
+button.panel-tile {
+  touch-action: manipulation;
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
+}
+
 .panel-tile {
   background: var(--anthbot-secondary-background);
   border: 1px solid var(--anthbot-divider);

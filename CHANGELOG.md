@@ -1,5 +1,62 @@
 # Changelog
 
+## 2.1.0 — 2026-08-14
+
+Stable release of the field-tested `2.2.1-beta.48` feature set. Compared with
+`2.0.0`, it adds app-style task selection and pause/resume, multi-zone ordering,
+complete global/manual/automatic zone settings, maintenance and history views,
+editable edge overlap, the Garden Map mobile layout, 23-language localization,
+and an MQTT transport aligned with the ANTHBOT Android 2.15.15 application.
+
+See `RELEASE_NOTES_v2.1.0.md` for the complete user-facing change list.
+
+## 2.2.1-beta.45 — 2026-08-14
+
+- Restored the proven beta.35 command execution route for panel controls.
+- Single manual and automatic zone selections again press their concrete zone
+  button entity; multi-zone selection and ordering remain available.
+
+## 2.2.1-beta.44 — 2026-08-14
+
+- Fixed rotated `contain` geometry: at ±90 degrees the renderer now fits the
+  landscape map against the swapped viewport axes before rotation, instead of
+  drawing it at roughly 56% of the available mobile size.
+
+## 2.2.1-beta.43 — 2026-08-14
+
+- Replaced the experimental mobile overrides with the exact mobile layout and
+  renderer rules from the supplied working Garden Map Card.
+
+## 2.2.1-beta.42 — 2026-08-14
+
+- Force the map canvas to fill the available mobile viewport even when the
+  card has a configured fixed height.
+- Detect touch-only mobile and tablet displays in addition to narrow screens.
+
+## 2.2.1-beta.41 — 2026-08-14
+
+- Matched the proven Garden Map Card mobile layout: full available viewport
+  map height, compact floating menu, and a 76% scrollable glass panel.
+- Added Garden Map compatible `mobile_map_rotation`, `mobile_map_fit`, and
+  `mobile_robot_size` options.
+- Mobile controls and tabs now use the same compact two-column layout.
+
+## 2.2.1-beta.40 — 2026-08-14
+
+- Panel controls now react reliably to a single mouse click or touch.
+- Live mower updates no longer replace a pressed button between pointer-down
+  and click events.
+
+## 2.2.1-beta.39 — 2026-08-14
+
+- The manual and automatic zone selectors now preserve their independently
+  opened or closed state while selections are changed.
+- Selecting three or more zones remains stable and keeps the chosen mowing
+  order.
+- Zone clicks no longer propagate to the surrounding collapsible section.
+- Removed the gray hover flicker from mowing-target buttons while preserving
+  the green selected state.
+
 ## 2.0.0 — 2026-08-12
 
 First stable Anthbot Map v2 release, promoted from the field-tested
@@ -637,3 +694,22 @@ A v1.0.29 és v1.0.54 közötti részletes összehasonlítás:
 
 The integration is based on the upstream projects listed in [NOTICE.md](NOTICE.md).
 See their histories for changes made before this combined map release.
+# 2.2.1-beta.48
+
+- Added the app-style visual edge overlap editor to Anthbot Map Card.
+- The mower edge now follows the selected 5–20 cm boundary overhang with a matching measurement arrow.
+- Empty or deleted `ridable_areas` entries without vertices are hidden from the settings UI.
+- Added all 23 supported translations for the edge editor.
+
+# 2.2.1-beta.47
+
+- Download the app's separate `ridable_area` map file using
+  `ridable_area_time` and expose its editable edges to the map cards.
+- Expose `ridable_area_error` for direct Home Assistant diagnostics.
+
+# 2.2.1-beta.46
+
+- Added the app-compatible `set_edge_settings` service.
+- Edge overlap now uses the mobile app's `ride_distance` field and
+  `ridable_area_set` full-list payload.
+- Supported overlap values: 5, 7, 10, 13, 15, 17 and 20 cm.
