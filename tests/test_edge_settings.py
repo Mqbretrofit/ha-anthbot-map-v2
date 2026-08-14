@@ -73,6 +73,7 @@ class TestEdgeSettings(unittest.IsolatedAsyncioTestCase):
                 }
             },
             client=client,
+            apply_ridable_area_settings=unittest.mock.Mock(),
             async_request_refresh=AsyncMock(),
         )
 
@@ -110,7 +111,33 @@ class TestEdgeSettings(unittest.IsolatedAsyncioTestCase):
             },
         )
         client.async_request_all_properties.assert_awaited_once_with()
+        coordinator.apply_ridable_area_settings.assert_called_once_with(
+            [
+                {
+                    "id": 7,
+                    "name": "North",
+                    "cutter_height": 50,
+                    "ride_distance": 10,
+                    "vertexs": [1, 2],
+                },
+                {
+                    "id": 8,
+                    "name": "South",
+                    "cutter_height": 60,
+                    "ride_distance": 20,
+                    "vertexs": [3, 4],
+                },
+            ]
+        )
         coordinator.async_request_refresh.assert_awaited_once_with()
+
+    def test_frontend_prefers_fresh_separate_edge_definition(self) -> None:
+        source = (
+            ROOT / "custom_components/anthbot_map/frontend/edge-settings.js"
+        ).read_text(encoding="utf-8")
+        direct = "card.entity?.attributes?.ridable_areas"
+        embedded = 'for(const key of ["ridable_areas","ridableAreas"])'
+        self.assertLess(source.index(direct), source.index(embedded))
 
 
 if __name__ == "__main__":

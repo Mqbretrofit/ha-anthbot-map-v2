@@ -1,5 +1,5 @@
 import { AnthbotMapRenderer } from "./renderer.js?v=144";
-import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=22148";
+import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=21101";
 import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=22138";
 import {
   adjustCalibration,

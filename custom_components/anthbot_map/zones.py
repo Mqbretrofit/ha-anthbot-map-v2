@@ -188,6 +188,9 @@ async def async_update_edge_settings(
         cmd="ridable_area_set",
         data={"ridable_areas": edges, "delete_ridable_area": []},
     )
+    apply_settings = getattr(coordinator, "apply_ridable_area_settings", None)
+    if callable(apply_settings):
+        apply_settings(edges)
     await asyncio.sleep(2)
     await coordinator.client.async_request_all_properties()
     await coordinator.async_request_refresh()

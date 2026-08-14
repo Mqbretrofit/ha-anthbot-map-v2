@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import logging
 import time
@@ -219,6 +220,17 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._task_store.async_save(snapshot),
             f"anthbot_save_last_task_{self.client.serial_number}",
         )
+
+    def apply_ridable_area_settings(self, edges: list[dict[str, Any]]) -> None:
+        """Expose a successfully submitted edge definition without cache lag."""
+        definition = {"ridable_areas": deepcopy(edges)}
+        self._ridable_area_definition = definition
+        self._ridable_area_definition_error = None
+        if self.reported_state:
+            state = dict(self.reported_state)
+            state["_ridable_area_definition"] = definition
+            state["_ridable_area_definition_error"] = None
+            self.async_set_updated_data(state)
 
     async def async_clear_last_mowing_task(self) -> None:
         """Forget the resumable task after Stop deletes every mower task."""

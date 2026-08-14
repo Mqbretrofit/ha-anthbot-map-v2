@@ -29,9 +29,8 @@ const esc=(value)=>String(value??"").replace(/[&<>"']/g,(c)=>({"&":"&amp;","<":"
 
 function validEdges(card){
   const area=card.entity?.attributes?.area_definition||{};
-  let edges=[];
-  for(const key of ["ridable_areas","ridableAreas"])if(Array.isArray(area[key])){edges=area[key];break;}
-  if(!edges.length&&Array.isArray(card.entity?.attributes?.ridable_areas))edges=card.entity.attributes.ridable_areas;
+  let edges=Array.isArray(card.entity?.attributes?.ridable_areas)?card.entity.attributes.ridable_areas:[];
+  if(!edges.length)for(const key of ["ridable_areas","ridableAreas"])if(Array.isArray(area[key])){edges=area[key];break;}
   return edges.filter((edge)=>Array.isArray(edge?.vertexs)&&edge.vertexs.length>=2);
 }
 
@@ -83,4 +82,3 @@ export function renderAnthbotEdgeSettings(card,body){
   edges.forEach((edge,index)=>{const tile=document.createElement("button");tile.type="button";tile.className="panel-tile anthbot-edge-tile";tile.innerHTML=`<strong>${esc(edge.name||`${tr(card,"edge")} ${index+1}`)}</strong><span>${esc(tr(card,"edgeSettingsHint"))}</span>`;tile.addEventListener("click",()=>openModal(card,edge));grid.appendChild(tile);});
   section.querySelector(".settings-section-body").appendChild(grid);body.appendChild(section);
 }
-
