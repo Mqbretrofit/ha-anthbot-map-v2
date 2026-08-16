@@ -90,11 +90,13 @@ jobs:
             CHANGELOG_v2.1.0_HU.md \
             CHANGELOG_v2.1.1_HU.md \
             CHANGELOG_v2.2.0_HU.md \
+            CHANGELOG_v2.2.1_HU.md \
             RELEASE_NOTES_v2.0.0-beta.15.md \
             RELEASE_NOTES_v2.0.0.md \
             RELEASE_NOTES_v2.1.0.md \
             RELEASE_NOTES_v2.1.1.md \
             RELEASE_NOTES_v2.2.0.md \
+            RELEASE_NOTES_v2.2.1.md \
             LICENSE \
             NOTICE.md \
             hacs.json
@@ -104,7 +106,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${{ steps.release.outputs.tag }}"
-          cat RELEASE_NOTES_v2.2.0.md CHANGELOG_v2.2.0_HU.md > /tmp/release-notes.md
+          cat RELEASE_NOTES_v2.2.1.md CHANGELOG_v2.2.1_HU.md > /tmp/release-notes.md
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release edit "$tag" \
               --title "Anthbot Map $tag" \

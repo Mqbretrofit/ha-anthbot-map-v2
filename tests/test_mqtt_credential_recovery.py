@@ -27,6 +27,13 @@ class MqttCredentialRecoveryTests(unittest.TestCase):
         self.assertIn('?SDK=JavaScript&Version=2.2.15', source)
         self.assertIn('_connect_packet(str(uuid.uuid4()), 300)', source)
 
+    def test_live_position_shadow_is_refreshed_only_over_mqtt(self) -> None:
+        source = SOURCE.read_text(encoding="utf-8")
+        self.assertIn('_PROPERTY_REFRESH_SECONDS = 5', source)
+        self.assertIn('await self._client.async_request_all_properties()', source)
+        self.assertIn('packet[0] >> 4 == 13', source)
+        self.assertIn('AWS IoT MQTT did not answer PINGREQ', source)
+
     def test_app_named_shadow_response_topics_are_subscribed(self) -> None:
         source = SOURCE.read_text(encoding="utf-8")
         for suffix in (

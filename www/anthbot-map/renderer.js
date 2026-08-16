@@ -1146,12 +1146,12 @@ export class AnthbotMapRenderer {
 
   cloudHeadingDegrees(pose) {
     const headingCandidates = [
+      this.state.raw_pose?.heading,
+      pose?.heading,
       this.state.cur_pose?.heading,
       this.state.curPose?.heading,
       this.state.map_scan_pose?.heading,
       this.state.mapScanPose?.heading,
-      this.state.raw_pose?.heading,
-      pose?.heading,
     ];
     for (const value of headingCandidates) {
       const heading = Number(value);
@@ -1161,12 +1161,12 @@ export class AnthbotMapRenderer {
     }
 
     const yawCandidates = [
+      this.state.raw_pose?.yaw,
+      pose?.yaw,
       this.state.cur_pose?.yaw,
       this.state.curPose?.yaw,
       this.state.map_scan_pose?.yaw,
       this.state.mapScanPose?.yaw,
-      this.state.raw_pose?.yaw,
-      pose?.yaw,
     ];
     for (const value of yawCandidates) {
       const yaw = Number(value);

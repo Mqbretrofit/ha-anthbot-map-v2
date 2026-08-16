@@ -92,3 +92,36 @@ async def async_start_mowing(
         )
 
     return False
+
+
+async def async_start_outer_edge_mowing(
+    coordinator: AnthbotGenieDataUpdateCoordinator,
+) -> bool:
+    """Start outer-edge mowing with the command used by the official app."""
+    if not await async_prepare_cloud_connection(coordinator):
+        raise AnthbotGenieApiError(
+            "The mower did not confirm its cloud connection; edge command was not sent"
+        )
+
+    expected = {"bordermowing", "edgemowing", "gototarget"}
+    for attempt in range(2):
+        await coordinator.client.async_publish_service_command(
+            cmd="ridable_mow_start", data=1
+        )
+
+        for _ in range(4):
+            await asyncio.sleep(2)
+            state = coordinator.reported_state
+            robot_sta = state.get("robot_sta")
+            mode = robot_sta.get("value") if isinstance(robot_sta, dict) else None
+            mode = str(mode or state.get("mower_status") or "").lower()
+            if mode in expected:
+                return True
+
+        _LOGGER.warning(
+            "Anthbot outer-edge start was not confirmed for %s (attempt %s/2)",
+            coordinator.client.serial_number,
+            attempt + 1,
+        )
+
+    return False

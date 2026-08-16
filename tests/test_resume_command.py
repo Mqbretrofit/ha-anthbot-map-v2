@@ -68,6 +68,11 @@ class ResumeCommandTests(unittest.TestCase):
         self.assertNotIn("if (control.closest?.('[data-role=\"panel-body\"]')) return;", source)
         self.assertIn("void executeAnthbotCommand(hass, card, command, details, control, config);", source)
 
+    def test_primary_action_is_not_overridden_by_global_start_handler(self) -> None:
+        source = CARD_SOURCE.read_text(encoding="utf-8")
+        self.assertIn("tile.dataset.primaryMowingAction = action", source)
+        self.assertIn('if (control.matches?.("[data-primary-mowing-action]")) return;', source)
+
     def test_single_zone_uses_the_beta35_zone_button_route(self) -> None:
         source = CARD_SOURCE.read_text(encoding="utf-8")
         self.assertIn("this.selectedMowingTarget.zones.length === 1", source)
@@ -115,6 +120,18 @@ class ResumeCommandTests(unittest.TestCase):
         self.assertIn('this.config.mobile_map_rotation ?? this.config.mobileMapRotation ?? 90', source)
         self.assertIn('this.config.mobile_map_fit || this.config.mobileMapFit || "contain"', source)
         self.assertIn('this.config.mobile_robot_size ?? this.config.mobileRobotSize ?? 24', source)
+
+    def test_live_pose_has_priority_over_stale_mapping_pose(self) -> None:
+        source = CARD_SOURCE.read_text(encoding="utf-8")
+        self.assertIn(
+            "[rawPose, attributes.cur_pose, attributes.map_scan_pose]",
+            source,
+        )
+        renderer = (ROOT / "custom_components" / "anthbot_map" / "frontend" / "renderer.js").read_text(encoding="utf-8")
+        heading_block = renderer.split("const headingCandidates = [", 1)[1].split("];", 1)[0]
+        yaw_block = renderer.split("const yawCandidates = [", 1)[1].split("];", 1)[0]
+        self.assertLess(heading_block.index("raw_pose"), heading_block.index("cur_pose"))
+        self.assertLess(yaw_block.index("raw_pose"), yaw_block.index("cur_pose"))
 
     def test_quarter_turn_map_fit_uses_swapped_viewport_axes(self) -> None:
         geometry = (ROOT / "custom_components" / "anthbot_map" / "frontend" / "geometry.js").read_text(encoding="utf-8")

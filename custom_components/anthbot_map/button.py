@@ -17,7 +17,11 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .api import AnthbotGenieApiError
 from .const import DOMAIN
 from .coordinator import AnthbotGenieDataUpdateCoordinator
-from .commands import async_prepare_cloud_connection, async_start_mowing
+from .commands import (
+    async_prepare_cloud_connection,
+    async_start_mowing,
+    async_start_outer_edge_mowing,
+)
 from .zones import auto_zones, manual_zones
 
 _LOGGER = logging.getLogger(__name__)
@@ -145,11 +149,7 @@ class AnthbotButtonEntity(
             if await async_start_mowing(self.coordinator, app_state=1):
                 self.coordinator.remember_mowing_task("full")
         elif key == "start_outer_edge_mow":
-            if await async_start_mowing(
-                self.coordinator,
-                app_state=2,
-                expected_modes={"bordermowing", "edgemowing", "gototarget"},
-            ):
+            if await async_start_outer_edge_mowing(self.coordinator):
                 self.coordinator.remember_mowing_task("edge")
         elif key == "start_dock_edge_mow":
             if not await async_prepare_cloud_connection(self.coordinator):
@@ -181,11 +181,7 @@ class AnthbotButtonEntity(
                         "The mower did not confirm resuming full-area mowing"
                     )
             elif task_type == "edge":
-                if not await async_start_mowing(
-                    self.coordinator,
-                    app_state=2,
-                    expected_modes={"bordermowing", "edgemowing", "gototarget"},
-                ):
+                if not await async_start_outer_edge_mowing(self.coordinator):
                     raise AnthbotGenieApiError(
                         "The mower did not confirm resuming edge mowing"
                     )

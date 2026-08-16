@@ -483,7 +483,7 @@ class AnthbotMapCard extends HTMLElement {
 
     const attributes = this.entity.attributes || {};
     const rawPose = attributes.pose && typeof attributes.pose === "object" ? attributes.pose : {};
-    const coordinatePose = [attributes.cur_pose, attributes.map_scan_pose, rawPose].find((candidate) =>
+    const coordinatePose = [rawPose, attributes.cur_pose, attributes.map_scan_pose].find((candidate) =>
       Number.isFinite(Number(candidate?.x)) && Number.isFinite(Number(candidate?.y)),
     );
     const poseYawEntity = this.getRelatedEntity("poseYaw");
@@ -1113,6 +1113,7 @@ class AnthbotMapCard extends HTMLElement {
     };
     const tile = document.createElement("button");
     tile.type = "button";
+    tile.dataset.primaryMowingAction = action;
     tile.className = `panel-tile task-action-tile ${action}`;
     tile.innerHTML = `<strong>${labels[action][0]}</strong><span>${labels[action][1]}</span>`;
     tile.addEventListener("click", () => this.handlePrimaryMowingAction(action));
@@ -1646,7 +1647,7 @@ class AnthbotMapCard extends HTMLElement {
     const expected = ({
       start_full_mow: ["mowing", "globalmowing", "working", "cutting", "nyiras", "funyiras"],
       start_zone_mow: ["mowing", "zonemowing", "regionmowing", "working", "cutting", "nyiras", "zonanyiras"],
-      start_outer_edge_mow: ["mowing", "bordermowing", "edgecutting", "working", "nyiras", "szegelynyiras"],
+      start_outer_edge_mow: ["mowing", "bordermowing", "edgemowing", "edgecutting", "working", "nyiras", "szegelynyiras"],
       start_dock_edge_mow: ["mowing", "nestmowing", "working", "nyiras", "tolto", "kornyekeneknyirasa"],
       stop_mow: ["paused", "pause", "standby", "idle", "charging", "charge", "docked", "szunetel", "keszenlet", "toltes", "dokkolva"],
       pause_mow: ["paused", "pause", "szunetel", "szuneteltetve"],
@@ -2380,7 +2381,7 @@ function anthbotStandaloneCommandIsConfirmed(hass, service) {
   const expected = ({
     start_full_mow: ["mowing", "globalmowing", "working", "cutting", "nyiras", "funyiras"],
     start_zone_mow: ["mowing", "zonemowing", "regionmowing", "working", "cutting", "nyiras", "funyiras", "zonanyiras"],
-    start_outer_edge_mow: ["mowing", "bordermowing", "edgecutting", "working", "szegelynyiras"],
+    start_outer_edge_mow: ["mowing", "bordermowing", "edgemowing", "edgecutting", "working", "szegelynyiras"],
     start_dock_edge_mow: ["mowing", "nestmowing", "working", "tolto", "kornyekeneknyirasa"],
     stop_mow: ["paused", "pause", "standby", "idle", "charging", "charge", "docked", "szunetel", "keszenlet", "toltes", "dokkolva"],
     pause_mow: ["paused", "pause", "szunetel", "szuneteltetve"],
@@ -2540,6 +2541,9 @@ window.__anthbotFeedbackClickHandler = (event) => {
       )
     );
     if (!control) return;
+    // This command depends on the selected mowing target (full, edge or zones).
+    // Let the tile's handlePrimaryMowingAction() listener dispatch it.
+    if (control.matches?.("[data-primary-mowing-action]")) return;
     const hassHost = path.find((item) => item?._hass?.states || item?.hass?.states);
     const hass = hassHost?._hass
       || hassHost?.hass

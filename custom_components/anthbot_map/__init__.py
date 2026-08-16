@@ -65,7 +65,11 @@ from .const import (
     SERVICE_RESET_DOCK_CONTACT_MAINTENANCE,
 )
 from .coordinator import AnthbotGenieDataUpdateCoordinator
-from .commands import async_prepare_cloud_connection, async_start_mowing
+from .commands import (
+    async_prepare_cloud_connection,
+    async_start_mowing,
+    async_start_outer_edge_mowing,
+)
 from .zones import async_update_edge_settings, auto_zones, manual_zones
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -339,11 +343,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
 
     async def _handle_start_outer_edge_mow(service_call) -> None:
         for coordinator in _resolve_target_coordinators(hass, service_call.data):
-            if await async_start_mowing(
-                coordinator,
-                app_state=2,
-                expected_modes={"bordermowing", "edgemowing", "gototarget"},
-            ):
+            if await async_start_outer_edge_mowing(coordinator):
                 coordinator.remember_mowing_task("edge")
             await _async_sync_after_command(coordinator)
 
@@ -406,11 +406,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             if task_type == "full":
                 started = await async_start_mowing(coordinator, app_state=1)
             elif task_type == "edge":
-                started = await async_start_mowing(
-                    coordinator,
-                    app_state=2,
-                    expected_modes={"bordermowing", "edgemowing", "gototarget"},
-                )
+                started = await async_start_outer_edge_mowing(coordinator)
             elif task_type == "dock_edge":
                 await async_prepare_cloud_connection(coordinator)
                 await coordinator.client.async_publish_service_command(

@@ -30,6 +30,9 @@ _LOGGER = logging.getLogger(__name__)
 
 _RECONNECT_INITIAL_SECONDS = 5
 _RECONNECT_MAX_SECONDS = 30
+_PROPERTY_REFRESH_SECONDS = 5
+_MQTT_IDLE_PING_SECONDS = 30
+_MQTT_PING_RESPONSE_SECONDS = 15
 
 
 def _safe_error(error: Exception) -> str:
@@ -334,11 +337,44 @@ class AnthbotLiveShadowListener:
                 self._consecutive_failures = 0
                 self._client.set_live_command_publisher(self.async_publish_command)
                 await self._on_connection(True, None)
+                loop = asyncio.get_running_loop()
+                last_received = loop.time()
+                next_property_refresh = last_received + _PROPERTY_REFRESH_SECONDS
+                ping_sent_at: float | None = None
                 while not self._stop.is_set():
+                    now = loop.time()
+                    deadlines = [next_property_refresh]
+                    if ping_sent_at is None:
+                        deadlines.append(last_received + _MQTT_IDLE_PING_SECONDS)
+                    else:
+                        deadlines.append(ping_sent_at + _MQTT_PING_RESPONSE_SECONDS)
+                    receive_timeout = max(0.1, min(deadlines) - now)
                     try:
-                        message = await asyncio.wait_for(ws.receive(), timeout=30)
+                        message = await asyncio.wait_for(
+                            ws.receive(), timeout=receive_timeout
+                        )
                     except TimeoutError:
-                        await ws.send_bytes(b"\xc0\x00")
+                        now = loop.time()
+                        if now >= next_property_refresh:
+                            # Match the cloud-connect action: ask the mower,
+                            # over the active MQTT service shadow, to publish
+                            # a fresh complete property state. Reading only
+                            # property/get can return an already stale pose.
+                            await self._client.async_request_all_properties()
+                            next_property_refresh = now + _PROPERTY_REFRESH_SECONDS
+                        if (
+                            ping_sent_at is None
+                            and now - last_received >= _MQTT_IDLE_PING_SECONDS
+                        ):
+                            await ws.send_bytes(b"\xc0\x00")
+                            ping_sent_at = now
+                        elif (
+                            ping_sent_at is not None
+                            and now - ping_sent_at >= _MQTT_PING_RESPONSE_SECONDS
+                        ):
+                            raise TimeoutError(
+                                "AWS IoT MQTT did not answer PINGREQ"
+                            )
                         continue
                     if message.type in (WSMsgType.CLOSED, WSMsgType.CLOSE, WSMsgType.ERROR):
                         detail = ws.exception()
@@ -350,6 +386,10 @@ class AnthbotLiveShadowListener:
                     if message.type != WSMsgType.BINARY:
                         continue
                     for packet in _mqtt_packets(message.data):
+                        last_received = loop.time()
+                        if packet[0] >> 4 == 13:  # PINGRESP
+                            ping_sent_at = None
+                            continue
                         decoded = _decode_publish(packet)
                         if decoded is None:
                             continue
