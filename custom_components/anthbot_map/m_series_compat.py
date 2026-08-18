@@ -28,6 +28,28 @@ _M_SERIES_MAP_CANDIDATES = (
     "map_manager.tar.gz",
 )
 
+_SENSITIVE_FIELD_PARTS = (
+    "ssid",
+    "bssid",
+    "password",
+    "passwd",
+    "token",
+    "secret",
+    "access_key",
+    "session_key",
+    "pin",
+    "ccid",
+    "iccid",
+    "imei",
+    "imsi",
+    "latitude",
+    "longitude",
+    "gps_lat",
+    "gps_lon",
+    "ip",
+    "mac",
+)
+
 
 def _is_m_series(model: object) -> bool:
     value = str(model or "").upper()
@@ -43,6 +65,41 @@ def _serial_from_topic(topic: str) -> str | None:
     return serial if separator and serial else None
 
 
+def _is_sensitive_key(key: object) -> bool:
+    normalized = str(key or "").lower()
+    return any(part in normalized for part in _SENSITIVE_FIELD_PARTS)
+
+
+def _sanitize_shadow_value(key: object, value: Any, *, depth: int = 0) -> Any:
+    """Return a compact log-safe representation of an M-series shadow value."""
+    if _is_sensitive_key(key):
+        return "<redacted>"
+    if depth >= 3:
+        return "<nested>"
+    if isinstance(value, dict):
+        return {
+            str(child_key): _sanitize_shadow_value(
+                child_key, child_value, depth=depth + 1
+            )
+            for child_key, child_value in list(value.items())[:30]
+        }
+    if isinstance(value, list):
+        return [
+            _sanitize_shadow_value(key, item, depth=depth + 1)
+            for item in value[:15]
+        ]
+    if isinstance(value, str) and len(value) > 120:
+        return value[:117] + "..."
+    return value
+
+
+def _shadow_diagnostic_payload(reported: dict[str, Any]) -> dict[str, Any]:
+    return {
+        str(key): _sanitize_shadow_value(key, value)
+        for key, value in list(reported.items())[:120]
+    }
+
+
 def install_m_series_compat() -> None:
     """Install model-aware M5/M9 behavior once per Home Assistant process."""
     global _INSTALLED
@@ -51,6 +108,7 @@ def install_m_series_compat() -> None:
     _INSTALLED = True
 
     original_coordinator_init = AnthbotGenieDataUpdateCoordinator.__init__
+    original_live_shadow = AnthbotGenieDataUpdateCoordinator._async_handle_live_shadow
     original_service_state = AnthbotShadowApiClient.async_get_service_reported_state
     original_publish = AnthbotShadowApiClient.async_publish_service_command
     original_publish_packet = mqtt_live._publish_packet
@@ -69,6 +127,38 @@ def install_m_series_compat() -> None:
         )
         if is_m_series:
             _M_SERIES_SERIALS.add(self.client.serial_number)
+            setattr(self, "_m_series_shadow_diag_signatures", {})
+
+    async def live_shadow(
+        self,
+        shadow_name: str,
+        reported: dict[str, Any],
+    ) -> None:
+        if _is_m_series(getattr(self.device, "model", None)) and isinstance(
+            reported, dict
+        ):
+            safe_payload = _shadow_diagnostic_payload(reported)
+            signature = json.dumps(
+                safe_payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            )
+            signatures = getattr(self, "_m_series_shadow_diag_signatures", None)
+            if not isinstance(signatures, dict):
+                signatures = {}
+                setattr(self, "_m_series_shadow_diag_signatures", signatures)
+            # Log only when the content actually changes, so normal MQTT bursts
+            # do not flood Home Assistant's log.
+            if signatures.get(shadow_name) != signature:
+                signatures[shadow_name] = signature
+                _LOGGER.warning(
+                    "ANTHBOT M-SERIES SHADOW: serial=%s shadow=%s fields=%s",
+                    self.client.serial_number,
+                    shadow_name,
+                    signature,
+                )
+        await original_live_shadow(self, shadow_name, reported)
 
     async def service_state(self) -> dict[str, Any]:
         if _is_m_series(getattr(self, "_device_model", None)):
@@ -140,9 +230,6 @@ def install_m_series_compat() -> None:
         last_body = ""
         last_headers: dict[str, str] = {}
 
-        # Vincent retries the complete matrix once after refreshing STS creds.
-        # Keep that behavior before falling back to the already-connected MQTT
-        # transport, which uses the same corrected M-series payload.
         for refresh_attempt in range(2):
             for attempt_index, (
                 request_uri,
@@ -303,6 +390,7 @@ def install_m_series_compat() -> None:
         )
 
     AnthbotGenieDataUpdateCoordinator.__init__ = coordinator_init
+    AnthbotGenieDataUpdateCoordinator._async_handle_live_shadow = live_shadow
     AnthbotGenieDataUpdateCoordinator._async_refresh_map_definition = refresh_map_definition
     AnthbotShadowApiClient.async_get_service_reported_state = service_state
     AnthbotShadowApiClient.async_publish_service_command = publish_service_command
