@@ -7,8 +7,13 @@ import logging
 
 from .api import AnthbotGenieApiError
 from .coordinator import AnthbotGenieDataUpdateCoordinator, is_robot_online
+from .m_series_compat import install_m_series_compat
 
 _LOGGER = logging.getLogger(__name__)
+
+# __init__.py imports this module before any mower coordinator is created, so
+# install the model-aware shadow behavior here without touching Genie paths.
+install_m_series_compat()
 
 
 async def async_prepare_cloud_connection(
@@ -81,6 +86,13 @@ async def async_start_mowing(
             state = coordinator.reported_state
             robot_sta = state.get("robot_sta")
             mode = robot_sta.get("value") if isinstance(robot_sta, dict) else None
+            if mode is None:
+                m_series_mode = state.get("mode")
+                mode = (
+                    m_series_mode.get("value")
+                    if isinstance(m_series_mode, dict)
+                    else m_series_mode
+                )
             mode = str(mode or state.get("mower_status") or "").lower()
             if mode in expected:
                 return True
@@ -114,6 +126,13 @@ async def async_start_outer_edge_mowing(
             state = coordinator.reported_state
             robot_sta = state.get("robot_sta")
             mode = robot_sta.get("value") if isinstance(robot_sta, dict) else None
+            if mode is None:
+                m_series_mode = state.get("mode")
+                mode = (
+                    m_series_mode.get("value")
+                    if isinstance(m_series_mode, dict)
+                    else m_series_mode
+                )
             mode = str(mode or state.get("mower_status") or "").lower()
             if mode in expected:
                 return True
