@@ -1,12 +1,13 @@
 """Compatibility helpers for ANTHBOT M5/M9 cloud/shadow behavior.
 
-The M-series exposes its readable state through the property named shadow while
-commands are still written to the service named shadow.  Keep this isolated so
-existing Genie behavior remains unchanged.
+M5/M9 can expose readable REST state via the property named shadow while still
+publishing useful live status fragments on the service shadow MQTT topics.
+Commands remain writable through the service named shadow.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -45,14 +46,13 @@ def install_m_series_compat() -> None:
     original_coordinator_init = AnthbotGenieDataUpdateCoordinator.__init__
     original_service_state = AnthbotShadowApiClient.async_get_service_reported_state
     original_publish = AnthbotShadowApiClient.async_publish_service_command
-    original_subscribe_packet = mqtt_live._subscribe_packet
     original_publish_packet = mqtt_live._publish_packet
 
     def coordinator_init(self, *args: Any, **kwargs: Any) -> None:
         original_coordinator_init(self, *args, **kwargs)
         model = getattr(self.device, "model", None)
-        is_m_series = _is_m_series(model)
         setattr(self.client, "_device_model", model)
+        is_m_series = _is_m_series(model)
         _LOGGER.warning(
             "ANTHBOT MODEL TEST: serial=%s, model=%s, m_series=%s",
             self.client.serial_number,
@@ -64,8 +64,10 @@ def install_m_series_compat() -> None:
 
     async def service_state(self) -> dict[str, Any]:
         if _is_m_series(getattr(self, "_device_model", None)):
-            # M5/M9 readable state lives in the property shadow.  Trying to
-            # read the service named shadow can be rejected by the IoT policy.
+            # REST reads of the service named shadow can be rejected for M5/M9.
+            # Use property for polling, but keep MQTT service subscriptions: M9
+            # firmware may publish robot status there even when telemetry such
+            # as battery arrives through property.
             return await self._async_get_named_shadow_reported_state("property")
         return await original_service_state(self)
 
@@ -74,9 +76,6 @@ def install_m_series_compat() -> None:
             await original_publish(self, cmd=cmd, data=data)
             return
 
-        # Reverse-engineered M5/M9 payload used by the working legacy
-        # integration: service shadow stays writable, but selected settings use
-        # the M-series property names inside the legacy cmd/data envelope.
         converted = data
         if cmd == "param_set":
             value = data
@@ -114,35 +113,24 @@ def install_m_series_compat() -> None:
         if converted is not None:
             desired["data"] = converted
         body = {"state": {"desired": desired}}
-
-        import json
-
         payload = json.dumps(body, separators=(",", ":")).encode("utf-8")
         topic = f"$aws/things/{self.serial_number}/shadow/name/service/update"
         publisher = getattr(self, "_live_command_publisher", None)
         if publisher is None:
-            # Preserve the integration's normal error/retry behavior.
             await original_publish(self, cmd=cmd, data=converted)
             return
         await publisher(topic, payload)
 
-    def subscribe_packet(packet_id: int, topics: list[str]) -> bytes:
-        filtered: list[str] = []
-        for topic in topics:
-            serial = _serial_from_topic(topic)
-            if serial in _M_SERIES_SERIALS and "/service/" in topic:
-                continue
-            filtered.append(topic)
-        return original_subscribe_packet(packet_id, filtered)
-
     def publish_packet(topic: str, payload: bytes = b"{}") -> bytes:
         serial = _serial_from_topic(topic)
         if serial in _M_SERIES_SERIALS and topic.endswith("/service/get"):
+            # Do not REST/MQTT GET the M-series service shadow. We intentionally
+            # remain subscribed to service update/accepted/documents, because
+            # live M9 status can arrive there unsolicited.
             topic = topic.replace("/service/get", "/property/get")
         return original_publish_packet(topic, payload)
 
     AnthbotGenieDataUpdateCoordinator.__init__ = coordinator_init
     AnthbotShadowApiClient.async_get_service_reported_state = service_state
     AnthbotShadowApiClient.async_publish_service_command = publish_service_command
-    mqtt_live._subscribe_packet = subscribe_packet
     mqtt_live._publish_packet = publish_packet
