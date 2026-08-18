@@ -10,6 +10,7 @@ from .coordinator import AnthbotGenieDataUpdateCoordinator, is_robot_online
 from .m_series_compat import install_m_series_compat
 
 _LOGGER = logging.getLogger(__name__)
+_LOGGER.warning("ANTHBOT TEST: commands.py loaded")
 
 # __init__.py imports this module before any mower coordinator is created, so
 # install the model-aware shadow behavior here without touching Genie paths.
