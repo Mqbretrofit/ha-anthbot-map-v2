@@ -12,14 +12,20 @@ import logging
 from typing import Any
 
 from . import mqtt_live
-from .api import AnthbotShadowApiClient
+from .api import AnthbotGenieApiError, AnthbotShadowApiClient
 from .coordinator import AnthbotGenieDataUpdateCoordinator
+from .definition_refresh import map_archive_diagnostics, select_map_archive
 
 _LOGGER = logging.getLogger(__name__)
 _LOGGER.warning("ANTHBOT TEST: m_series_compat.py loaded")
 
 _M_SERIES_SERIALS: set[str] = set()
 _INSTALLED = False
+_M_SERIES_MAP_PROBE_RETRY_SECONDS = 60.0
+_M_SERIES_MAP_CANDIDATES = (
+    "multi_maps.tar.gz",
+    "map_manager.tar.gz",
+)
 
 
 def _is_m_series(model: object) -> bool:
@@ -47,6 +53,7 @@ def install_m_series_compat() -> None:
     original_service_state = AnthbotShadowApiClient.async_get_service_reported_state
     original_publish = AnthbotShadowApiClient.async_publish_service_command
     original_publish_packet = mqtt_live._publish_packet
+    original_refresh_map = AnthbotGenieDataUpdateCoordinator._async_refresh_map_definition
 
     def coordinator_init(self, *args: Any, **kwargs: Any) -> None:
         original_coordinator_init(self, *args, **kwargs)
@@ -130,7 +137,96 @@ def install_m_series_compat() -> None:
             topic = topic.replace("/service/get", "/property/get")
         return original_publish_packet(topic, payload)
 
+    async def refresh_map_definition(
+        self,
+        property_state: dict[str, Any],
+        now: float,
+        *,
+        allow_periodic: bool,
+    ) -> tuple[dict[str, Any], bool]:
+        model = getattr(self.device, "model", None)
+        if not _is_m_series(model):
+            return await original_refresh_map(
+                self,
+                property_state,
+                now,
+                allow_periodic=allow_periodic,
+            )
+
+        last_probe = float(getattr(self, "_m_series_map_probe_last", 0.0) or 0.0)
+        already_using_probe = str(getattr(self, "_map_definition_source", "")).startswith(
+            "m_series_probe:"
+        )
+        should_probe = (
+            not already_using_probe
+            and (last_probe == 0.0 or now - last_probe >= _M_SERIES_MAP_PROBE_RETRY_SECONDS)
+        )
+
+        if should_probe:
+            setattr(self, "_m_series_map_probe_last", now)
+            errors: list[str] = []
+            for filename in _M_SERIES_MAP_CANDIDATES:
+                _LOGGER.warning(
+                    "ANTHBOT M-SERIES MAP TEST: serial=%s model=%s probing filename=%s sub_category=multi_maps",
+                    self.client.serial_number,
+                    model,
+                    filename,
+                )
+                try:
+                    definition = await self.account_client.async_get_device_map_archive(
+                        self.client.serial_number,
+                        filename,
+                    )
+                except AnthbotGenieApiError as err:
+                    error_text = str(err).replace("\n", " ")[:240]
+                    errors.append(f"{filename}: {error_text}")
+                    _LOGGER.warning(
+                        "ANTHBOT M-SERIES MAP TEST: serial=%s filename=%s failed: %s",
+                        self.client.serial_number,
+                        filename,
+                        error_text,
+                    )
+                    continue
+
+                self._map_definition = definition
+                self._map_definition_source = f"m_series_probe:{filename}"
+                self._map_definition_error = None
+                self._last_map_download_monotonic = now
+                diagnostics = map_archive_diagnostics(
+                    property_state,
+                    select_map_archive(property_state),
+                )
+                diagnostics.update(
+                    {
+                        "preferred_source": "m_series_archive_probe",
+                        "active_source": self._map_definition_source,
+                        "probe_file": filename,
+                        "probe_candidates": list(_M_SERIES_MAP_CANDIDATES),
+                    }
+                )
+                _LOGGER.warning(
+                    "ANTHBOT M-SERIES MAP TEST: SUCCESS serial=%s model=%s filename=%s",
+                    self.client.serial_number,
+                    model,
+                    filename,
+                )
+                return diagnostics, True
+
+            if errors:
+                self._map_definition_error = "M-series archive probe failed: " + " | ".join(errors)
+
+        # Keep the existing v2 map logic as a fallback. This preserves current
+        # Genie behavior and lets M-series devices that do expose map_<sn>.txt
+        # or multi_maps.map_list continue to work.
+        return await original_refresh_map(
+            self,
+            property_state,
+            now,
+            allow_periodic=allow_periodic,
+        )
+
     AnthbotGenieDataUpdateCoordinator.__init__ = coordinator_init
+    AnthbotGenieDataUpdateCoordinator._async_refresh_map_definition = refresh_map_definition
     AnthbotShadowApiClient.async_get_service_reported_state = service_state
     AnthbotShadowApiClient.async_publish_service_command = publish_service_command
     mqtt_live._publish_packet = publish_packet
