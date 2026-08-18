@@ -123,6 +123,28 @@ def _decode_live_curpath(value: Any) -> dict[str, Any] | None:
     return decoded
 
 
+def _m_series_display_path_points(points: Any) -> list[dict[str, Any]]:
+    """Return M-series curpath points without Genie-specific point type filtering."""
+    if not isinstance(points, list):
+        return []
+    display_points: list[dict[str, Any]] = []
+    for point in points:
+        if isinstance(point, dict):
+            x = point.get("x")
+            y = point.get("y")
+        elif isinstance(point, (list, tuple)) and len(point) >= 2:
+            x, y = point[0], point[1]
+        else:
+            continue
+        try:
+            x_value = float(x)
+            y_value = float(y)
+        except (TypeError, ValueError):
+            continue
+        display_points.append({"x": x_value, "y": y_value})
+    return display_points
+
+
 def _normalize_m_series_reported(reported: dict[str, Any]) -> dict[str, Any]:
     """Expose M5/M9 nested fields through the legacy keys used by v2 sensors."""
     normalized = dict(reported)
@@ -219,8 +241,12 @@ def _normalize_m_series_reported(reported: dict[str, Any]) -> dict[str, Any]:
     curpath = reported.get("curpath")
     decoded_curpath = _decode_live_curpath(curpath)
     if decoded_curpath is not None:
-        path_points = decoded_curpath.get("_path_points")
-        if isinstance(path_points, list):
+        raw_path_points = decoded_curpath.get("_path_points")
+        path_points = _m_series_display_path_points(raw_path_points)
+        if path_points:
+            decoded_curpath = dict(decoded_curpath)
+            decoded_curpath["_path_points_raw"] = raw_path_points
+            decoded_curpath["_path_points"] = path_points
             normalized["path"] = path_points
             normalized["mowed_path"] = path_points
             normalized["cloud_path"] = path_points
