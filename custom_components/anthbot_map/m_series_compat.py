@@ -80,9 +80,6 @@ def install_m_series_compat() -> None:
             await original_publish(self, cmd=cmd, data=data)
             return
 
-        # Match Vincent's known-working M5/M9 payload format. Generic commands
-        # such as app_state/mow_start must be nested inside data as {cmd: value};
-        # sending data=1 directly is accepted by the socket but ignored by M9.
         if cmd == "param_set":
             value = data
             if isinstance(data, dict):
@@ -130,9 +127,6 @@ def install_m_series_compat() -> None:
         request_uri_encoded = "/topics/" + quote(topic, safe="-_.~")
         request_uri_raw = f"/topics/{topic}"
 
-        # Vincent's M9-compatible integration uses the signed IoTData HTTPS
-        # POST path rather than the raw MQTT socket. Keep its fallback matrix so
-        # AWS canonicalization differences cannot silently swallow commands.
         attempts = (
             (request_uri_encoded, True, None, True),
             (request_uri_encoded, True, request_uri_encoded, True),
@@ -145,35 +139,71 @@ def install_m_series_compat() -> None:
         last_status = 0
         last_body = ""
         last_headers: dict[str, str] = {}
-        for attempt_index, (
-            request_uri,
-            include_sdk_headers,
-            canonical_uri_override,
-            sign_content_length,
-        ) in enumerate(attempts):
-            status, body_text, response_payload, response_headers = (
-                await self._async_signed_post(
-                    request_uri=request_uri,
-                    canonical_query="",
-                    payload_bytes=payload,
-                    include_sdk_headers=include_sdk_headers,
-                    canonical_uri_override=canonical_uri_override,
-                    sign_content_length=sign_content_length,
+
+        # Vincent retries the complete matrix once after refreshing STS creds.
+        # Keep that behavior before falling back to the already-connected MQTT
+        # transport, which uses the same corrected M-series payload.
+        for refresh_attempt in range(2):
+            for attempt_index, (
+                request_uri,
+                include_sdk_headers,
+                canonical_uri_override,
+                sign_content_length,
+            ) in enumerate(attempts):
+                status, body_text, response_payload, response_headers = (
+                    await self._async_signed_post(
+                        request_uri=request_uri,
+                        canonical_query="",
+                        payload_bytes=payload,
+                        include_sdk_headers=include_sdk_headers,
+                        canonical_uri_override=canonical_uri_override,
+                        sign_content_length=sign_content_length,
+                    )
                 )
+                last_status = status
+                last_body = body_text
+                last_headers = response_headers
+                if status == 200 and isinstance(response_payload, dict):
+                    _LOGGER.warning(
+                        "ANTHBOT M-SERIES COMMAND TEST: serial=%s cmd=%s accepted via signed POST attempt=%s refreshed=%s",
+                        self.serial_number,
+                        cmd,
+                        attempt_index + 1,
+                        refresh_attempt > 0,
+                    )
+                    return
+                if status != 403:
+                    break
+
+            if last_status == 403 and refresh_attempt == 0:
+                try:
+                    await self._async_get_credentials(force_refresh=True)
+                    _LOGGER.warning(
+                        "ANTHBOT M-SERIES COMMAND TEST: serial=%s cmd=%s got 403; refreshed STS credentials",
+                        self.serial_number,
+                        cmd,
+                    )
+                    continue
+                except Exception as err:  # noqa: BLE001 - diagnostic fallback.
+                    _LOGGER.warning(
+                        "ANTHBOT M-SERIES COMMAND TEST: serial=%s cmd=%s STS refresh failed: %s",
+                        self.serial_number,
+                        cmd,
+                        err,
+                    )
+            break
+
+        publisher = getattr(self, "_live_command_publisher", None)
+        if publisher is not None:
+            _LOGGER.warning(
+                "ANTHBOT M-SERIES COMMAND TEST: serial=%s cmd=%s signed POST failed status=%s errortype=%s; trying MQTT with M-series payload",
+                self.serial_number,
+                cmd,
+                last_status,
+                last_headers.get("x-amzn-errortype", ""),
             )
-            last_status = status
-            last_body = body_text
-            last_headers = response_headers
-            if status == 200 and isinstance(response_payload, dict):
-                _LOGGER.warning(
-                    "ANTHBOT M-SERIES COMMAND TEST: serial=%s cmd=%s accepted via signed POST attempt=%s",
-                    self.serial_number,
-                    cmd,
-                    attempt_index + 1,
-                )
-                return
-            if status != 403:
-                break
+            await publisher(topic, payload)
+            return
 
         raise AnthbotGenieApiError(
             f"M-series command '{cmd}' failed ({last_status}); "
