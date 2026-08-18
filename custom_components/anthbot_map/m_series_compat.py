@@ -100,6 +100,107 @@ def _shadow_diagnostic_payload(reported: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _normalize_m_series_reported(reported: dict[str, Any]) -> dict[str, Any]:
+    """Expose M5/M9 nested fields through the legacy keys used by v2 sensors."""
+    normalized = dict(reported)
+
+    online = reported.get("online")
+    if isinstance(online, dict) and "value" in online:
+        normalized["online"] = online.get("value")
+        if "time" in online and "timestamp" not in normalized:
+            normalized["timestamp"] = online.get("time")
+
+    net_state = reported.get("net_state")
+    if isinstance(net_state, dict):
+        normalized.setdefault("wifi_state", net_state.get("wifi_state"))
+        normalized.setdefault("4g_state", net_state.get("4g_state"))
+
+    net_config = reported.get("net_config")
+    if isinstance(net_config, dict):
+        normalized.setdefault("sta_ssid", net_config.get("ssid"))
+        normalized.setdefault("sta_ip_addr", net_config.get("ip"))
+        normalized.setdefault("4g_ccid", net_config.get("4g_ccid"))
+
+    device_config = reported.get("device_config")
+    if isinstance(device_config, dict):
+        normalized.setdefault("volume", device_config.get("volume"))
+        normalized.setdefault("anti_loss_radius", device_config.get("anti_loss_radius"))
+        normalized.setdefault("anti_loss_switch", device_config.get("anti_loss_switch"))
+        normalized.setdefault("camera_switch", device_config.get("camera_switch"))
+        normalized.setdefault("indoor_switch", device_config.get("indoor_switch"))
+        normalized.setdefault("log_switch", device_config.get("log_switch"))
+        normalized.setdefault("pin_code", device_config.get("pin_code"))
+        normalized.setdefault("rain_continue_time", device_config.get("rain_continue_time"))
+        normalized.setdefault("rain_switch", device_config.get("rain_switch"))
+        normalized.setdefault("pobctl_level", device_config.get("pobctl_level"))
+        normalized.setdefault("pobctl_switch", device_config.get("pobctl_switch"))
+        normalized.setdefault(
+            "pobctl",
+            {
+                "level": device_config.get("pobctl_level"),
+                "switch": device_config.get("pobctl_switch"),
+            },
+        )
+
+    mowing_time = reported.get("mowing_time")
+    if isinstance(mowing_time, dict):
+        normalized.setdefault("mowing_time_new", mowing_time)
+
+    mowing_area = reported.get("mowing_area")
+    if isinstance(mowing_area, dict):
+        normalized.setdefault("mowing_area_new", mowing_area)
+
+    map_data = reported.get("map")
+    if isinstance(map_data, dict):
+        normalized.setdefault("map_area", map_data.get("map_area"))
+        normalized.setdefault("map_sta", {"value": map_data.get("state")})
+        normalized.setdefault("map_time", map_data.get("time"))
+        if map_data.get("map_id"):
+            normalized.setdefault("has_map", {"value": 1})
+
+    event = reported.get("event")
+    if isinstance(event, dict):
+        normalized.setdefault("event_code", event.get("value"))
+
+    error = reported.get("error")
+    if isinstance(error, dict):
+        normalized.setdefault("err_code", error.get("value"))
+
+    rtk = reported.get("rtk")
+    if isinstance(rtk, dict):
+        normalized.setdefault("rtk_state", rtk.get("state"))
+        normalized.setdefault("rtk_move_sta", {"value": rtk.get("moved")})
+
+    ota_status = reported.get("ota_status")
+    if isinstance(ota_status, dict):
+        normalized.setdefault("ota_status", dict(ota_status))
+        if "ota_progress" not in normalized["ota_status"]:
+            normalized["ota_status"]["ota_progress"] = ota_status.get("progress")
+        if "ota_state" not in normalized["ota_status"]:
+            normalized["ota_status"]["ota_state"] = ota_status.get("states")
+
+    anti_loss_pose = reported.get("anti_loss_pose")
+    if isinstance(anti_loss_pose, dict):
+        pose2d = anti_loss_pose.get("pose2d")
+        if isinstance(pose2d, dict):
+            normalized.setdefault(
+                "pose",
+                {
+                    "x": pose2d.get("x"),
+                    "y": pose2d.get("y"),
+                    "yaw": pose2d.get("yaw"),
+                },
+            )
+
+    mode = reported.get("mode")
+    if "robot_sta" not in normalized and isinstance(mode, dict):
+        mode_value = mode.get("value")
+        if mode_value is not None:
+            normalized["robot_sta"] = {"value": mode_value}
+
+    return normalized
+
+
 def install_m_series_compat() -> None:
     """Install model-aware M5/M9 behavior once per Home Assistant process."""
     global _INSTALLED
@@ -148,8 +249,6 @@ def install_m_series_compat() -> None:
             if not isinstance(signatures, dict):
                 signatures = {}
                 setattr(self, "_m_series_shadow_diag_signatures", signatures)
-            # Log only when the content actually changes, so normal MQTT bursts
-            # do not flood Home Assistant's log.
             if signatures.get(shadow_name) != signature:
                 signatures[shadow_name] = signature
                 _LOGGER.warning(
@@ -158,11 +257,13 @@ def install_m_series_compat() -> None:
                     shadow_name,
                     signature,
                 )
+            reported = _normalize_m_series_reported(reported)
         await original_live_shadow(self, shadow_name, reported)
 
     async def service_state(self) -> dict[str, Any]:
         if _is_m_series(getattr(self, "_device_model", None)):
-            return await self._async_get_named_shadow_reported_state("property")
+            state = await self._async_get_named_shadow_reported_state("property")
+            return _normalize_m_series_reported(state)
         return await original_service_state(self)
 
     async def publish_service_command(self, *, cmd: str, data: Any = None) -> None:
@@ -271,7 +372,7 @@ def install_m_series_compat() -> None:
                         cmd,
                     )
                     continue
-                except Exception as err:  # noqa: BLE001 - diagnostic fallback.
+                except Exception as err:
                     _LOGGER.warning(
                         "ANTHBOT M-SERIES COMMAND TEST: serial=%s cmd=%s STS refresh failed: %s",
                         self.serial_number,
