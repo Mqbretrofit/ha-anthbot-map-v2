@@ -225,6 +225,10 @@ def _normalize_m_series_reported(reported: dict[str, Any]) -> dict[str, Any]:
             normalized["mowed_path"] = path_points
             normalized["cloud_path"] = path_points
         normalized["_m_series_curpath_definition"] = decoded_curpath
+        normalized["_path_definition"] = decoded_curpath
+        normalized["_path_definition_error"] = None
+        normalized["_history_path_source"] = "m_series_curpath"
+        normalized["_history_path_live_refresh"] = True
         if isinstance(curpath, dict) and curpath.get("time") is not None:
             normalized.setdefault("path_time", curpath.get("time"))
 
