@@ -7,13 +7,18 @@ Commands remain writable through the service named shadow.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from typing import Any
 from urllib.parse import quote
 
 from . import mqtt_live
-from .api import AnthbotGenieApiError, AnthbotShadowApiClient
+from .api import (
+    AnthbotGenieApiError,
+    AnthbotShadowApiClient,
+    decode_device_definition,
+)
 from .coordinator import AnthbotGenieDataUpdateCoordinator
 from .definition_refresh import map_archive_diagnostics, select_map_archive
 
@@ -98,6 +103,24 @@ def _shadow_diagnostic_payload(reported: dict[str, Any]) -> dict[str, Any]:
         str(key): _sanitize_shadow_value(key, value)
         for key, value in list(reported.items())[:120]
     }
+
+
+def _decode_live_curpath(value: Any) -> dict[str, Any] | None:
+    """Decode the M5/M9 base64 curpath using the integration's path decoder."""
+    raw_value = value.get("value") if isinstance(value, dict) else value
+    if not isinstance(raw_value, str) or not raw_value:
+        return None
+    try:
+        raw_bytes = base64.b64decode(raw_value, validate=True)
+    except (ValueError, TypeError):
+        return None
+    decoded = decode_device_definition(raw_bytes, "m_series_curpath.path")
+    if not isinstance(decoded, dict):
+        return None
+    points = decoded.get("_path_points")
+    if not isinstance(points, list) or not points:
+        return None
+    return decoded
 
 
 def _normalize_m_series_reported(reported: dict[str, Any]) -> dict[str, Any]:
@@ -191,6 +214,19 @@ def _normalize_m_series_reported(reported: dict[str, Any]) -> dict[str, Any]:
                     "yaw": pose2d.get("yaw"),
                 },
             )
+            normalized.setdefault("cur_pose", normalized["pose"])
+
+    curpath = reported.get("curpath")
+    decoded_curpath = _decode_live_curpath(curpath)
+    if decoded_curpath is not None:
+        path_points = decoded_curpath.get("_path_points")
+        if isinstance(path_points, list):
+            normalized["path"] = path_points
+            normalized["mowed_path"] = path_points
+            normalized["cloud_path"] = path_points
+        normalized["_m_series_curpath_definition"] = decoded_curpath
+        if isinstance(curpath, dict) and curpath.get("time") is not None:
+            normalized.setdefault("path_time", curpath.get("time"))
 
     mode = reported.get("mode")
     if "robot_sta" not in normalized and isinstance(mode, dict):
@@ -199,6 +235,18 @@ def _normalize_m_series_reported(reported: dict[str, Any]) -> dict[str, Any]:
             normalized["robot_sta"] = {"value": mode_value}
 
     return normalized
+
+
+def _m_series_map_candidates(property_state: dict[str, Any]) -> tuple[str, ...]:
+    """Return app-derived map archive candidates, preferring the active map id."""
+    candidates: list[str] = []
+    map_data = property_state.get("map")
+    if isinstance(map_data, dict):
+        map_id = map_data.get("map_id")
+        if isinstance(map_id, str) and map_id:
+            candidates.append(f"map_manager_{map_id}.tar.gz")
+    candidates.extend(_M_SERIES_MAP_CANDIDATES)
+    return tuple(dict.fromkeys(candidates))
 
 
 def install_m_series_compat() -> None:
@@ -258,6 +306,15 @@ def install_m_series_compat() -> None:
                     signature,
                 )
             reported = _normalize_m_series_reported(reported)
+            decoded = reported.get("_m_series_curpath_definition")
+            if isinstance(decoded, dict):
+                _LOGGER.debug(
+                    "ANTHBOT M-SERIES CURPATH: serial=%s format=%s points=%s path_id=%s",
+                    self.client.serial_number,
+                    decoded.get("format"),
+                    decoded.get("point_count"),
+                    decoded.get("path_id"),
+                )
         await original_live_shadow(self, shadow_name, reported)
 
     async def service_state(self) -> dict[str, Any]:
@@ -433,7 +490,8 @@ def install_m_series_compat() -> None:
         if should_probe:
             setattr(self, "_m_series_map_probe_last", now)
             errors: list[str] = []
-            for filename in _M_SERIES_MAP_CANDIDATES:
+            candidates = _m_series_map_candidates(property_state)
+            for filename in candidates:
                 _LOGGER.warning(
                     "ANTHBOT M-SERIES MAP TEST: serial=%s model=%s probing filename=%s sub_category=multi_maps",
                     self.client.serial_number,
@@ -469,7 +527,7 @@ def install_m_series_compat() -> None:
                         "preferred_source": "m_series_archive_probe",
                         "active_source": self._map_definition_source,
                         "probe_file": filename,
-                        "probe_candidates": list(_M_SERIES_MAP_CANDIDATES),
+                        "probe_candidates": list(candidates),
                     }
                 )
                 _LOGGER.warning(
