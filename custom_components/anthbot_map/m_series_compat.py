@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any
+from urllib.parse import quote
 
 from . import mqtt_live
 from .api import AnthbotGenieApiError, AnthbotShadowApiClient
@@ -71,10 +72,6 @@ def install_m_series_compat() -> None:
 
     async def service_state(self) -> dict[str, Any]:
         if _is_m_series(getattr(self, "_device_model", None)):
-            # REST reads of the service named shadow can be rejected for M5/M9.
-            # Use property for polling, but keep MQTT service subscriptions: M9
-            # firmware may publish robot status there even when telemetry such
-            # as battery arrives through property.
             return await self._async_get_named_shadow_reported_state("property")
         return await original_service_state(self)
 
@@ -83,7 +80,9 @@ def install_m_series_compat() -> None:
             await original_publish(self, cmd=cmd, data=data)
             return
 
-        converted = data
+        # Match Vincent's known-working M5/M9 payload format. Generic commands
+        # such as app_state/mow_start must be nested inside data as {cmd: value};
+        # sending data=1 directly is accepted by the socket but ignored by M9.
         if cmd == "param_set":
             value = data
             if isinstance(data, dict):
@@ -100,8 +99,9 @@ def install_m_series_compat() -> None:
                     ),
                     next(iter(data.values()), None),
                 )
-            if value is not None:
-                converted = {"cutter_ctl_cutter_lift": int(value)}
+            desired_data: Any = (
+                {"cutter_ctl_cutter_lift": int(value)} if value is not None else {}
+            )
         elif cmd == "volume_ctl":
             value = data
             if isinstance(data, dict):
@@ -113,27 +113,77 @@ def install_m_series_compat() -> None:
                     ),
                     next(iter(data.values()), None),
                 )
-            if value is not None:
-                converted = {"volume_ctl": int(value)}
+            desired_data = {"volume_ctl": int(value)} if value is not None else {}
+        else:
+            desired_data = data if isinstance(data, dict) else {cmd: data}
 
-        desired: dict[str, Any] = {"cmd": cmd}
-        if converted is not None:
-            desired["data"] = converted
-        body = {"state": {"desired": desired}}
+        body = {
+            "state": {
+                "desired": {
+                    "cmd": cmd,
+                    "data": desired_data,
+                }
+            }
+        }
         payload = json.dumps(body, separators=(",", ":")).encode("utf-8")
         topic = f"$aws/things/{self.serial_number}/shadow/name/service/update"
-        publisher = getattr(self, "_live_command_publisher", None)
-        if publisher is None:
-            await original_publish(self, cmd=cmd, data=converted)
-            return
-        await publisher(topic, payload)
+        request_uri_encoded = "/topics/" + quote(topic, safe="-_.~")
+        request_uri_raw = f"/topics/{topic}"
+
+        # Vincent's M9-compatible integration uses the signed IoTData HTTPS
+        # POST path rather than the raw MQTT socket. Keep its fallback matrix so
+        # AWS canonicalization differences cannot silently swallow commands.
+        attempts = (
+            (request_uri_encoded, True, None, True),
+            (request_uri_encoded, True, request_uri_encoded, True),
+            (request_uri_encoded, True, None, False),
+            (request_uri_encoded, False, None, True),
+            (request_uri_raw, True, None, True),
+            (request_uri_raw, True, request_uri_raw, True),
+            (request_uri_raw, False, None, True),
+        )
+        last_status = 0
+        last_body = ""
+        last_headers: dict[str, str] = {}
+        for attempt_index, (
+            request_uri,
+            include_sdk_headers,
+            canonical_uri_override,
+            sign_content_length,
+        ) in enumerate(attempts):
+            status, body_text, response_payload, response_headers = (
+                await self._async_signed_post(
+                    request_uri=request_uri,
+                    canonical_query="",
+                    payload_bytes=payload,
+                    include_sdk_headers=include_sdk_headers,
+                    canonical_uri_override=canonical_uri_override,
+                    sign_content_length=sign_content_length,
+                )
+            )
+            last_status = status
+            last_body = body_text
+            last_headers = response_headers
+            if status == 200 and isinstance(response_payload, dict):
+                _LOGGER.warning(
+                    "ANTHBOT M-SERIES COMMAND TEST: serial=%s cmd=%s accepted via signed POST attempt=%s",
+                    self.serial_number,
+                    cmd,
+                    attempt_index + 1,
+                )
+                return
+            if status != 403:
+                break
+
+        raise AnthbotGenieApiError(
+            f"M-series command '{cmd}' failed ({last_status}); "
+            f"errortype={last_headers.get('x-amzn-errortype', '')}; "
+            f"body={last_body[:240]}"
+        )
 
     def publish_packet(topic: str, payload: bytes = b"{}") -> bytes:
         serial = _serial_from_topic(topic)
         if serial in _M_SERIES_SERIALS and topic.endswith("/service/get"):
-            # Do not REST/MQTT GET the M-series service shadow. We intentionally
-            # remain subscribed to service update/accepted/documents, because
-            # live M9 status can arrive there unsolicited.
             topic = topic.replace("/service/get", "/property/get")
         return original_publish_packet(topic, payload)
 
@@ -215,9 +265,6 @@ def install_m_series_compat() -> None:
             if errors:
                 self._map_definition_error = "M-series archive probe failed: " + " | ".join(errors)
 
-        # Keep the existing v2 map logic as a fallback. This preserves current
-        # Genie behavior and lets M-series devices that do expose map_<sn>.txt
-        # or multi_maps.map_list continue to work.
         return await original_refresh_map(
             self,
             property_state,
