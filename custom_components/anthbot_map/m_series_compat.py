@@ -308,12 +308,14 @@ def install_m_series_compat() -> None:
             reported = _normalize_m_series_reported(reported)
             decoded = reported.get("_m_series_curpath_definition")
             if isinstance(decoded, dict):
-                _LOGGER.debug(
-                    "ANTHBOT M-SERIES CURPATH: serial=%s format=%s points=%s path_id=%s",
+                _LOGGER.warning(
+                    "ANTHBOT M-SERIES CURPATH: serial=%s format=%s points=%s path_id=%s header_len=%s protocol_version=%s",
                     self.client.serial_number,
                     decoded.get("format"),
                     decoded.get("point_count"),
                     decoded.get("path_id"),
+                    decoded.get("header_len"),
+                    decoded.get("protocol_version"),
                 )
         await original_live_shadow(self, shadow_name, reported)
 
