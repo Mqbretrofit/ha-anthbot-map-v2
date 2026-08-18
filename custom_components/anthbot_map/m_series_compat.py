@@ -7,11 +7,15 @@ existing Genie behavior remains unchanged.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from . import mqtt_live
 from .api import AnthbotShadowApiClient
 from .coordinator import AnthbotGenieDataUpdateCoordinator
+
+_LOGGER = logging.getLogger(__name__)
+_LOGGER.warning("ANTHBOT TEST: m_series_compat.py loaded")
 
 _M_SERIES_SERIALS: set[str] = set()
 _INSTALLED = False
@@ -47,8 +51,15 @@ def install_m_series_compat() -> None:
     def coordinator_init(self, *args: Any, **kwargs: Any) -> None:
         original_coordinator_init(self, *args, **kwargs)
         model = getattr(self.device, "model", None)
+        is_m_series = _is_m_series(model)
         setattr(self.client, "_device_model", model)
-        if _is_m_series(model):
+        _LOGGER.warning(
+            "ANTHBOT MODEL TEST: serial=%s, model=%s, m_series=%s",
+            self.client.serial_number,
+            model,
+            is_m_series,
+        )
+        if is_m_series:
             _M_SERIES_SERIALS.add(self.client.serial_number)
 
     async def service_state(self) -> dict[str, Any]:
