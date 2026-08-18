@@ -114,6 +114,36 @@ def _m_series_display_path_points(points: Any) -> list[dict[str, float]]:
     return display_points
 
 
+def _m_series_valid_pose(value: Any) -> dict[str, Any] | None:
+    """Return a finite M-series pose or None when the delta omitted it."""
+    if not isinstance(value, dict):
+        return None
+    try:
+        x = float(value.get("x"))
+        y = float(value.get("y"))
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(x) or not math.isfinite(y):
+        return None
+    pose = dict(value)
+    pose["x"] = x
+    pose["y"] = y
+    return pose
+
+
+def _m_series_pose_for_update(
+    reported_pose: Any, fallback_pose: Any
+) -> tuple[dict[str, Any] | None, str]:
+    """Select the live pose, retaining the previous one for curpath deltas."""
+    pose = _m_series_valid_pose(reported_pose)
+    if pose is not None:
+        return pose, "reported"
+    pose = _m_series_valid_pose(fallback_pose)
+    if pose is not None:
+        return pose, "cached"
+    return None, "missing"
+
+
 def _m_series_anchor_path_to_pose(points: Any, pose: Any) -> list[dict[str, float]]:
     """Convert M-series millimetre path coordinates to live world coordinates.
 
@@ -125,12 +155,11 @@ def _m_series_anchor_path_to_pose(points: Any, pose: Any) -> list[dict[str, floa
     raw = _m_series_display_path_points(points)
     if not raw:
         return []
-    try:
-        pose_x = float(pose.get("x")) if isinstance(pose, dict) else 0.0
-        pose_y = float(pose.get("y")) if isinstance(pose, dict) else 0.0
-    except (TypeError, ValueError):
-        pose_x = 0.0
-        pose_y = 0.0
+    valid_pose = _m_series_valid_pose(pose)
+    if valid_pose is None:
+        return []
+    pose_x = float(valid_pose["x"])
+    pose_y = float(valid_pose["y"])
     anchor = raw[-1]
     return [
         {
@@ -176,7 +205,9 @@ def _path_coordinate_diagnostics(points: Any, pose: Any) -> dict[str, Any] | Non
     return result
 
 
-def _normalize_m_series_reported(reported: dict[str, Any]) -> dict[str, Any]:
+def _normalize_m_series_reported(
+    reported: dict[str, Any], fallback_pose: Any = None
+) -> dict[str, Any]:
     normalized = dict(reported)
     online = reported.get("online")
     if isinstance(online, dict) and "value" in online:
@@ -250,11 +281,23 @@ def _normalize_m_series_reported(reported: dict[str, Any]) -> dict[str, Any]:
             })
             normalized.setdefault("cur_pose", normalized["pose"])
 
+    pose, pose_source = _m_series_pose_for_update(
+        normalized.get("pose"), fallback_pose
+    )
+    normalized["_m_series_pose_source"] = pose_source
+    if pose is not None:
+        normalized["pose"] = pose
+        if _m_series_valid_pose(normalized.get("cur_pose")) is None:
+            normalized["cur_pose"] = pose
+
     curpath = reported.get("curpath")
     decoded_curpath = _decode_live_curpath(curpath)
     if decoded_curpath is not None:
         raw_path_points = decoded_curpath.get("_path_points")
         path_points = _m_series_anchor_path_to_pose(raw_path_points, normalized.get("pose"))
+        normalized["_m_series_curpath_coords_raw"] = _path_coordinate_diagnostics(
+            raw_path_points, normalized.get("pose")
+        )
         if path_points:
             decoded_curpath = dict(decoded_curpath)
             decoded_curpath["source_coordinate_scale"] = decoded_curpath.get(
@@ -266,15 +309,18 @@ def _normalize_m_series_reported(reported: dict[str, Any]) -> dict[str, Any]:
             normalized["path"] = path_points
             normalized["mowed_path"] = path_points
             normalized["cloud_path"] = path_points
-            normalized["_m_series_curpath_coords_raw"] = _path_coordinate_diagnostics(raw_path_points, normalized.get("pose"))
             normalized["_m_series_curpath_coords"] = _path_coordinate_diagnostics(path_points, normalized.get("pose"))
-        normalized["_m_series_curpath_definition"] = decoded_curpath
-        normalized["_path_definition"] = decoded_curpath
-        normalized["_path_definition_error"] = None
-        normalized["_history_path_source"] = "m_series_curpath"
-        normalized["_history_path_live_refresh"] = True
-        if isinstance(curpath, dict) and curpath.get("time") is not None:
-            normalized.setdefault("path_time", curpath.get("time"))
+            normalized["_m_series_curpath_definition"] = decoded_curpath
+            normalized["_path_definition"] = decoded_curpath
+            normalized["_path_definition_error"] = None
+            normalized["_history_path_source"] = "m_series_curpath"
+            normalized["_history_path_live_refresh"] = True
+            if isinstance(curpath, dict) and curpath.get("time") is not None:
+                normalized.setdefault("path_time", curpath.get("time"))
+        else:
+            normalized["_path_definition_error"] = (
+                "M-series curpath is waiting for the first valid live pose"
+            )
 
     mode = reported.get("mode")
     if "robot_sta" not in normalized and isinstance(mode, dict) and mode.get("value") is not None:
@@ -320,6 +366,7 @@ def install_m_series_compat() -> None:
             setattr(self, "_m_series_shadow_diag_signatures", {})
             setattr(self, "_m_series_path_accumulator", [])
             setattr(self, "_m_series_path_id", None)
+            setattr(self, "_m_series_last_pose", None)
 
     async def live_shadow(self, shadow_name: str, reported: dict[str, Any]) -> None:
         if _is_m_series(getattr(self.device, "model", None)) and isinstance(reported, dict):
@@ -336,7 +383,15 @@ def install_m_series_compat() -> None:
                     self.client.serial_number, shadow_name, signature,
                 )
 
-            reported = _normalize_m_series_reported(reported)
+            fallback_pose = getattr(self, "_m_series_last_pose", None)
+            if _m_series_valid_pose(fallback_pose) is None:
+                fallback_pose = self.reported_state.get("pose")
+            reported = _normalize_m_series_reported(
+                reported, fallback_pose=fallback_pose
+            )
+            current_pose = _m_series_valid_pose(reported.get("pose"))
+            if current_pose is not None:
+                setattr(self, "_m_series_last_pose", current_pose)
             decoded = reported.get("_m_series_curpath_definition")
             if isinstance(decoded, dict):
                 packet_points = _m_series_display_path_points(decoded.get("_path_points"))
@@ -395,6 +450,7 @@ def install_m_series_compat() -> None:
                         ),
                         "assumed_raw_units_per_pose_unit": _M_SERIES_PATH_SCALE,
                         "pose": reported.get("pose"),
+                        "pose_source": reported.get("_m_series_pose_source"),
                         "raw": raw_coords,
                         "anchored_packet": anchored_coords,
                         "accumulated": accumulated_coords,
