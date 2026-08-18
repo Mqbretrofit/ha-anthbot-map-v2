@@ -257,6 +257,9 @@ def _normalize_m_series_reported(reported: dict[str, Any]) -> dict[str, Any]:
         path_points = _m_series_anchor_path_to_pose(raw_path_points, normalized.get("pose"))
         if path_points:
             decoded_curpath = dict(decoded_curpath)
+            decoded_curpath["source_coordinate_scale"] = decoded_curpath.get(
+                "coordinate_scale"
+            )
             decoded_curpath["_path_points_raw"] = raw_path_points
             decoded_curpath["_path_points"] = path_points
             decoded_curpath["coordinate_scale"] = 1
@@ -375,12 +378,36 @@ def install_m_series_compat() -> None:
                     self.client.serial_number, decoded.get("format"), len(packet_points),
                     len(accumulator), path_id, int(_M_SERIES_PATH_SCALE),
                 )
-                coords = reported.get("_m_series_curpath_coords")
-                if isinstance(coords, dict):
+                raw_coords = reported.get("_m_series_curpath_coords_raw")
+                anchored_coords = reported.get("_m_series_curpath_coords")
+                accumulated_coords = _path_coordinate_diagnostics(
+                    accumulator, reported.get("pose")
+                )
+                if any(
+                    isinstance(value, dict)
+                    for value in (raw_coords, anchored_coords, accumulated_coords)
+                ):
+                    coordinate_diagnostics = {
+                        "path_id": path_id,
+                        "format": decoded.get("format"),
+                        "source_coordinate_scale": decoded.get(
+                            "source_coordinate_scale"
+                        ),
+                        "assumed_raw_units_per_pose_unit": _M_SERIES_PATH_SCALE,
+                        "pose": reported.get("pose"),
+                        "raw": raw_coords,
+                        "anchored_packet": anchored_coords,
+                        "accumulated": accumulated_coords,
+                    }
                     _LOGGER.warning(
                         "ANTHBOT M-SERIES CURPATH COORDS: serial=%s coords=%s",
                         self.client.serial_number,
-                        json.dumps(coords, separators=(",", ":"), sort_keys=True),
+                        json.dumps(
+                            coordinate_diagnostics,
+                            separators=(",", ":"),
+                            sort_keys=True,
+                            default=str,
+                        ),
                     )
         await original_live_shadow(self, shadow_name, reported)
 
