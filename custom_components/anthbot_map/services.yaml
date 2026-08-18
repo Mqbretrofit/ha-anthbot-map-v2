@@ -336,9 +336,3 @@ reset_dock_contact_maintenance:
       example: "YOUR_MOWER_SERIAL"
       selector:
         text:
-    serial_number:
-      name: Serial number
-      description: Optional mower serial number or list of serial numbers.
-      example: "YOUR_MOWER_SERIAL"
-      selector:
-        text:
