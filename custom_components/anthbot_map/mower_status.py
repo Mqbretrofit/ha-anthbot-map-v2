@@ -84,11 +84,25 @@ def as_int(value: Any) -> int | None:
     return None
 
 
+def _status_value(data: dict[str, Any]) -> Any:
+    """Return mower status across Genie and M-series shadow layouts."""
+    for key in ("robot_sta", "mower_status", "mode"):
+        value = unwrap_value(data.get(key))
+        if value is not None:
+            return value
+
+    service = data.get("_service_reported")
+    if isinstance(service, dict):
+        for key in ("robot_sta", "mower_status", "mode"):
+            value = unwrap_value(service.get(key))
+            if value is not None:
+                return value
+    return None
+
+
 def raw_robot_status(data: dict[str, Any]) -> str | None:
     """Return a normalized raw mower status from the shadow payload."""
-    value = unwrap_value(data.get("robot_sta"))
-    if value is None:
-        value = unwrap_value(data.get("mower_status"))
+    value = _status_value(data)
     if isinstance(value, int):
         if 0 <= value < len(ROBOT_STATUS_BY_CODE):
             value = ROBOT_STATUS_BY_CODE[value]
@@ -102,6 +116,12 @@ def raw_robot_status(data: dict[str, Any]) -> str | None:
 def mower_activity_name(data: dict[str, Any]) -> str | None:
     """Map an Anthbot shadow payload to a Home Assistant mower activity name."""
     error_code = as_int(data.get("err_code"))
+    if error_code is None:
+        service = data.get("_service_reported")
+        if isinstance(service, dict):
+            error_code = as_int(service.get("err_code"))
+            if error_code is None:
+                error_code = as_int(service.get("error"))
     if error_code not in (None, 0):
         return "error"
 
