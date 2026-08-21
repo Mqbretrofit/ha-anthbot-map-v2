@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.3.0 — 2026-08-21
+
+- Added structured mowing-history cards and per-session map/path detail.
+- Switched mowing records to the mobile app's confirmed `/api/v1/device/area`
+  endpoint and corrected historical path coordinate scaling.
+- Added experimental M5/M9 property-shadow, live-path, status, command, and
+  map-archive parsing compatibility; M5/M9 map display is not yet working.
+- Fixed multi-mower history targeting, long-session duration conversion, and
+  filtering of non-mowing travel segments.
+- Removed captured device identifiers and added release/version consistency
+  checks.
+
+See `RELEASE_NOTES_v2.3.0.md` and `CHANGELOG_v2.3.0_HU.md` for details.
+
 ## 2.2.0 — 2026-08-14
 
 Stable release containing every Anthbot Map improvement since `2.0.0`, plus

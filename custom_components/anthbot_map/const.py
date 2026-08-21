@@ -137,6 +137,7 @@ SERVICE_START_AUTO_ZONE_MOW = "start_auto_zone_mow"
 SERVICE_RESET_BLADE_MAINTENANCE = "reset_blade_maintenance"
 SERVICE_RESET_CAMERA_MAINTENANCE = "reset_camera_maintenance"
 SERVICE_RESET_DOCK_CONTACT_MAINTENANCE = "reset_dock_contact_maintenance"
+SERVICE_GET_MOWING_RECORD_DETAIL = "get_mowing_record_detail"
 
 ATTR_SERIAL_NUMBER = "serial_number"
 ATTR_MOW_HEIGHT = "mow_height"

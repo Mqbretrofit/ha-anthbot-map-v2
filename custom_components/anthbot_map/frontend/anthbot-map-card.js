@@ -1,6 +1,7 @@
 import { AnthbotMapRenderer } from "./renderer.js?v=144";
+import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=144";
 import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=22000";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=22138";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=22141";
 import {
   adjustCalibration,
   cardToYaml,
@@ -196,7 +197,7 @@ class AnthbotMapCard extends HTMLElement {
       .join(" ");
     root.innerHTML = `
       <ha-card class="${cardClasses}">
-        <link rel="stylesheet" href="${this.resolveAsset("styles.css?v=138")}">
+        <link rel="stylesheet" href="${this.resolveAsset("styles.css?v=141")}">
         <style>
           .anthbot-menu-toggle { position:absolute; right:14px; bottom:14px; z-index:40; min-height:46px; padding:9px 15px; border:1px solid rgba(255,255,255,.38); border-radius:999px; background:rgba(10,18,26,.66); color:#fff; backdrop-filter:blur(12px); box-shadow:0 8px 28px rgba(0,0,0,.32); font:inherit; font-weight:800; cursor:pointer; }
           .anthbot-glass-panel { display:none; position:absolute; z-index:39; right:12px; bottom:70px; width:min(1100px,calc(100% - 24px)); max-height:calc(100% - 84px); overflow:auto; border:1px solid rgba(255,255,255,.34); border-radius:18px; background:rgba(9,18,27,.16); color:#fff; backdrop-filter:blur(9px) saturate(115%); box-shadow:0 16px 44px rgba(0,0,0,.24); overscroll-behavior:contain; }
@@ -236,6 +237,25 @@ class AnthbotMapCard extends HTMLElement {
           .maintenance-tile { display:flex; flex-direction:column; align-items:stretch; gap:10px; }
           .maintenance-value { font-size:22px; font-weight:900; color:#55e58a; }
           .maintenance-reset { min-height:42px; border:1px solid rgba(255,255,255,.18); border-radius:12px; background:rgba(255,255,255,.10); color:#fff; font:inherit; font-weight:800; cursor:pointer; }
+          .mowing-history-summary { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:12px; }
+          .mowing-history-summary-item { flex:1 1 140px; padding:10px 12px; border-radius:12px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.14); }
+          .mowing-history-summary-item span { display:block; font-size:11px; color:#aeb7c2; margin-bottom:2px; }
+          .mowing-history-summary-item strong { font-size:16px; }
+          .mowing-history-empty { padding:14px 4px; color:#aeb7c2; font-size:13px; }
+          .mowing-history-list { display:flex; flex-direction:column; gap:10px; }
+          .mowing-history-card { padding:12px 14px; border-radius:14px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.14); }
+          .mowing-history-head { margin-bottom:8px; font-size:14px; }
+          .mowing-history-stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); gap:8px; margin-bottom:8px; }
+          .mowing-history-stat { display:flex; flex-direction:column; gap:2px; }
+          .mowing-history-stat span { font-size:11px; color:#aeb7c2; }
+          .mowing-history-stat strong { font-size:14px; }
+          .mowing-history-zones { display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
+          .mowing-history-zone-chip { display:flex; flex-direction:column; gap:2px; padding:6px 10px; border-radius:10px; background:rgba(114,239,160,.10); border:1px solid rgba(114,239,160,.28); }
+          .mowing-history-zone-chip strong { font-size:12px; }
+          .mowing-history-zone-chip span { font-size:11px; color:#aeb7c2; }
+          .mowing-history-raw { margin-top:8px; }
+          .mowing-history-raw summary { font-size:11px; color:#aeb7c2; cursor:pointer; }
+          .mowing-history-raw pre { margin:6px 0 0; max-height:220px; overflow:auto; font-size:11px; }
           @media (max-width:720px) {
             .canvas-wrap.auto-map-size { aspect-ratio:auto; height:calc(100dvh - 78px); min-height:0; max-height:none; }
             .preview-hint { max-width:52%; padding:8px 10px; border-radius:13px; }
@@ -465,6 +485,29 @@ class AnthbotMapCard extends HTMLElement {
     probe.src = imageUrl;
   }
 
+  // Extracted out of updateRenderer() so the mowing-history detail popup
+  // can compute the exact same live "pose" the live map renderer feeds
+  // into getWorldBounds() -- reusing the identical logic here (rather than
+  // a second, possibly-drifting copy) is what keeps the popup's world
+  // bounds, and therefore its scale, in sync with the live map's.
+  computeLivePose(attributes = this.entity?.attributes || {}) {
+    const rawPose = attributes.pose && typeof attributes.pose === "object" ? attributes.pose : {};
+    const coordinatePose = [rawPose, attributes.cur_pose, attributes.map_scan_pose].find((candidate) =>
+      Number.isFinite(Number(candidate?.x)) && Number.isFinite(Number(candidate?.y)),
+    );
+    const poseYawEntity = this.getRelatedEntity("poseYaw");
+    const fallbackYaw = [
+      coordinatePose?.yaw,
+      coordinatePose?.heading,
+      rawPose.yaw,
+      rawPose.heading,
+      poseYawEntity?.state,
+    ].find((value) => Number.isFinite(Number(value)));
+    return coordinatePose
+      ? { ...rawPose, ...coordinatePose, yaw: fallbackYaw }
+      : { ...rawPose, yaw: fallbackYaw };
+  }
+
   updateRenderer() {
     if (!this.renderer || !this.entity) {
       return;
@@ -482,21 +525,11 @@ class AnthbotMapCard extends HTMLElement {
     }
 
     const attributes = this.entity.attributes || {};
+    const pose = this.computeLivePose(attributes);
+    // computeLivePose() only returns the merged/fallback-filled pose (what
+    // rendering needs); the state's own separate `raw_pose` field wants the
+    // pre-merge raw value, so it's reconstructed the same trivial way here.
     const rawPose = attributes.pose && typeof attributes.pose === "object" ? attributes.pose : {};
-    const coordinatePose = [rawPose, attributes.cur_pose, attributes.map_scan_pose].find((candidate) =>
-      Number.isFinite(Number(candidate?.x)) && Number.isFinite(Number(candidate?.y)),
-    );
-    const poseYawEntity = this.getRelatedEntity("poseYaw");
-    const fallbackYaw = [
-      coordinatePose?.yaw,
-      coordinatePose?.heading,
-      rawPose.yaw,
-      rawPose.heading,
-      poseYawEntity?.state,
-    ].find((value) => Number.isFinite(Number(value)));
-    const pose = coordinatePose
-      ? { ...rawPose, ...coordinatePose, yaw: fallbackYaw }
-      : { ...rawPose, yaw: fallbackYaw };
     this.renderer.setOptions(this.rendererOptions());
     this.renderer.setState({
       pose,
@@ -546,11 +579,13 @@ class AnthbotMapCard extends HTMLElement {
     this.updateMapBadges(attributes);
     this.updateBatteryAndStatus();
     this.renderZoneControls(attributes.area_definition);
-    // Do not rebuild the settings DOM on every cloud refresh. Replacing
-    // an open <details> tree resets the panel scroll position and makes the
-    // zone the user just opened jump back to the top.
+    // Do not rebuild the settings/diagnostics DOM on every cloud refresh.
+    // Replacing an open <details> tree (zone settings, or the mowing-history
+    // / error-history sections on the Diagnostics tab) resets the panel
+    // scroll position and collapses whatever the user just expanded.
     if (
       this.activePanel !== "settings"
+      && this.activePanel !== "diagnostics"
       && Date.now() >= this.panelInteractionUntil
       && !this.isPanelControlActive()
     ) {
@@ -1069,14 +1104,505 @@ class AnthbotMapCard extends HTMLElement {
     }
     body.appendChild(grid);
     const attrs = this.entity?.attributes || {};
-    const records = attrs.mowing_records?.data || attrs.mowing_records || [];
+    const recordsPayload = attrs.mowing_records || { data: [] };
+    const recordsError = attrs.mowing_records_error;
     const errors = attrs.error_history || [];
     const history = this.createSettingsSection(this.t("mowingHistory"), "mowing-history");
-    history.querySelector(".settings-section-body").innerHTML = `<pre>${escapeHtml(JSON.stringify(records, null, 2))}</pre>`;
+    this.renderMowingHistoryList(history.querySelector(".settings-section-body"), recordsPayload, recordsError);
     body.appendChild(history);
     const errorHistory = this.createSettingsSection(this.t("errorHistory"), "error-history");
     errorHistory.querySelector(".settings-section-body").innerHTML = `<pre>${escapeHtml(JSON.stringify(errors, null, 2))}</pre>`;
     body.appendChild(errorHistory);
+  }
+
+  renderMowingHistoryList(container, recordsPayload, recordsError) {
+    container.innerHTML = "";
+    const records = Array.isArray(recordsPayload?.data)
+      ? recordsPayload.data
+      : Array.isArray(recordsPayload) ? recordsPayload : [];
+
+    const summary = this.buildMowingHistorySummary(recordsPayload);
+    if (summary) container.appendChild(summary);
+
+    if (!records.length) {
+      const empty = document.createElement("div");
+      empty.className = "mowing-history-empty";
+      empty.textContent = recordsError
+        ? `${this.t("mowingHistoryEmpty")} (${recordsError})`
+        : this.t("mowingHistoryEmpty");
+      container.appendChild(empty);
+      return;
+    }
+
+    const list = document.createElement("div");
+    list.className = "mowing-history-list";
+    for (const record of records) {
+      list.appendChild(this.createMowingHistoryCard(record));
+    }
+    container.appendChild(list);
+  }
+
+  buildMowingHistorySummary(payload) {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+    const total = pickRecordValue(payload, ["total", "total_times", "totalTimes"]);
+    const totalArea = pickRecordValue(payload, ["total_area", "totalArea"]);
+    if (total === undefined && totalArea === undefined) return null;
+
+    const summary = document.createElement("div");
+    summary.className = "mowing-history-summary";
+    const items = [];
+    if (total !== undefined) items.push([this.t("mowingHistoryTotalCount"), String(total)]);
+    if (totalArea !== undefined) items.push([this.t("mowingHistoryTotalArea"), formatRecordArea(totalArea)]);
+    for (const [label, value] of items) {
+      const item = document.createElement("div");
+      item.className = "mowing-history-summary-item";
+      item.innerHTML = `<span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>`;
+      summary.appendChild(item);
+    }
+    return summary;
+  }
+
+  createMowingHistoryCard(record) {
+    const card = document.createElement("div");
+    card.className = "mowing-history-card";
+
+    const { start, end } = resolveMowingRecordTimeRange(record);
+    const area = pickRecordValue(record, MOWING_RECORD_AREA_KEYS);
+    const percent = pickRecordValue(record, MOWING_RECORD_PERCENT_KEYS);
+    const durationEntry = pickRecordEntry(record, MOWING_RECORD_DURATION_KEYS);
+    const rawDuration = durationEntry?.value;
+    const mode = pickRecordValue(record, MOWING_RECORD_MODE_KEYS);
+    const source = pickRecordValue(record, MOWING_RECORD_SOURCE_KEYS);
+    const zoneListRaw = pickRecordValue(record, MOWING_RECORD_ZONE_LIST_KEYS);
+    const zoneList = Array.isArray(zoneListRaw) ? zoneListRaw : [];
+
+    const areaUrl = pickRecordValue(record, MOWING_RECORD_AREA_URL_KEYS);
+    const mapUrl = pickRecordValue(record, MOWING_RECORD_MAP_URL_KEYS);
+    const pathUrl = pickRecordValue(record, MOWING_RECORD_PATH_URL_KEYS);
+    if (areaUrl || mapUrl || pathUrl) {
+      card.classList.add("has-detail");
+      card.setAttribute("role", "button");
+      card.setAttribute("tabindex", "0");
+      const openDetail = (event) => {
+        event.stopPropagation();
+        this.openMowingRecordDetail(record, { areaUrl, mapUrl, pathUrl });
+      };
+      card.addEventListener("click", openDetail);
+      card.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openDetail(event);
+        }
+      });
+    }
+
+    const head = document.createElement("div");
+    head.className = "mowing-history-head";
+    head.innerHTML = `<strong>${escapeHtml(this.formatMowingDateRange(start, end))}</strong>`;
+    card.appendChild(head);
+
+    let durationSeconds = null;
+    if (start && end) {
+      durationSeconds = (end.getTime() - start.getTime()) / 1000;
+    } else if (rawDuration !== undefined) {
+      durationSeconds = normalizeRecordDurationSeconds(rawDuration, durationEntry?.key);
+    }
+
+    const statItems = [];
+    if (area !== undefined) statItems.push([this.t("mowingHistoryArea"), formatRecordArea(area)]);
+    if (percent !== undefined) {
+      const pct = formatRecordPercent(percent);
+      if (pct) statItems.push([this.t("mowingHistoryProgress"), pct]);
+    }
+    if (durationSeconds !== null) {
+      statItems.push([this.t("mowingHistoryDuration"), formatRecordDurationSeconds(durationSeconds)]);
+    }
+    if (mode !== undefined) statItems.push([this.t("mowingHistoryMode"), this.formatRecordMode(mode)]);
+    if (source !== undefined) statItems.push([this.t("mowingHistoryStartedBy"), this.formatRecordSource(source)]);
+
+    if (statItems.length) {
+      const stats = document.createElement("div");
+      stats.className = "mowing-history-stats";
+      for (const [label, value] of statItems) {
+        const stat = document.createElement("div");
+        stat.className = "mowing-history-stat";
+        stat.innerHTML = `<span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong>`;
+        stats.appendChild(stat);
+      }
+      card.appendChild(stats);
+    }
+
+    if (zoneList.length) {
+      const zoneWrap = document.createElement("div");
+      zoneWrap.className = "mowing-history-zones";
+      for (const zone of zoneList) {
+        const zoneName = pickRecordValue(zone, MOWING_RECORD_ZONE_NAME_KEYS);
+        const width = pickRecordValue(zone, MOWING_RECORD_ZONE_WIDTH_KEYS);
+        const height = pickRecordValue(zone, MOWING_RECORD_ZONE_HEIGHT_KEYS);
+        const zoneArea = pickRecordValue(zone, MOWING_RECORD_ZONE_AREA_KEYS);
+        let dims = "";
+        if (width !== undefined && height !== undefined) {
+          dims = `${formatRecordNumber(width)}m × ${formatRecordNumber(height)}m`;
+        } else if (zoneArea !== undefined) {
+          dims = formatRecordArea(zoneArea);
+        }
+        const chip = document.createElement("div");
+        chip.className = "mowing-history-zone-chip";
+        chip.innerHTML = `<strong>${escapeHtml(zoneName ? String(zoneName) : this.t("zone"))}</strong>${dims ? `<span>${escapeHtml(dims)}</span>` : ""}`;
+        zoneWrap.appendChild(chip);
+      }
+      card.appendChild(zoneWrap);
+    }
+
+    const extraKeys = collectUnmappedRecordKeys(record, MOWING_RECORD_MAPPED_KEYS);
+    if (extraKeys.length) {
+      const extra = {};
+      for (const key of extraKeys) extra[key] = record[key];
+      const details = document.createElement("details");
+      details.className = "mowing-history-raw";
+      details.innerHTML = `<summary>${this.t("mowingHistoryRawFields")}</summary><pre>${escapeHtml(JSON.stringify(extra, null, 2))}</pre>`;
+      card.appendChild(details);
+    }
+
+    return card;
+  }
+
+  async openMowingRecordDetail(record, { areaUrl, mapUrl, pathUrl } = {}) {
+    const overlay = document.createElement("div");
+    overlay.className = "mowing-record-detail-overlay";
+    const dialog = document.createElement("div");
+    dialog.className = "mowing-record-detail-dialog";
+    overlay.appendChild(dialog);
+
+    const closeOverlay = () => {
+      overlay.remove();
+      document.removeEventListener("keydown", onKeydown);
+    };
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) closeOverlay();
+    });
+    const onKeydown = (event) => {
+      if (event.key === "Escape") closeOverlay();
+    };
+    document.addEventListener("keydown", onKeydown);
+
+    const { start, end } = resolveMowingRecordTimeRange(record);
+    const titleText = this.formatMowingDateRange(start, end);
+
+    dialog.innerHTML = `
+      <div class="mowing-record-detail-head">
+        <div class="mowing-record-detail-title">${escapeHtml(titleText)}</div>
+        <button type="button" class="mowing-record-detail-close" aria-label="${escapeHtml(this.t("close"))}">×</button>
+      </div>
+      <div class="mowing-record-detail-body">
+        <div class="mowing-record-detail-status">${escapeHtml(this.t("mowingHistoryDetailLoading"))}</div>
+      </div>
+    `;
+    dialog.querySelector(".mowing-record-detail-close").addEventListener("click", closeOverlay);
+
+    const root = this.shadowRoot || document.body;
+    root.appendChild(overlay);
+
+    const body = dialog.querySelector(".mowing-record-detail-body");
+
+    try {
+      if (!this._hass?.connection) {
+        throw new Error("Home Assistant connection unavailable");
+      }
+      const serviceData = {};
+      if (areaUrl) serviceData.area_url = areaUrl;
+      if (mapUrl) serviceData.map_url = mapUrl;
+      if (pathUrl) serviceData.path_url = pathUrl;
+      const entityId = this.entity?.entity_id;
+      if (entityId) serviceData.entity_id = entityId;
+
+      // Called via the raw websocket connection (not this._hass.callService)
+      // because the card installs a callService wrapper for command-toast
+      // feedback that only forwards 4 positional args and would silently
+      // drop the return_response flag this call depends on.
+      const result = await this._hass.connection.sendMessagePromise({
+        type: "call_service",
+        domain: "anthbot_map",
+        service: "get_mowing_record_detail",
+        service_data: serviceData,
+        return_response: true,
+      });
+      const detail = result?.response || {};
+      // The record row's x/y came back as small numbers (e.g. -8.23/-5.10)
+      // that only line up with the map raster's mm-based world bounds when
+      // treated as METERS and converted to mm (raster bounds are mm) --
+      // hence the *1000 here.
+      const anchorMetersX = Number(pickRecordValue(record, MOWING_RECORD_START_X_KEYS));
+      const anchorMetersY = Number(pickRecordValue(record, MOWING_RECORD_START_Y_KEYS));
+      const anchor = {
+        x: Number.isFinite(anchorMetersX) ? anchorMetersX * 1000 : 0,
+        y: Number.isFinite(anchorMetersY) ? anchorMetersY * 1000 : 0,
+      };
+      // Same garden photo the live map card underlays behind the
+      // boundary/zones (config.image) -- reused here so the history popup's
+      // zone schematic sits on the same familiar backdrop. Preloaded (and
+      // its natural pixel size read) *before* rendering so the image can be
+      // placed with the exact same affine fit the live map uses (see
+      // renderMowingRecordZonesSvg) instead of a naive stretch-to-fit.
+      const backgroundImage = this.config?.image ? await loadImageElement(this.config.image) : null;
+
+      // Mirrors renderer.js's own draw() exactly (confirmed by reading it):
+      // the live map does NOT feed the same world bounds into every
+      // geometry blindly -- it prefers an explicit `config.bounds` override
+      // when the user has set one, only falling back to a freshly computed
+      // getWorldBounds() otherwise. And critically, it fits BOTH its
+      // "base" (image) and calibrated (zones/path) geometries using the
+      // *photo's own* aspect ratio, and applies the same view rotation
+      // (config.rotation, plus the mobile auto-rotate) to both. Any of
+      // these three that differ between the popup and the live map would
+      // reproduce the "photo looks aligned-ish but isn't really" bug even
+      // with the correct calibration numbers -- so all three are threaded
+      // through here instead of recomputed independently.
+      const mobileViewport = typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches;
+      const mobileRotation = mobileViewport
+        ? Number(this.config.mobile_map_rotation ?? this.config.mobileMapRotation ?? 90) || 0
+        : 0;
+      const rotation = degreesToRadians((Number(this.config.rotation) || 0) + mobileRotation);
+
+      // A record's own `area_url` snapshot is what got mowed *then*, but it
+      // can differ slightly from the property's current live boundary/zone
+      // data (re-mapped since, edge points refined, etc.) -- if the popup
+      // computed its world bounds from that historical snapshot while the
+      // live map computes its bounds from the CURRENT live state, the two
+      // would end up scaled just enough differently to visibly mismatch
+      // (Attila's "squeeze it together horizontally" report) even with
+      // identical calibration numbers. So world bounds are computed here
+      // from the exact same live inputs `updateRenderer()` feeds the live
+      // renderer -- not from the historical record's own area data -- and
+      // handed down already resolved, matching renderer.js's own
+      // `bounds = this.config.bounds || getWorldBounds(mapSource, pose)`.
+      const liveAttributes = this.entity?.attributes || {};
+      const liveMapSource = {
+        ...(liveAttributes.area_definition || {}),
+        map_raster: liveAttributes.map_raster,
+        map_definition: liveAttributes.map_definition,
+        path_definition: liveAttributes.path_definition,
+        map_binary_paths: liveAttributes.map_binary_paths,
+        path_binary_paths: liveAttributes.path_binary_paths,
+      };
+      const livePose = this.computeLivePose(liveAttributes);
+      const bounds = this.config?.bounds || getWorldBounds(liveMapSource, livePose);
+      // Attila asked for the lawn's own boundary outline to also be visible
+      // in the popup. First attempt used getBoundaryPaths() (map_binary_paths
+      // -- the raw wire-perimeter/travel-route data), but Attila noticed it
+      // cuts straight across the driveway/parking area: that vector path is
+      // the "legacy boundary" the live map itself only draws when
+      // showLegacyBoundary is explicitly turned on (normally off). What the
+      // live map actually shows BY DEFAULT is a pixel-traced outline of the
+      // `map_raster` mask (drawDecodedBoundary/drawRasterBoundary in
+      // renderer.js) -- the real mapped-lawn silhouette, not the wire route.
+      // boundaryRaster carries that live raster through so the popup can
+      // trace the same outline; boundaryPaths is kept only as a fallback
+      // for the (rare) case no live map_raster is available.
+      const boundaryRaster = liveMapSource.map_raster;
+      const boundaryPaths = getBoundaryPaths(liveMapSource);
+
+      // Attila: the zones/coverage still read "too tall" vertically vs. the
+      // live map, even with identical bounds/calibration. Root cause: the
+      // live map's own "map" rect (computeMapFit's width/height/center) is
+      // fit against the live CANVAS's own pixel width/height -- whatever
+      // the card's actual on-screen box happens to be, which (with the
+      // default `fit: "cover"`, or any configured fixed `height:`) can have
+      // a different aspect ratio than the photo, causing the live view to
+      // crop/zoom rather than show the whole world uncropped. The popup was
+      // instead sizing its own SVG canvas to exactly match the photo's own
+      // aspect ratio (zero letterboxing by construction) -- a DIFFERENT fit
+      // than the live map's, so even identical bounds/calibration produced
+      // a differently-cropped/zoomed picture. Reading the live renderer's
+      // *actual* current canvas pixel size (and its `fit` mode) and reusing
+      // both here reproduces the exact same "map" rect the live view uses.
+      const liveCanvas = this.renderer?.canvas;
+      const liveDpr = this.renderer?.dpr || 1;
+      const canvasSize =
+        liveCanvas && liveCanvas.width > 0 && liveCanvas.height > 0
+          ? { width: liveCanvas.width / liveDpr, height: liveCanvas.height / liveDpr }
+          : null;
+      const fit = this.renderer?.options?.fit || this.config?.fit || "cover";
+
+      this.renderMowingRecordDetailBody(body, detail, {
+        pathRequested: Boolean(pathUrl),
+        anchor,
+        mowedZoneInfo: mowedZoneInfoFromRecord(record),
+        // The card's own calibration (from the "Map fit" controls) -- the
+        // same one the live map applies -- so the zone/image placement here
+        // matches the live map instead of an independent, uncalibrated fit.
+        calibration: this.calibration,
+        // Separate, additional calibration knob (from the live map's own
+        // "decoded boundary" fit controls) applied only to the raster-
+        // traced boundary outline -- distinct from the main `calibration`
+        // used for zones/coverage/photo. Threading it through is what lets
+        // the traced outline land exactly where it does on the live map.
+        decodedBoundaryCalibration: this.decodedBoundaryCalibration,
+        backgroundImage,
+        bounds,
+        boundaryRaster,
+        boundaryPaths,
+        canvasSize,
+        fit,
+        rotation,
+      });
+    } catch (error) {
+      body.innerHTML = `<div class="mowing-record-detail-status mowing-record-detail-error">${escapeHtml(String(error?.message || error))}</div>`;
+    }
+  }
+
+  renderMowingRecordDetailBody(
+    body,
+    detail,
+    {
+      pathRequested = true,
+      anchor = null,
+      mowedZoneInfo = null,
+      calibration = null,
+      decodedBoundaryCalibration = null,
+      backgroundImage = null,
+      bounds = null,
+      boundaryRaster = null,
+      boundaryPaths = null,
+      canvasSize = null,
+      fit = "cover",
+      rotation = 0,
+    } = {}
+  ) {
+    body.innerHTML = "";
+    let rendered = false;
+
+    // The map file is just the mower's static lawn boundary (the same
+    // outline every session) -- it does NOT show what got mowed *this*
+    // session. That comes from the path file's decoded trajectory points,
+    // which get drawn as a coverage overlay on top of whichever background
+    // (raster or zone schematic) is available, or on their own if neither is.
+    const pathPoints = extractDetailPathPoints(detail?.path, anchor);
+
+    // Sanity guard: the delta+anchor reconstruction (see
+    // extractDetailPathPoints) can still drift wildly if the struct-layout
+    // guess is wrong for this record's path format -- drawing that as a
+    // "coverage" line would be actively misleading (a stray line shooting
+    // across the whole map), worse than showing nothing. Only draw it if
+    // its extent is in the same ballpark as the raster's own world size.
+    let pathLooksSane = true;
+    const mapRaster = detail?.map?._map_raster;
+    if (mapRaster?.bounds && pathPoints.length) {
+      const pb = boundingBoxOf(pathPoints);
+      const rb = mapRaster.bounds;
+      const rasterSpanX = Number(rb.max_x ?? rb.maxX) - Number(rb.min_x ?? rb.minX);
+      const rasterSpanY = Number(rb.max_y ?? rb.maxY) - Number(rb.min_y ?? rb.minY);
+      if (Number.isFinite(rasterSpanX) && rasterSpanX > 0 && Number.isFinite(rasterSpanY) && rasterSpanY > 0) {
+        pathLooksSane = pb.maxX - pb.minX <= rasterSpanX * 4 && pb.maxY - pb.minY <= rasterSpanY * 4;
+      }
+    }
+
+    // Prefer the zone schematic (labeled rectangles/polygons, with the
+    // zone(s) this record actually mowed highlighted) when zone data is
+    // available -- this is the layout Attila's reference screenshot (the
+    // real app's own history detail screen) uses, and it reads much better
+    // than the raw boundary raster. Fall back to the raster picture, then
+    // to a bare path plot, when there's no zone data to work with.
+    if (detail?.area && typeof detail.area === "object") {
+      const svg = renderMowingRecordZonesSvg(detail.area, pathLooksSane ? pathPoints : [], mowedZoneInfo, {
+        backgroundImage,
+        calibration,
+        decodedBoundaryCalibration,
+        bounds,
+        boundaryRaster,
+        boundaryPaths,
+        canvasSize,
+        fit,
+        rotation,
+      });
+      if (svg) {
+        const wrap = document.createElement("div");
+        wrap.className = "mowing-record-detail-canvas-wrap";
+        wrap.appendChild(svg);
+        body.appendChild(wrap);
+        rendered = true;
+      }
+    }
+
+    if (!rendered && mapRaster && Array.isArray(mapRaster.runs) && mapRaster.width && mapRaster.height) {
+      const canvas = renderMowingRecordRasterCanvas(mapRaster);
+      if (canvas) {
+        if (pathPoints.length && pathLooksSane) {
+          drawDetailPathOnRasterCanvas(canvas, mapRaster, pathPoints);
+        }
+        const wrap = document.createElement("div");
+        wrap.className = "mowing-record-detail-canvas-wrap";
+        wrap.appendChild(canvas);
+        body.appendChild(wrap);
+        rendered = true;
+      }
+    }
+
+    if (!rendered && pathPoints.length && pathLooksSane) {
+      const svg = renderMowingRecordPathOnlySvg(pathPoints);
+      if (svg) {
+        const wrap = document.createElement("div");
+        wrap.className = "mowing-record-detail-canvas-wrap";
+        wrap.appendChild(svg);
+        body.appendChild(wrap);
+        rendered = true;
+      }
+    }
+
+    if (!rendered) {
+      const status = document.createElement("div");
+      status.className = "mowing-record-detail-status";
+      status.textContent = this.t("mowingHistoryDetailUnavailable");
+      body.appendChild(status);
+    }
+
+    const errors = detail?._errors;
+    if (Array.isArray(errors) && errors.length) {
+      const errBox = document.createElement("div");
+      errBox.className = "mowing-record-detail-error";
+      errBox.textContent = errors.join(" | ");
+      body.appendChild(errBox);
+    }
+
+  }
+
+  formatMowingDateRange(start, end) {
+    if (!start && !end) return this.t("mowingHistoryUnknownTime");
+    const locale = this.language && this.language !== "auto" ? this.language : undefined;
+    const dateFmt = new Intl.DateTimeFormat(locale, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const timeFmt = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" });
+    if (start && !end) return dateFmt.format(start);
+    if (end && !start) return dateFmt.format(end);
+    const startLabel = start ? dateFmt.format(start) : "?";
+    const endLabel = end ? timeFmt.format(end) : "?";
+    return `${startLabel} – ${endLabel}`;
+  }
+
+  formatRecordMode(value) {
+    const normalized = String(value).toLowerCase();
+    // Confirmed against the mobile app (2026-08-19): the cloud's numeric
+    // mow_mode "1" is shown by the app as "Zónák" (zone mowing), not "Teljes
+    // terület" as previously (incorrectly) guessed. "0" is assumed to be the
+    // complementary full-area mow since it's the only other observed value.
+    if (normalized === "1") return this.t("mowingModeZones");
+    if (normalized === "0") return this.t("mowingModeGlobal");
+    if (normalized.includes("zone") || normalized.includes("zona")) return this.t("mowingModeZones");
+    if (normalized.includes("edge") || normalized.includes("border") || normalized.includes("szeg")) return this.t("mowingModeEdge");
+    if (normalized.includes("dock")) return this.t("mowingModeDockEdge");
+    if (normalized.includes("global") || normalized.includes("all") || normalized.includes("entire")) return this.t("mowingModeGlobal");
+    return String(value);
+  }
+
+  formatRecordSource(value) {
+    const normalized = String(value).toLowerCase();
+    // Confirmed against the mobile app (2026-08-19): start_cause "1" is shown
+    // by the app as "APP" (started from the mobile app).
+    if (normalized === "1") return this.t("mowingSourceApp");
+    if (normalized.includes("app")) return this.t("mowingSourceApp");
+    if (normalized.includes("sched") || normalized.includes("plan") || normalized.includes("timer")) return this.t("mowingSourceSchedule");
+    if (normalized.includes("button") || normalized.includes("key") || normalized.includes("manual")) return this.t("mowingSourceButton");
+    if (normalized.includes("voice")) return this.t("mowingSourceVoice");
+    return String(value).toUpperCase();
   }
 
   createPanelGrid() {
@@ -2258,6 +2784,940 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (char) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;",
   })[char]);
+}
+
+// --- Mowing history (previous mowing-task records) -------------------------
+//
+// The cloud "record list" endpoint field names have not been confirmed from a
+// populated response yet (the account used to build this only had an empty
+// history at the time), so every field is read defensively through a list of
+// plausible camelCase/snake_case aliases, mirroring the alias-list approach
+// already used for path/history URL keys elsewhere in this integration. Any
+// record field that isn't recognized by one of these aliases is still shown,
+// verbatim, in a collapsible "other fields" block so nothing is silently
+// dropped. Once real records are available the alias lists below can be
+// trimmed to the confirmed key names.
+
+const MOWING_RECORD_ID_KEYS = ["id", "record_id", "recordId", "task_id", "taskId", "_id"];
+const MOWING_RECORD_START_KEYS = [
+  "start_time", "startTime", "begin_time", "beginTime", "begin",
+  "task_start_time", "taskStartTime", "create_time", "createTime",
+  "started_at", "startedAt",
+];
+const MOWING_RECORD_END_KEYS = [
+  "end_time", "endTime", "finish_time", "finishTime", "stop_time", "stopTime",
+  "complete_time", "completeTime", "finished_at", "finishedAt",
+];
+const MOWING_RECORD_AREA_KEYS = [
+  "area", "mow_area", "mowArea", "actual_area", "actualArea", "clean_area",
+  "cleanArea", "cleaned_area", "cleanedArea", "real_area", "realArea",
+  "task_area", "taskArea", "mowing_area", "mowingArea",
+];
+const MOWING_RECORD_PERCENT_KEYS = [
+  "percent", "percentage", "progress", "complete_rate", "completeRate",
+  "finish_rate", "finishRate", "mow_percent", "mowPercent",
+  "task_percent", "taskPercent", "rate", "mowing_progress", "mowingProgress",
+];
+const MOWING_RECORD_DURATION_KEYS = [
+  "duration_ms", "durationMs", "elapsed_ms", "elapsedMs",
+  "mowing_time_ms", "mowingTimeMs", "task_time_ms", "taskTimeMs",
+  "duration", "cost_time", "costTime", "time_len", "timeLen", "elapsed",
+  "elapsed_time", "elapsedTime", "mowing_time", "mowingTime",
+  "task_time", "taskTime", "work_time", "workTime", "mow_time", "mowTime",
+];
+const MOWING_RECORD_MODE_KEYS = [
+  "mode", "mow_mode", "mowMode", "task_type", "taskType", "type",
+  "task_mode", "taskMode",
+];
+const MOWING_RECORD_SOURCE_KEYS = [
+  "source", "start_source", "startSource", "trigger", "task_source",
+  "taskSource", "from", "start_type", "startType", "start_reason", "startReason",
+  "start_cause", "startCause",
+];
+const MOWING_RECORD_AREA_URL_KEYS = ["area_url", "areaUrl"];
+const MOWING_RECORD_MAP_URL_KEYS = ["map_url", "mapUrl"];
+const MOWING_RECORD_PATH_URL_KEYS = ["path_url", "pathUrl"];
+// The record row's own start position (confirmed present alongside
+// mow_mode/finish_time in the /api/v1/device/area response) -- used as the
+// anchor for the mgs-v1-history path format, whose points turned out to be
+// per-sample deltas rather than absolute coordinates (see
+// extractDetailPathPoints).
+const MOWING_RECORD_START_X_KEYS = ["x", "X", "start_x", "startX"];
+const MOWING_RECORD_START_Y_KEYS = ["y", "Y", "start_y", "startY"];
+const MOWING_RECORD_ZONE_LIST_KEYS = [
+  "zone_list", "zoneList", "zones", "region_list", "regionList",
+  "area_list", "areaList", "task_zones", "taskZones", "zone_info", "zoneInfo",
+];
+const MOWING_RECORD_ZONE_NAME_KEYS = [
+  "name", "zone_name", "zoneName", "region_name", "regionName",
+  "area_name", "areaName", "title",
+];
+const MOWING_RECORD_ZONE_WIDTH_KEYS = ["width", "w", "zone_width", "zoneWidth"];
+const MOWING_RECORD_ZONE_HEIGHT_KEYS = [
+  "height", "h", "zone_height", "zoneHeight", "length", "zone_length", "zoneLength",
+];
+const MOWING_RECORD_ZONE_AREA_KEYS = ["area", "zone_area", "zoneArea", "actual_area", "actualArea", "size"];
+
+const MOWING_RECORD_MAPPED_KEYS = [
+  ...MOWING_RECORD_ID_KEYS, ...MOWING_RECORD_START_KEYS, ...MOWING_RECORD_END_KEYS,
+  ...MOWING_RECORD_AREA_KEYS, ...MOWING_RECORD_PERCENT_KEYS, ...MOWING_RECORD_DURATION_KEYS,
+  ...MOWING_RECORD_MODE_KEYS, ...MOWING_RECORD_SOURCE_KEYS, ...MOWING_RECORD_ZONE_LIST_KEYS,
+];
+
+// Builds a lookup (normalized zone name -> {name, dims}) from the mowing
+// record's own `zone_list` field -- this is the app's own account of which
+// zones were actually part of *this* session (matching the reference
+// screenshot Attila shared, which highlights only the mowed zone(s) among
+// the full property layout). Matched against the full zone polygons from
+// the `area` file by name in renderMowingRecordZonesSvg.
+function mowedZoneInfoFromRecord(record) {
+  const zoneListRaw = pickRecordValue(record, MOWING_RECORD_ZONE_LIST_KEYS);
+  const zoneList = Array.isArray(zoneListRaw) ? zoneListRaw : [];
+  const info = new Map();
+  for (const zone of zoneList) {
+    const zoneName = pickRecordValue(zone, MOWING_RECORD_ZONE_NAME_KEYS);
+    if (!zoneName) continue;
+    const width = pickRecordValue(zone, MOWING_RECORD_ZONE_WIDTH_KEYS);
+    const height = pickRecordValue(zone, MOWING_RECORD_ZONE_HEIGHT_KEYS);
+    const zoneArea = pickRecordValue(zone, MOWING_RECORD_ZONE_AREA_KEYS);
+    let dims = "";
+    if (width !== undefined && height !== undefined) {
+      dims = `${formatRecordNumber(width)}m × ${formatRecordNumber(height)}m`;
+    } else if (zoneArea !== undefined) {
+      dims = formatRecordArea(zoneArea);
+    }
+    info.set(String(zoneName).trim().toLowerCase(), { name: String(zoneName), dims });
+  }
+  return info;
+}
+
+function pickRecordValue(record, keys) {
+  if (!record || typeof record !== "object") return undefined;
+  for (const key of keys) {
+    const value = record[key];
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return undefined;
+}
+
+function pickRecordEntry(record, keys) {
+  if (!record || typeof record !== "object") return null;
+  for (const key of keys) {
+    const value = record[key];
+    if (value !== undefined && value !== null && value !== "") return { key, value };
+  }
+  return null;
+}
+
+function collectUnmappedRecordKeys(record, mappedKeys) {
+  if (!record || typeof record !== "object") return [];
+  const mapped = new Set(mappedKeys);
+  return Object.keys(record).filter((key) => !mapped.has(key));
+}
+
+function parseRecordTimestamp(value) {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value === "number") {
+    const ms = value > 10_000_000_000 ? value : value * 1000;
+    const date = new Date(ms);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (/^\d{14}$/.test(trimmed)) {
+      const year = trimmed.slice(0, 4), month = trimmed.slice(4, 6), day = trimmed.slice(6, 8);
+      const hour = trimmed.slice(8, 10), minute = trimmed.slice(10, 12), second = trimmed.slice(12, 14);
+      const date = new Date(Date.UTC(+year, +month - 1, +day, +hour, +minute, +second));
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+    if (/^\d+$/.test(trimmed)) return parseRecordTimestamp(Number(trimmed));
+    let isoCandidate = trimmed.replace(" ", "T");
+    // The Anthbot cloud API returns timestamps such as finish_time in UTC but
+    // without a "Z"/offset suffix (e.g. "2026-08-19T15:09:59"). Per the JS Date
+    // spec, a date-time string with no timezone designator is parsed as LOCAL
+    // time, which silently shifted every mowing-history time by the viewer's
+    // UTC offset (confirmed against the mobile app: cloud said 15:09, app
+    // showed 17:09 in UTC+2). Mark it UTC explicitly before parsing.
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(isoCandidate)) {
+      isoCandidate += "Z";
+    }
+    const date = new Date(isoCandidate);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  return null;
+}
+
+// Paints a run-length-encoded coverage raster (the same format the live map
+// uses for `_map_raster`, see renderer.js's getRasterCanvas) into a small
+// standalone <canvas>, without needing the live renderer's calibrated
+// world-to-screen geometry -- the history popup just needs the raw picture.
+function rasterColorForRecordDetail(value) {
+  if (value === 255) return [248, 250, 252, 255];
+  if (value === 160) return [158, 166, 174, 255];
+  if (value === 128) return [117, 125, 133, 255];
+  if (value === 0) return [25, 32, 42, 255];
+  const shade = Math.max(0, Math.min(255, Number(value) || 0));
+  return [shade, shade, shade, 255];
+}
+
+// Resolves once the image has loaded (with its natural pixel size readable)
+// or once it fails -- never rejects, so callers can `await` it plainly and
+// treat a null result as "no background image available".
+function loadImageElement(url) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
+function boundingBoxOf(points) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const point of points) {
+    if (point.x < minX) minX = point.x;
+    if (point.x > maxX) maxX = point.x;
+    if (point.y < minY) minY = point.y;
+    if (point.y > maxY) maxY = point.y;
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+// The Genie/MGS path format tags every sample with a `type`; these codes
+// (mirrored from renderer.js's live-map trail filter) mark "blade engaged /
+// actually cutting" points, as opposed to plain travel (blade off, e.g.
+// driving to the start point or back to the dock).
+const DETAIL_PATH_MOWED_TYPES = new Set([1, 2, 5, 8]);
+// Consecutive mowed samples farther apart than this (in the same mm world
+// units as the map raster bounds) are treated as a break -- e.g. the mower
+// was carried, or the log jumps between two disjoint passes -- rather than
+// drawn as a single straight line cutting across the whole map.
+const DETAIL_PATH_JUMP_LIMIT_MM = 2500;
+
+function isDetailPathMowedPoint(point, hasKnownMowedTypes) {
+  // Historical files may omit type information. When at least one known
+  // blade-engaged type is present, use the same filtering as the live map so
+  // travel to/from the dock is not painted as mowed coverage. If no known type
+  // occurs, preserve the complete path rather than rendering a blank detail.
+  return !hasKnownMowedTypes || DETAIL_PATH_MOWED_TYPES.has(Number(point?.type));
+}
+
+// Pulls the decoded path points out of a `path` file definition (see
+// api.py's `_decode_path_definition`) and drops anything without finite
+// coordinates.
+//
+// 2026-08-21 history: a live hex dump of an "mgs-v1-history" path file
+// showed the very first points sitting almost still (x~-98, y~5, barely
+// moving for several samples) -- exactly what you'd expect right at the
+// start of a session near the dock, NOT a per-sample delta pattern. The
+// real bug turned out to be the coordinate scale: this format was using x1
+// instead of the x10 every other format uses (now fixed in api.py). No
+// cumulative summing/anchor needed -- the decoded x/y are already absolute
+// positions in the same mm world frame as the map raster bounds. (The
+// `anchor` parameter is kept, unused, in case a future format genuinely
+// turns out to be delta-encoded.)
+function extractDetailPathPoints(pathDefinition, _anchor = null) {
+  const raw = pathDefinition?._path_points;
+  if (!Array.isArray(raw)) return [];
+  const points = [];
+  for (const point of raw) {
+    const x = Number(point?.x);
+    const y = Number(point?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    points.push({ x, y, type: point?.type, clean_time: point?.clean_time });
+  }
+  return points;
+}
+
+// Splits the raw point stream into disjoint polylines: drops travel-only
+// (blade-off) points and starts a new segment whenever consecutive mowed
+// points are implausibly far apart.
+function buildDetailPathSegments(points, jumpLimit) {
+  const segments = [];
+  let segment = [];
+  let previous = null;
+  const hasKnownMowedTypes = points.some((point) =>
+    DETAIL_PATH_MOWED_TYPES.has(Number(point?.type))
+  );
+  for (const point of points) {
+    if (!isDetailPathMowedPoint(point, hasKnownMowedTypes)) {
+      if (segment.length) segments.push(segment);
+      segment = [];
+      previous = null;
+      continue;
+    }
+    const jumped = previous && Math.hypot(point.x - previous.x, point.y - previous.y) > jumpLimit;
+    if (jumped && segment.length) {
+      segments.push(segment);
+      segment = [];
+    }
+    segment.push(point);
+    previous = point;
+  }
+  if (segment.length) segments.push(segment);
+  return segments.filter((entry) => entry.length >= 2);
+}
+
+// Converts a path point's world coordinates (mm, same frame the map
+// raster's `bounds` are expressed in) into the raster canvas's raw pixel
+// space, matching the same row flip `renderMowingRecordRasterCanvas` uses.
+function projectWorldPointToRasterPixel(point, raster) {
+  const bounds = raster?.bounds;
+  const resolution = Number(raster?.resolution);
+  const height = Number(raster?.height);
+  if (!bounds || !Number.isFinite(resolution) || resolution <= 0 || !Number.isFinite(height)) {
+    return null;
+  }
+  const minX = Number(bounds.min_x ?? bounds.minX);
+  const minY = Number(bounds.min_y ?? bounds.minY);
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null;
+  const resolutionMm = resolution * 1000;
+  if (!Number.isFinite(resolutionMm) || resolutionMm <= 0) return null;
+  const x = (point.x - minX) / resolutionMm;
+  const y = height - 1 - (point.y - minY) / resolutionMm;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x, y };
+}
+
+// Draws the session's actual mowed coverage on top of the static boundary
+// raster. Returns true if anything was drawn.
+function drawDetailPathOnRasterCanvas(canvas, raster, pathPoints) {
+  if (!canvas || !pathPoints.length) return false;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return false;
+
+  const segments = buildDetailPathSegments(pathPoints, DETAIL_PATH_JUMP_LIMIT_MM)
+    .map((segment) => segment.map((point) => projectWorldPointToRasterPixel(point, raster)).filter(Boolean))
+    .filter((segment) => segment.length >= 2);
+  if (!segments.length) return false;
+
+  const strokeWidth = Math.max(2, canvas.width * 0.012);
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  for (const [color, width] of [
+    ["rgba(82, 94, 245, 0.55)", strokeWidth],
+    ["rgba(220, 226, 255, 0.7)", Math.max(1, strokeWidth * 0.35)],
+  ]) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    for (const segment of segments) {
+      ctx.beginPath();
+      ctx.moveTo(segment[0].x, segment[0].y);
+      for (const point of segment.slice(1)) ctx.lineTo(point.x, point.y);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+  return true;
+}
+
+// Appends the mowed-path polylines to an existing zone/path-only SVG, using
+// raw world coordinates directly (the same unflipped convention the zone
+// polygons already use, see renderMowingRecordZonesSvg).
+function appendDetailPathPolylines(svg, pathPoints, strokeWidth) {
+  const segments = buildDetailPathSegments(pathPoints, DETAIL_PATH_JUMP_LIMIT_MM);
+  if (!segments.length) return false;
+  const svgNs = "http://www.w3.org/2000/svg";
+  for (const segment of segments) {
+    const line = document.createElementNS(svgNs, "polyline");
+    line.setAttribute("points", segment.map((p) => `${p.x},${p.y}`).join(" "));
+    line.setAttribute("fill", "none");
+    line.setAttribute("stroke", "rgba(94, 224, 131, 0.85)");
+    line.setAttribute("stroke-width", String(strokeWidth));
+    line.setAttribute("stroke-linecap", "round");
+    line.setAttribute("stroke-linejoin", "round");
+    svg.appendChild(line);
+  }
+  return true;
+}
+
+// Standalone rendering for when only the path file decoded (no map raster,
+// no area/zone data): plots the mowed-point bounding box on its own.
+function renderMowingRecordPathOnlySvg(pathPoints) {
+  const segments = buildDetailPathSegments(pathPoints, DETAIL_PATH_JUMP_LIMIT_MM);
+  if (!segments.length) return null;
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const segment of segments) {
+    for (const point of segment) {
+      if (point.x < minX) minX = point.x;
+      if (point.x > maxX) maxX = point.x;
+      if (point.y < minY) minY = point.y;
+      if (point.y > maxY) maxY = point.y;
+    }
+  }
+  if (![minX, minY, maxX, maxY].every(Number.isFinite)) return null;
+
+  const spanX = Math.max(maxX - minX, 0.01);
+  const spanY = Math.max(maxY - minY, 0.01);
+  const padding = Math.max(spanX, spanY) * 0.08;
+  const svgNs = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNs, "svg");
+  svg.setAttribute(
+    "viewBox",
+    `${minX - padding} ${minY - padding} ${spanX + padding * 2} ${spanY + padding * 2}`
+  );
+  svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  appendDetailPathPolylines(svg, pathPoints, Math.max(spanX, spanY) * 0.01);
+  return svg;
+}
+
+function renderMowingRecordRasterCanvas(raster) {
+  const width = Number(raster.width);
+  const height = Number(raster.height);
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+    return null;
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  const imageData = ctx.createImageData(width, height);
+  let pixel = 0;
+  const runs = raster.runs || [];
+  for (let index = 0; index < runs.length - 1 && pixel < width * height; index += 2) {
+    const value = Number(runs[index]);
+    const count = Number(runs[index + 1]);
+    if (!Number.isFinite(value) || !Number.isFinite(count) || count <= 0) continue;
+    const color = rasterColorForRecordDetail(value);
+    for (let step = 0; step < count && pixel < width * height; step += 1, pixel += 1) {
+      const sourceX = pixel % width;
+      const sourceY = Math.floor(pixel / width);
+      const target = ((height - 1 - sourceY) * width + sourceX) * 4;
+      imageData.data[target] = color[0];
+      imageData.data[target + 1] = color[1];
+      imageData.data[target + 2] = color[2];
+      imageData.data[target + 3] = color[3];
+    }
+  }
+  ctx.putImageData(imageData, 0, 0);
+  return canvas;
+}
+
+// Port of renderer.js's decodeRasterRuns(): expands the raster's
+// run-length-encoded `runs` (value, count, value, count, ...) into a flat
+// per-pixel array, row-major, NO row flip (that flip in
+// renderMowingRecordRasterCanvas above is purely a canvas-image-orientation
+// concern; the raw pixel order here matches world Y directly, same as
+// renderer.js's own boundary tracer expects).
+function decodeRasterSolidMask(raster, width, height) {
+  if (!Array.isArray(raster?.runs)) return null;
+  const pixels = new Uint8Array(width * height);
+  let offset = 0;
+  for (let index = 0; index < raster.runs.length - 1; index += 2) {
+    const value = Math.max(0, Math.min(255, Number(raster.runs[index]) || 0));
+    const count = Number(raster.runs[index + 1]);
+    if (!Number.isFinite(count) || count <= 0) continue;
+    pixels.fill(value, offset, Math.min(width * height, offset + count));
+    offset += count;
+    if (offset >= width * height) break;
+  }
+  return pixels;
+}
+
+// Port of renderer.js's drawRasterBoundary(): traces the edges between
+// solid (mowed-lawn) and empty raster cells -- the real mapped-lawn
+// silhouette, pixel-accurate, as opposed to the raw wire-perimeter/travel
+// route in map_binary_paths (which can cut across non-grass areas like a
+// driveway when the mower's route connects two mowing zones). Returns an
+// SVG path `d` string built from many disconnected M/L segments -- one per
+// boundary edge, exactly mirroring the ctx.moveTo/lineTo pairs the canvas
+// version draws -- which is not a single closed loop, but reads as one
+// when stroked with round joins/caps because adjacent edges share endpoints.
+function buildRasterBoundaryPathD(raster, rasterBounds, worldToScreen) {
+  const width = Number(raster?.width);
+  const height = Number(raster?.height);
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+    return null;
+  }
+  const pixels = decodeRasterSolidMask(raster, width, height);
+  if (!pixels) return null;
+
+  const minX = Number(rasterBounds?.min_x ?? rasterBounds?.minX);
+  const maxX = Number(rasterBounds?.max_x ?? rasterBounds?.maxX);
+  const minY = Number(rasterBounds?.min_y ?? rasterBounds?.minY);
+  const maxY = Number(rasterBounds?.max_y ?? rasterBounds?.maxY);
+  if (![minX, maxX, minY, maxY].every(Number.isFinite)) return null;
+
+  const stepX = (maxX - minX) / width;
+  const stepY = (maxY - minY) / height;
+  if (!Number.isFinite(stepX) || !Number.isFinite(stepY) || stepX === 0 || stepY === 0) {
+    return null;
+  }
+
+  const isSolid = (x, y) => x >= 0 && x < width && y >= 0 && y < height && pixels[y * width + x] !== 0;
+  const toScreen = (x, y) => worldToScreen({ x: minX + x * stepX, y: minY + y * stepY });
+
+  const segments = [];
+  const addEdge = (x1, y1, x2, y2) => {
+    const start = toScreen(x1, y1);
+    const end = toScreen(x2, y2);
+    segments.push(`M${start.x},${start.y} L${end.x},${end.y}`);
+  };
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (!isSolid(x, y)) continue;
+      if (!isSolid(x - 1, y)) addEdge(x, y, x, y + 1);
+      if (!isSolid(x + 1, y)) addEdge(x + 1, y, x + 1, y + 1);
+      if (!isSolid(x, y - 1)) addEdge(x, y, x + 1, y);
+      if (!isSolid(x, y + 1)) addEdge(x, y + 1, x + 1, y + 1);
+    }
+  }
+
+  return segments.length ? segments.join(" ") : null;
+}
+
+// Port of renderer.js's applyMapCalibration(): composes an extra
+// offset/scale/rotation adjustment (the live map's own, separate "decoded
+// boundary" fit controls) on top of a geometry's normal world->screen
+// projection. geometry.js doesn't export the pieces needed to build this
+// directly, so it's reproduced here from the geometry object's own
+// worldToMap/mapToScreen (both already exposed by createGeometry).
+function worldToScreenWithExtraCalibration(geometry, calibration, point) {
+  const next = {
+    offsetX: Number(calibration?.offsetX) || 0,
+    offsetY: Number(calibration?.offsetY) || 0,
+    scaleX: Number(calibration?.scaleX) || 1,
+    scaleY: Number(calibration?.scaleY) || 1,
+    rotation: Number(calibration?.rotation) || 0,
+  };
+  const mapPoint = geometry.worldToMap(point);
+  const centered = {
+    x: (Number(mapPoint.x) - 0.5) * next.scaleX,
+    y: (Number(mapPoint.y) - 0.5) * next.scaleY,
+  };
+  const cos = Math.cos(next.rotation);
+  const sin = Math.sin(next.rotation);
+  const calibrated = {
+    x: centered.x * cos - centered.y * sin + 0.5 + next.offsetX,
+    y: centered.x * sin + centered.y * cos + 0.5 + next.offsetY,
+  };
+  return geometry.mapToScreen(calibrated);
+}
+
+// Draws a simple schematic (not necessarily oriented like the live map) of
+// the zone polygons an "area" file describes, reusing the same zone/vertex
+// parsing the live map overlay uses (getZones/getZonePoints from geometry.js)
+// so it recognizes the same field-name variants.
+function renderMowingRecordZonesSvg(
+  areaDefinition,
+  pathPoints = [],
+  mowedZoneInfo = null,
+  {
+    backgroundImage = null,
+    calibration = null,
+    decodedBoundaryCalibration = null,
+    bounds: resolvedBounds = null,
+    boundaryRaster = null,
+    boundaryPaths = null,
+    canvasSize = null,
+    fit = "cover",
+    rotation = 0,
+  } = {}
+) {
+  const zones = getZones(areaDefinition, ["custom_areas", "zones", "customAreas", "ridable_areas"]);
+  const zonePolygons = zones
+    .map((zone) => ({ zone, points: getZonePoints(zone) }))
+    .filter((entry) => entry.points.length >= 3);
+  if (!zonePolygons.length) return null;
+
+  // Mirrors renderer.js's draw() precisely, not just "the same calibration
+  // values": the live map (1) computes its world bounds from the property's
+  // CURRENT live boundary/zone/raster data (falling back to an explicit
+  // config.bounds override when the caller set one) -- NOT from whatever
+  // this particular historical record's own `area_url` snapshot happens to
+  // contain, which can differ just enough to visibly mis-scale things; the
+  // caller (openMowingRecordDetail) already resolves that and passes the
+  // final `bounds` in, (2) fits BOTH its image geometry and its zone/path
+  // geometry to the *photo's own* aspect ratio (not the raw world aspect
+  // ratio), and (3) draws the background photo with an UNCALIBRATED
+  // geometry (calibration: {}) while drawing zones/path with the
+  // CALIBRATED one -- the photo is the fixed reference frame; calibration
+  // is how the robot's own (possibly offset/rotated/scaled) coordinate
+  // system gets nudged to line up with it.
+  const bounds = resolvedBounds || getWorldBounds(areaDefinition, null);
+  const sourceWidth = Number(backgroundImage?.naturalWidth || backgroundImage?.width) || 0;
+  const sourceHeight = Number(backgroundImage?.naturalHeight || backgroundImage?.height) || 0;
+  const hasImage = Boolean(backgroundImage && sourceWidth > 0 && sourceHeight > 0);
+  const photoRatio = hasImage ? sourceWidth / sourceHeight : undefined;
+
+  // Attila: the zones/coverage still read "too tall" vertically vs. the
+  // live map even with matching bounds/calibration. Root cause: the live
+  // map's "map" rect is fit against the live CANVAS's own actual pixel
+  // width/height (whatever the card's on-screen box happens to be) using
+  // its configured `fit` ("cover" by default -- crops/zooms rather than
+  // showing the world uncropped when the container's aspect ratio doesn't
+  // match the photo's). The popup was instead sizing its own SVG canvas to
+  // exactly match the photo's aspect ratio with zero letterboxing by
+  // construction -- a DIFFERENT fit, so even identical bounds/calibration
+  // produced a differently zoomed/cropped picture. When the caller can
+  // supply the live renderer's actual current canvas size, reuse it (and
+  // its `fit` mode) directly so the popup reproduces the exact same "map"
+  // rect the live view uses; only fall back to a synthetic, letterbox-free
+  // size (photo's own aspect ratio, "contain") when that isn't available.
+  let size;
+  let fitMode;
+  if (canvasSize && canvasSize.width > 0 && canvasSize.height > 0) {
+    size = { width: canvasSize.width, height: canvasSize.height };
+    fitMode = fit || "cover";
+  } else {
+    const rawWorldRatio = (bounds.maxX - bounds.minX) / (bounds.maxY - bounds.minY);
+    const worldRatio = Number.isFinite(rawWorldRatio) && rawWorldRatio > 0 ? rawWorldRatio : 1;
+    const fitRatio = Number.isFinite(photoRatio) && photoRatio > 0 ? photoRatio : worldRatio;
+    size = { width: 1000, height: Math.max(1, 1000 / fitRatio) };
+    fitMode = "contain";
+  }
+  const view = { rotation: Number(rotation) || 0 };
+  const geometryOptions = { bounds, width: size.width, height: size.height, view, aspectRatio: photoRatio, fit: fitMode };
+  const baseGeometry = createGeometry({ ...geometryOptions, calibration: {} });
+  const geometry = createGeometry({ ...geometryOptions, calibration });
+  const project = (point) => geometry.worldToScreen(point);
+
+  // Styling mirrors the real app's own history-detail screen (reference
+  // screenshot, 2026-08-21): every zone rectangle gets the same plain pale
+  // frame, and the actual mowed *coverage* (the clipped path swath drawn
+  // per zone below) is what visually shows what got mowed -- not a flat
+  // solid fill on the whole rectangle.
+  const MOWED_STROKE = "#4d4ed6";
+  const NEUTRAL_FILL = "#8b8fdb";
+  const NEUTRAL_STROKE = "#9598e0";
+  // Attila: the dimension text ("15.3m x 11.7m") was reading as too
+  // dominant over the photo -- shrunk noticeably smaller than the zone
+  // name label, instead of the previous 0.8x-of-name ratio.
+  const fontSize = Math.max(size.width, size.height) * 0.026;
+  const dimsFontSize = Math.max(size.width, size.height) * 0.013;
+  const svgNs = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNs, "svg");
+  svg.setAttribute("viewBox", `0 0 ${size.width} ${size.height}`);
+  svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+
+  // Same garden photo the live map card underlays behind the boundary/zones
+  // (config.image), placed with the exact same affine fit the live map
+  // renderer uses (renderer.js's drawImageOnMap/drawImageToScreenRect): the
+  // image's unit-square corners (0,0)-(1,0)-(0,1) run through the
+  // UNCALIBRATED baseGeometry.mapToScreen (see comment above), and the
+  // resulting 2x3 affine is reproduced here as an SVG matrix transform
+  // instead of a canvas setTransform.
+  if (hasImage) {
+    const topLeft = baseGeometry.mapToScreen({ x: 0, y: 0 });
+    const topRight = baseGeometry.mapToScreen({ x: 1, y: 0 });
+    const bottomLeft = baseGeometry.mapToScreen({ x: 0, y: 1 });
+    const a = (topRight.x - topLeft.x) / sourceWidth;
+    const b = (topRight.y - topLeft.y) / sourceWidth;
+    const c = (bottomLeft.x - topLeft.x) / sourceHeight;
+    const d = (bottomLeft.y - topLeft.y) / sourceHeight;
+
+    const bgImage = document.createElementNS(svgNs, "image");
+    bgImage.setAttributeNS("http://www.w3.org/1999/xlink", "href", backgroundImage.src);
+    bgImage.setAttribute("href", backgroundImage.src);
+    bgImage.setAttribute("x", "0");
+    bgImage.setAttribute("y", "0");
+    bgImage.setAttribute("width", String(sourceWidth));
+    bgImage.setAttribute("height", String(sourceHeight));
+    bgImage.setAttribute("preserveAspectRatio", "none");
+    bgImage.setAttribute("opacity", "0.6");
+    bgImage.setAttribute("transform", `matrix(${a} ${b} ${c} ${d} ${topLeft.x} ${topLeft.y})`);
+    svg.appendChild(bgImage);
+  }
+
+  // Reference screenshot (the real app's own history-detail screen,
+  // 2026-08-21) doesn't fill the whole zone RECTANGLE solid when it was
+  // mowed -- it draws the real, irregular coverage silhouette (following
+  // actual lawn edges/obstacles) inside the rectangle, and leaves the
+  // rectangle itself as a plain pale reference frame for every zone,
+  // mowed or not. We don't have a true coverage polygon, but the mowed
+  // *path* (already decoded) traces that same irregular shape -- drawing
+  // it as thick, near-solid, round-capped strokes (instead of the earlier
+  // thin translucent lines that read as generic clutter) approximates it
+  // closely, and clipping those strokes to each zone's own polygon (via an
+  // SVG <clipPath>) keeps a session's coverage from bleeding into a
+  // neighboring zone the same way the real app's per-zone silhouette does.
+  const defs = document.createElementNS(svgNs, "defs");
+  svg.appendChild(defs);
+  const coverageSegments = pathPoints.length ? buildDetailPathSegments(pathPoints, DETAIL_PATH_JUMP_LIMIT_MM) : [];
+  // Approximate cutting width of the mower, in world mm -- unconfirmed
+  // against real device specs, chosen to visually read as a filled
+  // coverage swath (like the reference screenshot) rather than thin
+  // stripes when consecutive passes overlap.
+  const MOWER_WIDTH_MM = 300;
+  const pxPerMm = geometry.map.width / Math.max(1, bounds.maxX - bounds.minX);
+  const coverageStrokeWidth = Math.max(2, MOWER_WIDTH_MM * pxPerMm);
+
+  zonePolygons.forEach(({ zone, points }, zoneIndex) => {
+    const name = zone?.name || zone?.label;
+    const normalizedName = name ? String(name).trim().toLowerCase() : "";
+    const matched = mowedZoneInfo?.get(normalizedName) || null;
+    const screenPoints = points.map(project);
+
+    const poly = document.createElementNS(svgNs, "polygon");
+    poly.setAttribute("points", screenPoints.map((p) => `${p.x},${p.y}`).join(" "));
+    poly.setAttribute("fill", NEUTRAL_FILL);
+    poly.setAttribute("fill-opacity", "0.14");
+    poly.setAttribute("stroke", NEUTRAL_STROKE);
+    poly.setAttribute("stroke-width", String(Math.max(size.width, size.height) * 0.004));
+    svg.appendChild(poly);
+
+    if (coverageSegments.length) {
+      const clipId = `mowing-zone-clip-${zoneIndex}`;
+      const clipPath = document.createElementNS(svgNs, "clipPath");
+      clipPath.setAttribute("id", clipId);
+      const clipPoly = document.createElementNS(svgNs, "polygon");
+      clipPoly.setAttribute("points", screenPoints.map((p) => `${p.x},${p.y}`).join(" "));
+      clipPath.appendChild(clipPoly);
+      defs.appendChild(clipPath);
+
+      const coverageGroup = document.createElementNS(svgNs, "g");
+      coverageGroup.setAttribute("clip-path", `url(#${clipId})`);
+      for (const segment of coverageSegments) {
+        const line = document.createElementNS(svgNs, "polyline");
+        line.setAttribute(
+          "points",
+          segment
+            .map((p) => {
+              const s = project(p);
+              return `${s.x},${s.y}`;
+            })
+            .join(" ")
+        );
+        line.setAttribute("fill", "none");
+        line.setAttribute("stroke", MOWED_STROKE);
+        line.setAttribute("stroke-opacity", "0.92");
+        line.setAttribute("stroke-width", String(coverageStrokeWidth));
+        line.setAttribute("stroke-linecap", "round");
+        line.setAttribute("stroke-linejoin", "round");
+        coverageGroup.appendChild(line);
+      }
+      svg.appendChild(coverageGroup);
+    }
+
+    if (name) {
+      let cx = 0, cy = 0;
+      for (const p of screenPoints) { cx += p.x; cy += p.y; }
+      cx /= screenPoints.length;
+      cy /= screenPoints.length;
+
+      // Dimensions: prefer the record's own reported width x height for a
+      // zone it actually mowed (confirmed correct against the app in an
+      // earlier round); otherwise fall back to this zone polygon's own
+      // world-mm bounding box (unconfirmed for zones outside a record's
+      // zone_list).
+      let dims = matched?.dims || "";
+      if (!dims && points.length >= 3) {
+        let zMinX = Infinity, zMinY = Infinity, zMaxX = -Infinity, zMaxY = -Infinity;
+        for (const p of points) {
+          if (p.x < zMinX) zMinX = p.x;
+          if (p.x > zMaxX) zMaxX = p.x;
+          if (p.y < zMinY) zMinY = p.y;
+          if (p.y > zMaxY) zMaxY = p.y;
+        }
+        if ([zMinX, zMinY, zMaxX, zMaxY].every(Number.isFinite)) {
+          dims = `${((zMaxX - zMinX) / 1000).toFixed(1)}m × ${((zMaxY - zMinY) / 1000).toFixed(1)}m`;
+        }
+      }
+
+      // A dark outline keeps the label legible over the (optional) photo
+      // background, whose brightness varies -- plain white fill alone can
+      // wash out over light patches of the image.
+      const textOutline = String(Math.max(size.width, size.height) * 0.0025);
+
+      const nameText = document.createElementNS(svgNs, "text");
+      nameText.setAttribute("x", String(cx));
+      nameText.setAttribute("y", String(cy - fontSize * 0.35));
+      nameText.setAttribute("text-anchor", "middle");
+      nameText.setAttribute("font-size", String(fontSize));
+      nameText.setAttribute("font-weight", "600");
+      nameText.setAttribute("fill", "#ffffff");
+      nameText.setAttribute("stroke", "rgba(0,0,0,0.65)");
+      nameText.setAttribute("stroke-width", textOutline);
+      nameText.setAttribute("paint-order", "stroke");
+      nameText.textContent = String(name);
+      svg.appendChild(nameText);
+
+      if (dims) {
+        const dimsText = document.createElementNS(svgNs, "text");
+        dimsText.setAttribute("x", String(cx));
+        dimsText.setAttribute("y", String(cy + fontSize * 0.7));
+        dimsText.setAttribute("text-anchor", "middle");
+        dimsText.setAttribute("font-size", String(dimsFontSize));
+        dimsText.setAttribute("fill", "rgba(255,255,255,0.85)");
+        dimsText.setAttribute("stroke", "rgba(0,0,0,0.65)");
+        dimsText.setAttribute("stroke-width", textOutline);
+        dimsText.setAttribute("paint-order", "stroke");
+        dimsText.textContent = dims;
+        svg.appendChild(dimsText);
+      }
+    }
+  });
+
+  // Attila: "a no-go zone nincs rajta" -- the popup was only ever reading
+  // the mowable-zone keys (custom_areas/zones/customAreas/ridable_areas);
+  // it never looked at the forbidden/no-go-area keys at all, so those
+  // zones were silently missing here even though the live map always
+  // draws them (renderer.js's draw(): drawZones(..., "zone") immediately
+  // followed by drawZones(..., "no-go"), same geometry, right before the
+  // boundary/mowed-path layers -- mirrored here in the same order/style:
+  // solid red fill+stroke, label falls back to "No-go" for an unnamed or
+  // generically-named ("Zone 1") zone, same as zoneLabel() in renderer.js).
+  const noGoZones = getZones(areaDefinition, [
+    "forbid_areas",
+    "forbidAreas",
+    "remote_forbid_areas",
+    "remoteForbidAreas",
+    "no_go_areas",
+    "noGoAreas",
+  ]);
+  const noGoPolygons = noGoZones
+    .map((zone) => ({ zone, points: getZonePoints(zone) }))
+    .filter((entry) => entry.points.length >= 3);
+  const NO_GO_FILL = "rgba(244, 67, 54, 0.38)";
+  const NO_GO_STROKE = "rgba(255, 82, 82, 1)";
+  noGoPolygons.forEach(({ zone, points }) => {
+    const screenPoints = points.map(project);
+    const poly = document.createElementNS(svgNs, "polygon");
+    poly.setAttribute("points", screenPoints.map((p) => `${p.x},${p.y}`).join(" "));
+    poly.setAttribute("fill", NO_GO_FILL);
+    poly.setAttribute("stroke", NO_GO_STROKE);
+    poly.setAttribute("stroke-width", String(Math.max(size.width, size.height) * 0.004));
+    svg.appendChild(poly);
+
+    const rawName = zone?.name || zone?.label;
+    const label = rawName && !/^zone\s*\d+$/i.test(String(rawName)) ? String(rawName) : "No-go";
+    let cx = 0, cy = 0;
+    for (const p of screenPoints) { cx += p.x; cy += p.y; }
+    cx /= screenPoints.length;
+    cy /= screenPoints.length;
+    const textOutline = String(Math.max(size.width, size.height) * 0.0025);
+    const labelText = document.createElementNS(svgNs, "text");
+    labelText.setAttribute("x", String(cx));
+    labelText.setAttribute("y", String(cy));
+    labelText.setAttribute("text-anchor", "middle");
+    labelText.setAttribute("font-size", String(fontSize * 0.8));
+    labelText.setAttribute("font-weight", "600");
+    labelText.setAttribute("fill", "#ffffff");
+    labelText.setAttribute("stroke", "rgba(0,0,0,0.65)");
+    labelText.setAttribute("stroke-width", textOutline);
+    labelText.setAttribute("paint-order", "stroke");
+    labelText.textContent = label;
+    svg.appendChild(labelText);
+  });
+
+  // Attila asked for the lawn's own boundary outline to be visible too
+  // (previously only the zone rectangles were drawn), then pointed out the
+  // first attempt (getBoundaryPaths()'s map_binary_paths -- the raw
+  // wire-perimeter/travel route) cut straight across the driveway, since
+  // that's the "legacy boundary" the live map itself only shows when
+  // explicitly turned on. What the live map shows BY DEFAULT is a
+  // pixel-traced outline of the map_raster mask -- the real mapped-lawn
+  // silhouette -- so that's preferred here too, with the vector paths kept
+  // only as a fallback when no usable raster is available. Either way,
+  // drawn twice -- a thicker, translucent "glow" underneath, then a solid
+  // line on top -- and drawn last (on top of the zone fills) to match the
+  // live map's own draw order (zones, then boundary, then mowed path).
+  const boundaryWidth = Math.max(size.width, size.height) * 0.006;
+  const boundaryGlowWidth = boundaryWidth * 2.2;
+  const strokeBoundaryPathD = (pathD) => {
+    const glow = document.createElementNS(svgNs, "path");
+    glow.setAttribute("d", pathD);
+    glow.setAttribute("fill", "none");
+    glow.setAttribute("stroke", "rgba(168, 179, 255, 0.38)");
+    glow.setAttribute("stroke-width", String(boundaryGlowWidth));
+    glow.setAttribute("stroke-linecap", "round");
+    glow.setAttribute("stroke-linejoin", "round");
+    svg.appendChild(glow);
+
+    const solid = document.createElementNS(svgNs, "path");
+    solid.setAttribute("d", pathD);
+    solid.setAttribute("fill", "none");
+    solid.setAttribute("stroke", "rgba(74, 101, 255, 0.9)");
+    solid.setAttribute("stroke-width", String(boundaryWidth));
+    solid.setAttribute("stroke-linecap", "round");
+    solid.setAttribute("stroke-linejoin", "round");
+    svg.appendChild(solid);
+  };
+
+  const rasterBoundaryD =
+    boundaryRaster && boundaryRaster.bounds
+      ? buildRasterBoundaryPathD(boundaryRaster, boundaryRaster.bounds, (point) =>
+          worldToScreenWithExtraCalibration(geometry, decodedBoundaryCalibration, point)
+        )
+      : null;
+
+  if (rasterBoundaryD) {
+    strokeBoundaryPathD(rasterBoundaryD);
+  } else if (Array.isArray(boundaryPaths) && boundaryPaths.length) {
+    for (const path of boundaryPaths) {
+      if (!Array.isArray(path) || path.length < 2) continue;
+      const screenPoints = path.map(project);
+      const closedD = `M${screenPoints.map((p) => `${p.x},${p.y}`).join(" L")} Z`;
+      strokeBoundaryPathD(closedD);
+    }
+  }
+
+  return svg;
+}
+
+function formatRecordArea(value) {
+  const num = Number(value);
+  if (Number.isNaN(num)) return String(value);
+  return `${Math.round(num * 10) / 10} m²`;
+}
+
+function formatRecordNumber(value) {
+  const num = Number(value);
+  if (Number.isNaN(num)) return String(value);
+  return String(Math.round(num * 10) / 10);
+}
+
+function formatRecordPercent(value) {
+  const num = Number(value);
+  if (Number.isNaN(num)) return null;
+  const pct = num > 0 && num <= 1 ? num * 100 : num;
+  return `${Math.round(pct * 10) / 10}%`;
+}
+
+function formatRecordDurationSeconds(totalSeconds) {
+  const total = Math.max(0, Math.round(totalSeconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes} min`;
+}
+
+// The confirmed Anthbot mow_time field is expressed in seconds. Explicit
+// millisecond aliases are converted by field name; magnitude is deliberately
+// not used because a valid large-property mowing session can exceed 20,000 s.
+function normalizeRecordDurationSeconds(rawDuration, sourceKey = "") {
+  if (rawDuration === undefined || rawDuration === null || rawDuration === "") return null;
+  const rawNum = Number(rawDuration);
+  if (Number.isNaN(rawNum)) return null;
+  return /(?:_ms|Ms)$/.test(String(sourceKey)) ? rawNum / 1000 : rawNum;
+}
+
+// Attila: the real app shows a "start - end" range for every history entry
+// (e.g. "2026-08-09 13:53 - 2026-08-19 14:37"), but the cloud record itself
+// only ever carries an end timestamp (`finish_time`) -- there is no
+// start_time/begin_time field in the confirmed real response (see the
+// MOWING_RECORD_START_KEYS alias list, which was written defensively before
+// a populated history existed and has simply never matched anything real).
+// What the record DOES carry is the session's duration (`mow_time`, in
+// seconds), so the start can be reconstructed as end minus duration -- the
+// same arithmetic the app itself must be doing to show that range. Falls
+// back to whatever an actual start-time alias resolves to, if the cloud
+// ever does start sending one, so this doesn't fight a real field later.
+function resolveMowingRecordTimeRange(record) {
+  const end = parseRecordTimestamp(pickRecordValue(record, MOWING_RECORD_END_KEYS));
+  let start = parseRecordTimestamp(pickRecordValue(record, MOWING_RECORD_START_KEYS));
+  if (!start && end) {
+    const durationEntry = pickRecordEntry(record, MOWING_RECORD_DURATION_KEYS);
+    const durationSeconds = normalizeRecordDurationSeconds(durationEntry?.value, durationEntry?.key);
+    if (durationSeconds !== null && durationSeconds > 0) {
+      start = new Date(end.getTime() - durationSeconds * 1000);
+    }
+  }
+  return { start, end };
 }
 
 customElements.define("anthbot-map-card", AnthbotMapCard);

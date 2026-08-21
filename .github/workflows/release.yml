@@ -44,12 +44,19 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
+          tag="${{ steps.release.outputs.tag }}"
+          manifest_version="$(python -c 'import json; print(json.load(open("custom_components/anthbot_map/manifest.json"))["version"])')"
+          if [ "v${manifest_version}" != "$tag" ]; then
+            echo "Release tag $tag does not match manifest version v${manifest_version}."
+            exit 1
+          fi
           python -m unittest discover -s tests -v
           python -m json.tool custom_components/anthbot_map/manifest.json >/dev/null
           find custom_components www -type f -name '*.js' -print0 | xargs -0 -n1 node --check
           cmp custom_components/anthbot_map/frontend/anthbot-map-card.js www/anthbot-map/anthbot-map-card.js
           cmp custom_components/anthbot_map/frontend/i18n.js www/anthbot-map/i18n.js
           cmp custom_components/anthbot_map/frontend/renderer.js www/anthbot-map/renderer.js
+          cmp custom_components/anthbot_map/frontend/styles.css www/anthbot-map/styles.css
           test -z "$(find custom_components -type f \( -name '*.pyc' -o -name '*.gz' \) -print -quit)"
 
       - name: Build complete installer
@@ -61,42 +68,8 @@ jobs:
             README.md \
             README_HU.md \
             CHANGELOG.md \
-            CHANGELOG_v1.0.59_HU.md \
-            CHANGELOG_v1.0.60_HU.md \
-            CHANGELOG_v1.0.61_HU.md \
-            CHANGELOG_v1.0.62_HU.md \
-            CHANGELOG_v1.0.63_HU.md \
-            CHANGELOG_v1.0.64_HU.md \
-            CHANGELOG_v1.0.65_HU.md \
-            CHANGELOG_v1.0.66_HU.md \
-            CHANGELOG_v1.0.67_HU.md \
-            CHANGELOG_v1.0.68_HU.md \
-            CHANGELOG_v1.0.69_HU.md \
-            CHANGELOG_v1.0.70_HU.md \
-            CHANGELOG_v2.0.0-beta.1_HU.md \
-            CHANGELOG_v2.0.0-beta.2_HU.md \
-            CHANGELOG_v2.0.0-beta.3_HU.md \
-            CHANGELOG_v2.0.0-beta.4_HU.md \
-            CHANGELOG_v2.0.0-beta.5_HU.md \
-            CHANGELOG_v2.0.0-beta.6_HU.md \
-            CHANGELOG_v2.0.0-beta.7_HU.md \
-            CHANGELOG_v2.0.0-beta.8_HU.md \
-            CHANGELOG_v2.0.0-beta.10_HU.md \
-            CHANGELOG_v2.0.0-beta.11_HU.md \
-            CHANGELOG_v2.0.0-beta.13_HU.md \
-            CHANGELOG_v2.0.0-beta.14_HU.md \
-            CHANGELOG_v2.0.0-beta.15_HU.md \
-            CHANGELOG_v2.0.0_HU.md \
-            CHANGELOG_v2.1.0_HU.md \
-            CHANGELOG_v2.1.1_HU.md \
-            CHANGELOG_v2.2.0_HU.md \
-            CHANGELOG_v2.2.1_HU.md \
-            RELEASE_NOTES_v2.0.0-beta.15.md \
-            RELEASE_NOTES_v2.0.0.md \
-            RELEASE_NOTES_v2.1.0.md \
-            RELEASE_NOTES_v2.1.1.md \
-            RELEASE_NOTES_v2.2.0.md \
-            RELEASE_NOTES_v2.2.1.md \
+            CHANGELOG*.md \
+            RELEASE_NOTES*.md \
             LICENSE \
             NOTICE.md \
             hacs.json
@@ -106,7 +79,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${{ steps.release.outputs.tag }}"
-          cat RELEASE_NOTES_v2.2.1.md CHANGELOG_v2.2.1_HU.md > /tmp/release-notes.md
+          version="${tag#v}"
+          : > /tmp/release-notes.md
+          for notes_file in "RELEASE_NOTES_v${version}.md" "CHANGELOG_v${version}_HU.md"; do
+            if [ -f "$notes_file" ]; then
+              cat "$notes_file" >> /tmp/release-notes.md
+              printf '\n' >> /tmp/release-notes.md
+            fi
+          done
+          if [ ! -s /tmp/release-notes.md ]; then
+            printf '# Anthbot Map %s\n\nSee CHANGELOG.md for details.\n' "$tag" > /tmp/release-notes.md
+          fi
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release edit "$tag" \
               --title "Anthbot Map $tag" \

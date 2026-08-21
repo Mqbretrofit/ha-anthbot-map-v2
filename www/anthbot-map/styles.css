@@ -696,3 +696,113 @@ textarea {
   color: #0b1411;
   font-weight: 800;
 }
+
+.mowing-history-card.has-detail {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.mowing-history-card.has-detail:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.mowing-record-detail-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 16px;
+}
+
+.mowing-record-detail-dialog {
+  background: var(--anthbot-card-background);
+  color: var(--anthbot-primary-text);
+  border-radius: 12px;
+  max-width: 640px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.mowing-record-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.mowing-record-detail-title {
+  font-weight: 700;
+  font-size: 1.05em;
+}
+
+.mowing-record-detail-close {
+  background: transparent;
+  border: none;
+  color: var(--anthbot-secondary-text);
+  font-size: 1.4em;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+.mowing-record-detail-close:hover {
+  color: var(--anthbot-primary-text);
+}
+
+.mowing-record-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mowing-record-detail-canvas-wrap {
+  width: 100%;
+  background: var(--anthbot-secondary-background);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mowing-record-detail-canvas-wrap canvas,
+.mowing-record-detail-canvas-wrap svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.mowing-record-detail-status {
+  padding: 24px 8px;
+  text-align: center;
+  color: var(--anthbot-secondary-text);
+}
+
+.mowing-record-detail-error {
+  color: #ff8a80;
+  font-size: 0.9em;
+}
+
+.mowing-record-detail-zones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mowing-record-detail-debug {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--anthbot-border-color, rgba(255, 255, 255, 0.12));
+  font-size: 0.72em;
+  font-family: monospace;
+  color: var(--anthbot-secondary-text);
+  opacity: 0.75;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
