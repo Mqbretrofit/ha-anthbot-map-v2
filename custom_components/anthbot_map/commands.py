@@ -7,8 +7,20 @@ import logging
 
 from .api import AnthbotGenieApiError
 from .coordinator import AnthbotGenieDataUpdateCoordinator, is_robot_online
+from .m_series_compat import install_m_series_compat
+from .mower_status import raw_robot_status
 
 _LOGGER = logging.getLogger(__name__)
+
+# __init__.py imports this module before any mower coordinator is created, so
+# install the model-aware shadow behavior here without touching Genie paths.
+install_m_series_compat()
+
+
+def _is_m_series(coordinator: AnthbotGenieDataUpdateCoordinator) -> bool:
+    """Return whether this coordinator controls an M5/M9 mower."""
+    model = str(getattr(coordinator.device, "model", "") or "").upper()
+    return "M5" in model or "M9" in model
 
 
 async def async_prepare_cloud_connection(
@@ -17,12 +29,28 @@ async def async_prepare_cloud_connection(
     attempts: int = 2,
     wait_seconds: int = 4,
 ) -> bool:
-    """Request app-style MQTT properties and wait for live shadow state."""
+    """Request app-style MQTT properties and wait for live shadow state.
+
+    M5/M9 do not reliably acknowledge the app-style wake request with the
+    property-shadow timestamp/online fields used by Genie. A connected MQTT
+    session plus already-received M-series status/telemetry is sufficient proof
+    that the cloud path is usable, so do not block commands on the Genie-only
+    wake acknowledgement.
+    """
+    m_series = _is_m_series(coordinator)
+
     for attempt in range(attempts):
         if not coordinator.live_shadow_connected:
             await asyncio.sleep(1)
             if not coordinator.live_shadow_connected:
                 continue
+
+        # For M5/M9, reaching this point already proves that the authenticated
+        # AWS IoT transport is up. If we also have a decoded mower status (for
+        # example Docked), the device is demonstrably reporting live state.
+        if m_series and raw_robot_status(coordinator.reported_state) is not None:
+            return True
+
         try:
             await coordinator.client.async_request_all_properties()
         except Exception as err:  # noqa: BLE001 - retry the wake handshake.
@@ -33,7 +61,15 @@ async def async_prepare_cloud_connection(
                 attempts,
                 err,
             )
+            # M-series commands use their own signed command transport. A
+            # failed get_all_props wake must not suppress an otherwise usable
+            # command path when MQTT itself is connected.
+            if m_series and coordinator.live_shadow_connected:
+                return True
             continue
+
+        if m_series:
+            return True
 
         for _ in range(wait_seconds):
             await asyncio.sleep(1)

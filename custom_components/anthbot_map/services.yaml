@@ -342,3 +342,39 @@ reset_dock_contact_maintenance:
       example: "YOUR_MOWER_SERIAL"
       selector:
         text:
+
+get_mowing_record_detail:
+  name: Get mowing record detail
+  description: >-
+    Download and decode the area/map/path files referenced by a single
+    completed mowing-history record (used internally by the card's
+    "what got mowed" popup). Returns the decoded data as the service
+    response.
+  target:
+    entity:
+      integration: anthbot_map
+  fields:
+    area_url:
+      name: Area file name
+      description: The record's area_url field, if present.
+      example: "1787152199026_area.txt"
+      selector:
+        text:
+    map_url:
+      name: Map file name
+      description: The record's map_url field, if present.
+      example: "1787152199026_map.txt"
+      selector:
+        text:
+    path_url:
+      name: Path file name
+      description: The record's path_url field, if present.
+      example: "1787152199026_path.txt"
+      selector:
+        text:
+    serial_number:
+      name: Serial number
+      description: Optional mower serial number or list of serial numbers.
+      example: "YOUR_MOWER_SERIAL"
+      selector:
+        text:

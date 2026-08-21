@@ -32,11 +32,10 @@ testing and quick rollback.
    restart Home Assistant. Do not enable both at once.
 
 > [!IMPORTANT]
-> **Version 2.2.0 highlight:** the integration keeps a persistent AWS IoT
-> MQTT-over-WebSocket connection for substantially faster live mower updates.
-> Commands use the app-compatible live service-shadow channel and wait for the
-> mower's confirmation. Rapid shadow messages are coalesced before they reach
-> Home Assistant, while persistent reconnect remains active.
+> **Version 2.3.0 highlight:** mowing history now uses the confirmed mobile-app
+> endpoint and provides per-session area, map, and path detail. This release
+> also adds experimental M5/M9 shadow and live-path compatibility while keeping
+> Genie behavior unchanged. **The map view is not yet working on M5/M9 mowers.**
 
 The project combines cloud telemetry and mower control with a custom Lovelace
 card that can place the live Anthbot map, zones, mowing trail, charger, and
@@ -72,8 +71,22 @@ robot on a top-down photograph of the garden.
 - 23 selectable languages, including simplified and traditional Chinese,
   Turkish, Thai, Vietnamese, Korean, and Khmer
 
-Tested primarily with Genie-series mowers. Cloud fields and available commands
-can vary by mower model and firmware.
+Tested primarily with Genie-series mowers. M5/M9 support is experimental and
+their map view is not yet working. Cloud fields and available commands can vary
+by mower model and firmware.
+
+## Where to find mowing history
+
+1. Open the **Anthbot Map** card on your Home Assistant dashboard.
+2. Open the card's floating menu and select **Diagnostics**.
+3. Expand **Previous mowing tasks**.
+4. Select a completed session to open its available area, map, and mowing-path
+   detail.
+
+The list is refreshed automatically from the Anthbot cloud approximately every
+five minutes. A session can be opened only when its cloud record contains an
+area, map, or path file; otherwise its summary remains available without the
+visual detail popup.
 
 ## Repository layout
 

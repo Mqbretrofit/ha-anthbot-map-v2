@@ -36,12 +36,12 @@ Anthbot-integráció mellett is telepítve maradhat.
    egyszerre.
 
 > [!IMPORTANT]
-> **A stabil 2.2.0 legfontosabb újdonsága:** az integráció tartós AWS IoT
-> MQTT-over-WebSocket kapcsolatot használ, ezért a robot élő adatai lényegesen
-> gyorsabban frissülnek. A parancsok az alkalmazással egyező élő service-shadow
-> csatornán jutnak el a robothoz, és az integráció megvárja a robot
-> visszaigazolását. A sűrű shadow-üzenetek összevonva jutnak el a Home
-> Assistantig, a kapcsolat pedig automatikusan újracsatlakozik.
+> **A stabil 2.3.0 legfontosabb újdonsága:** a nyírási előzmények már a mobilapp
+> igazolt végpontját használják, és nyírásonként megjelenítik a terület-, térkép-
+> és útvonalrészleteket. A kiadás valós M9 adatok alapján kísérleti M5/M9
+> shadow- és élőútvonal-kompatibilitást is ad, a Genie működésének
+> megváltoztatása nélkül. **Az M5/M9 modelleknél a térképes megjelenítés még nem
+> működik.**
 
 > Ez a projekt nem áll kapcsolatban az Anthbottal. A forrásokról és a
 > védjegyekről a [NOTICE.md](NOTICE.md) fájlban olvashatsz.
@@ -71,8 +71,22 @@ Anthbot-integráció mellett is telepítve maradhat.
 - 23 választható nyelv, köztük az egyszerűsített és hagyományos kínai,
   a török, thai, vietnámi, koreai és khmer
 
-Elsősorban Genie sorozatú fűnyírókkal tesztelve. Az elérhető adatok és
-parancsok modellenként és firmware-verziónként eltérhetnek.
+Elsősorban Genie sorozatú fűnyírókkal tesztelve. Az M5/M9 támogatás kísérleti,
+és ezeknél a modelleknél a térképes megjelenítés még nem működik. Az elérhető
+adatok és parancsok modellenként és firmware-verziónként eltérhetnek.
+
+## Hol érhetők el a nyírási előzmények?
+
+1. Nyisd meg a Home Assistant irányítópultján az **Anthbot Map** kártyát.
+2. Nyisd ki a kártya lebegő menüjét, majd válaszd a **Diagnosztika** fület.
+3. Nyisd le a **Korábbi nyírási feladatok** részt.
+4. Kattints egy befejezett nyírásra a hozzá elérhető terület-, térkép- és
+   nyomvonalrészletek megnyitásához.
+
+A lista körülbelül ötpercenként automatikusan frissül az Anthbot felhőből. Egy
+előzmény akkor nyitható meg, ha a felhőrekord tartalmaz terület-, térkép- vagy
+útvonalfájlt; enélkül az összefoglaló látható marad, de nem nyílik meg a képi
+részletező.
 
 ## A repository felépítése
 

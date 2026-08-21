@@ -105,6 +105,7 @@ class AnthbotBoundDevice:
     alias: str
     model: str
     is_owner: bool | None = None
+    device_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -267,7 +268,14 @@ def _decode_path_definition(raw_bytes: bytes) -> dict[str, Any] | None:
 
         point_count = min(declared_size, (len(raw_bytes) - header_len) // point_len)
         points: list[dict[str, int]] = []
-        coordinate_scale = 1 if format_name == "mgs-v1-history" else 10
+        # Historical-record confirmation (2026-08-21, live hex dump): the
+        # "mgs-v1-history" branch's points were previously assumed to already
+        # be in mm (scale=1), which produced an absurdly tiny (~1m) bounding
+        # box for an 11921-point/93 m² session. With the same x10 scale the
+        # other formats use, the box works out to ~8.7m x 11.8m -- squarely
+        # in the right ballpark for that mowed area and comfortably inside
+        # the map raster's own world bounds. Scale is 10 for every format.
+        coordinate_scale = 10
         for index in range(point_count):
             offset = header_len + (index * point_len)
             x, y = struct.unpack_from("<hh", raw_bytes, offset)
@@ -978,42 +986,65 @@ class AnthbotCloudApiClient:
                 is_owner = owner_value
             elif isinstance(owner_value, int):
                 is_owner = owner_value == 1
+            id_value = item.get("id")
+            device_id = id_value if isinstance(id_value, int) and not isinstance(id_value, bool) else None
             devices.append(
                 AnthbotBoundDevice(
                     serial_number=serial_number,
                     alias=alias if isinstance(alias, str) and alias else serial_number,
                     model=model if model else "Anthbot mower",
                     is_owner=is_owner,
+                    device_id=device_id,
                 )
             )
 
         return devices
 
     async def async_get_mowing_records(
-        self, serial_number: str, *, page: int = 1, page_size: int = 20
+        self,
+        serial_number: str,
+        *,
+        page: int = 1,
+        page_size: int = 20,
+        device_id: int | None = None,
     ) -> dict[str, Any]:
-        """Fetch the same completed mowing records shown by the mobile app."""
+        """Fetch the same completed mowing records shown by the mobile app.
+
+        Confirmed against real HTTP Toolkit captures of the mobile app
+        (2026-08-19): the mobile app calls ``GET /api/v1/device/area`` with
+        ``sn``/``pagenum``/``pagesize`` query params -- NOT
+        ``/api/v1/device/v3/record/list`` as previously guessed. The
+        ``device_id`` parameter was never the issue; the endpoint path was
+        simply wrong, which is why the old endpoint always returned
+        ``code: 0`` with an empty, but technically "successful", result.
+        """
         self._require_token()
-        url = f"https://{self._host}/api/v1/device/v3/record/list"
+        url = f"https://{self._host}/api/v1/device/area"
+        params = {"sn": serial_number, "pagenum": page, "pagesize": page_size}
+
         try:
             async with self._session.get(
                 url,
                 headers=self._auth_headers,
-                params={"sn": serial_number, "pagenum": page, "pagesize": page_size},
+                params=params,
                 timeout=15,
             ) as resp:
                 if resp.status != 200:
                     body = await resp.text()
                     raise AnthbotGenieApiError(
-                        f"Mowing record list failed ({resp.status}): {body[:300]}"
+                        f"Mowing records failed ({resp.status}): {body[:300]}"
                     )
                 payload = await resp.json(content_type=None)
         except ClientError as err:
             raise AnthbotGenieApiError(f"Network error: {err}") from err
         except TimeoutError as err:
             raise AnthbotGenieApiError("Request timed out") from err
+
         if not isinstance(payload, dict) or payload.get("code") != 0:
-            raise AnthbotGenieApiError("Invalid mowing record response")
+            raise AnthbotGenieApiError(
+                f"Invalid mowing record response (code={payload.get('code') if isinstance(payload, dict) else 'n/a'})"
+            )
+
         data = payload.get("data")
         return data if isinstance(data, dict) else {"data": data or []}
 
@@ -1401,6 +1432,46 @@ class AnthbotCloudApiClient:
             "No app-style history path file could be downloaded: "
             + " | ".join(errors[-4:])
         )
+
+    async def async_get_mowing_record_detail(
+        self,
+        serial_number: str,
+        *,
+        area_url: str | None = None,
+        map_url: str | None = None,
+        path_url: str | None = None,
+    ) -> dict[str, Any]:
+        """Download and decode the per-record area/map/path files referenced
+        by a single completed mowing-history record (as returned by
+        :meth:`async_get_mowing_records` in its ``area_url``/``map_url``/
+        ``path_url`` fields), so the mobile app's per-session "what got
+        mowed" view can be reproduced on the card. Each requested file is
+        fetched independently; a failure on one (e.g. an expired/garbage
+        collected S3 object) does not prevent the others from being
+        returned.
+        """
+        result: dict[str, Any] = {}
+        errors: list[str] = []
+        file_specs: tuple[tuple[str, str | None, str], ...] = (
+            ("area", area_url, "area"),
+            ("map", map_url, "map"),
+            ("path", path_url, "path"),
+        )
+        for sub_category, filename, result_key in file_specs:
+            if not filename:
+                continue
+            try:
+                result[result_key] = await self.async_get_device_json_file(
+                    serial_number,
+                    file_prefix=sub_category,
+                    sub_category=sub_category,
+                    filename=filename,
+                )
+            except AnthbotGenieApiError as err:
+                errors.append(f"{sub_category}({filename}): {err}")
+        if errors:
+            result["_errors"] = errors
+        return result
 
     async def async_get_device_presigned_region(self, serial_number: str) -> str | None:
         """Fetch presigned_url metadata and extract AWS region."""

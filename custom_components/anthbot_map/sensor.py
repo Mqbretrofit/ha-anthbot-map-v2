@@ -814,6 +814,7 @@ class AnthbotMapSensorEntity(
     _unrecorded_attributes = frozenset(
         {
             "pose",
+            "serial_number",
             "mower_status",
             "robot_status_raw",
             "cur_pose",
@@ -858,6 +859,7 @@ class AnthbotMapSensorEntity(
             "live_shadow_error",
             "last_mowing_task",
             "mowing_records",
+            "mowing_records_error",
             "error_history",
             "maintenance",
         }
@@ -895,6 +897,7 @@ class AnthbotMapSensorEntity(
         path_points = _definition_path_points(path_definition) or state.get("path")
 
         return {
+            "serial_number": self.coordinator.client.serial_number,
             "pose": state.get("pose"),
             "mower_status": _general_mower_status(state),
             "robot_status_raw": _raw_robot_status(state),
@@ -940,6 +943,7 @@ class AnthbotMapSensorEntity(
             "live_shadow_error": state.get("_live_shadow_error"),
             "last_mowing_task": self.coordinator.last_mowing_task,
             "mowing_records": state.get("_mowing_records", {"data": []}),
+            "mowing_records_error": state.get("_mowing_records_error"),
             "error_history": state.get("_error_history", []),
             "maintenance": state.get("robot_maintenance") or {
                 "blade": state.get("cutting_components_life"),

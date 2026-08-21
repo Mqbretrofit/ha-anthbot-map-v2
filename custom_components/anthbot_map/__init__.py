@@ -16,7 +16,7 @@ from homeassistant.components.lovelace.const import (
     MODE_STORAGE,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, SupportsResponse
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -63,6 +63,7 @@ from .const import (
     SERVICE_RESET_BLADE_MAINTENANCE,
     SERVICE_RESET_CAMERA_MAINTENANCE,
     SERVICE_RESET_DOCK_CONTACT_MAINTENANCE,
+    SERVICE_GET_MOWING_RECORD_DETAIL,
 )
 from .coordinator import AnthbotGenieDataUpdateCoordinator
 from .commands import (
@@ -86,7 +87,7 @@ PLATFORMS = [
 _LOGGER = logging.getLogger(__name__)
 VALID_MOW_HEIGHTS = list(range(30, 75, 5))
 FRONTEND_RESOURCE_PATH = "/anthbot-map-v2/anthbot-map-card.js"
-FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.2.0"
+FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.3.0"
 LEGACY_ENTITY_SUFFIXES: tuple[str, ...] = (
     "enable_custom_mowing_direction",
     "custom_mowing_direction_enable",
@@ -112,11 +113,14 @@ def _resolve_target_coordinators(
         return []
 
     requested_serials: set[str] = set()
+    target_requested = False
 
     serial_value = service_data.get(ATTR_SERIAL_NUMBER)
     if isinstance(serial_value, str) and serial_value:
+        target_requested = True
         requested_serials.add(serial_value)
     elif isinstance(serial_value, list):
+        target_requested = bool(serial_value)
         requested_serials.update(
             item for item in serial_value if isinstance(item, str) and item
         )
@@ -125,6 +129,7 @@ def _resolve_target_coordinators(
     if isinstance(entity_ids, str):
         entity_ids = [entity_ids]
     if isinstance(entity_ids, list):
+        target_requested = target_requested or bool(entity_ids)
         for entity_id in entity_ids:
             if not isinstance(entity_id, str):
                 continue
@@ -136,7 +141,11 @@ def _resolve_target_coordinators(
                 requested_serials.add(serial_number)
 
     if not requested_serials:
-        return coordinators
+        # A service call without a target intentionally applies to every mower.
+        # If a target was supplied but could not be resolved, never fall back to
+        # every mower: doing so could run the action against the wrong device in
+        # a multi-mower account.
+        return [] if target_requested else coordinators
 
     return [
         coordinator
@@ -332,6 +341,16 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         },
         extra=vol.ALLOW_EXTRA,
     )
+    mowing_record_detail_schema = vol.Schema(
+        {
+            vol.Optional("area_url"): cv.string,
+            vol.Optional("map_url"): cv.string,
+            vol.Optional("path_url"): cv.string,
+            vol.Optional(ATTR_SERIAL_NUMBER): vol.Any(cv.string, [cv.string]),
+            vol.Optional("entity_id"): vol.Any(cv.entity_id, [cv.entity_id]),
+        },
+        extra=vol.ALLOW_EXTRA,
+    )
     async def _handle_start_full_mow(service_call) -> None:
         targets = _resolve_target_coordinators(hass, service_call.data)
         if not targets:
@@ -452,6 +471,18 @@ async def _async_register_services(hass: HomeAssistant) -> None:
 
     async def _handle_reset_dock_contact_maintenance(service_call) -> None:
         await _handle_reset_maintenance(service_call, 0)
+
+    async def _handle_get_mowing_record_detail(service_call) -> dict:
+        targets = _resolve_target_coordinators(hass, service_call.data)
+        if not targets:
+            raise AnthbotGenieApiError("No target Anthbot mower found")
+        coordinator = targets[0]
+        return await coordinator.account_client.async_get_mowing_record_detail(
+            coordinator.client.serial_number,
+            area_url=service_call.data.get("area_url"),
+            map_url=service_call.data.get("map_url"),
+            path_url=service_call.data.get("path_url"),
+        )
 
     async def _handle_return_to_dock(service_call) -> None:
         targets = _resolve_target_coordinators(hass, service_call.data)
@@ -645,6 +676,14 @@ async def _async_register_services(hass: HomeAssistant) -> None:
     ):
         if not hass.services.has_service(DOMAIN, service_name):
             hass.services.async_register(DOMAIN, service_name, handler, schema=base_schema)
+    if not hass.services.has_service(DOMAIN, SERVICE_GET_MOWING_RECORD_DETAIL):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_GET_MOWING_RECORD_DETAIL,
+            _handle_get_mowing_record_detail,
+            schema=mowing_record_detail_schema,
+            supports_response=SupportsResponse.ONLY,
+        )
     if not hass.services.has_service(DOMAIN, SERVICE_SET_MOW_HEIGHT):
         hass.services.async_register(
             DOMAIN,
@@ -962,6 +1001,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 SERVICE_RESET_BLADE_MAINTENANCE,
                 SERVICE_RESET_CAMERA_MAINTENANCE,
                 SERVICE_RESET_DOCK_CONTACT_MAINTENANCE,
+                SERVICE_GET_MOWING_RECORD_DETAIL,
             ):
                 if hass.services.has_service(DOMAIN, service_name):
                     hass.services.async_remove(DOMAIN, service_name)
