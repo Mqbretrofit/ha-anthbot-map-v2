@@ -11,6 +11,8 @@
   filtering of non-mowing travel segments.
 - Removed captured device identifiers and added release/version consistency
   checks.
+- Removed the duplicate `serial_number` service field and added a regression
+  check for duplicate YAML mapping keys.
 
 See `RELEASE_NOTES_v2.3.0.md` and `CHANGELOG_v2.3.0_HU.md` for details.
 

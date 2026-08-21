@@ -91,6 +91,12 @@ jobs:
             printf '# Anthbot Map %s\n\nSee CHANGELOG.md for details.\n' "$tag" > /tmp/release-notes.md
           fi
           if gh release view "$tag" >/dev/null 2>&1; then
+            # Reissuing an existing version must update both the downloadable
+            # asset and the tag used by HACS/source archives.
+            gh api --method PATCH \
+              "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}" \
+              -f sha="${GITHUB_SHA}" \
+              -F force=true
             gh release edit "$tag" \
               --title "Anthbot Map $tag" \
               --latest \

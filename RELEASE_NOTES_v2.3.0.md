@@ -26,3 +26,5 @@
 - Handles long mowing sessions without confusing seconds and milliseconds.
 - Removes captured device identifiers from the source.
 - Keeps bundled frontend assets and release versions consistent.
+- Removes a duplicate `serial_number` entry from the charging-contact reset
+  service definition and prevents duplicate YAML mapping keys from returning.
