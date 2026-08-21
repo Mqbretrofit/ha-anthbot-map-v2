@@ -28,3 +28,5 @@
 - A hosszú nyírási időket nem téveszti össze ezredmásodperces értékekkel.
 - A rögzített eszközazonosítók kikerültek a forrásból.
 - A frontend másolatai és a kiadási verziók egységesek.
+- Kikerült a töltőérintkező-karbantartás szolgáltatás duplikált `serial_number`
+  mezője, és regressziós teszt védi a YAML-fájlokat a hasonló hibáktól.
