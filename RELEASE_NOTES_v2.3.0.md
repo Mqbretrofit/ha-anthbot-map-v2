@@ -20,6 +20,15 @@
   without changing Genie routing.
 - **Known limitation:** map display is not yet working on M5/M9 mowers.
 
+## Map alignment
+
+- Renames **Robot alignment** to **Mowing path alignment** to clarify that it
+  controls the robot-derived mowing layer.
+- Applies offset, horizontal and vertical scale, and rotation to the complete
+  mowing path, coverage, and robot position instead of the robot icon alone.
+- Keeps robot-icon direction adjustment separate from mowing-path alignment.
+- Prevents rotation from distorting non-square maps.
+
 ## Reliability and privacy
 
 - Targets the correct mower when more than one mower is configured.

@@ -1,5 +1,5 @@
-import { AnthbotMapRenderer } from "./renderer.js?v=144";
-import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=144";
+import { AnthbotMapRenderer } from "./renderer.js?v=145";
+import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=145";
 import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=22000";
 import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=22141";
 import {
@@ -9,7 +9,7 @@ import {
   readDecodedBoundaryCalibration,
   readRobotCalibration,
   resetCalibration,
-} from "./calibration.js?v=138";
+} from "./calibration.js?v=145";
 
 const ENTITY_MAP = {
   battery: ["sensor", ["battery_level"]],
@@ -59,6 +59,7 @@ class AnthbotMapCard extends HTMLElement {
     this.entity = null;
     this.calibration = resetCalibration();
     this.robotCalibration = resetCalibration();
+    this.robotHeadingOffset = 0;
     this.decodedBoundaryCalibration = resetCalibration();
     this.renderer = null;
     this.activePanel = "control";
@@ -123,6 +124,7 @@ class AnthbotMapCard extends HTMLElement {
     window.clearTimeout(this.pendingRefreshTimer);
     this.calibration = readCalibration(config);
     this.robotCalibration = readRobotCalibration(config);
+    this.robotHeadingOffset = Number(config.robot_heading_offset ?? config.robotHeadingOffset) || 0;
     this.decodedBoundaryCalibration = readDecodedBoundaryCalibration(config);
     this.mapOverlayOverrides = savedInterface.mapOverlayOverrides && typeof savedInterface.mapOverlayOverrides === "object"
       ? { ...savedInterface.mapOverlayOverrides }
@@ -343,12 +345,18 @@ class AnthbotMapCard extends HTMLElement {
             <button type="button" data-robot-calibration="down">${this.t("down")}</button>
             <button type="button" data-robot-calibration="narrower">${this.t("narrower")}</button>
             <button type="button" data-robot-calibration="wider">${this.t("wider")}</button>
+            <button type="button" data-robot-calibration="shorter">${this.t("shorter")}</button>
+            <button type="button" data-robot-calibration="taller">${this.t("taller")}</button>
             <button type="button" data-robot-calibration="rotate-left">${this.t("rotation")} -</button>
             <button type="button" data-robot-calibration="rotate-right">${this.t("rotation")} +</button>
-            <button type="button" data-robot-calibration="rotate-left-large">${this.t("robotDirection")} -15°</button>
-            <button type="button" data-robot-calibration="rotate-right-large">${this.t("robotDirection")} +15°</button>
-            <button type="button" data-robot-calibration="rotate-around">${this.t("robotDirection")} 180°</button>
             <button type="button" data-action="reset-robot">${this.t("reset")}</button>
+          </div>
+          <div class="calibration-title">${this.t("robotDirection")}</div>
+          <div class="calibration-grid">
+            <button type="button" data-robot-heading="left">-15°</button>
+            <button type="button" data-robot-heading="right">+15°</button>
+            <button type="button" data-robot-heading="around">180°</button>
+            <button type="button" data-action="reset-robot-heading">${this.t("reset")}</button>
           </div>
           <div class="calibration-title">${this.t("boundaryFit")}</div>
           <div class="calibration-grid">
@@ -393,6 +401,9 @@ class AnthbotMapCard extends HTMLElement {
     });
     root.querySelectorAll("button[data-robot-calibration]").forEach((button) => {
       button.addEventListener("click", () => this.handleRobotCalibration(button.dataset.robotCalibration));
+    });
+    root.querySelectorAll("button[data-robot-heading]").forEach((button) => {
+      button.addEventListener("click", () => this.handleRobotHeading(button.dataset.robotHeading));
     });
     root.querySelectorAll("button[data-boundary-calibration]").forEach((button) => {
       button.addEventListener("click", () => this.handleBoundaryCalibration(button.dataset.boundaryCalibration));
@@ -1902,7 +1913,7 @@ class AnthbotMapCard extends HTMLElement {
       robotSize: mobileViewport ? this.config.mobile_robot_size ?? this.config.mobileRobotSize ?? 24 : this.config.robot_size ?? this.config.robotSize,
       robotImageRotation: this.config.robot_image_rotation ?? this.config.robotImageRotation,
       robotHeadingSource: this.config.robot_heading_source || this.config.robotHeadingSource,
-      robotHeadingOffset: this.config.robot_heading_offset ?? this.config.robotHeadingOffset,
+      robotHeadingOffset: this.robotHeadingOffset,
       robotMowingHeadingOffset: this.config.robot_mowing_heading_offset ?? this.config.robotMowingHeadingOffset,
       showMowedPath: this.config.show_mowed_path !== false,
       showMowedCoverage: this.config.show_mowed_coverage !== false && this.config.showMowedCoverage !== false,
@@ -2367,13 +2378,19 @@ class AnthbotMapCard extends HTMLElement {
     } else if (action === "reset") {
       this.calibration = resetCalibration();
       this.robotCalibration = resetCalibration();
+      this.robotHeadingOffset = 0;
       this.renderer.setCalibration(this.calibration);
       this.renderer.setRobotCalibration(this.robotCalibration);
+      this.renderer.setOptions({ robotHeadingOffset: this.robotHeadingOffset });
       this.renderer.resetView();
       this.updateYaml();
     } else if (action === "reset-robot") {
       this.robotCalibration = resetCalibration();
       this.renderer.setRobotCalibration(this.robotCalibration);
+      this.updateYaml();
+    } else if (action === "reset-robot-heading") {
+      this.robotHeadingOffset = 0;
+      this.renderer.setOptions({ robotHeadingOffset: this.robotHeadingOffset });
       this.updateYaml();
     } else if (action === "reset-boundary") {
       this.decodedBoundaryCalibration = resetCalibration();
@@ -2467,6 +2484,15 @@ class AnthbotMapCard extends HTMLElement {
     this.updateYaml();
   }
 
+  handleRobotHeading(action) {
+    if (action === "left") this.robotHeadingOffset -= 15;
+    if (action === "right") this.robotHeadingOffset += 15;
+    if (action === "around") this.robotHeadingOffset += 180;
+    this.robotHeadingOffset = ((this.robotHeadingOffset + 180) % 360 + 360) % 360 - 180;
+    this.renderer.setOptions({ robotHeadingOffset: this.robotHeadingOffset });
+    this.updateYaml();
+  }
+
   handleBoundaryCalibration(action) {
     this.decodedBoundaryCalibration = adjustCalibration(this.decodedBoundaryCalibration, action, 1);
     this.renderer?.setDecodedBoundaryCalibration(this.decodedBoundaryCalibration);
@@ -2510,6 +2536,7 @@ class AnthbotMapCard extends HTMLElement {
       glass_background: this.glassBackground,
       transparent_background: this.transparentBackground,
       language: this.selectedLanguage,
+      robot_heading_offset: this.robotHeadingOffset,
       show_decoded_boundary: this.showDecodedBoundary,
       show_zones: this.showZones,
       show_no_go_zones: this.showNoGoZones,
@@ -3271,32 +3298,11 @@ function buildRasterBoundaryPathD(raster, rasterBounds, worldToScreen) {
   return segments.length ? segments.join(" ") : null;
 }
 
-// Port of renderer.js's applyMapCalibration(): composes an extra
-// offset/scale/rotation adjustment (the live map's own, separate "decoded
-// boundary" fit controls) on top of a geometry's normal world->screen
-// projection. geometry.js doesn't export the pieces needed to build this
-// directly, so it's reproduced here from the geometry object's own
-// worldToMap/mapToScreen (both already exposed by createGeometry).
+// Compose the live map's separate decoded-boundary adjustment with the
+// geometry's normal world-to-screen projection.
 function worldToScreenWithExtraCalibration(geometry, calibration, point) {
-  const next = {
-    offsetX: Number(calibration?.offsetX) || 0,
-    offsetY: Number(calibration?.offsetY) || 0,
-    scaleX: Number(calibration?.scaleX) || 1,
-    scaleY: Number(calibration?.scaleY) || 1,
-    rotation: Number(calibration?.rotation) || 0,
-  };
   const mapPoint = geometry.worldToMap(point);
-  const centered = {
-    x: (Number(mapPoint.x) - 0.5) * next.scaleX,
-    y: (Number(mapPoint.y) - 0.5) * next.scaleY,
-  };
-  const cos = Math.cos(next.rotation);
-  const sin = Math.sin(next.rotation);
-  const calibrated = {
-    x: centered.x * cos - centered.y * sin + 0.5 + next.offsetX,
-    y: centered.x * sin + centered.y * cos + 0.5 + next.offsetY,
-  };
-  return geometry.mapToScreen(calibrated);
+  return geometry.mapToScreen(geometry.calibrateMapPoint(mapPoint, calibration));
 }
 
 // Draws a simple schematic (not necessarily oriented like the live map) of

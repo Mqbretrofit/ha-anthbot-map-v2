@@ -1,4 +1,4 @@
-import { createGeometry, getBoundaryPaths, getWorldBounds, getZonePoints, getZones } from "./geometry.js?v=144";
+import { createGeometry, getBoundaryPaths, getWorldBounds, getZonePoints, getZones } from "./geometry.js?v=145";
 
 const COLORS = Object.freeze({
   background: "#18202a",
@@ -809,6 +809,7 @@ export class AnthbotMapRenderer {
     const cloudYaw =
       degreesToRadians(this.cloudHeadingDegrees(pose)) +
       geometry.map.rotation +
+      (Number(geometry.calibration?.rotation) || 0) +
       degreesToRadians(Number(this.options.robotHeadingOffset ?? this.options.robot_heading_offset) || 0) +
       degreesToRadians(mowingHeadingOffset) +
       (Number(robotCalibration.rotation) || 0);
@@ -831,7 +832,6 @@ export class AnthbotMapRenderer {
     if (this.robotImage) {
       const size = clamp(
         (Number(this.options.robotSize) || 42) *
-          (Number(robotCalibration.scaleX) || 1) *
           (Number(this.view.zoom) || 1),
         8,
         260,
@@ -1137,8 +1137,7 @@ export class AnthbotMapRenderer {
       return this.robotHeading;
     }
 
-    const nextHeading =
-      Math.atan2(dy, dx) + (Number(this.options.robotCalibration?.rotation) || 0);
+    const nextHeading = Math.atan2(dy, dx);
     this.robotHeading =
       this.robotHeading === null ? nextHeading : smoothAngle(this.robotHeading, nextHeading, 0.35);
     return this.robotHeading;
@@ -1180,10 +1179,7 @@ export class AnthbotMapRenderer {
   robotPositionToScreen(geometry, point) {
     const robotCalibration = this.options.robotCalibration || {};
     const mapPoint = geometry.worldToMap({ x: Number(point.x), y: Number(point.y) });
-    return geometry.mapToScreen({
-      x: mapPoint.x + (Number(robotCalibration.offsetX) || 0),
-      y: mapPoint.y + (Number(robotCalibration.offsetY) || 0),
-    });
+    return geometry.mapToScreen(geometry.calibrateMapPoint(mapPoint, robotCalibration));
   }
 
   isMowingState() {
@@ -1672,28 +1668,10 @@ function rasterColor(value) {
 }
 
 function applyMapCalibration(geometry, calibration = {}) {
-  const next = {
-    offsetX: Number(calibration.offsetX) || 0,
-    offsetY: Number(calibration.offsetY) || 0,
-    scaleX: Number(calibration.scaleX) || 1,
-    scaleY: Number(calibration.scaleY) || 1,
-    rotation: Number(calibration.rotation) || 0,
-  };
-
   return {
     worldToScreen(point) {
       const mapPoint = geometry.worldToMap(point);
-      const centered = {
-        x: (Number(mapPoint.x) - 0.5) * next.scaleX,
-        y: (Number(mapPoint.y) - 0.5) * next.scaleY,
-      };
-      const cos = Math.cos(next.rotation);
-      const sin = Math.sin(next.rotation);
-      const calibrated = {
-        x: centered.x * cos - centered.y * sin + 0.5 + next.offsetX,
-        y: centered.x * sin + centered.y * cos + 0.5 + next.offsetY,
-      };
-      return geometry.mapToScreen(calibrated);
+      return geometry.mapToScreen(geometry.calibrateMapPoint(mapPoint, calibration));
     },
   };
 }

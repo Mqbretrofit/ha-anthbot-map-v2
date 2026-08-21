@@ -106,6 +106,7 @@ export function robotCalibrationToYaml(robotCalibration) {
     `  offsetX: ${formatNumber(next.offsetX)}`,
     `  offsetY: ${formatNumber(next.offsetY)}`,
     `  scaleX: ${formatNumber(next.scaleX)}`,
+    `  scaleY: ${formatNumber(next.scaleY)}`,
     `  rotation: ${formatNumber(next.rotation)}`,
   ].join("\n");
 }

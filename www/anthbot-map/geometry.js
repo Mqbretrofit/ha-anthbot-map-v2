@@ -30,6 +30,9 @@ export function createGeometry(options = {}) {
     mapToScreen(point) {
       return mapToScreen(point, map, calibration);
     },
+    calibrateMapPoint(point, pointCalibration) {
+      return calibrateMapPoint(point, map, pointCalibration);
+    },
     screenToMap(point) {
       return screenToMap(point, map, calibration);
     },
@@ -395,7 +398,7 @@ function mapToWorld(point, bounds) {
 }
 
 function mapToScreen(point, map, calibration) {
-  const transformed = applyCalibration(point, calibration);
+  const transformed = calibrateMapPoint(point, map, calibration);
   const centered = {
     x: (transformed.x - 0.5) * map.width,
     y: (transformed.y - 0.5) * map.height,
@@ -419,7 +422,7 @@ function screenToMap(point, map, calibration) {
     y: rotated.y / map.height + 0.5,
   };
 
-  return removeCalibration(normalized, calibration);
+  return uncalibrateMapPoint(normalized, map, calibration);
 }
 
 function computeMapFit(size, bounds, view, aspectRatio, fit = "contain") {
@@ -471,29 +474,31 @@ export function normalizeCalibration(calibration) {
   };
 }
 
-function applyCalibration(point, calibration) {
+export function calibrateMapPoint(point, map, calibration = {}) {
+  const next = normalizeCalibration(calibration);
   const centered = {
-    x: (Number(point.x) - 0.5) * calibration.scaleX,
-    y: (Number(point.y) - 0.5) * calibration.scaleY,
+    x: (Number(point.x) - 0.5) * map.width * next.scaleX,
+    y: (Number(point.y) - 0.5) * map.height * next.scaleY,
   };
-  const rotated = rotatePoint(centered, calibration.rotation);
+  const rotated = rotatePoint(centered, next.rotation);
 
   return {
-    x: rotated.x + 0.5 + calibration.offsetX,
-    y: rotated.y + 0.5 + calibration.offsetY,
+    x: rotated.x / map.width + 0.5 + next.offsetX,
+    y: rotated.y / map.height + 0.5 + next.offsetY,
   };
 }
 
-function removeCalibration(point, calibration) {
+function uncalibrateMapPoint(point, map, calibration = {}) {
+  const next = normalizeCalibration(calibration);
   const centered = {
-    x: Number(point.x) - 0.5 - calibration.offsetX,
-    y: Number(point.y) - 0.5 - calibration.offsetY,
+    x: (Number(point.x) - 0.5 - next.offsetX) * map.width,
+    y: (Number(point.y) - 0.5 - next.offsetY) * map.height,
   };
-  const rotated = rotatePoint(centered, -calibration.rotation);
+  const rotated = rotatePoint(centered, -next.rotation);
 
   return {
-    x: rotated.x / calibration.scaleX + 0.5,
-    y: rotated.y / calibration.scaleY + 0.5,
+    x: rotated.x / (map.width * next.scaleX) + 0.5,
+    y: rotated.y / (map.height * next.scaleY) + 0.5,
   };
 }
 

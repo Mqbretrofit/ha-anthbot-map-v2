@@ -22,6 +22,16 @@
 - **Ismert korlátozás:** az M5/M9 modelleknél a térképes megjelenítés még nem
   működik.
 
+## Térképillesztés
+
+- A félreérthető **Robot illesztése** elnevezés helyett **Nyírási útvonal
+  illesztése** jelenik meg.
+- Az eltolás, a vízszintes és függőleges méretezés, valamint a forgatás már a
+  teljes nyírási útvonalra, lefedettségre és robotpozícióra hat, nem csak a
+  robotikonra.
+- A robotikon iránya a nyírási útvonal illesztésétől külön állítható.
+- A nem négyzetes térképek forgatása többé nem torzítja el az alakzatot.
+
 ## Megbízhatóság és adatvédelem
 
 - Több robot esetén is a megfelelő robot nyírási részlete töltődik le.
