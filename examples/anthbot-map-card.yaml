@@ -27,6 +27,13 @@ robotCalibration:
   offsetX: 0
   offsetY: 0
   scaleX: 1
+  scaleY: 1
+  rotation: 0
+mowingPathCalibration:
+  offsetX: 0
+  offsetY: 0
+  scaleX: 1
+  scaleY: 1
   rotation: 0
 decodedBoundaryCalibration:
   offsetX: 0

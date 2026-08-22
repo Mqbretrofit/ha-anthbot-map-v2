@@ -5,104 +5,109 @@
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Unofficial Home Assistant integration and photo-backed map card for Anthbot
-Genie robotic lawn mowers.
+Unofficial Home Assistant integration and custom map card for ANTHBOT robotic
+lawn mowers.
 
-This is a standalone integration derived from the credited MIT-licensed
-projects; it is not an add-on for them. Version 2 uses its own `anthbot_map`
-domain, so it can remain installed beside another Anthbot integration for
-testing and quick rollback.
+The integration connects Home Assistant to the ANTHBOT cloud, creates the
+entities required to monitor and control the mower, and bundles the
+`anthbot-map-card` Lovelace card.
 
-> [!CAUTION]
-> **Do not enable this integration at the same time as
-> `vincentjanv/anthbot_genie_ha`, the AdrianTIonut fork, or another Anthbot Home
-> Assistant integration.** Both integrations may remain installed, but disable
-> the old integration under **Settings → Devices & services** before enabling
-> Anthbot Map. Running both can open competing cloud sessions and send
-> conflicting commands to the same mower. During testing the new entity IDs may
-> receive an `_2`, `_3`, or later suffix because disabled integrations keep their entity
-> registry entries; this makes switching back possible without reinstalling.
+The card can display the mower, charging station, lawn boundary, mowing zones,
+no-go zones, live and historical mowing paths, covered area, and an optional
+aerial or drone photograph of the garden.
 
-### Testing beside an existing Anthbot integration
+> [!WARNING]
+> This is a community project and is not affiliated with ANTHBOT.
 
-1. Keep the existing integration installed and disable its config entry under
-   **Settings → Devices & services**.
-2. Restart Home Assistant, then add **Anthbot Map** and test it.
-3. To roll back, disable Anthbot Map, enable the previous integration, and
-   restart Home Assistant. Do not enable both at once.
+## Current version
+
+Stable version: **2.3.0**
+
+### Highlights in 2.3.0
+
+- Previous mowing tasks now include their available area, map, and path data.
+- The map, mower icon, mowing path, and decoded boundary can be calibrated
+  separately.
+- Mirrored mower heading during horizontal travel has been corrected.
+- Mowing-path rotation on non-square maps has been corrected.
+- Accounts containing multiple mowers are handled more reliably.
+- Calibration and mowing-history text is available in all 23 supported
+  languages.
+- Remaining frontend debug output has been removed.
+- Experimental M5/M9 shadow and live-path handling has been added.
 
 > [!IMPORTANT]
-> **Version 2.3.0 highlight:** mowing history now uses the confirmed mobile-app
-> endpoint and provides per-session area, map, and path detail. This release
-> also adds experimental M5/M9 shadow and live-path compatibility while keeping
-> Genie behavior unchanged. **The map view is not yet working on M5/M9 mowers.**
+> **Map display is not yet working on ANTHBOT M5 and M9 mowers.** M5/M9
+> support is experimental, and available states and features can vary by model
+> and firmware version.
 
-The project combines cloud telemetry and mower control with a custom Lovelace
-card that can place the live Anthbot map, zones, mowing trail, charger, and
-robot on a top-down photograph of the garden.
+## Supported models
 
-> This project is not affiliated with Anthbot. Read [NOTICE.md](NOTICE.md)
-> for attribution and trademark information.
+The integration is tested primarily with ANTHBOT Genie-series mowers.
+
+- ANTHBOT Genie: primary support
+- ANTHBOT M5/M9: experimental support
+- M5/M9 map display: not currently working
+
+## Using another ANTHBOT integration
+
+Anthbot Map v2 uses its own `anthbot_map` integration domain, so it can remain
+installed beside an older ANTHBOT integration. Do not enable both integrations
+at the same time.
+
+> [!CAUTION]
+> Do not run Anthbot Map together with `vincentjanv/anthbot_genie_ha`, the
+> AdrianTIonut fork, or another ANTHBOT Home Assistant integration. Concurrent
+> integrations can open competing cloud sessions and send conflicting commands
+> to the same mower.
+
+Safe migration and rollback:
+
+1. Leave the previous integration installed.
+2. Disable its config entry under **Settings -> Devices & services**.
+3. Restart Home Assistant.
+4. Add and test **Anthbot Map**.
+5. To roll back, disable Anthbot Map, enable the previous integration, and
+   restart Home Assistant.
+
+Existing entity-registry entries can cause the new entity IDs to receive an
+`_2`, `_3`, or later suffix. This is expected and is not an error.
 
 ## Features
 
-- Anthbot cloud login from the Home Assistant UI
-- support for multiple mowers on one account
-- persistent app-compatible AWS IoT/MQTT live-shadow updates and reconnect
-- native Home Assistant `lawn_mower` entity with start, stop/pause, and dock controls
-- battery, mower status, charging, RTK, network, firmware, maintenance, map,
-  zone, error, and diagnostic entities
-- full-lawn, manual-zone, and automatic-zone mowing controls
-- pause, stop, and return-to-dock commands
-- map sensor with robot position and downloadable map/path definitions
-- optional aerial or drone photograph as the map background
-- custom zones and no-go areas
-- live and historical mowing trail
-- app-style cloud history-path download and decoding
-- mowing-session trail persistence across view changes and page reloads
-- optional configurable mowing-coverage layer
-- charger and robot icons
-- full-screen view, zoom, pan, rotation, and calibration controls
-- floating translucent control menu that keeps the garden map visible
-- visible position and direction badges
-- robot heading calculated like the official app from milliradian `pose.yaw`
-- generated YAML can be copied from the card calibration panel
-- automatic Home Assistant language detection and manual language selection
-- 23 selectable languages, including simplified and traditional Chinese,
-  Turkish, Thai, Vietnamese, Korean, and Khmer
+- ANTHBOT cloud login from the Home Assistant UI
+- multiple mowers on one ANTHBOT account
+- cloud polling and persistent AWS IoT/MQTT shadow updates
+- automatic MQTT reconnection
+- native Home Assistant `lawn_mower` entity
+- full-area, manual-zone, and automatic-zone mowing
+- outer-edge and dock-surroundings mowing
+- pause, resume, stop, and return-to-dock commands
+- battery, charging, status, RTK, network, firmware, and maintenance data
+- map, zone, error, and diagnostic entities
+- live mowing path and mowing-coverage display
+- previous mowing tasks with area, map, and path detail
+- optional aerial or drone photograph as the background
+- fullscreen map, zoom, pan, and rotation
+- separate map, mower, path, and boundary calibration
+- generated YAML that can be copied from the card
+- 23 selectable interface languages
 
-Tested primarily with Genie-series mowers. M5/M9 support is experimental and
-their map view is not yet working. Cloud fields and available commands can vary
-by mower model and firmware.
+## Requirements
 
-## Where to find mowing history
+- Home Assistant 2024.1.0 or newer
+- HACS for the recommended installation method
+- a working ANTHBOT account
+- internet access to the ANTHBOT cloud
 
-1. Open the **Anthbot Map** card on your Home Assistant dashboard.
-2. Open the card's floating menu and select **Diagnostics**.
-3. Expand **Previous mowing tasks**.
-4. Select a completed session to open its available area, map, and mowing-path
-   detail.
+# Installation
 
-The list is refreshed automatically from the Anthbot cloud approximately every
-five minutes. A session can be opened only when its cloud record contains an
-area, map, or path file; otherwise its summary remains available without the
-visual detail popup.
+## Install with HACS
 
-## Repository layout
+### 1. Add the custom repository
 
-```text
-custom_components/anthbot_map/   Home Assistant integration
-www/anthbot-map/                        Lovelace map card
-tools/anthbot_dump.py                   Optional diagnostic helper
-examples/                               Example YAML
-```
-
-## Installation
-
-### 1. Install the integration with HACS
-
-1. Open **HACS → Integrations**.
-2. Open the three-dot menu and select **Custom repositories**.
+1. Open **HACS -> Integrations**.
+2. From the three-dot menu, select **Custom repositories**.
 3. Add:
 
    ```text
@@ -110,61 +115,84 @@ examples/                               Example YAML
    ```
 
 4. Select category **Integration**.
-5. Install **Anthbot Map**.
-6. Restart Home Assistant.
-7. Open **Settings → Devices & services → Add integration**.
-8. Search for **Anthbot Map** and enter the Anthbot account details.
+5. Select **Add**.
 
-HACS installs the integration and manages subsequent updates. The complete ZIP
-on the GitHub Releases page contains the integration, map card, example files,
-and documentation in one package.
+### 2. Install the integration
 
-### 2. Install the map card
+1. Find **Anthbot Map** in HACS.
+2. Install the latest stable version.
+3. Restart Home Assistant.
 
-The card is bundled with the integration, so HACS installs and updates it
-automatically. On first load the integration also mirrors the frontend into
-`/config/www/anthbot-map-v2/`. The card therefore remains available while the
-v2 config entry is disabled and a legacy Anthbot integration is enabled for
-testing.
+The map card does not need a separate HACS dashboard repository. The
+`anthbot-map-card` is bundled with the integration and is updated with it.
 
-In Lovelace storage mode the integration automatically creates or updates this
-JavaScript resource:
+### 3. Add the ANTHBOT account
+
+1. Open **Settings -> Devices & services**.
+2. Select **Add integration**.
+3. Search for **Anthbot Map**.
+4. Enter the ANTHBOT account details.
+5. Wait for Home Assistant to create the mower device and entities.
+
+## Lovelace resource
+
+In Lovelace storage mode, the integration automatically creates or updates:
 
 ```text
 /anthbot-map-v2/anthbot-map-card.js
 ```
 
-Resource type: **JavaScript module**. This is a one-time setup.
+Resource type: **JavaScript module**. No manual setup is normally required.
 
-In YAML resource mode it must still be added manually. The resource editor is
-normally available under **Settings → Dashboards →
-three-dot menu → Resources**. Restart Home Assistant and hard-refresh the
-browser after changing the files (`Ctrl+Shift+R`).
+### If the resource was not created automatically
 
-Only one Anthbot Map card resource should be enabled at a time. HACS updates
-the bundled file behind this stable URL, so later releases do not require a
-resource URL change.
+1. Open **Settings -> Dashboards -> Resources**.
+2. Add:
 
-### Manual integration installation
+   ```text
+   /anthbot-map-v2/anthbot-map-card.js?v=2.3.0
+   ```
 
-Copy:
+3. Select type **JavaScript module**.
+4. Restart Home Assistant and hard-refresh with `Ctrl+Shift+R`.
 
-```text
-custom_components/anthbot_map/
-```
+Only one Anthbot Map Card resource should be enabled at a time.
 
-to:
+## Manual installation
 
-```text
-/config/custom_components/anthbot_map/
-```
+1. Download the ZIP file from the latest GitHub release.
+2. Copy `custom_components/anthbot_map/` to
+   `/config/custom_components/anthbot_map/`.
+3. Restart Home Assistant.
+4. Open **Settings -> Devices & services** and add **Anthbot Map**.
 
-Then restart Home Assistant and add the integration from **Devices & services**.
+# Adding the map card
 
-## Minimal card configuration
+## Minimal configuration
 
-Find the map entity in **Developer Tools → States**. Its entity ID normally
+Find the map entity under **Developer Tools -> States**. Its entity ID normally
 ends with `_map`.
+
+```yaml
+type: custom:anthbot-map-card
+entity: sensor.YOUR_MOWER_map
+name: Anthbot Map
+```
+
+Replace `sensor.YOUR_MOWER_map` with the actual map entity ID.
+
+## Using a garden photograph
+
+Copy a top-down image to `/config/www/garden.jpg` and reference it as:
+
+```yaml
+image: /local/garden.jpg
+```
+
+A top-down aerial or drone photograph with minimal perspective distortion gives
+the best calibration result.
+
+## Recommended full configuration
 
 ```yaml
 type: custom:anthbot-map-card
@@ -173,38 +201,18 @@ name: Anthbot Map
 image: /local/garden.jpg
 height: 720
 fit: cover
+refresh_interval: 3
 robot_heading_source: cloud
-refresh_interval: 2
+robot_heading_offset: 0
+mowed_path_color: rgba(255, 235, 59, 0.82)
+mowed_path_width: 10
+boundary_width: 3
+boundary_color: rgba(74, 101, 255, 0.9)
 show_zones: true
 show_no_go_zones: true
 show_no_go_labels: true
 show_mowed_path: true
 show_decoded_boundary: true
-```
-
-Replace `sensor.YOUR_MOWER_map` with the actual entity ID. The background image
-is optional; when used, place it in `/config/www/`, for example:
-
-```text
-/config/www/garden.jpg
-```
-
-which is referenced from Lovelace as `/local/garden.jpg`.
-
-## Map calibration
-
-1. Open the card and expand the map.
-2. Open **Beállítások / Settings**.
-3. Adjust the map, robot, and decoded boundary until they match the photograph.
-4. Copy the generated YAML.
-5. Replace the card configuration with the generated YAML.
-
-Calibration values are installation-specific because every garden photograph
-has a different crop, scale, and rotation.
-
-Example generated sections:
-
-```yaml
 calibration:
   offsetX: 0
   offsetY: 0
@@ -215,6 +223,13 @@ robotCalibration:
   offsetX: 0
   offsetY: 0
   scaleX: 1
+  scaleY: 1
+  rotation: 0
+mowingPathCalibration:
+  offsetX: 0
+  offsetY: 0
+  scaleX: 1
+  scaleY: 1
   rotation: 0
 decodedBoundaryCalibration:
   offsetX: 0
@@ -224,146 +239,193 @@ decodedBoundaryCalibration:
   rotation: 0
 ```
 
-Rotation values in calibration blocks are radians.
+# Calibration
 
-## Robot direction
+The four calibration sections control different map layers.
 
-Use:
+## Map alignment
+
+`calibration` performs the base alignment of the complete ANTHBOT map
+coordinate system to the garden photograph. Use it first.
+
+```yaml
+calibration:
+  offsetX: 0
+  offsetY: 0
+  scaleX: 1
+  scaleY: 1
+  rotation: 0
+```
+
+## Mower calibration
+
+`robotCalibration` fine-tunes the mower icon's position, size, and direction
+correction. It does not rotate the mowing path.
+
+```yaml
+robotCalibration:
+  offsetX: 0
+  offsetY: 0
+  scaleX: 1
+  scaleY: 1
+  rotation: 0
+```
+
+## Mowing-path calibration
+
+`mowingPathCalibration` independently moves, scales, and rotates the current
+mowing path, historical paths, and mowing-coverage rendering.
+
+```yaml
+mowingPathCalibration:
+  offsetX: 0
+  offsetY: 0
+  scaleX: 1
+  scaleY: 1
+  rotation: 0
+```
+
+## Boundary calibration
+
+`decodedBoundaryCalibration` separately aligns the decoded lawn boundary.
+
+```yaml
+decodedBoundaryCalibration:
+  offsetX: 0
+  offsetY: 0
+  scaleX: 1
+  scaleY: 1
+  rotation: 0
+```
+
+## Recommended calibration order
+
+1. Use **Map alignment** to align the complete map with the photograph.
+2. Use **Mowing-path calibration** to align the path and coverage.
+3. Use **Mower calibration** to fine-tune the mower icon and its direction.
+4. Use **Boundary alignment** to align the decoded boundary.
+5. Select **Copy YAML** and save the generated configuration.
+
+`offsetX`, `offsetY`, `scaleX`, and `scaleY` are relative values. `rotation`
+values in calibration blocks are radians.
+
+# Mower heading
+
+Recommended setting:
 
 ```yaml
 robot_heading_source: cloud
 ```
 
-The official application treats `pose.yaw` as milliradians. This card uses the
-same conversion:
+Available modes:
+
+- `cloud`: official-app-compatible cloud `pose.yaw`; recommended;
+- `movement`: calculate heading from consecutive positions;
+- `auto`: prefer movement and fall back to the cloud heading.
+
+The official application treats `pose.yaw` as milliradians. The card uses:
 
 ```text
 degrees = yaw * 180 / (pi * 1000)
 ```
 
-Available heading modes:
-
-- `cloud` — official-app-compatible `pose.yaw`; recommended
-- `movement` — calculate direction from consecutive positions
-- `auto` — prefer movement and fall back to the cloud heading
-
-If the robot image has a fixed alignment difference, use:
+For a fixed image-alignment difference, use:
 
 ```yaml
 robot_heading_offset: 0
 robot_image_rotation: 90
 ```
 
-Both values are degrees.
+These two values are degrees.
 
-## Language
+# Mowing history
 
-By default the card follows the Home Assistant user-interface language. Open
-the card's **Settings** panel to select a different language. The selection is
-stored in the browser and is also included in copied YAML.
+1. Open the **Anthbot Map** card.
+2. Open the floating menu in the lower-right corner.
+3. Select **Diagnostics**.
+4. Expand **Previous mowing tasks**.
+5. Select a completed session.
+
+History entries can show the date, duration, mowed area, progress, mowing mode,
+start reason, affected zones, and available historical area, map, and path.
+
+The list is refreshed from the ANTHBOT cloud approximately every five minutes.
+Visual detail opens only when the cloud record contains an area, map, or path
+file. The summary remains visible when no visual file is available.
+
+# Language
+
+The card follows the Home Assistant interface language by default:
 
 ```yaml
 language: auto
 ```
 
-Supported choices: English, Hungarian, German, French, Spanish, Italian,
+Supported languages are English, Hungarian, German, French, Spanish, Italian,
 Portuguese, Dutch, Polish, Czech, Slovak, Romanian, Danish, Swedish, Norwegian,
-Finnish, simplified Chinese, and traditional Chinese. Unsupported languages
-fall back to English.
+Finnish, simplified Chinese, traditional Chinese, Turkish, Thai, Vietnamese,
+Korean, and Khmer. Unsupported languages fall back to English.
 
-## Updating
+# Updating
 
-### Map-only mode
+When using HACS:
 
-Use these options to display only the transparent map layer on a floorplan:
+1. Install the update offered by HACS.
+2. Restart Home Assistant.
+3. Hard-refresh the browser with `Ctrl+Shift+R`.
 
-```yaml
-map_only: true
-transparent_background: true
-```
+In Lovelace storage mode, the integration updates the resource version
+automatically. In YAML resource mode, update the cache-busting query after an
+upgrade, for example `/anthbot-map-v2/anthbot-map-card.js?v=2.3.0`.
 
-The background image remains the calibration and aspect-ratio reference but is
-not painted onto the canvas.
+# Troubleshooting
 
-Both options are also available under the **Interface settings** tab and are
-remembered in the current browser. Double-click or double-tap a map-only card
-to restore the full interface.
+## Card not found
 
-The glass effect is a separate option and keeps a translucent blurred card surface:
+Check that:
 
-```yaml
-glass_background: true
-```
+- Anthbot Map is installed and Home Assistant has been restarted;
+- `/config/www/anthbot-map-v2/anthbot-map-card.js` exists;
+- `/anthbot-map-v2/anthbot-map-card.js` is listed as a JavaScript module;
+- no duplicate old Anthbot Map Card resource is enabled.
 
-`glass_background` and `transparent_background` cannot be active at the same time.
+Then hard-refresh with `Ctrl+Shift+R`.
 
-Home Assistant theme colors can be enabled separately:
+## Map is not displayed
 
-```yaml
-theme_background: true
-```
+Check that the correct map entity is configured, its state is `ready`, and its
+attributes contain `pose` and map data. Also check the Home Assistant log for
+`anthbot_map` errors.
 
-The default is `false`, so the card keeps its own dark colors until enabled.
+Map display on M5/M9 is a known limitation and is not currently working.
 
-### Custom button actions
+## Mower heading is incorrect
 
-Commands can call a custom Home Assistant service or script:
+Start with `robot_heading_source: cloud`. If the icon has a constant angular
+offset, adjust `robot_heading_offset`, then fine-tune **Mower calibration**.
 
-```yaml
-button_actions:
-  start:
-    service: script.anthbot_safe_start
-  dock:
-    service: script.anthbot_safe_dock
-```
+## Mowing history is missing
 
-Supported command keys are `start`, `stop`, `dock`, `outer-edge`, `dock-edge`,
-and `connect`. Buttons without an override keep their built-in action.
+Check that version 2.3.0 or newer is installed, the card uses the correct
+mower's map entity, `mowing_records` is present in its attributes, the cloud
+connection works, and at least five minutes have passed since the last refresh.
 
-After updating the card files, increment the query string in the Lovelace
-resource URL to avoid browser caching, for example:
+# Reporting problems
 
-```text
-/anthbot-map-v2/anthbot-map-card.js
-```
+Open an issue at:
 
-Then restart Home Assistant and hard-refresh the browser.
+https://github.com/Mqbretrofit/ha-anthbot-map-v2/issues
 
-## Troubleshooting
+Before publishing diagnostics, remove passwords, bearer tokens, AWS IDs and
+keys, mower serial numbers, PIN codes, GPS coordinates, garden photographs,
+and other personal data.
 
-### Card is not found
+# Credits
 
-- confirm the resource is a JavaScript module
-- confirm `/config/www/anthbot-map/anthbot-map-card.js` exists
-- open `/anthbot-map-v2/anthbot-map-card.js` directly in the browser
-- hard-refresh with `Ctrl+Shift+R`
+- https://github.com/vincentjanv/anthbot_genie_ha
+- https://github.com/AdrianTIonut/anthbot_genie_ha
+- https://github.com/reloxx13/ioBroker.anthbot-genie
 
-### Map or robot is missing
+# License
 
-- verify the configured map entity exists and is `ready`
-- inspect its attributes for `pose`, `area_definition`, and map data
-- wait for the next cloud poll
-- check Home Assistant logs for `anthbot_map`
-
-### Direction is limited to roughly -40°…+40°
-
-An older card version is still cached. Version 79 converts milliradians
-correctly. Update the resource URL and hard-refresh the browser.
-
-### Reporting problems
-
-Open an issue at
-[github.com/Mqbretrofit/ha-anthbot-map-v2/issues](https://github.com/Mqbretrofit/ha-anthbot-map-v2/issues).
-
-Never publish passwords, bearer tokens, AWS credentials, mower serial numbers,
-PIN codes, GPS coordinates, garden photographs, or unredacted diagnostic dumps.
-
-## Credits
-
-- [vincentjanv/anthbot_genie_ha](https://github.com/vincentjanv/anthbot_genie_ha)
-- [AdrianTIonut/anthbot_genie_ha](https://github.com/AdrianTIonut/anthbot_genie_ha)
-- [reloxx13/ioBroker.anthbot-genie](https://github.com/reloxx13/ioBroker.anthbot-genie)
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+MIT - see [LICENSE](LICENSE).
