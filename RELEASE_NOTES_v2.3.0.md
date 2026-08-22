@@ -25,15 +25,28 @@
 - Renames **Robot alignment** to **Mowing path alignment** to clarify that it
   controls the robot-derived mowing layer.
 - Applies offset, horizontal and vertical scale, and rotation to the complete
-  mowing path, coverage, and robot position instead of the robot icon alone.
+  mowing path and coverage independently from the robot icon.
+- Provides separate calibration controls and YAML blocks for the robot and the
+  mowing path.
+- Makes the up, down, left, right, narrower, wider, shorter, and taller controls
+  move every separately calibrated layer in the same visual direction as the
+  map-alignment controls.
 - Keeps robot-icon direction adjustment separate from mowing-path alignment.
-- Prevents rotation from distorting non-square maps.
+- Corrects mirrored cloud heading on horizontal travel while preserving the
+  already correct heading for vertical travel.
+- Preserves legacy `robotCalibration.rotation` as an icon-direction correction;
+  independent path rotation is stored under `mowingPathCalibration`.
+- Prevents mowing-path rotation from distorting the path on non-square maps
+  while preserving existing map-calibration behavior.
 
 ## Reliability and privacy
 
 - Targets the correct mower when more than one mower is configured.
 - Handles long mowing sessions without confusing seconds and milliseconds.
 - Removes captured device identifiers from the source.
+- Removes the remaining frontend debug logging from command confirmation.
+- Completes the calibration and mowing-history translations for all 23
+  supported languages without English fallback labels.
 - Keeps bundled frontend assets and release versions consistent.
 - Removes a duplicate `serial_number` entry from the charging-contact reset
   service definition and prevents duplicate YAML mapping keys from returning.

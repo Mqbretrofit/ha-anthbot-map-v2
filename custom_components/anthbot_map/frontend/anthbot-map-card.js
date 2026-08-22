@@ -1,5 +1,5 @@
-import { AnthbotMapRenderer } from "./renderer.js?v=145";
-import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=145";
+import { AnthbotMapRenderer } from "./renderer.js?v=149";
+import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=149";
 import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=22000";
 import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=22141";
 import {
@@ -7,9 +7,10 @@ import {
   cardToYaml,
   readCalibration,
   readDecodedBoundaryCalibration,
+  readMowingPathCalibration,
   readRobotCalibration,
   resetCalibration,
-} from "./calibration.js?v=145";
+} from "./calibration.js?v=149";
 
 const ENTITY_MAP = {
   battery: ["sensor", ["battery_level"]],
@@ -59,6 +60,7 @@ class AnthbotMapCard extends HTMLElement {
     this.entity = null;
     this.calibration = resetCalibration();
     this.robotCalibration = resetCalibration();
+    this.mowingPathCalibration = resetCalibration();
     this.robotHeadingOffset = 0;
     this.decodedBoundaryCalibration = resetCalibration();
     this.renderer = null;
@@ -124,6 +126,7 @@ class AnthbotMapCard extends HTMLElement {
     window.clearTimeout(this.pendingRefreshTimer);
     this.calibration = readCalibration(config);
     this.robotCalibration = readRobotCalibration(config);
+    this.mowingPathCalibration = readMowingPathCalibration(config);
     this.robotHeadingOffset = Number(config.robot_heading_offset ?? config.robotHeadingOffset) || 0;
     this.decodedBoundaryCalibration = readDecodedBoundaryCalibration(config);
     this.mapOverlayOverrides = savedInterface.mapOverlayOverrides && typeof savedInterface.mapOverlayOverrides === "object"
@@ -345,11 +348,23 @@ class AnthbotMapCard extends HTMLElement {
             <button type="button" data-robot-calibration="down">${this.t("down")}</button>
             <button type="button" data-robot-calibration="narrower">${this.t("narrower")}</button>
             <button type="button" data-robot-calibration="wider">${this.t("wider")}</button>
-            <button type="button" data-robot-calibration="shorter">${this.t("shorter")}</button>
-            <button type="button" data-robot-calibration="taller">${this.t("taller")}</button>
             <button type="button" data-robot-calibration="rotate-left">${this.t("rotation")} -</button>
             <button type="button" data-robot-calibration="rotate-right">${this.t("rotation")} +</button>
             <button type="button" data-action="reset-robot">${this.t("reset")}</button>
+          </div>
+          <div class="calibration-title">${this.t("mowingPathFit")}</div>
+          <div class="calibration-grid">
+            <button type="button" data-mowing-path-calibration="up">${this.t("up")}</button>
+            <button type="button" data-mowing-path-calibration="left">${this.t("left")}</button>
+            <button type="button" data-mowing-path-calibration="right">${this.t("right")}</button>
+            <button type="button" data-mowing-path-calibration="down">${this.t("down")}</button>
+            <button type="button" data-mowing-path-calibration="narrower">${this.t("narrower")}</button>
+            <button type="button" data-mowing-path-calibration="wider">${this.t("wider")}</button>
+            <button type="button" data-mowing-path-calibration="shorter">${this.t("shorter")}</button>
+            <button type="button" data-mowing-path-calibration="taller">${this.t("taller")}</button>
+            <button type="button" data-mowing-path-calibration="rotate-left">${this.t("rotation")} -</button>
+            <button type="button" data-mowing-path-calibration="rotate-right">${this.t("rotation")} +</button>
+            <button type="button" data-action="reset-mowing-path">${this.t("reset")}</button>
           </div>
           <div class="calibration-title">${this.t("robotDirection")}</div>
           <div class="calibration-grid">
@@ -401,6 +416,9 @@ class AnthbotMapCard extends HTMLElement {
     });
     root.querySelectorAll("button[data-robot-calibration]").forEach((button) => {
       button.addEventListener("click", () => this.handleRobotCalibration(button.dataset.robotCalibration));
+    });
+    root.querySelectorAll("button[data-mowing-path-calibration]").forEach((button) => {
+      button.addEventListener("click", () => this.handleMowingPathCalibration(button.dataset.mowingPathCalibration));
     });
     root.querySelectorAll("button[data-robot-heading]").forEach((button) => {
       button.addEventListener("click", () => this.handleRobotHeading(button.dataset.robotHeading));
@@ -1905,6 +1923,7 @@ class AnthbotMapCard extends HTMLElement {
       rotation: degreesToRadians((Number(this.config.rotation) || 0) + mobileRotation),
       calibration: this.calibration,
       robotCalibration: this.robotCalibration,
+      mowingPathCalibration: this.mowingPathCalibration,
       decodedBoundaryCalibration: this.decodedBoundaryCalibration,
       robotImage: this.config.robot_image || this.config.robotImage || this.resolveAsset("robot.png?v=133"),
       noGoLabel: this.t("forbidden"),
@@ -2378,11 +2397,17 @@ class AnthbotMapCard extends HTMLElement {
     } else if (action === "reset") {
       this.calibration = resetCalibration();
       this.robotCalibration = resetCalibration();
+      this.mowingPathCalibration = resetCalibration();
       this.robotHeadingOffset = 0;
       this.renderer.setCalibration(this.calibration);
       this.renderer.setRobotCalibration(this.robotCalibration);
+      this.renderer.setMowingPathCalibration(this.mowingPathCalibration);
       this.renderer.setOptions({ robotHeadingOffset: this.robotHeadingOffset });
       this.renderer.resetView();
+      this.updateYaml();
+    } else if (action === "reset-mowing-path") {
+      this.mowingPathCalibration = resetCalibration();
+      this.renderer.setMowingPathCalibration(this.mowingPathCalibration);
       this.updateYaml();
     } else if (action === "reset-robot") {
       this.robotCalibration = resetCalibration();
@@ -2478,6 +2503,12 @@ class AnthbotMapCard extends HTMLElement {
     this.updateYaml();
   }
 
+  handleMowingPathCalibration(action) {
+    this.mowingPathCalibration = adjustCalibration(this.mowingPathCalibration, action, 1);
+    this.renderer.setMowingPathCalibration(this.mowingPathCalibration);
+    this.updateYaml();
+  }
+
   handleRobotCalibration(action) {
     this.robotCalibration = adjustCalibration(this.robotCalibration, action, 1);
     this.renderer.setRobotCalibration(this.robotCalibration);
@@ -2507,6 +2538,7 @@ class AnthbotMapCard extends HTMLElement {
         this.calibration,
         this.robotCalibration,
         this.decodedBoundaryCalibration,
+        this.mowingPathCalibration,
       );
     }
   }
@@ -2517,6 +2549,7 @@ class AnthbotMapCard extends HTMLElement {
       this.calibration,
       this.robotCalibration,
       this.decodedBoundaryCalibration,
+      this.mowingPathCalibration,
     );
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(yaml);
@@ -3302,7 +3335,7 @@ function buildRasterBoundaryPathD(raster, rasterBounds, worldToScreen) {
 // geometry's normal world-to-screen projection.
 function worldToScreenWithExtraCalibration(geometry, calibration, point) {
   const mapPoint = geometry.worldToMap(point);
-  return geometry.mapToScreen(geometry.calibrateMapPoint(mapPoint, calibration));
+  return geometry.mapToScreenWithLayerCalibration(mapPoint, calibration);
 }
 
 // Draws a simple schematic (not necessarily oriented like the live map) of
@@ -3870,8 +3903,8 @@ async function waitForAnthbotVisibleConfirmation(card, hass, service, label) {
         showAnthbotCommandToast(anthbotFeedback(card, hass, "commandConfirmed", label));
         return;
       }
-    } catch (error) {
-      console.debug("Anthbot confirmation state check retry", error);
+    } catch {
+      // A transient entity update must not interrupt the confirmation retry loop.
     }
   }
   if (window.__anthbotVisibleConfirmationToken === token) {

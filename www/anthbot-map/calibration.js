@@ -20,6 +20,25 @@ export function readRobotCalibration(config = {}) {
   };
 }
 
+export function readMowingPathCalibration(config = {}) {
+  const configured = config.mowingPathCalibration || config.mowing_path_calibration;
+  if (configured && typeof configured === "object") {
+    return {
+      ...DEFAULT_CALIBRATION,
+      ...configured,
+    };
+  }
+
+  // Legacy robotCalibration offsets moved the path, while scale and rotation
+  // adjusted the icon. Preserve those meanings for existing card YAML.
+  const legacy = config.robotCalibration || {};
+  return {
+    ...DEFAULT_CALIBRATION,
+    offsetX: Number(legacy.offsetX) || 0,
+    offsetY: Number(legacy.offsetY) || 0,
+  };
+}
+
 export function readDecodedBoundaryCalibration(config = {}) {
   return {
     ...DEFAULT_CALIBRATION,
@@ -111,6 +130,19 @@ export function robotCalibrationToYaml(robotCalibration) {
   ].join("\n");
 }
 
+export function mowingPathCalibrationToYaml(mowingPathCalibration) {
+  const next = { ...DEFAULT_CALIBRATION, ...(mowingPathCalibration || {}) };
+
+  return [
+    "mowingPathCalibration:",
+    `  offsetX: ${formatNumber(next.offsetX)}`,
+    `  offsetY: ${formatNumber(next.offsetY)}`,
+    `  scaleX: ${formatNumber(next.scaleX)}`,
+    `  scaleY: ${formatNumber(next.scaleY)}`,
+    `  rotation: ${formatNumber(next.rotation)}`,
+  ].join("\n");
+}
+
 export function decodedBoundaryCalibrationToYaml(decodedBoundaryCalibration) {
   const next = { ...DEFAULT_CALIBRATION, ...(decodedBoundaryCalibration || {}) };
 
@@ -124,7 +156,13 @@ export function decodedBoundaryCalibrationToYaml(decodedBoundaryCalibration) {
   ].join("\n");
 }
 
-export function cardToYaml(config = {}, calibration, robotCalibration, decodedBoundaryCalibration) {
+export function cardToYaml(
+  config = {},
+  calibration,
+  robotCalibration,
+  decodedBoundaryCalibration,
+  mowingPathCalibration,
+) {
   const lines = [
     "type: custom:anthbot-map-card",
     `entity: ${config.entity || ""}`,
@@ -275,6 +313,7 @@ export function cardToYaml(config = {}, calibration, robotCalibration, decodedBo
 
   lines.push(calibrationToYaml(calibration));
   lines.push(robotCalibrationToYaml(robotCalibration));
+  lines.push(mowingPathCalibrationToYaml(mowingPathCalibration));
   lines.push(decodedBoundaryCalibrationToYaml(decodedBoundaryCalibration));
 
   return lines.join("\n");

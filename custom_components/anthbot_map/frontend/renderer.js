@@ -1,4 +1,4 @@
-import { createGeometry, getBoundaryPaths, getWorldBounds, getZonePoints, getZones } from "./geometry.js?v=145";
+import { createGeometry, getBoundaryPaths, getWorldBounds, getZonePoints, getZones } from "./geometry.js?v=149";
 
 const COLORS = Object.freeze({
   background: "#18202a",
@@ -118,6 +118,11 @@ export class AnthbotMapRenderer {
 
   setRobotCalibration(robotCalibration) {
     this.options.robotCalibration = robotCalibration;
+    this.draw();
+  }
+
+  setMowingPathCalibration(mowingPathCalibration) {
+    this.options.mowingPathCalibration = mowingPathCalibration;
     this.draw();
   }
 
@@ -281,7 +286,7 @@ export class AnthbotMapRenderer {
     const width = Number(options.width) || 7;
     const segments = buildMowedPathSegments(
       trail,
-      (point) => this.robotPositionToScreen(geometry, point),
+      (point) => this.mowingPathPositionToScreen(geometry, point),
       Number(options.canvasDiagonal) || 800,
     );
     if (!segments.length) {
@@ -344,8 +349,8 @@ export class AnthbotMapRenderer {
       return clamp(coverageMm / 35, 10, 48);
     }
 
-    const a = this.robotPositionToScreen(geometry, anchor);
-    const b = this.robotPositionToScreen(geometry, {
+    const a = this.mowingPathPositionToScreen(geometry, anchor);
+    const b = this.mowingPathPositionToScreen(geometry, {
       x: Number(anchor.x) + coverageMm,
       y: Number(anchor.y),
     });
@@ -807,9 +812,8 @@ export class AnthbotMapRenderer {
       ? Number(this.options.robotMowingHeadingOffset ?? this.options.robot_mowing_heading_offset ?? 0) || 0
       : 0;
     const cloudYaw =
-      degreesToRadians(this.cloudHeadingDegrees(pose)) +
+      cloudHeadingToCanvasRadians(this.cloudHeadingDegrees(pose)) +
       geometry.map.rotation +
-      (Number(geometry.calibration?.rotation) || 0) +
       degreesToRadians(Number(this.options.robotHeadingOffset ?? this.options.robot_heading_offset) || 0) +
       degreesToRadians(mowingHeadingOffset) +
       (Number(robotCalibration.rotation) || 0);
@@ -832,6 +836,7 @@ export class AnthbotMapRenderer {
     if (this.robotImage) {
       const size = clamp(
         (Number(this.options.robotSize) || 42) *
+          (Number(robotCalibration.scaleX) || 1) *
           (Number(this.view.zoom) || 1),
         8,
         260,
@@ -1129,8 +1134,8 @@ export class AnthbotMapRenderer {
       return null;
     }
 
-    const last = this.robotPositionToScreen(geometry, trail[trail.length - 1]);
-    const previous = this.robotPositionToScreen(geometry, trail[trail.length - 2]);
+    const last = this.mowingPathPositionToScreen(geometry, trail[trail.length - 1]);
+    const previous = this.mowingPathPositionToScreen(geometry, trail[trail.length - 2]);
     const dx = last.x - previous.x;
     const dy = last.y - previous.y;
     if (Math.hypot(dx, dy) < 6) {
@@ -1179,7 +1184,16 @@ export class AnthbotMapRenderer {
   robotPositionToScreen(geometry, point) {
     const robotCalibration = this.options.robotCalibration || {};
     const mapPoint = geometry.worldToMap({ x: Number(point.x), y: Number(point.y) });
-    return geometry.mapToScreen(geometry.calibrateMapPoint(mapPoint, robotCalibration));
+    return geometry.mapToScreenWithLayerCalibration(mapPoint, {
+      offsetX: Number(robotCalibration.offsetX) || 0,
+      offsetY: Number(robotCalibration.offsetY) || 0,
+    });
+  }
+
+  mowingPathPositionToScreen(geometry, point) {
+    const mowingPathCalibration = this.options.mowingPathCalibration || {};
+    const mapPoint = geometry.worldToMap({ x: Number(point.x), y: Number(point.y) });
+    return geometry.mapToScreenWithLayerCalibration(mapPoint, mowingPathCalibration);
   }
 
   isMowingState() {
@@ -1298,6 +1312,12 @@ function rotateAround(point, center, angle) {
 
 function degreesToRadians(degrees) {
   return (degrees * Math.PI) / 180;
+}
+
+// Anthbot's cloud heading uses the opposite horizontal axis from the canvas:
+// up/down already match, while left/right must be mirrored.
+export function cloudHeadingToCanvasRadians(value) {
+  return normalizeAngle(degreesToRadians(180 - normalizeHeadingDegrees(value)));
 }
 
 function milliRadiansToDegrees(value) {
@@ -1671,7 +1691,7 @@ function applyMapCalibration(geometry, calibration = {}) {
   return {
     worldToScreen(point) {
       const mapPoint = geometry.worldToMap(point);
-      return geometry.mapToScreen(geometry.calibrateMapPoint(mapPoint, calibration));
+      return geometry.mapToScreenWithLayerCalibration(mapPoint, calibration);
     },
   };
 }

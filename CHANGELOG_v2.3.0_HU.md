@@ -26,17 +26,29 @@
 
 - A félreérthető **Robot illesztése** elnevezés helyett **Nyírási útvonal
   illesztése** jelenik meg.
-- Az eltolás, a vízszintes és függőleges méretezés, valamint a forgatás már a
-  teljes nyírási útvonalra, lefedettségre és robotpozícióra hat, nem csak a
-  robotikonra.
+- Az eltolás, a vízszintes és függőleges méretezés, valamint a forgatás a teljes
+  nyírási útvonalra és lefedettségre hat, a robotikontól függetlenül.
+- A robot és a nyírási útvonal külön kalibrációs kezelőszerveket és külön YAML
+  blokkot kapott.
+- A fel, le, balra, jobbra, keskenyebb, szélesebb, alacsonyabb és magasabb
+  kezelőszervek minden külön kalibrálható réteget a térképillesztéssel azonos
+  vizuális irányba mozgatnak.
 - A robotikon iránya a nyírási útvonal illesztésétől külön állítható.
-- A nem négyzetes térképek forgatása többé nem torzítja el az alakzatot.
+- A felhőből érkező robotirány vízszintes mozgásnál már nem tükrözött, miközben
+  a függőleges mozgás korábban helyes iránya megmaradt.
+- A korábbi `robotCalibration.rotation` továbbra is csak az ikon irányát
+  korrigálja; az útvonal külön forgatása a `mowingPathCalibration` blokkba kerül.
+- A nyírási útvonal forgatása nem torzítja el az alakzatot nem négyzetes
+  térképen sem, miközben a korábbi térképkalibráció működése változatlan marad.
 
 ## Megbízhatóság és adatvédelem
 
 - Több robot esetén is a megfelelő robot nyírási részlete töltődik le.
 - A hosszú nyírási időket nem téveszti össze ezredmásodperces értékekkel.
 - A rögzített eszközazonosítók kikerültek a forrásból.
+- A parancs-visszaigazolás megmaradt frontend debug naplózása is kikerült.
+- A kalibráció és a nyírási előzmények szövege mind a 23 támogatott nyelven
+  teljes, angol tartalékfeliratok nélkül.
 - A frontend másolatai és a kiadási verziók egységesek.
 - Kikerült a töltőérintkező-karbantartás szolgáltatás duplikált `serial_number`
   mezője, és regressziós teszt védi a YAML-fájlokat a hasonló hibáktól.

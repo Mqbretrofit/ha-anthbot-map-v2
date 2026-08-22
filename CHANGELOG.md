@@ -9,8 +9,13 @@
   map-archive parsing compatibility; M5/M9 map display is not yet working.
 - Fixed multi-mower history targeting, long-session duration conversion, and
   filtering of non-mowing travel segments.
+- Added independent robot and mowing-path calibration, aligned every layer's
+  directional controls, and corrected mirrored horizontal cloud heading.
 - Removed captured device identifiers and added release/version consistency
   checks.
+- Removed remaining frontend command-confirmation debug logging.
+- Completed calibration and mowing-history translations for all 23 supported
+  languages.
 - Removed the duplicate `serial_number` service field and added a regression
   check for duplicate YAML mapping keys.
 

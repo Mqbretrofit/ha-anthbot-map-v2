@@ -30,6 +30,9 @@ export function createGeometry(options = {}) {
     mapToScreen(point) {
       return mapToScreen(point, map, calibration);
     },
+    mapToScreenWithLayerCalibration(point, layerCalibration) {
+      return mapToScreenWithLayerCalibration(point, map, calibration, layerCalibration);
+    },
     calibrateMapPoint(point, pointCalibration) {
       return calibrateMapPoint(point, map, pointCalibration);
     },
@@ -398,7 +401,21 @@ function mapToWorld(point, bounds) {
 }
 
 function mapToScreen(point, map, calibration) {
-  const transformed = calibrateMapPoint(point, map, calibration);
+  // Keep the established map-calibration coordinate system for backwards
+  // compatibility with existing card YAML. Independent layer calibration is
+  // composed afterwards by mapToScreenWithLayerCalibration().
+  const transformed = applyCalibration(point, calibration);
+  return transformedMapPointToScreen(transformed, map);
+}
+
+function mapToScreenWithLayerCalibration(point, map, calibration, layerCalibration) {
+  const transformed = applyCalibration(point, calibration);
+  const transformedCenter = applyCalibration({ x: 0.5, y: 0.5 }, calibration);
+  const layered = calibrateMapPoint(transformed, map, layerCalibration, transformedCenter);
+  return transformedMapPointToScreen(layered, map);
+}
+
+function transformedMapPointToScreen(transformed, map) {
   const centered = {
     x: (transformed.x - 0.5) * map.width,
     y: (transformed.y - 0.5) * map.height,
@@ -422,7 +439,7 @@ function screenToMap(point, map, calibration) {
     y: rotated.y / map.height + 0.5,
   };
 
-  return uncalibrateMapPoint(normalized, map, calibration);
+  return removeCalibration(normalized, calibration);
 }
 
 function computeMapFit(size, bounds, view, aspectRatio, fit = "contain") {
@@ -474,31 +491,50 @@ export function normalizeCalibration(calibration) {
   };
 }
 
-export function calibrateMapPoint(point, map, calibration = {}) {
+function applyCalibration(point, calibration) {
+  const centered = {
+    x: (Number(point.x) - 0.5) * calibration.scaleX,
+    y: (Number(point.y) - 0.5) * calibration.scaleY,
+  };
+  const rotated = rotatePoint(centered, calibration.rotation);
+
+  return {
+    x: rotated.x + 0.5 + calibration.offsetX,
+    y: rotated.y + 0.5 + calibration.offsetY,
+  };
+}
+
+function removeCalibration(point, calibration) {
+  const centered = {
+    x: Number(point.x) - 0.5 - calibration.offsetX,
+    y: Number(point.y) - 0.5 - calibration.offsetY,
+  };
+  const rotated = rotatePoint(centered, -calibration.rotation);
+
+  return {
+    x: rotated.x / calibration.scaleX + 0.5,
+    y: rotated.y / calibration.scaleY + 0.5,
+  };
+}
+
+// Apply an independent layer calibration in the displayed map's physical
+// coordinate system so rotation does not stretch a non-square mowing path.
+export function calibrateMapPoint(
+  point,
+  map,
+  calibration = {},
+  center = { x: 0.5, y: 0.5 },
+) {
   const next = normalizeCalibration(calibration);
   const centered = {
-    x: (Number(point.x) - 0.5) * map.width * next.scaleX,
-    y: (Number(point.y) - 0.5) * map.height * next.scaleY,
+    x: (Number(point.x) - Number(center.x)) * map.width * next.scaleX,
+    y: (Number(point.y) - Number(center.y)) * map.height * next.scaleY,
   };
   const rotated = rotatePoint(centered, next.rotation);
 
   return {
-    x: rotated.x / map.width + 0.5 + next.offsetX,
-    y: rotated.y / map.height + 0.5 + next.offsetY,
-  };
-}
-
-function uncalibrateMapPoint(point, map, calibration = {}) {
-  const next = normalizeCalibration(calibration);
-  const centered = {
-    x: (Number(point.x) - 0.5 - next.offsetX) * map.width,
-    y: (Number(point.y) - 0.5 - next.offsetY) * map.height,
-  };
-  const rotated = rotatePoint(centered, -next.rotation);
-
-  return {
-    x: rotated.x / (map.width * next.scaleX) + 0.5,
-    y: rotated.y / (map.height * next.scaleY) + 0.5,
+    x: rotated.x / map.width + Number(center.x) + next.offsetX,
+    y: rotated.y / map.height + Number(center.y) + next.offsetY,
   };
 }
 
