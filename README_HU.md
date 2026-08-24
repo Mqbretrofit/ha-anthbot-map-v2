@@ -21,7 +21,22 @@ valamint egy saját légi vagy drónfelvétel a kertről.
 
 ## Aktuális verzió
 
-Stabil verzió: **2.3.0**
+Stabil verzió: **2.4.0**
+
+### A 2.4.0 legfontosabb változásai
+
+- Megjelent az opcionális akkumulátorkímélő mód Home Assistant `switch`
+  entitással vezérelt töltőkhöz.
+- Külön beállítható a felső töltési határ, a nyugalmi fenntartó töltés alsó
+  szintje és a megszakított feladat folytatási töltöttsége.
+- Az alacsony töltöttség miatti visszatérést az ANTHBOT felhő `1021`
+  feladateseménye jelzi; élő nyírási százalékot a felhő nem szolgáltat, ezért
+  az integráció nem becsül hamis értéket.
+- A Home Assistantból indított teljes, zóna-, szegély- és töltőkörüli nyírás
+  megjegyezhető és a helyreállító töltés után folytatható.
+- A töltő automatikus bekapcsolásakor a robot ideiglenesen elnémul, majd
+  visszakapja a korábbi hangerőt.
+- Új feladatesemény-szenzorok és diagnosztikai adatok készültek.
 
 ### A 2.3.0 legfontosabb változásai
 

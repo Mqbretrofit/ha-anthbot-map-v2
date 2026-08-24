@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.4.0 — 2026-08-24
+
+- Added an optional smart-plug battery-saving mode with configurable upper,
+  idle-maintenance, and interrupted-task resume charge levels.
+- Added task-aware recovery after confirmed low-battery return event `1021`.
+- Added cloud task-event entities and diagnostics without inventing a live
+  mowing-progress value that the cloud API does not provide.
+- Temporarily mutes charging announcements during automatic charger switching
+  and restores the mower's previous volume.
+- Improved completed-task, manual-return, restart, and missing-task handling.
+
+See `RELEASE_NOTES_v2.4.0.md` and `CHANGELOG_v2.4.0_HU.md` for details.
+
 ## 2.3.0 — 2026-08-21
 
 - Added structured mowing-history cards and per-session map/path detail.

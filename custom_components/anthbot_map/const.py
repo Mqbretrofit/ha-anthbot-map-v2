@@ -12,6 +12,11 @@ CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
 CONF_AREA_CODE = "area_code"
 CONF_SCAN_INTERVAL = "scan_interval"
+CONF_BATTERY_SAVER_CONFIGS = "battery_saver_configs"
+CONF_CHARGER_SWITCH = "charger_switch"
+CONF_CHARGE_LIMIT = "charge_limit"
+CONF_MAINTENANCE_LEVEL = "maintenance_level"
+CONF_RESUME_LEVEL = "resume_level"
 
 DEFAULT_NAME = "Anthbot Genie"
 DEFAULT_API_HOST = "api.anthbot.com"
@@ -116,6 +121,9 @@ RTK_BASE_STATE_OPTIONS: dict[int, str] = {
 
 DEFAULT_SCAN_INTERVAL = 60
 DEFAULT_SCAN_INTERVAL_DELTA = timedelta(seconds=DEFAULT_SCAN_INTERVAL)
+DEFAULT_BATTERY_SAVER_CHARGE_LIMIT = 80
+DEFAULT_BATTERY_SAVER_MAINTENANCE_LEVEL = 40
+DEFAULT_BATTERY_SAVER_RESUME_LEVEL = 40
 
 # Service names and attributes.
 SERVICE_START_FULL_MOW = "start_full_mow"

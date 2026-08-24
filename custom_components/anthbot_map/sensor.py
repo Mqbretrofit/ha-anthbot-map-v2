@@ -33,6 +33,13 @@ from .const import (
     RTK_STATE_OPTIONS,
 )
 from .coordinator import AnthbotGenieDataUpdateCoordinator
+from .task_events import (
+    latest_task_event,
+    task_event_code,
+    task_event_datetime,
+    task_event_items,
+    task_event_value,
+)
 from .zones import active_manual_zone_ids, auto_zones, manual_zones, ridable_areas
 
 
@@ -371,6 +378,34 @@ SENSORS: tuple[AnthbotSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda data: _as_int(data.get("event_code")),
     ),
+    AnthbotSensorDescription(
+        key="cloud_task_event_code",
+        name="Cloud task event code",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: task_event_code(data.get("_task_events")),
+    ),
+    AnthbotSensorDescription(
+        key="cloud_task_event_text",
+        name="Cloud task event text",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: task_event_value(
+            data.get("_task_events"), "event_message"
+        ),
+    ),
+    AnthbotSensorDescription(
+        key="cloud_task_event_type",
+        name="Cloud task event type",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: task_event_value(data.get("_task_events"), "code_type"),
+    ),
+    AnthbotSensorDescription(
+        key="cloud_task_event_time",
+        name="Cloud task event time",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: task_event_datetime(data.get("_task_events")),
+    ),
     # --- Positioning / RTK ----------------------------------------------
     AnthbotSensorDescription(
         key="rtk_state",
@@ -701,6 +736,9 @@ class AnthbotSensorEntity(
 
     entity_description: AnthbotSensorDescription
     _attr_has_entity_name = True
+    _unrecorded_attributes = frozenset(
+        {"latest_task_event", "task_events", "task_events_error"}
+    )
 
     def __init__(
         self,
@@ -804,6 +842,11 @@ class AnthbotSensorEntity(
                 for zone in auto_zone_list
                 if isinstance((zone_name := zone.get("name")), str) and zone_name
             ]
+        if self.entity_description.key == "cloud_task_event_code":
+            payload = state.get("_task_events")
+            attributes["latest_task_event"] = latest_task_event(payload)
+            attributes["task_events"] = task_event_items(payload)
+            attributes["task_events_error"] = state.get("_task_events_error")
         return attributes
         
 class AnthbotMapSensorEntity(
@@ -860,6 +903,8 @@ class AnthbotMapSensorEntity(
             "last_mowing_task",
             "mowing_records",
             "mowing_records_error",
+            "task_events",
+            "task_events_error",
             "error_history",
             "maintenance",
         }
@@ -944,6 +989,8 @@ class AnthbotMapSensorEntity(
             "last_mowing_task": self.coordinator.last_mowing_task,
             "mowing_records": state.get("_mowing_records", {"data": []}),
             "mowing_records_error": state.get("_mowing_records_error"),
+            "task_events": task_event_items(state.get("_task_events")),
+            "task_events_error": state.get("_task_events_error"),
             "error_history": state.get("_error_history", []),
             "maintenance": state.get("robot_maintenance") or {
                 "blade": state.get("cutting_components_life"),

@@ -8,6 +8,7 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_NAME
+from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -18,12 +19,20 @@ from .const import (
     CONF_AREA_CODE,
     CONF_PASSWORD,
     CONF_SCAN_INTERVAL,
+    CONF_BATTERY_SAVER_CONFIGS,
+    CONF_CHARGE_LIMIT,
+    CONF_CHARGER_SWITCH,
+    CONF_MAINTENANCE_LEVEL,
+    CONF_RESUME_LEVEL,
     CONF_USERNAME,
     COUNTRY_AREA_CODES,
     DEFAULT_API_HOST,
     DEFAULT_AREA_CODE,
     DEFAULT_NAME,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_BATTERY_SAVER_CHARGE_LIMIT,
+    DEFAULT_BATTERY_SAVER_MAINTENANCE_LEVEL,
+    DEFAULT_BATTERY_SAVER_RESUME_LEVEL,
     DOMAIN,
 )
 
@@ -34,6 +43,14 @@ class AnthbotGenieConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle config flow for Anthbot Genie."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> AnthbotGenieOptionsFlow:
+        """Return the per-mower battery-saver options flow."""
+        return AnthbotGenieOptionsFlow()
 
     async def async_step_user(self, user_input: dict | None = None) -> FlowResult:
         """Handle the initial step."""
@@ -94,3 +111,109 @@ class AnthbotGenieConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
         )
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+
+
+class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
+    """Configure the optional battery-saving behavior for one mower."""
+
+    def __init__(self) -> None:
+        self._serial_number: str | None = None
+
+    def _coordinators(self) -> list:
+        return self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, [])
+
+    async def async_step_init(self, user_input: dict | None = None) -> FlowResult:
+        """Choose which discovered mower should be configured."""
+        coordinators = self._coordinators()
+        if not coordinators:
+            return self.async_abort(reason="no_devices")
+        if len(coordinators) == 1:
+            self._serial_number = coordinators[0].client.serial_number
+            return await self.async_step_battery_saver()
+        if user_input is not None:
+            self._serial_number = user_input["mower"]
+            return await self.async_step_battery_saver()
+        options = [
+            selector.SelectOptionDict(
+                value=coordinator.client.serial_number,
+                label=f"{coordinator.device.alias} ({coordinator.client.serial_number})",
+            )
+            for coordinator in coordinators
+        ]
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("mower"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=options,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    )
+                }
+            ),
+        )
+
+    async def async_step_battery_saver(
+        self, user_input: dict | None = None
+    ) -> FlowResult:
+        """Configure charger entity and charge thresholds."""
+        if self._serial_number is None:
+            return await self.async_step_init()
+        stored_configs = self.config_entry.options.get(CONF_BATTERY_SAVER_CONFIGS, {})
+        configs = dict(stored_configs) if isinstance(stored_configs, dict) else {}
+        current = configs.get(self._serial_number, {})
+        if not isinstance(current, dict):
+            current = {}
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if (
+                user_input[CONF_RESUME_LEVEL] >= user_input[CONF_CHARGE_LIMIT]
+                or user_input[CONF_MAINTENANCE_LEVEL]
+                >= user_input[CONF_CHARGE_LIMIT]
+            ):
+                errors["base"] = "invalid_battery_thresholds"
+            else:
+                configs[self._serial_number] = dict(user_input)
+                options = dict(self.config_entry.options)
+                options[CONF_BATTERY_SAVER_CONFIGS] = configs
+                return self.async_create_entry(title="", data=options)
+        charger_entity = current.get(CONF_CHARGER_SWITCH)
+        charger_field = (
+            vol.Required(CONF_CHARGER_SWITCH, default=charger_entity)
+            if isinstance(charger_entity, str) and charger_entity
+            else vol.Required(CONF_CHARGER_SWITCH)
+        )
+        return self.async_show_form(
+            step_id="battery_saver",
+            data_schema=vol.Schema(
+                {
+                    charger_field: selector.EntitySelector(
+                        selector.EntitySelectorConfig(domain="switch")
+                    ),
+                    vol.Required(
+                        CONF_CHARGE_LIMIT,
+                        default=current.get(
+                            CONF_CHARGE_LIMIT,
+                            DEFAULT_BATTERY_SAVER_CHARGE_LIMIT,
+                        ),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=20, max=100)),
+                    vol.Required(
+                        CONF_MAINTENANCE_LEVEL,
+                        default=current.get(
+                            CONF_MAINTENANCE_LEVEL,
+                            DEFAULT_BATTERY_SAVER_MAINTENANCE_LEVEL,
+                        ),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=10, max=99)),
+                    vol.Required(
+                        CONF_RESUME_LEVEL,
+                        default=current.get(
+                            CONF_RESUME_LEVEL,
+                            DEFAULT_BATTERY_SAVER_RESUME_LEVEL,
+                        ),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=10, max=99)),
+                }
+            ),
+            errors=errors,
+            description_placeholders={"serial_number": self._serial_number},
+        )

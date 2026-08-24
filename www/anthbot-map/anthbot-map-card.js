@@ -1,7 +1,7 @@
 import { AnthbotMapRenderer } from "./renderer.js?v=149";
 import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=149";
 import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=22000";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=22141";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=240";
 import {
   adjustCalibration,
   cardToYaml,
@@ -50,6 +50,7 @@ const SWITCH_MAP = {
   customDirection: ["custom_mowing_direction_enabled", "custom mowing direction"],
   edgeReturn: ["edge_following_return_enabled", "edge-following return"],
   autoDockMow: ["automatic_dock_mowing_enabled", "automatic dock-area mowing"],
+  batterySaver: ["battery_saver_mode", "battery saver mode"],
 };
 
 class AnthbotMapCard extends HTMLElement {
@@ -867,6 +868,7 @@ class AnthbotMapCard extends HTMLElement {
       this.createSwitchControl(this.t("customCutDirection"), "customDirection"),
       this.createSwitchControl(this.t("edgeReturn"), "edgeReturn"),
       this.createSwitchControl(this.t("autoDockMow"), "autoDockMow"),
+      this.createSwitchControl(this.t("batterySaverMode"), "batterySaver"),
     );
     globalSection.querySelector(".settings-section-body").appendChild(grid);
     body.appendChild(globalSection);

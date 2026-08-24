@@ -75,6 +75,7 @@ async def async_setup_entry(
         for coordinator in coordinators
         for description in SWITCHES
     ]
+    entities.extend(AnthbotBatterySaverSwitchEntity(coordinator) for coordinator in coordinators)
     for coordinator in coordinators:
         for zone_kind, zones in (
             ("manual", manual_zones(coordinator.reported_state)),
@@ -98,6 +99,57 @@ async def async_setup_entry(
                     )
                 )
     async_add_entities(entities)
+
+
+class AnthbotBatterySaverSwitchEntity(
+    CoordinatorEntity[AnthbotGenieDataUpdateCoordinator], SwitchEntity
+):
+    """Persistent local guard for the optional battery-saver automation."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "battery_saver_mode"
+    _attr_name = "Battery saver mode"
+    _attr_icon = "mdi:battery-heart-variant"
+
+    def __init__(self, coordinator: AnthbotGenieDataUpdateCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = (
+            f"{coordinator.client.serial_number}_battery_saver_mode"
+        )
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, coordinator.client.serial_number)},
+            manufacturer="Anthbot",
+            model=coordinator.device.model,
+            name=coordinator.device.alias,
+        )
+
+    @property
+    def is_on(self) -> bool:
+        """Return the persisted local mode state."""
+        return self.coordinator.battery_saver_enabled
+
+    @property
+    def available(self) -> bool:
+        """Keep the local guard available even if the cloud is temporarily offline."""
+        return True
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        """Expose the per-mower charger and thresholds used by the mode."""
+        config = self.coordinator.battery_saver_config
+        return {
+            **config,
+            "configured": bool(config.get("charger_switch")),
+            "phase": self.coordinator.battery_saver_phase,
+        }
+
+    async def async_turn_on(self, **kwargs) -> None:
+        """Arm battery-saving behavior."""
+        await self.coordinator.async_set_battery_saver_enabled(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        """Disarm battery-saving behavior."""
+        await self.coordinator.async_set_battery_saver_enabled(False)
 
 
 class AnthbotSwitchEntity(

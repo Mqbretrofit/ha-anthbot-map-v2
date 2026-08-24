@@ -1048,6 +1048,50 @@ class AnthbotCloudApiClient:
         data = payload.get("data")
         return data if isinstance(data, dict) else {"data": data or []}
 
+    async def async_get_task_events(
+        self,
+        serial_number: str,
+        *,
+        page: int = 1,
+        page_size: int = 20,
+        language: str = "English",
+    ) -> dict[str, Any]:
+        """Fetch the mower cloud event list used for task-state decisions."""
+        self._require_token()
+        url = f"https://{self._host}/api/v1/device/v2/code/list"
+        params = {
+            "sn": serial_number,
+            "pagenum": page,
+            "pagesize": page_size,
+            "language": language,
+        }
+
+        try:
+            async with self._session.get(
+                url,
+                headers=self._auth_headers,
+                params=params,
+                timeout=15,
+            ) as resp:
+                if resp.status != 200:
+                    body = await resp.text()
+                    raise AnthbotGenieApiError(
+                        f"Task events failed ({resp.status}): {body[:300]}"
+                    )
+                payload = await resp.json(content_type=None)
+        except ClientError as err:
+            raise AnthbotGenieApiError(f"Network error: {err}") from err
+        except TimeoutError as err:
+            raise AnthbotGenieApiError("Request timed out") from err
+
+        if not isinstance(payload, dict) or payload.get("code") != 0:
+            raise AnthbotGenieApiError(
+                f"Invalid task event response (code={payload.get('code') if isinstance(payload, dict) else 'n/a'})"
+            )
+
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {"data": data or []}
+
     async def async_get_device_region(self, serial_number: str) -> AnthbotDeviceRegion:
         """Fetch device cloud region metadata."""
         self._require_token()

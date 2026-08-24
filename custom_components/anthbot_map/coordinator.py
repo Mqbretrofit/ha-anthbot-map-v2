@@ -20,6 +20,18 @@ from .api import (
 )
 from .zones import ridable_areas
 from .const import DOMAIN
+from .const import (
+    ATTR_SERIAL_NUMBER,
+    CONF_CHARGE_LIMIT,
+    CONF_CHARGER_SWITCH,
+    CONF_MAINTENANCE_LEVEL,
+    CONF_RESUME_LEVEL,
+    DEFAULT_BATTERY_SAVER_CHARGE_LIMIT,
+    DEFAULT_BATTERY_SAVER_MAINTENANCE_LEVEL,
+    DEFAULT_BATTERY_SAVER_RESUME_LEVEL,
+    SERVICE_RESUME_MOW,
+)
+from .task_events import latest_task_cycle_signal
 from .definition_refresh import (
     MapArchiveSelection,
     definition_content,
@@ -54,6 +66,20 @@ _LIVE_STATUS_VALUES = {
     "nyir",
     "munka",
     "vagas",
+}
+_DOCKED_STATUS_VALUES = {"charge", "charging", "chargestart", "idle", "sleep"}
+_ROBOT_STATUS_BY_CODE = {
+    0: "idle",
+    2: "charge",
+    3: "sleep",
+    6: "globalmowing",
+    7: "zonemowing",
+    8: "pointmowing",
+    10: "backtodock",
+    15: "gototarget",
+    16: "bordermowing",
+    17: "regionmowing",
+    18: "nestmowing",
 }
 
 _HISTORY_PATH_URL_KEYS = {
@@ -146,6 +172,7 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         client: AnthbotShadowApiClient,
         device: AnthbotBoundDevice,
         update_interval: timedelta,
+        battery_saver_config: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(
             hass,
@@ -167,6 +194,9 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._history_path_source: str | None = None
         self._mowing_records: dict[str, Any] = {"data": []}
         self._mowing_records_error: str | None = None
+        self._task_events: dict[str, Any] = {"data": []}
+        self._task_events_error: str | None = None
+        self._last_task_event_download_monotonic = 0.0
         self._last_record_download_monotonic = 0.0
         self._error_history: list[dict[str, Any]] = []
         self._last_error_signature: str | None = None
@@ -194,10 +224,23 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._pending_live_service: dict[str, Any] = {}
         self._live_flush_task: asyncio.Task[None] | None = None
         self._last_mowing_task: dict[str, Any] | None = None
+        self._battery_saver_config = dict(battery_saver_config or {})
+        self._battery_saver_enabled = False
+        self._battery_saver_phase = "disabled"
+        self._battery_saver_listener_remove = None
+        self._battery_saver_task: asyncio.Task[None] | None = None
+        self._battery_saver_volume_restore_task: asyncio.Task[None] | None = None
+        self._battery_saver_saved_volume: int | None = None
+        self._battery_saver_action_lock = asyncio.Lock()
         self._task_store: Store[dict[str, Any]] = Store(
             hass,
             1,
             f"{DOMAIN}.last_mowing_task_{client.serial_number}",
+        )
+        self._battery_saver_store: Store[dict[str, Any]] = Store(
+            hass,
+            1,
+            f"{DOMAIN}.battery_saver_{client.serial_number}",
         )
 
     @property
@@ -293,6 +336,403 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def last_mowing_task(self) -> dict[str, Any] | None:
         """Return a copy of the most recently started mowing task."""
         return dict(self._last_mowing_task) if self._last_mowing_task else None
+
+    @property
+    def battery_saver_enabled(self) -> bool:
+        """Return whether automatic battery-saving behavior is armed."""
+        return self._battery_saver_enabled
+
+    @property
+    def battery_saver_phase(self) -> str:
+        """Return the current state-machine phase for diagnostics."""
+        return self._battery_saver_phase
+
+    @property
+    def battery_saver_config(self) -> dict[str, Any]:
+        """Return normalized per-mower battery saver configuration."""
+        try:
+            charge_limit = int(
+                self._battery_saver_config.get(
+                    CONF_CHARGE_LIMIT, DEFAULT_BATTERY_SAVER_CHARGE_LIMIT
+                )
+            )
+        except (TypeError, ValueError):
+            charge_limit = DEFAULT_BATTERY_SAVER_CHARGE_LIMIT
+        try:
+            maintenance_level = int(
+                self._battery_saver_config.get(
+                    CONF_MAINTENANCE_LEVEL,
+                    DEFAULT_BATTERY_SAVER_MAINTENANCE_LEVEL,
+                )
+            )
+        except (TypeError, ValueError):
+            maintenance_level = DEFAULT_BATTERY_SAVER_MAINTENANCE_LEVEL
+        try:
+            resume_level = int(
+                self._battery_saver_config.get(
+                    CONF_RESUME_LEVEL, DEFAULT_BATTERY_SAVER_RESUME_LEVEL
+                )
+            )
+        except (TypeError, ValueError):
+            resume_level = DEFAULT_BATTERY_SAVER_RESUME_LEVEL
+        return {
+            CONF_CHARGER_SWITCH: self._battery_saver_config.get(CONF_CHARGER_SWITCH),
+            CONF_CHARGE_LIMIT: max(20, min(100, charge_limit)),
+            CONF_MAINTENANCE_LEVEL: max(10, min(99, maintenance_level)),
+            CONF_RESUME_LEVEL: max(10, min(99, resume_level)),
+        }
+
+    async def async_load_battery_saver_state(self) -> None:
+        """Restore the local battery-saver switch after a restart."""
+        stored = await self._battery_saver_store.async_load()
+        self._battery_saver_enabled = bool(
+            isinstance(stored, dict) and stored.get("enabled") is True
+        )
+        if isinstance(stored, dict):
+            saved_volume = stored.get("saved_volume")
+            if isinstance(saved_volume, (int, float)) and 0 <= saved_volume <= 100:
+                self._battery_saver_saved_volume = int(saved_volume)
+        if self._battery_saver_enabled and isinstance(stored, dict):
+            phase = stored.get("phase")
+            if phase in {
+                "initial_charge",
+                "mowing",
+                "recovery_charge",
+                "manual_charge",
+                "waiting_for_task",
+                "completed",
+            }:
+                self._battery_saver_phase = phase
+                return
+        self._battery_saver_phase = "disabled"
+
+    async def async_set_battery_saver_enabled(self, enabled: bool) -> None:
+        """Persist the local battery-saver switch without changing mower settings."""
+        self._battery_saver_enabled = enabled
+        if enabled:
+            status = self._robot_status(self.reported_state)
+            self._battery_saver_phase = (
+                "mowing" if status in _LIVE_STATUS_VALUES else "initial_charge"
+            )
+        else:
+            self._battery_saver_phase = "disabled"
+            await self._async_restore_voice_volume()
+        await self._async_save_battery_saver_state()
+        if self.reported_state:
+            state = dict(self.reported_state)
+            state["_battery_saver_enabled"] = enabled
+            state["_battery_saver_phase"] = self._battery_saver_phase
+            self.async_set_updated_data(state)
+        self.async_schedule_battery_saver_evaluation()
+
+    def start_battery_saver_monitor(self) -> None:
+        """Start evaluating battery-saving behavior after coordinator updates."""
+        if self._battery_saver_listener_remove is not None:
+            return
+        self._battery_saver_listener_remove = self.async_add_listener(
+            self.async_schedule_battery_saver_evaluation
+        )
+        self.async_schedule_battery_saver_evaluation()
+
+    async def async_stop_battery_saver_monitor(self) -> None:
+        """Stop the local battery-saving state machine."""
+        if self._battery_saver_listener_remove is not None:
+            self._battery_saver_listener_remove()
+            self._battery_saver_listener_remove = None
+        if self._battery_saver_task is not None:
+            self._battery_saver_task.cancel()
+            try:
+                await self._battery_saver_task
+            except asyncio.CancelledError:
+                pass
+            self._battery_saver_task = None
+        if self._battery_saver_volume_restore_task is not None:
+            self._battery_saver_volume_restore_task.cancel()
+            try:
+                await self._battery_saver_volume_restore_task
+            except asyncio.CancelledError:
+                pass
+            self._battery_saver_volume_restore_task = None
+        await self._async_restore_voice_volume()
+
+    def async_schedule_battery_saver_evaluation(self) -> None:
+        """Schedule one non-reentrant battery-saving evaluation."""
+        if self._battery_saver_task is not None and not self._battery_saver_task.done():
+            return
+        self._battery_saver_task = self.hass.async_create_background_task(
+            self._async_evaluate_battery_saver(),
+            f"anthbot_battery_saver_{self.client.serial_number}",
+        )
+
+    @staticmethod
+    def _battery_percentage(data: dict[str, Any]) -> int | None:
+        value = data.get("elec")
+        seen: set[int] = set()
+        while isinstance(value, dict):
+            identity = id(value)
+            if identity in seen:
+                return None
+            seen.add(identity)
+            value = value.get("value")
+        try:
+            percentage = int(float(value))
+        except (TypeError, ValueError):
+            return None
+        return percentage if 0 <= percentage <= 100 else None
+
+    @staticmethod
+    def _robot_status(data: dict[str, Any]) -> str:
+        value = data.get("robot_sta")
+        if isinstance(value, dict):
+            value = value.get("value")
+        if isinstance(value, int):
+            return _ROBOT_STATUS_BY_CODE.get(value, str(value))
+        return _normalize_status(str(value)) if value is not None else ""
+
+    async def _async_save_battery_saver_state(self) -> None:
+        await self._battery_saver_store.async_save(
+            {
+                "enabled": self._battery_saver_enabled,
+                "phase": self._battery_saver_phase,
+                "saved_volume": self._battery_saver_saved_volume,
+            }
+        )
+
+    def _current_voice_volume(self) -> int | None:
+        """Return the mower voice volume from the live shadow."""
+        value = self.reported_state.get("volume")
+        try:
+            volume = int(float(value))
+        except (TypeError, ValueError):
+            return None
+        return volume if 0 <= volume <= 100 else None
+
+    async def _async_restore_voice_volume(self) -> None:
+        """Restore the volume saved before a smart-plug charging start."""
+        volume = self._battery_saver_saved_volume
+        if volume is None:
+            return
+        try:
+            await self.client.async_publish_service_command(
+                cmd="volume_ctl", data={"volume": volume}
+            )
+        except Exception as err:  # noqa: BLE001 - retry on the next evaluation.
+            _LOGGER.warning(
+                "Battery saver could not restore voice volume for %s: %s",
+                self.client.serial_number,
+                err,
+            )
+            return
+        self._battery_saver_saved_volume = None
+        await self._async_save_battery_saver_state()
+
+    async def _async_delayed_voice_volume_restore(self) -> None:
+        """Keep charging-start speech muted, then restore the user's volume."""
+        try:
+            await asyncio.sleep(12)
+            await self._async_restore_voice_volume()
+        finally:
+            self._battery_saver_volume_restore_task = None
+
+    async def _async_mute_charging_announcement(self) -> None:
+        """Temporarily mute the mower before energising a docked charger."""
+        if self._battery_saver_saved_volume is not None:
+            return
+        volume = self._current_voice_volume()
+        if volume is None or volume <= 0:
+            return
+        try:
+            await self.client.async_publish_service_command(
+                cmd="volume_ctl", data={"volume": 0}
+            )
+        except Exception as err:  # noqa: BLE001 - charging must still be enabled.
+            _LOGGER.warning(
+                "Battery saver could not mute charging announcement for %s: %s",
+                self.client.serial_number,
+                err,
+            )
+            return
+        self._battery_saver_saved_volume = volume
+        await self._async_save_battery_saver_state()
+        await asyncio.sleep(1)
+
+    async def _async_set_charger(self, enabled: bool) -> None:
+        if not self._battery_saver_enabled:
+            return
+        entity_id = self.battery_saver_config.get(CONF_CHARGER_SWITCH)
+        if not isinstance(entity_id, str) or not entity_id:
+            return
+        state = self.hass.states.get(entity_id)
+        desired = "on" if enabled else "off"
+        if state is not None and state.state == desired:
+            return
+        if enabled:
+            await self._async_mute_charging_announcement()
+        try:
+            await self.hass.services.async_call(
+                "switch",
+                "turn_on" if enabled else "turn_off",
+                {"entity_id": entity_id},
+                blocking=True,
+            )
+        finally:
+            if enabled and self._battery_saver_saved_volume is not None:
+                if self._battery_saver_volume_restore_task is not None:
+                    self._battery_saver_volume_restore_task.cancel()
+                self._battery_saver_volume_restore_task = (
+                    self.hass.async_create_background_task(
+                        self._async_delayed_voice_volume_restore(),
+                        f"anthbot_restore_volume_{self.client.serial_number}",
+                    )
+                )
+
+    async def _async_maintain_idle_charge(self, battery: int) -> None:
+        """Maintain an idle mower between lower and upper charge thresholds."""
+        config = self.battery_saver_config
+        entity_id = config.get(CONF_CHARGER_SWITCH)
+        state = self.hass.states.get(entity_id) if isinstance(entity_id, str) else None
+        charger_on = state is not None and state.state == "on"
+        if battery >= config[CONF_CHARGE_LIMIT]:
+            await self._async_set_charger(False)
+        elif charger_on:
+            # Once a maintenance charge starts, let it reach the upper limit.
+            return
+        elif battery <= config[CONF_MAINTENANCE_LEVEL]:
+            await self._async_set_charger(True)
+
+    async def _async_refresh_task_events(self) -> None:
+        """Refresh cloud events used by the battery-saver state machine."""
+        now = time.monotonic()
+        if now - self._last_task_event_download_monotonic < 5:
+            return
+        self._last_task_event_download_monotonic = now
+        try:
+            self._task_events = await self.account_client.async_get_task_events(
+                self.client.serial_number,
+                page_size=20,
+            )
+            self._task_events_error = None
+            if self.reported_state:
+                state = dict(self.reported_state)
+                state["_task_events"] = self._task_events
+                state["_task_events_error"] = None
+                self.async_set_updated_data(state)
+        except AnthbotGenieApiError as err:
+            self._task_events_error = str(err)
+            _LOGGER.warning(
+                "Battery saver could not refresh task events for %s: %s",
+                self.client.serial_number,
+                err,
+            )
+
+    async def _async_evaluate_battery_saver(self) -> None:
+        """Apply charge limits and resume only after a cloud code 1021 return."""
+        if not self._battery_saver_enabled:
+            return
+        if (
+            self._battery_saver_saved_volume is not None
+            and self._battery_saver_volume_restore_task is None
+        ):
+            # Recover safely if Home Assistant restarted during the short mute.
+            await self._async_restore_voice_volume()
+        config = self.battery_saver_config
+        if not config.get(CONF_CHARGER_SWITCH):
+            return
+        async with self._battery_saver_action_lock:
+            data = self.reported_state
+            status = self._robot_status(data)
+            battery = self._battery_percentage(data)
+            if battery is None:
+                return
+            is_mowing = status in _LIVE_STATUS_VALUES
+            is_docked = status in _DOCKED_STATUS_VALUES
+
+            if is_mowing:
+                if self._battery_saver_phase != "mowing":
+                    self._battery_saver_phase = "mowing"
+                    await self._async_save_battery_saver_state()
+                await self._async_set_charger(False)
+                return
+
+            if self._battery_saver_phase == "initial_charge":
+                if is_docked:
+                    await self._async_maintain_idle_charge(battery)
+                return
+
+            if self._battery_saver_phase == "mowing" and (
+                status == "backtodock" or is_docked
+            ):
+                # Code 1021 is emitted specifically for an automatic
+                # low-battery return. A manual return has 1019/1022 but no
+                # 1021, while a finished task has 1014 before docking.
+                await self._async_set_charger(True)
+                await self._async_refresh_task_events()
+                signal = latest_task_cycle_signal(self._task_events)
+                if signal == "low_battery_return":
+                    self._battery_saver_phase = "recovery_charge"
+                    await self._async_save_battery_saver_state()
+                elif signal == "completed":
+                    self._battery_saver_phase = "completed"
+                    await self._async_save_battery_saver_state()
+                elif status == "backtodock":
+                    self.hass.loop.call_later(
+                        5, self.async_schedule_battery_saver_evaluation
+                    )
+                    return
+                else:
+                    self._battery_saver_phase = "manual_charge"
+                    await self._async_save_battery_saver_state()
+
+            if self._battery_saver_phase == "manual_charge":
+                # Re-check once docked in case code 1021 reached the event API
+                # slightly after the live status transition.
+                await self._async_refresh_task_events()
+                if latest_task_cycle_signal(self._task_events) == "low_battery_return":
+                    self._battery_saver_phase = "recovery_charge"
+                    await self._async_save_battery_saver_state()
+                elif is_docked:
+                    await self._async_maintain_idle_charge(battery)
+                    return
+
+            if self._battery_saver_phase == "completed":
+                if self.last_mowing_task is not None:
+                    await self.async_clear_last_mowing_task()
+                self._battery_saver_phase = "initial_charge"
+                await self._async_save_battery_saver_state()
+                if is_docked:
+                    await self._async_maintain_idle_charge(battery)
+                return
+
+            if self._battery_saver_phase != "recovery_charge" or not is_docked:
+                return
+            if battery < config[CONF_RESUME_LEVEL]:
+                await self._async_set_charger(True)
+                return
+            if self.last_mowing_task is None:
+                self._battery_saver_phase = "initial_charge"
+                await self._async_save_battery_saver_state()
+                await self._async_maintain_idle_charge(battery)
+                return
+            await self._async_set_charger(False)
+            if not self._battery_saver_enabled:
+                return
+            self._battery_saver_phase = "mowing"
+            await self._async_save_battery_saver_state()
+            try:
+                await self.hass.services.async_call(
+                    DOMAIN,
+                    SERVICE_RESUME_MOW,
+                    {ATTR_SERIAL_NUMBER: self.client.serial_number},
+                    blocking=True,
+                )
+            except Exception as err:  # noqa: BLE001 - preserve retry state after command failure.
+                self._battery_saver_phase = "recovery_charge"
+                await self._async_save_battery_saver_state()
+                _LOGGER.error(
+                    "Battery saver could not resume the task for %s: %s",
+                    self.client.serial_number,
+                    err,
+                )
 
     async def async_start_live_shadow(self) -> None:
         """Start the optional AWS IoT push listener."""
@@ -401,7 +841,6 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # Publish live telemetry immediately. A rare map archive
                 # download must not delay the mower's position/status update.
                 self.async_set_updated_data(state)
-
                 live_ridable_area_time = property_update.get("ridable_area_time")
                 if (
                     isinstance(live_ridable_area_time, str)
@@ -748,6 +1187,21 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self._last_path_download_monotonic = time.monotonic()
 
             merged_state = dict(property_state)
+            try:
+                self._task_events = await self.account_client.async_get_task_events(
+                    self.client.serial_number,
+                    page_size=20,
+                )
+                self._task_events_error = None
+                self._last_task_event_download_monotonic = now
+            except AnthbotGenieApiError as err:
+                self._task_events_error = str(err)
+                self._last_task_event_download_monotonic = now
+                _LOGGER.warning(
+                    "Anthbot task events unavailable for %s: %s",
+                    self.client.serial_number,
+                    err,
+                )
             if now - self._last_record_download_monotonic >= 300:
                 try:
                     self._mowing_records = await self.account_client.async_get_mowing_records(
@@ -780,6 +1234,8 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             merged_state["_service_reported"] = service_state
             merged_state["_mowing_records"] = self._mowing_records
             merged_state["_mowing_records_error"] = self._mowing_records_error
+            merged_state["_task_events"] = self._task_events
+            merged_state["_task_events_error"] = self._task_events_error
             merged_state["_error_history"] = self._error_history
             merged_state["_area_definition"] = self._area_definition
             merged_state["_ridable_area_definition"] = self._ridable_area_definition
@@ -799,6 +1255,8 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             merged_state["_robot_online"] = is_robot_online(property_state)
             merged_state["_live_shadow_connected"] = self._live_shadow_connected
             merged_state["_live_shadow_error"] = self._live_shadow_error
+            merged_state["_battery_saver_enabled"] = self._battery_saver_enabled
+            merged_state["_battery_saver_phase"] = self._battery_saver_phase
             self._consecutive_cloud_failures = 0
             return merged_state
         except AnthbotGenieApiError as err:

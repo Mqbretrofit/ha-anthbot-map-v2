@@ -40,6 +40,7 @@ from .const import (
     CONF_BEARER_TOKEN,
     CONF_PASSWORD,
     CONF_SCAN_INTERVAL,
+    CONF_BATTERY_SAVER_CONFIGS,
     CONF_USERNAME,
     DEFAULT_AREA_CODE,
     DEFAULT_SCAN_INTERVAL,
@@ -87,13 +88,17 @@ PLATFORMS = [
 _LOGGER = logging.getLogger(__name__)
 VALID_MOW_HEIGHTS = list(range(30, 75, 5))
 FRONTEND_RESOURCE_PATH = "/anthbot-map-v2/anthbot-map-card.js"
-FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.3.0-calibration5"
+FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.0"
 LEGACY_ENTITY_SUFFIXES: tuple[str, ...] = (
     "enable_custom_mowing_direction",
     "custom_mowing_direction_enable",
     "custom_mowing_direction_enabled_button",
     "mow_count",
     "last_service_command_state",
+    "mowing_progress",
+    "mowing_progress_source",
+    "mowing_finish_cause",
+    "mowing_incomplete",
 )
 
 
@@ -854,6 +859,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not devices:
         raise ConfigEntryNotReady("No Anthbot devices found for this account")
 
+    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
+    battery_saver_configs = entry.options.get(CONF_BATTERY_SAVER_CONFIGS, {})
+    if not isinstance(battery_saver_configs, dict):
+        battery_saver_configs = {}
     coordinators: list[AnthbotGenieDataUpdateCoordinator] = []
     for device in devices:
         if device.is_owner is False:
@@ -949,8 +958,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             client=shadow_client,
             device=device,
             update_interval=timedelta(seconds=scan_interval),
+            battery_saver_config=battery_saver_configs.get(device.serial_number),
         )
         await coordinator.async_load_last_mowing_task()
+        await coordinator.async_load_battery_saver_state()
         # The mobile app establishes the named-shadow MQTT session first.
         # Ancillary REST data can refresh independently afterwards.
         await coordinator.async_start_live_shadow()
@@ -967,13 +978,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinators
     await _async_register_services(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    for coordinator in coordinators:
+        coordinator.start_battery_saver_monitor()
     return True
+
+
+async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload the entry after per-mower options change."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload Anthbot Genie config entry."""
     coordinators = hass.data.get(DOMAIN, {}).get(entry.entry_id, [])
     for coordinator in coordinators:
+        await coordinator.async_stop_battery_saver_monitor()
         await coordinator.async_stop_live_shadow()
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:

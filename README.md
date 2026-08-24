@@ -21,7 +21,21 @@ aerial or drone photograph of the garden.
 
 ## Current version
 
-Stable version: **2.3.0**
+Stable version: **2.4.0**
+
+### Highlights in 2.4.0
+
+- Added an optional battery-saving mode for chargers controlled by a Home
+  Assistant switch entity.
+- Added independently configurable upper charge, idle maintenance, and
+  interrupted-task resume levels.
+- Low-battery returns are detected from ANTHBOT cloud task event `1021`; live
+  mowing progress is not exposed by the cloud API and is not estimated.
+- Home Assistant-started full-map, zone, outer-edge, and dock-edge tasks can be
+  remembered and resumed after recovery charging.
+- Automatic charger switch-on temporarily mutes the mower and restores the
+  previous volume afterwards.
+- Added cloud task event sensors and task-event diagnostics.
 
 ### Highlights in 2.3.0
 

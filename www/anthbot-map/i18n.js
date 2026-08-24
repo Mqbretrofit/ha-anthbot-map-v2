@@ -646,6 +646,35 @@ for (const [language, values] of Object.entries(zoneSelectionTranslations)) {
   Object.assign(settingsTranslations[language] || (settingsTranslations[language] = {}), values);
 }
 
+const batterySaverTranslations = {
+  en:{batterySaverMode:"Battery saver mode"},
+  hu:{batterySaverMode:"Akkumulátorkímélő mód"},
+  de:{batterySaverMode:"Akkuschonmodus"},
+  fr:{batterySaverMode:"Mode économie de batterie"},
+  es:{batterySaverMode:"Modo de ahorro de batería"},
+  it:{batterySaverMode:"Modalità risparmio batteria"},
+  pt:{batterySaverMode:"Modo de poupança de bateria"},
+  nl:{batterySaverMode:"Batterijbesparingsmodus"},
+  pl:{batterySaverMode:"Tryb oszczędzania baterii"},
+  cs:{batterySaverMode:"Režim šetření baterie"},
+  sk:{batterySaverMode:"Režim šetrenia batérie"},
+  ro:{batterySaverMode:"Mod economisire baterie"},
+  da:{batterySaverMode:"Batterisparetilstand"},
+  sv:{batterySaverMode:"Batterisparläge"},
+  no:{batterySaverMode:"Batterisparemodus"},
+  fi:{batterySaverMode:"Akunsäästötila"},
+  "zh-CN":{batterySaverMode:"省电模式"},
+  "zh-TW":{batterySaverMode:"省電模式"},
+  tr:{batterySaverMode:"Pil tasarrufu modu"},
+  th:{batterySaverMode:"โหมดประหยัดแบตเตอรี่"},
+  vi:{batterySaverMode:"Chế độ tiết kiệm pin"},
+  ko:{batterySaverMode:"배터리 절약 모드"},
+  km:{batterySaverMode:"របៀបសន្សំថ្ម"}
+};
+for (const [language, values] of Object.entries(batterySaverTranslations)) {
+  Object.assign(settingsTranslations[language] || (settingsTranslations[language] = {}), values);
+}
+
 export function normalizeLanguage(value) {
   const raw = String(value || "en").replace("_", "-");
   const lower = raw.toLowerCase();

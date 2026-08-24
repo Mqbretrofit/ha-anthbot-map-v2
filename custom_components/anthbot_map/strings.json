@@ -23,6 +23,33 @@
       "unknown": "Unexpected error."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Battery saver",
+        "description": "Choose the mower to configure.",
+        "data": {
+          "mower": "Mower"
+        }
+      },
+      "battery_saver": {
+        "title": "Battery saver",
+        "description": "Configure the charger and limits for {serial_number}. The mode remains inactive until its switch is turned on.",
+        "data": {
+          "charger_switch": "Smart-plug switch",
+          "charge_limit": "Upper charge limit (%)",
+          "maintenance_level": "Idle recharge start level (%)",
+          "resume_level": "Resume charge level (%)"
+        }
+      }
+    },
+    "error": {
+      "invalid_battery_thresholds": "The resume and idle recharge levels must be lower than the upper charge limit."
+    },
+    "abort": {
+      "no_devices": "No loaded Anthbot mower is available."
+    }
+  },
   "entity": {
     "sensor": {
       "mower_status": {
@@ -131,6 +158,9 @@
       },
       "automatic_dock_mowing_enabled": {
         "name": "Automatic dock-area mowing"
+      },
+      "battery_saver_mode": {
+        "name": "Battery saver mode"
       }
     }
   }
