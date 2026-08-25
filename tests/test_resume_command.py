@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BUTTON_SOURCE = ROOT / "custom_components" / "anthbot_map" / "button.py"
 CARD_SOURCE = ROOT / "custom_components" / "anthbot_map" / "frontend" / "anthbot-map-card.js"
 I18N_SOURCE = ROOT / "custom_components" / "anthbot_map" / "frontend" / "i18n.js"
+STYLES_SOURCE = ROOT / "custom_components" / "anthbot_map" / "frontend" / "styles.css"
 COORDINATOR_SOURCE = ROOT / "custom_components" / "anthbot_map" / "coordinator.py"
 INIT_SOURCE = ROOT / "custom_components" / "anthbot_map" / "__init__.py"
 
@@ -120,6 +121,19 @@ class ResumeCommandTests(unittest.TestCase):
         self.assertIn('this.config.mobile_map_rotation ?? this.config.mobileMapRotation ?? 90', source)
         self.assertIn('this.config.mobile_map_fit || this.config.mobileMapFit || "contain"', source)
         self.assertIn('this.config.mobile_robot_size ?? this.config.mobileRobotSize ?? 24', source)
+
+    def test_panel_tabs_wrap_and_selected_tiles_have_readable_contrast(self) -> None:
+        card = CARD_SOURCE.read_text(encoding="utf-8")
+        styles = STYLES_SOURCE.read_text(encoding="utf-8")
+        self.assertIn(
+            "grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));",
+            styles,
+        )
+        self.assertIn("white-space: normal;", styles)
+        self.assertIn("overflow-wrap: anywhere;", styles)
+        self.assertIn(".panel-tabs button.active", styles)
+        self.assertIn("color: #07140c;", styles)
+        self.assertIn("color:#07140c !important", card)
 
     def test_live_pose_has_priority_over_stale_mapping_pose(self) -> None:
         source = CARD_SOURCE.read_text(encoding="utf-8")

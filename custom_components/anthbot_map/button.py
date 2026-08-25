@@ -152,7 +152,9 @@ class AnthbotButtonEntity(
             if await async_start_outer_edge_mowing(self.coordinator):
                 self.coordinator.remember_mowing_task("edge")
         elif key == "start_dock_edge_mow":
-            if not await async_prepare_cloud_connection(self.coordinator):
+            if not await async_prepare_cloud_connection(
+                self.coordinator, mowing_start=True
+            ):
                 _LOGGER.warning(
                     "Anthbot mower %s did not confirm the wake request; "
                     "attempting dock mowing on the live MQTT transport",
@@ -186,12 +188,16 @@ class AnthbotButtonEntity(
                         "The mower did not confirm resuming edge mowing"
                     )
             elif task_type == "dock_edge":
-                await async_prepare_cloud_connection(self.coordinator)
+                await async_prepare_cloud_connection(
+                    self.coordinator, mowing_start=True
+                )
                 await self.coordinator.client.async_publish_service_command(
                     cmd="nest_mow_start", data=1
                 )
             else:
-                if not await async_prepare_cloud_connection(self.coordinator):
+                if not await async_prepare_cloud_connection(
+                    self.coordinator, mowing_start=True
+                ):
                     raise AnthbotGenieApiError(
                         "The mower did not confirm its cloud connection"
                     )
@@ -313,7 +319,9 @@ class AnthbotZoneButtonEntity(
 
     async def async_press(self) -> None:
         """Start mowing the selected zone."""
-        if not await async_prepare_cloud_connection(self.coordinator):
+        if not await async_prepare_cloud_connection(
+            self.coordinator, mowing_start=True
+        ):
             raise AnthbotGenieApiError(
                 "The mower did not confirm its cloud connection; zone mowing was not started"
             )

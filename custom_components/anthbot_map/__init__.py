@@ -373,7 +373,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
 
     async def _handle_start_dock_edge_mow(service_call) -> None:
         for coordinator in _resolve_target_coordinators(hass, service_call.data):
-            if not await async_prepare_cloud_connection(coordinator):
+            if not await async_prepare_cloud_connection(coordinator, mowing_start=True):
                 _LOGGER.warning(
                     "Anthbot mower %s did not confirm the wake request; "
                     "attempting dock mowing on the live MQTT transport",
@@ -432,13 +432,15 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             elif task_type == "edge":
                 started = await async_start_outer_edge_mowing(coordinator)
             elif task_type == "dock_edge":
-                await async_prepare_cloud_connection(coordinator)
+                await async_prepare_cloud_connection(coordinator, mowing_start=True)
                 await coordinator.client.async_publish_service_command(
                     cmd="nest_mow_start", data=1
                 )
                 started = True
             else:
-                if not await async_prepare_cloud_connection(coordinator):
+                if not await async_prepare_cloud_connection(
+                    coordinator, mowing_start=True
+                ):
                     raise AnthbotGenieApiError(
                         "The mower did not confirm its cloud connection"
                     )
@@ -602,7 +604,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
                 raise AnthbotGenieApiError(
                     f"No matching zones found for mower {coordinator.client.serial_number}"
                 )
-            if not await async_prepare_cloud_connection(coordinator):
+            if not await async_prepare_cloud_connection(coordinator, mowing_start=True):
                 raise AnthbotGenieApiError(
                     "The mower did not confirm its cloud connection; zone mowing was not started"
                 )
@@ -624,7 +626,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
                 raise AnthbotGenieApiError(
                     f"No matching auto-zones found for mower {coordinator.client.serial_number}"
                 )
-            if not await async_prepare_cloud_connection(coordinator):
+            if not await async_prepare_cloud_connection(coordinator, mowing_start=True):
                 raise AnthbotGenieApiError(
                     "The mower did not confirm its cloud connection; auto-zone mowing was not started"
                 )

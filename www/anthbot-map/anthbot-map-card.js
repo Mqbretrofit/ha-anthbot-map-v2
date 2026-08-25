@@ -203,7 +203,7 @@ class AnthbotMapCard extends HTMLElement {
       .join(" ");
     root.innerHTML = `
       <ha-card class="${cardClasses}">
-        <link rel="stylesheet" href="${this.resolveAsset("styles.css?v=141")}">
+        <link rel="stylesheet" href="${this.resolveAsset("styles.css?v=142")}">
         <style>
           .anthbot-menu-toggle { position:absolute; right:14px; bottom:14px; z-index:40; min-height:46px; padding:9px 15px; border:1px solid rgba(255,255,255,.38); border-radius:999px; background:rgba(10,18,26,.66); color:#fff; backdrop-filter:blur(12px); box-shadow:0 8px 28px rgba(0,0,0,.32); font:inherit; font-weight:800; cursor:pointer; }
           .anthbot-glass-panel { display:none; position:absolute; z-index:39; right:12px; bottom:70px; width:min(1100px,calc(100% - 24px)); max-height:calc(100% - 84px); overflow:auto; border:1px solid rgba(255,255,255,.34); border-radius:18px; background:rgba(9,18,27,.16); color:#fff; backdrop-filter:blur(9px) saturate(115%); box-shadow:0 16px 44px rgba(0,0,0,.24); overscroll-behavior:contain; }
@@ -220,8 +220,8 @@ class AnthbotMapCard extends HTMLElement {
           .cloud-status[data-state="offline"] { color:#ff6b6b; }
           .mowing-target-tile { border:1px solid rgba(255,255,255,.15) !important; transition:none !important; }
           .mowing-target-tile:hover { background:var(--anthbot-secondary-background) !important; }
-          .mowing-target-tile.active,.mowing-target-tile.active:hover { background:linear-gradient(145deg,#31bf62,#249c4d) !important; border-color:#72efa0 !important; color:#fff !important; box-shadow:0 0 0 2px rgba(114,239,160,.30) inset,0 8px 24px rgba(0,0,0,.22); }
-          .mowing-target-tile.active strong,.mowing-target-tile.active span { color:#fff !important; }
+          .mowing-target-tile.active,.mowing-target-tile.active:hover { background:linear-gradient(145deg,#5ee083,#43c96c) !important; border-color:#8cf2aa !important; color:#07140c !important; box-shadow:0 0 0 2px rgba(114,239,160,.30) inset,0 8px 24px rgba(0,0,0,.22); }
+          .mowing-target-tile.active strong,.mowing-target-tile.active span { color:#07140c !important; }
           .mowing-zone-group { margin:10px 0; }
           .mowing-zone-group > summary span { opacity:.75; font-size:13px; }
           .mowing-order { display:flex; flex-direction:column; gap:7px; margin-top:10px; }
