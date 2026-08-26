@@ -13,5 +13,5 @@
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/Mqbretrofit/ha-anthbot-map-v2/issues",
   "requirements": [],
-  "version": "2.4.0"
+  "version": "2.4.1-test"
 }
