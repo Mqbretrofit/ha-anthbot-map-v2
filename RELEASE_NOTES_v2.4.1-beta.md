@@ -2,6 +2,8 @@
 
 ## Beta release
 
+Release channel: **beta / pre-release**.
+
 This beta keeps the complete feature set from the v2.4.1 test line while preserving the current main branch changes.
 
 ### Battery saver
@@ -28,6 +30,8 @@ The beta package is built from the preserved main branch plus the complete valid
 ---
 
 # Anthbot Map v2.4.1-beta – magyar
+
+Kiadási csatorna: **béta / előzetes kiadás**.
 
 Ez a béta megtartja a v2.4.1 tesztág teljes funkciókészletét, miközben a jelenlegi `main` változásai sem vesznek el.
 
