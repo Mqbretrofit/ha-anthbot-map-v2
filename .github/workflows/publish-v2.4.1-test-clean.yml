@@ -47,11 +47,28 @@ jobs:
           for line in src[start:end]:
               lines.append(line[10:] if line.startswith('          ') else line)
           script = '\n'.join(lines) + '\n'
+
           strict = 'test -z "$(find custom_components -type f \\( -name \'*.pyc\' -o -name \'*.gz\' \\) -print -quit)"'
-          cleanup = "find custom_components -type d -name '__pycache__' -prune -exec rm -rf {} +\n          find custom_components -type f -name '*.pyc' -delete\n          " + strict
+          cleanup = "find custom_components -type d -name '__pycache__' -prune -exec rm -rf {} +\nfind custom_components -type f -name '*.pyc' -delete\n" + strict
           if strict not in script:
               raise SystemExit('bytecode check anchor not found')
           script = script.replace(strict, cleanup, 1)
+
+          # The Actions token may publish code but may not modify workflow files.
+          # Keep the one-shot workflow in the branch; it is excluded from the ZIP.
+          script = script.replace(
+              'git rm .github/workflows/publish-v2.4.1-test.yml\n',
+              'git checkout -- .github/workflows/publish-v2.4.1-test.yml\n',
+              1,
+          )
+
+          # patch(1) can leave a .orig backup when applying with offsets; never ship it.
+          script = script.replace(
+              'git add -A\n',
+              "rm -f custom_components/anthbot_map/coordinator.py.orig\ngit add -A\n",
+              1,
+          )
+
           Path('/tmp/publish-v241.sh').write_text(script, encoding='utf-8')
           PY
           bash -euxo pipefail /tmp/publish-v241.sh
