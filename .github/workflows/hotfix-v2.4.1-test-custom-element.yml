@@ -100,3 +100,5 @@ jobs:
             -F force=true
           gh release upload v2.4.1-test anthbot-map-v2.4.1-test.zip --clobber
           gh release edit v2.4.1-test --prerelease
+
+# trigger: duplicate custom-element hotfix
