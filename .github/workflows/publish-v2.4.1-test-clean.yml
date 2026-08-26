@@ -1,0 +1,57 @@
+name: Publish v2.4.1-test clean
+
+on:
+  push:
+    branches:
+      - release/v2.4.1-test
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout test branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run proven publisher with bytecode cleanup
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          src = Path('.github/workflows/publish-v2.4.1-test.yml').read_text(encoding='utf-8').splitlines()
+          start = None
+          end = None
+          for i, line in enumerate(src):
+              if line.strip() == 'run: |' and i > 0 and 'Build exact v2.4.1-test source' in src[i - 2]:
+                  start = i + 1
+                  break
+          if start is None:
+              raise SystemExit('publisher run block not found')
+          for i in range(start, len(src)):
+              if src[i].startswith('        env:'):
+                  end = i
+                  break
+          if end is None:
+              raise SystemExit('publisher run block end not found')
+
+          lines = []
+          for line in src[start:end]:
+              lines.append(line[10:] if line.startswith('          ') else line)
+          script = '\n'.join(lines) + '\n'
+          strict = 'test -z "$(find custom_components -type f \\( -name \'*.pyc\' -o -name \'*.gz\' \\) -print -quit)"'
+          cleanup = "find custom_components -type d -name '__pycache__' -prune -exec rm -rf {} +\n          find custom_components -type f -name '*.pyc' -delete\n          " + strict
+          if strict not in script:
+              raise SystemExit('bytecode check anchor not found')
+          script = script.replace(strict, cleanup, 1)
+          Path('/tmp/publish-v241.sh').write_text(script, encoding='utf-8')
+          PY
+          bash -euxo pipefail /tmp/publish-v241.sh
