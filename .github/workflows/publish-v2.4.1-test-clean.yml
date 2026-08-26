@@ -74,11 +74,19 @@ jobs:
               1,
           )
 
-          script = script.replace(
-              'git commit -m "Prepare Anthbot Map v2.4.1-test"\n',
-              'git diff --cached --quiet || git commit -m "Prepare Anthbot Map v2.4.1-test"\n',
-              1,
-          )
+          commit_push = '''git commit -m "Prepare Anthbot Map v2.4.1-test"
+git push origin HEAD:release/v2.4.1-test
+'''
+          safe_commit_push = '''if git diff --cached --quiet; then
+  echo "Release source already committed; skipping branch push."
+else
+  git commit -m "Prepare Anthbot Map v2.4.1-test"
+  git push origin HEAD:release/v2.4.1-test
+fi
+'''
+          if commit_push not in script:
+              raise SystemExit('commit/push block not found')
+          script = script.replace(commit_push, safe_commit_push, 1)
 
           script = script.replace(
               '--target HEAD \\\n',
