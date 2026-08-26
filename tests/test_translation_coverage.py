@@ -20,7 +20,7 @@ class TranslationCoverageTests(unittest.TestCase):
         ).decode("ascii")
         source = (FRONTEND / "i18n.js").read_text(encoding="utf-8")
         source = source.replace(
-            'from "./i18n-complements.js?v=138"',
+            'from "./i18n-complements.js?v=141"',
             f'from "data:text/javascript;base64,{complements}"',
             1,
         )

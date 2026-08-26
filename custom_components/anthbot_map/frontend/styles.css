@@ -431,10 +431,10 @@ button:hover {
 
 .panel-tabs {
   background: var(--anthbot-secondary-background);
-  border-radius: 999px;
+  border-radius: 18px;
   display: grid;
   gap: 4px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
   margin-bottom: 0;
   padding: 4px;
 }
@@ -446,14 +446,21 @@ button:hover {
 .panel-tabs button {
   background: transparent;
   border: 0;
-  border-radius: 999px;
+  border-radius: 14px;
   justify-content: center;
-  min-height: 36px;
+  line-height: 1.2;
+  min-height: 44px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 7px 10px;
+  text-align: center;
+  white-space: normal;
+  word-break: normal;
 }
 
 .panel-tabs button.active {
   background: var(--anthbot-accent);
-  color: var(--text-primary-color, #ffffff);
+  color: #07140c;
   font-weight: 800;
 }
 
@@ -674,7 +681,7 @@ textarea {
   }
 
   .panel-tabs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr));
   }
 }
 

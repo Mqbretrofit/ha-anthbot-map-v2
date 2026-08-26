@@ -62,7 +62,11 @@ class MowingHistoryV230Tests(unittest.TestCase):
 
     def test_long_duration_and_blade_off_filtering(self) -> None:
         source = CARD.read_text(encoding="utf-8")
-        source = source[source.index("const ENTITY_MAP") : source.index('customElements.define("anthbot-map-card"')]
+        start = source.index("const ENTITY_MAP")
+        guarded_registration = 'if (!customElements.get("anthbot-map-card"))'
+        legacy_registration = 'customElements.define("anthbot-map-card"'
+        end_marker = guarded_registration if guarded_registration in source else legacy_registration
+        source = source[start : source.index(end_marker)]
         assertions = r"""
 const longSeconds = normalizeRecordDurationSeconds(21600, "mow_time");
 const explicitMilliseconds = normalizeRecordDurationSeconds(21600000, "duration_ms");
@@ -98,8 +102,8 @@ process.stdout.write(JSON.stringify({longSeconds, explicitMilliseconds, filtered
         init_source = (INTEGRATION / "__init__.py").read_text(encoding="utf-8")
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 
-        self.assertEqual(manifest["version"], "2.4.0")
-        self.assertIn('?v=2.4.0"', init_source)
+        self.assertEqual(manifest["version"], "2.4.1-test")
+        self.assertIn('?v=2.4.1-test', init_source)
         self.assertIn("Release tag $tag does not match manifest version", workflow)
         for filename in ("anthbot-map-card.js", "i18n.js", "styles.css"):
             self.assertEqual(

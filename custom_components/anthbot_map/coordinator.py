@@ -67,7 +67,7 @@ _LIVE_STATUS_VALUES = {
     "munka",
     "vagas",
 }
-_DOCKED_STATUS_VALUES = {"charge", "charging", "chargestart", "idle", "sleep"}
+_DOCKED_STATUS_VALUES = {"charge", "charging", "chargestart", "idle", "sleep", "standby"}
 _ROBOT_STATUS_BY_CODE = {
     0: "idle",
     2: "charge",
@@ -81,6 +81,9 @@ _ROBOT_STATUS_BY_CODE = {
     17: "regionmowing",
     18: "nestmowing",
 }
+
+_RTK_READY_STATES = {2, 3, 4, 5, "differential", "fixed", "float", "dead_reckoning"}
+_RTK_BASE_READY_STATES = {3, "online"}
 
 _HISTORY_PATH_URL_KEYS = {
     "hisPathUrl",
@@ -230,6 +233,7 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._battery_saver_listener_remove = None
         self._battery_saver_task: asyncio.Task[None] | None = None
         self._battery_saver_volume_restore_task: asyncio.Task[None] | None = None
+        self._battery_saver_shutdown_guard_task: asyncio.Task[None] | None = None
         self._battery_saver_saved_volume: int | None = None
         self._battery_saver_action_lock = asyncio.Lock()
         self._task_store: Store[dict[str, Any]] = Store(
@@ -382,6 +386,17 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             CONF_RESUME_LEVEL: max(10, min(99, resume_level)),
         }
 
+    async def async_update_battery_saver_config(
+        self, config: dict[str, Any]
+    ) -> None:
+        """Apply validated battery-saver options without restarting Home Assistant."""
+        self._battery_saver_config = dict(config)
+        if self.reported_state:
+            state = dict(self.reported_state)
+            state["_battery_saver_config"] = self.battery_saver_config
+            self.async_set_updated_data(state)
+        self.async_schedule_battery_saver_evaluation()
+
     async def async_load_battery_saver_state(self) -> None:
         """Restore the local battery-saver switch after a restart."""
         stored = await self._battery_saver_store.async_load()
@@ -453,6 +468,13 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except asyncio.CancelledError:
                 pass
             self._battery_saver_volume_restore_task = None
+        if self._battery_saver_shutdown_guard_task is not None:
+            self._battery_saver_shutdown_guard_task.cancel()
+            try:
+                await self._battery_saver_shutdown_guard_task
+            except asyncio.CancelledError:
+                pass
+            self._battery_saver_shutdown_guard_task = None
         await self._async_restore_voice_volume()
 
     def async_schedule_battery_saver_evaluation(self) -> None:
@@ -556,15 +578,95 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self._async_save_battery_saver_state()
         await asyncio.sleep(1)
 
+    def _ensure_shutdown_guard(self) -> None:
+        """Start the 55+1 minute anti-shutdown guard while charger power is off."""
+        if not self._battery_saver_enabled:
+            return
+        if (
+            self._battery_saver_shutdown_guard_task is not None
+            and not self._battery_saver_shutdown_guard_task.done()
+        ):
+            return
+        self._battery_saver_shutdown_guard_task = self.hass.async_create_background_task(
+            self._async_shutdown_guard_loop(),
+            f"anthbot_shutdown_guard_{self.client.serial_number}",
+        )
+
+    async def _async_shutdown_guard_loop(self) -> None:
+        """Pulse charger power for one minute after each 55-minute idle-off period."""
+        try:
+            while self._battery_saver_enabled:
+                await asyncio.sleep(55 * 60)
+                config = self.battery_saver_config
+                entity_id = config.get(CONF_CHARGER_SWITCH)
+                if not isinstance(entity_id, str) or not entity_id:
+                    return
+                switch_state = self.hass.states.get(entity_id)
+                if switch_state is not None and switch_state.state == "on":
+                    return
+                status = self._robot_status(self.reported_state)
+                battery = self._battery_percentage(self.reported_state)
+                if battery is None:
+                    _LOGGER.debug(
+                        "Battery saver anti-shutdown guard has no battery value for %s; retrying in 60 seconds",
+                        self.client.serial_number,
+                    )
+                    await asyncio.sleep(60)
+                    continue
+                if status not in _DOCKED_STATUS_VALUES:
+                    _LOGGER.debug(
+                        "Battery saver anti-shutdown guard saw transient status %s for %s; retrying in 60 seconds",
+                        status,
+                        self.client.serial_number,
+                    )
+                    await asyncio.sleep(60)
+                    continue
+                # At/below the maintenance threshold this is no longer a short
+                # keep-awake pulse: normal maintenance charging must take over.
+                if battery <= config[CONF_MAINTENANCE_LEVEL]:
+                    await self._async_set_charger(True)
+                    return
+                _LOGGER.info(
+                    "Battery saver anti-shutdown pulse starting for %s",
+                    self.client.serial_number,
+                )
+                await self._async_set_charger(True)
+                await asyncio.sleep(60)
+                status = self._robot_status(self.reported_state)
+                battery = self._battery_percentage(self.reported_state)
+                if not self._battery_saver_enabled or status not in _DOCKED_STATUS_VALUES:
+                    return
+                if battery is None or battery <= config[CONF_MAINTENANCE_LEVEL]:
+                    # A real charge is now required; leave the charger on.
+                    return
+                await self._async_set_charger(False)
+                _LOGGER.info(
+                    "Battery saver anti-shutdown pulse completed for %s",
+                    self.client.serial_number,
+                )
+        except asyncio.CancelledError:
+            raise
+        finally:
+            if asyncio.current_task() is self._battery_saver_shutdown_guard_task:
+                self._battery_saver_shutdown_guard_task = None
+
     async def _async_set_charger(self, enabled: bool) -> None:
         if not self._battery_saver_enabled:
             return
         entity_id = self.battery_saver_config.get(CONF_CHARGER_SWITCH)
         if not isinstance(entity_id, str) or not entity_id:
             return
+        current_task = asyncio.current_task()
+        if enabled:
+            guard = self._battery_saver_shutdown_guard_task
+            if guard is not None and guard is not current_task and not guard.done():
+                guard.cancel()
+                self._battery_saver_shutdown_guard_task = None
         state = self.hass.states.get(entity_id)
         desired = "on" if enabled else "off"
         if state is not None and state.state == desired:
+            if not enabled:
+                self._ensure_shutdown_guard()
             return
         if enabled:
             await self._async_mute_charging_announcement()
@@ -585,6 +687,56 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         f"anthbot_restore_volume_{self.client.serial_number}",
                     )
                 )
+        if not enabled:
+            self._ensure_shutdown_guard()
+
+    @staticmethod
+    def _state_value(data: dict[str, Any], key: str) -> Any:
+        value = data.get(key)
+        return value.get("value") if isinstance(value, dict) else value
+
+    def _rtk_power_is_ready(self) -> bool:
+        """Return whether live telemetry confirms that RTK/base is usable."""
+        state = self.reported_state
+        rtk_state = self._state_value(state, "rtk_state")
+        base_state = self._state_value(state, "rtk_base_state")
+        ctl_base = state.get("ctl_rtk_base")
+        if isinstance(ctl_base, dict):
+            base_state = ctl_base.get("rtk_base_state", base_state)
+            if isinstance(base_state, dict):
+                base_state = base_state.get("value")
+        return rtk_state in _RTK_READY_STATES or base_state in _RTK_BASE_READY_STATES
+
+    async def async_prepare_mowing_power(self) -> None:
+        """Power a shared station/RTK supply before a mowing command."""
+        if not self._battery_saver_enabled:
+            return
+        entity_id = self.battery_saver_config.get(CONF_CHARGER_SWITCH)
+        if not isinstance(entity_id, str) or not entity_id:
+            return
+        switch_state = self.hass.states.get(entity_id)
+        was_off = switch_state is None or switch_state.state != "on"
+        await self._async_set_charger(True)
+        if not was_off:
+            return
+
+        # A shared smart plug may also supply the RTK base. Give it time to
+        # boot, then prefer a live ready indication without blocking forever
+        # on models/firmware that do not expose RTK state.
+        await asyncio.sleep(8)
+        for _ in range(8):
+            if self._rtk_power_is_ready():
+                return
+            try:
+                await self.client.async_request_all_properties()
+            except Exception as err:  # noqa: BLE001 - readiness polling is best effort.
+                _LOGGER.debug("RTK readiness refresh failed: %s", err)
+            await asyncio.sleep(3)
+        _LOGGER.warning(
+            "RTK readiness was not confirmed for %s after powering the shared supply; "
+            "continuing with the mowing command",
+            self.client.serial_number,
+        )
 
     async def _async_maintain_idle_charge(self, battery: int) -> None:
         """Maintain an idle mower between lower and upper charge thresholds."""
@@ -651,7 +803,9 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if self._battery_saver_phase != "mowing":
                     self._battery_saver_phase = "mowing"
                     await self._async_save_battery_saver_state()
-                await self._async_set_charger(False)
+                # The configured plug may power both the charging station and
+                # the RTK base, so it must remain energised while mowing.
+                await self._async_set_charger(True)
                 return
 
             if self._battery_saver_phase == "initial_charge":
@@ -713,7 +867,7 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 await self._async_save_battery_saver_state()
                 await self._async_maintain_idle_charge(battery)
                 return
-            await self._async_set_charger(False)
+            await self._async_set_charger(True)
             if not self._battery_saver_enabled:
                 return
             self._battery_saver_phase = "mowing"

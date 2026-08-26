@@ -175,6 +175,10 @@ class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
                 errors["base"] = "invalid_battery_thresholds"
             else:
                 configs[self._serial_number] = dict(user_input)
+                for coordinator in self._coordinators():
+                    if coordinator.client.serial_number == self._serial_number:
+                        await coordinator.async_update_battery_saver_config(user_input)
+                        break
                 options = dict(self.config_entry.options)
                 options[CONF_BATTERY_SAVER_CONFIGS] = configs
                 return self.async_create_entry(title="", data=options)
