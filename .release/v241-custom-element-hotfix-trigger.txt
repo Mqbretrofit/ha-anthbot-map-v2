@@ -1,0 +1,1 @@
+Trigger the v2.4.1-test duplicate custom-element registration hotfix workflow.
