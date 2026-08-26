@@ -23,6 +23,7 @@ This beta keeps the complete feature set from the v2.4.1 test line while preserv
 
 ### Notes
 This is a beta / pre-release build intended for validation before the next stable release.
+The beta package is built from the preserved main branch plus the complete validated v2.4.1 test feature set.
 
 ---
 
@@ -48,3 +49,4 @@ Ez a béta megtartja a v2.4.1 tesztág teljes funkciókészletét, miközben a j
 - Béta-specifikus frontend cache-kulcs.
 
 Ez **béta / előzetes kiadás**, a következő stabil verzió előtti teszteléshez.
+A béta csomag a megőrzött `main` és a teljes v2.4.1 teszt funkciókészlet egyesítéséből épül.
