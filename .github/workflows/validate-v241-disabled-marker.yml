@@ -1,0 +1,8 @@
+name: v2.4.1-test maintenance marker
+on:
+  workflow_dispatch:
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "v2.4.1-test publisher maintenance"
