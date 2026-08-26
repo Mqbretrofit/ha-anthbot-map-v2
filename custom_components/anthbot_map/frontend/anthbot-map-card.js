@@ -10,7 +10,7 @@ try {
     return originalDefine.call(registry, name, constructor, options);
   };
   defineOverridden = true;
-  await import("./anthbot-map-card-core.js?v=2.4.1-test-hotfix2");
+  await import("./anthbot-map-card-core.js?v=2.4.1-beta");
 } finally {
   if (defineOverridden) {
     try {
