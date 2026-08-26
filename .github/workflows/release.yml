@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       RELEASE_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,147 +46,37 @@ jobs:
             tag="$(printf '%s\n' "$RELEASE_COMMIT_MESSAGE" | sed -n 's/.*\[release \(v[^]]*\)\].*/\1/p')"
           fi
           if [ -z "$tag" ]; then
-            echo "Could not determine the release tag."
+            echo "Could not determine release tag"
             exit 1
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-      - name: Normalize beta frontend to one card file
-        id: normalize
+      - name: Finalize release metadata
+        id: finalize
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
+          tag="${{ steps.release.outputs.tag }}"
+          version="${tag#v}"
+
+          python - "$version" <<'PY'
           from pathlib import Path
+          import re
+          import sys
 
-          root = Path('.')
-          component_frontend = root / 'custom_components' / 'anthbot_map' / 'frontend'
-          www_frontend = root / 'www' / 'anthbot-map'
-          core = component_frontend / 'anthbot-map-card-core.js'
-          card = component_frontend / 'anthbot-map-card.js'
-
-          if core.exists():
-              text = core.read_text(encoding='utf-8')
-
-              old_define = 'customElements.define("anthbot-map-card", AnthbotMapCard);'
-              guarded_define = '''if (!customElements.get("anthbot-map-card")) {
-            customElements.define("anthbot-map-card", AnthbotMapCard);
-          }'''
-              if old_define in text:
-                  text = text.replace(old_define, guarded_define, 1)
-              elif guarded_define not in text:
-                  raise SystemExit('anthbot-map-card registration point not found')
-
-              old_cards = '''window.customCards = window.customCards || [];
-          window.customCards.push({
-            type: "anthbot-map-card",
-            name: "Anthbot Map Card",
-            description: "Canvas map display and controls for Anthbot map sensors",
-          });'''
-              guarded_cards = '''window.customCards = window.customCards || [];
-          if (!window.customCards.some((card) => card?.type === "anthbot-map-card")) {
-            window.customCards.push({
-              type: "anthbot-map-card",
-              name: "Anthbot Map Card",
-              description: "Canvas map display and controls for Anthbot map sensors",
-            });
-          }'''
-              if old_cards in text:
-                  text = text.replace(old_cards, guarded_cards, 1)
-
-              patch_marker = 'AnthbotMapCard.__batterySaverDialogTogglePatched = true;'
-              if patch_marker not in text:
-                  insertion = '''
-          if (!AnthbotMapCard.__batterySaverDialogTogglePatched) {
-            const proto = AnthbotMapCard.prototype;
-            const originalCreateSwitchControl = proto.createSwitchControl;
-            const originalOpenBatterySaverDialog = proto.openBatterySaverDialog;
-
-            proto.createSwitchControl = function(label, key) {
-              if (key !== "batterySaver") {
-                return originalCreateSwitchControl.call(this, label, key);
-              }
-
-              const entityId = this.getSwitchEntity(key);
-              const entity = entityId ? this._hass.states[entityId] : null;
-              const checked = entity?.state === "on";
-              const tile = document.createElement("label");
-              tile.className = "panel-tile switch-tile battery-saver-open-tile";
-              tile.title = entityId || this.t("switchMissing");
-              tile.tabIndex = entityId ? 0 : -1;
-              tile.innerHTML = `
-                <span>${label}</span>
-                <input type="checkbox" ${checked ? "checked" : ""} ${entityId ? "" : "disabled"} tabindex="-1" aria-hidden="true">
-              `;
-              const openDialog = (event) => {
-                event?.preventDefault?.();
-                if (!entityId) return;
-                this.openBatterySaverDialog(entityId);
-              };
-              tile.addEventListener("click", openDialog);
-              tile.addEventListener("keydown", (event) => {
-                if (event.key === "Enter" || event.key === " ") openDialog(event);
-              });
-              return tile;
-            };
-
-            proto.openBatterySaverDialog = function(entityId) {
-              originalOpenBatterySaverDialog.call(this, entityId);
-              const root = this.shadowRoot || document.body;
-              const dialogs = root.querySelectorAll(".battery-saver-dialog");
-              const dialog = dialogs[dialogs.length - 1];
-              if (!dialog || dialog.querySelector('[data-role="battery-saver-enabled"]')) return;
-
-              const state = entityId ? this._hass.states[entityId] : null;
-              const enabled = state?.state === "on";
-              const modeRow = document.createElement("label");
-              modeRow.className = "battery-saver-check";
-              modeRow.dataset.role = "battery-saver-enabled";
-              modeRow.style.marginTop = "14px";
-              modeRow.innerHTML = `
-                <span><strong>${this.t("batterySaverMode")}</strong><small style="display:block;opacity:.68;margin-top:3px">${this.t("batterySaverDescription")}</small></span>
-                <input type="checkbox" ${enabled ? "checked" : ""}>
-              `;
-              const header = dialog.querySelector(".mowing-record-detail-head");
-              header?.insertAdjacentElement("afterend", modeRow);
-
-              const input = modeRow.querySelector("input");
-              input.addEventListener("change", async () => {
-                input.disabled = true;
-                try {
-                  await this.toggleSwitchEntity("batterySaver", entityId, input.checked, input);
-                  this.scheduleRefresh(200);
-                } catch (error) {
-                  input.checked = !input.checked;
-                  throw error;
-                } finally {
-                  input.disabled = false;
-                }
-              });
-            };
-
-            AnthbotMapCard.__batterySaverDialogTogglePatched = true;
-          }
-
-          '''
-                  anchor = 'window.customCards = window.customCards || [];'
-                  if anchor not in text:
-                      raise SystemExit('customCards anchor not found')
-                  text = text.replace(anchor, insertion + anchor, 1)
-
-              card.write_text(text, encoding='utf-8')
-              (www_frontend / 'anthbot-map-card.js').write_text(text, encoding='utf-8')
-              core.unlink()
-              www_core = www_frontend / 'anthbot-map-card-core.js'
-              if www_core.exists():
-                  www_core.unlink()
-
-          # The beta tag is now the release version expected by the regression suite.
-          for test in (root / 'tests').glob('test_*.py'):
-              source = test.read_text(encoding='utf-8')
-              updated = source.replace('2.4.1-test', '2.4.1-beta')
-              if updated != source:
-                  test.write_text(updated, encoding='utf-8')
+          version = sys.argv[1]
+          init_file = Path("custom_components/anthbot_map/__init__.py")
+          source = init_file.read_text(encoding="utf-8")
+          updated, count = re.subn(
+              r'FRONTEND_RESOURCE_URL = f"\{FRONTEND_RESOURCE_PATH\}\?v=[^"]+"',
+              f'FRONTEND_RESOURCE_URL = f"{{FRONTEND_RESOURCE_PATH}}?v={version}"',
+              source,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit("FRONTEND_RESOURCE_URL version line not found")
+          if updated != source:
+              init_file.write_text(updated, encoding="utf-8")
           PY
 
           test ! -e custom_components/anthbot_map/frontend/anthbot-map-card-core.js
@@ -193,12 +84,13 @@ jobs:
           cmp custom_components/anthbot_map/frontend/anthbot-map-card.js www/anthbot-map/anthbot-map-card.js
           grep -q 'if (!customElements.get("anthbot-map-card"))' custom_components/anthbot_map/frontend/anthbot-map-card.js
           grep -q 'data-role="battery-saver-enabled"' custom_components/anthbot_map/frontend/anthbot-map-card.js
+          grep -q "?v=${version}" custom_components/anthbot_map/__init__.py
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add custom_components/anthbot_map/frontend www/anthbot-map tests
+          git add custom_components/anthbot_map/__init__.py
           if ! git diff --cached --quiet; then
-            git commit -m "Finalize v2.4.1-beta single-file frontend"
+            git commit -m "Finalize ${tag} frontend resource version"
             git push origin HEAD:main
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -210,7 +102,7 @@ jobs:
           tag="${{ steps.release.outputs.tag }}"
           manifest_version="$(python -c 'import json; print(json.load(open("custom_components/anthbot_map/manifest.json"))["version"])')"
           if [ "v${manifest_version}" != "$tag" ]; then
-            echo "Release tag $tag does not match manifest version v${manifest_version}."
+            echo "Release tag $tag does not match manifest version v${manifest_version}"
             exit 1
           fi
           python -m unittest discover -s tests -v
@@ -242,12 +134,13 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_SHA: ${{ steps.normalize.outputs.sha }}
+          RELEASE_SHA: ${{ steps.finalize.outputs.sha }}
         shell: bash
         run: |
           set -euo pipefail
           tag="${{ steps.release.outputs.tag }}"
           version="${tag#v}"
+
           : > /tmp/release-notes.md
           for notes_file in "RELEASE_NOTES_v${version}.md" "CHANGELOG_v${version}_HU.md"; do
             if [ -f "$notes_file" ]; then
@@ -275,9 +168,7 @@ jobs:
               --title "Anthbot Map $tag" \
               "${release_flags[@]}" \
               --notes-file /tmp/release-notes.md
-            gh release upload "$tag" \
-              "anthbot-map-${tag}.zip" \
-              --clobber
+            gh release upload "$tag" "anthbot-map-${tag}.zip" --clobber
           else
             gh release create "$tag" \
               "anthbot-map-${tag}.zip" \
