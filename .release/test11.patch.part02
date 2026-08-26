@@ -1,0 +1,65 @@
+rrentCharge}"></label>
++          <label class="battery-detail-row"><div><span>${escapeHtml(this.t("batteryMaintenanceLevel"))}</span><small>${escapeHtml(this.t("batteryMaintenanceLevelNote"))}</small></div><input name="maintenance_level" type="number" min="10" max="99" value="${currentMaintenance}"></label>
++          <label class="battery-detail-row"><div><span>${escapeHtml(this.t("batteryResumeLevel"))}</span><small>${escapeHtml(this.t("batteryResumeLevelNote"))}</small></div><input name="resume_level" type="number" min="10" max="99" value="${currentResume}"></label>
++          <label class="battery-saver-check"><span>${escapeHtml(this.t("sharedRtkPower"))}<small style="display:block;opacity:.68;margin-top:3px">${escapeHtml(this.t("sharedRtkPowerNote"))}</small></span><input name="shared_rtk_power" type="checkbox" ${attrs.shared_rtk_power ? "checked" : ""}></label>
++          <div class="battery-anti-shutdown"><strong>◷ ${escapeHtml(this.t("batteryShutdownGuardTitle"))}</strong><div style="margin-top:5px;line-height:1.42">${escapeHtml(this.t("batteryShutdownGuardText"))}</div><div style="opacity:.68;font-size:.86em;margin-top:7px">${escapeHtml(this.t("batteryShutdownGuardNote"))}</div></div>
+         </div>
++      </div>
++      <div class="battery-saver-actions">
++        <button type="button" class="secondary">${escapeHtml(this.t("close"))}</button>
++        <button type="button" class="primary">${escapeHtml(this.t("save"))}</button>
+       </div>`;
++
++    const profileValues = {
++      max: { charge: 80, maintenance: 60, resume: 50 },
++      balanced: { charge: 80, maintenance: 65, resume: 50 },
++      ready: { charge: 90, maintenance: 80, resume: 50 },
++    };
++    const chargeInput = dialog.querySelector('[name="charge_limit"]');
++    const maintenanceInput = dialog.querySelector('[name="maintenance_level"]');
++    const resumeInput = dialog.querySelector('[name="resume_level"]');
++    const selectProfile = (profile, applyValues = true) => {
++      dialog.querySelectorAll('.battery-profile-card').forEach((card) => card.classList.toggle('active', card.dataset.profile === profile));
++      const radio = dialog.querySelector(`[name="battery_profile"][value="${profile}"]`);
++      if (radio) radio.checked = true;
++      if (applyValues && profileValues[profile]) {
++        chargeInput.value = profileValues[profile].charge;
++        maintenanceInput.value = profileValues[profile].maintenance;
++        resumeInput.value = profileValues[profile].resume;
++      }
++      const custom = profile === 'custom';
++      chargeInput.disabled = !custom;
++      maintenanceInput.disabled = !custom;
++      resumeInput.disabled = !custom;
++    };
++    selectProfile(detectedProfile, false);
++    dialog.querySelectorAll('[name="battery_profile"]').forEach((radio) => {
++      radio.addEventListener('change', () => selectProfile(radio.value, true));
++    });
++
+     dialog.querySelector(".mowing-record-detail-close").addEventListener("click", close);
+     dialog.querySelector(".secondary").addEventListener("click", close);
+     dialog.querySelector(".primary").addEventListener("click", async () => {
+-      const chargeLimit = Number(dialog.querySelector('[name="charge_limit"]').value);
+-      const maintenanceLevel = Number(dialog.querySelector('[name="maintenance_level"]').value);
+-      const resumeLevel = Number(dialog.querySelector('[name="resume_level"]').value);
++      const chargeLimit = Number(chargeInput.value);
++      const maintenanceLevel = Number(maintenanceInput.value);
++      const resumeLevel = Number(resumeInput.value);
+       if (maintenanceLevel >= chargeLimit || resumeLevel >= chargeLimit) {
+         this.notify(this.t("batteryLevelsInvalid"));
+         return;
+diff -ruN t8local/custom_components/anthbot_map/frontend/i18n.js t11pub/custom_components/anthbot_map/frontend/i18n.js
+--- t8local/custom_components/anthbot_map/frontend/i18n.js	2026-08-25 16:04:36.000000000 +0000
++++ t11pub/custom_components/anthbot_map/frontend/i18n.js	2026-08-26 13:30:56.000000000 +0000
+@@ -1,4 +1,4 @@
+-import { TRANSLATION_COMPLEMENTS } from "./i18n-complements.js?v=140";
++import { TRANSLATION_COMPLEMENTS } from "./i18n-complements.js?v=141";
+ 
+ export const LANGUAGES = [
+   ["auto", "Automatic / Automatikus"],
+@@ -681,6 +681,13 @@
+   Object.assign(settingsTranslations[language] || (settingsTranslations[language] = {}), values);
+ }
+ 
++const batteryProfileTranslations = {"en":{"batterySaverDescription":"Configure how the robot charges the battery while in standby.","batteryProfileSelect":"Select profile","batteryProfileMax":"Maximum battery care","batteryProfileMaxNote":"If immediate start is rarely needed","batteryProfileBalanced":"Balanced","batteryProfileBalancedNote":"Recommended default","batteryProfileReady":"Always ready to start","batteryProfileReadyNote":"For quick start of longer mowing","batteryProfileCustom":"Custom","batteryProfileCustomNote":"For advanced users","batteryAdjustable":"adjustable","batteryImportant":"Important:","batteryStandbyInfo":"Battery saver mode manages standby charging. Manual mowing start is not restricted by the percentages set here.","batteryProfileDetails":"Profile details","batteryChargeLimit":"Upper charge limit (%)","batteryChargeLimitNote":"Stop charging at this level","batteryMaintenanceLevel":"Idle recharge start level (%)","batteryMaintenanceLevelNote":"Restart charging at this level","batteryResumeLevel":"Interrupted-task resume level (%)","batteryResumeLevelNote":"Level for resuming an interrupted task","sharedRtkPower":"Charging station and RTK share the same smart plug","sharedRtkPowerNote":"Enable if the RTK and robot charger use the same switched power supply.","batteryShutdownGuardTitle":"Short-charge anti-shutdown protection","batteryShutdownGuardText":"If the robot is docked and in standby while charger power is off, after 55 minutes the charger is switched on for 1 minute and then switched off again. The cycle then restarts.","batteryShutdownGuardNote":"Does not run during mowing/tasks, after leaving the dock, when normal charging is required, or when battery saver mode is disabled.","batterySaverMode":"Battery saver mode","save":"Save","close":"Close"},"hu":{"batterySaverDescription":"Állítsd be, hogyan töltse a robot az akkumulátort készenléti állapotban.","batteryProfileSelect":"Profil választása","batteryProfileMax":"Max. akkukímélés","batteryProfileMaxNote":"Ha ritkán kell azonnal indulnia","batteryProfileBalanced":"Kiegyensúlyozott","batteryProfileBalancedNote":"Ajánlott alapbeállítás","batteryProfileReady":"Mindig indulásra kész","batteryProfileReadyNote":"Hosszabb nyírás gyors indításához","batteryProfileCustom":"Egyéni","batteryProfileCustomNote":"Haladó felhasználóknak","batteryAdjustable":"állítható","batteryImportant":"Fontos:","batteryStandbyInfo":"Az akkukímélő mód a készenléti töltést kezeli. A kézi nyírásindítást nem korlátozzuk az itt beállított százalékok alapján.","batteryProfileDetails":"A profil részletei","batteryChargeLimit":"Felső töltési határ (%)","batteryChargeLimitNote":"Töltés leállítása ezen a szinten","batteryMaintenanceLevel":"Fenntartó töltés indítási szintje (%)","batteryMaintenanceLevelNote":"Töltés újraindítása ezen a szinten","batteryResumeLevel":"Félbehagyott feladat folytatási szintje (%)","batteryResumeLevelNote":"Félbehagyott feladat folytatási szintje","sharedRtkPower":"A töltőállomás és az RTK közös okoskonnektorról működik","sharedRtkPowerNote":"Kapcsold be, ha az RTK és a robot töltője ugyanarról a kapcsolt tápról működik.","batteryShutdownGuardTitle":"Rövid töltés anti-shutdown védelem","batteryShutdownGuardText":"Ha a robot dokkolva és készenlétben van, miközben a töltő ki van kapcsolva, 55 perc elteltével 1 percre bekapcsoljuk a töltőt, majd újra kikapcsoljuk. A ciklus ezután újraindul.","batteryShutdownGuardNote":"Nem fut nyírás/feladat alatt, a dokk elhag
