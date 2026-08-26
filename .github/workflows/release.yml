@@ -8,8 +8,16 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
+      action:
+        description: "Action"
+        required: true
+        type: choice
+        options:
+          - publish
+          - delete-v2.4.1-test
+        default: publish
       tag:
-        description: "Release tag (for example v2.4.1-beta)"
+        description: "Release tag"
         required: true
         default: "v2.4.1-beta"
 
@@ -17,12 +25,29 @@ permissions:
   contents: write
 
 jobs:
+  delete-old-test:
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'delete-v2.4.1-test'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete v2.4.1-test release and tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view v2.4.1-test --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete v2.4.1-test --repo "$GITHUB_REPOSITORY" --yes
+          fi
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v2.4.1-test" >/dev/null 2>&1; then
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/v2.4.1-test"
+          fi
+          echo "v2.4.1-test release and tag removed."
+
   release:
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[release v')
+    if: github.event_name != 'workflow_dispatch' || inputs.action == 'publish'
     runs-on: ubuntu-latest
     env:
       RELEASE_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,63 +71,57 @@ jobs:
             tag="$(printf '%s\n' "$RELEASE_COMMIT_MESSAGE" | sed -n 's/.*\[release \(v[^]]*\)\].*/\1/p')"
           fi
           if [ -z "$tag" ]; then
-            echo "Could not determine release tag"
-            exit 1
+            echo "No release requested by this push; skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - name: Finalize release metadata
+        if: steps.release.outputs.skip != 'true'
         id: finalize
         shell: bash
         run: |
           set -euo pipefail
           tag="${{ steps.release.outputs.tag }}"
           version="${tag#v}"
-
           python - "$version" <<'PY'
           from pathlib import Path
-          import re
           import sys
 
           version = sys.argv[1]
-          init_file = Path("custom_components/anthbot_map/__init__.py")
-          source = init_file.read_text(encoding="utf-8")
-          updated, count = re.subn(
-              r'FRONTEND_RESOURCE_URL = f"\{FRONTEND_RESOURCE_PATH\}\?v=[^"]+"',
-              f'FRONTEND_RESOURCE_URL = f"{{FRONTEND_RESOURCE_PATH}}?v={version}"',
-              source,
-              count=1,
-          )
-          if count != 1:
-              raise SystemExit("FRONTEND_RESOURCE_URL version line not found")
-          if updated != source:
-              init_file.write_text(updated, encoding="utf-8")
+          path = Path('custom_components/anthbot_map/__init__.py')
+          source = path.read_text(encoding='utf-8')
+          marker = 'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v='
+          start = source.find(marker)
+          if start < 0:
+              raise SystemExit('Frontend resource version marker not found')
+          end = source.find('"', start + len(marker))
+          if end < 0:
+              raise SystemExit('Frontend resource version terminator not found')
+          source = source[: start + len(marker)] + version + source[end:]
+          path.write_text(source, encoding='utf-8')
           PY
-
-          test ! -e custom_components/anthbot_map/frontend/anthbot-map-card-core.js
-          test ! -e www/anthbot-map/anthbot-map-card-core.js
-          cmp custom_components/anthbot_map/frontend/anthbot-map-card.js www/anthbot-map/anthbot-map-card.js
-          grep -q 'if (!customElements.get("anthbot-map-card"))' custom_components/anthbot_map/frontend/anthbot-map-card.js
-          grep -q 'data-role="battery-saver-enabled"' custom_components/anthbot_map/frontend/anthbot-map-card.js
-          grep -q "?v=${version}" custom_components/anthbot_map/__init__.py
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add custom_components/anthbot_map/__init__.py
           if ! git diff --cached --quiet; then
-            git commit -m "Finalize ${tag} frontend resource version"
+            git commit -m "Set frontend cache key for $tag"
             git push origin HEAD:main
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Verify release source
+        if: steps.release.outputs.skip != 'true'
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
           tag="${{ steps.release.outputs.tag }}"
           manifest_version="$(python -c 'import json; print(json.load(open("custom_components/anthbot_map/manifest.json"))["version"])')"
           if [ "v${manifest_version}" != "$tag" ]; then
-            echo "Release tag $tag does not match manifest version v${manifest_version}"
+            echo "Release tag $tag does not match manifest version v${manifest_version}."
             exit 1
           fi
           python -m unittest discover -s tests -v
@@ -114,9 +133,12 @@ jobs:
           cmp custom_components/anthbot_map/frontend/styles.css www/anthbot-map/styles.css
           test ! -e custom_components/anthbot_map/frontend/anthbot-map-card-core.js
           test ! -e www/anthbot-map/anthbot-map-card-core.js
+          grep -q 'if (!customElements.get("anthbot-map-card"))' custom_components/anthbot_map/frontend/anthbot-map-card.js
+          grep -q 'data-role="battery-saver-enabled"' custom_components/anthbot_map/frontend/anthbot-map-card.js
           test -z "$(find custom_components -type f \( -name '*.pyc' -o -name '*.gz' \) -print -quit)"
 
       - name: Build complete installer
+        if: steps.release.outputs.skip != 'true'
         run: |
           zip -r "anthbot-map-${{ steps.release.outputs.tag }}.zip" \
             custom_components \
@@ -132,6 +154,7 @@ jobs:
             hacs.json
 
       - name: Publish GitHub release
+        if: steps.release.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_SHA: ${{ steps.finalize.outputs.sha }}
@@ -140,7 +163,6 @@ jobs:
           set -euo pipefail
           tag="${{ steps.release.outputs.tag }}"
           version="${tag#v}"
-
           : > /tmp/release-notes.md
           for notes_file in "RELEASE_NOTES_v${version}.md" "CHANGELOG_v${version}_HU.md"; do
             if [ -f "$notes_file" ]; then
@@ -149,7 +171,7 @@ jobs:
             fi
           done
           if [ ! -s /tmp/release-notes.md ]; then
-            printf '# Anthbot Map %s\n\nBeta release with battery-saver shutdown guard and frontend fixes.\n' "$tag" > /tmp/release-notes.md
+            printf '# Anthbot Map %s\n\nSee CHANGELOG.md for details.\n' "$tag" > /tmp/release-notes.md
           fi
 
           release_flags=()
@@ -168,7 +190,9 @@ jobs:
               --title "Anthbot Map $tag" \
               "${release_flags[@]}" \
               --notes-file /tmp/release-notes.md
-            gh release upload "$tag" "anthbot-map-${tag}.zip" --clobber
+            gh release upload "$tag" \
+              "anthbot-map-${tag}.zip" \
+              --clobber
           else
             gh release create "$tag" \
               "anthbot-map-${tag}.zip" \
