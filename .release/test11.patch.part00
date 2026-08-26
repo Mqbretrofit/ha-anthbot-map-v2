@@ -1,0 +1,151 @@
+diff -ruN t8local/RELEASE_NOTES_v2.4.0-test11.md t11pub/RELEASE_NOTES_v2.4.0-test11.md
+--- t8local/RELEASE_NOTES_v2.4.0-test11.md	1970-01-01 00:00:00.000000000 +0000
++++ t11pub/RELEASE_NOTES_v2.4.0-test11.md	2026-08-26 13:45:27.000000000 +0000
+@@ -0,0 +1,18 @@
++# Anthbot Map v2.4.0-test11 — Test release
++
++## Battery saver improvements
++
++- Adds battery saver profiles: Maximum battery saving (60–80%), Balanced (65–80%), Always ready (80–90%), and Custom.
++- Keeps the separate setting for charging station and RTK sharing the same smart plug.
++- Adds the 55-minute + 1-minute anti-shutdown charging guard while the mower is docked and idle.
++- The guard is suspended while mowing/tasks are active, when the mower leaves the dock, when normal charging is required, or when battery saver mode is disabled.
++- Completes and prioritizes the battery saver translations across all 23 supported languages to prevent mixed-language UI text.
++- Refreshes frontend asset cache versions for the updated translations.
++
++## Magyar
++
++- Új akkukímélő profilok: Max. akkukímélés (60–80%), Kiegyensúlyozott (65–80%), Mindig indulásra kész (80–90%) és Egyéni.
++- Megmarad a külön beállítás arra, hogy a töltőállomás és az RTK közös okoskonnektorról működik-e.
++- Dokkolt, készenléti állapotban 55 perc után 1 perces rövid töltés védi a robotot az automatikus shutdown ellen.
++- A védelem nem avatkozik be aktív feladat, dokkelhagyás vagy normál töltési igény esetén.
++- Az akkumulátorkímélő ablak teljes fordítási készlete mind a 23 támogatott nyelven egységes prioritást kapott, így nem keverednek az angol és helyi feliratok.
+diff -ruN t8local/custom_components/anthbot_map/__init__.py t11pub/custom_components/anthbot_map/__init__.py
+--- t8local/custom_components/anthbot_map/__init__.py	2026-08-25 16:04:35.000000000 +0000
++++ t11pub/custom_components/anthbot_map/__init__.py	2026-08-26 13:42:21.000000000 +0000
+@@ -94,7 +94,7 @@
+ _LOGGER = logging.getLogger(__name__)
+ VALID_MOW_HEIGHTS = list(range(30, 75, 5))
+ FRONTEND_RESOURCE_PATH = "/anthbot-map-v2/anthbot-map-card.js"
+-FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.0-test7"
++FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.0-test11"
+ LEGACY_ENTITY_SUFFIXES: tuple[str, ...] = (
+     "enable_custom_mowing_direction",
+     "custom_mowing_direction_enable",
+diff -ruN t8local/custom_components/anthbot_map/coordinator.py t11pub/custom_components/anthbot_map/coordinator.py
+--- t8local/custom_components/anthbot_map/coordinator.py	2026-08-25 16:14:58.000000000 +0000
++++ t11pub/custom_components/anthbot_map/coordinator.py	2026-08-26 13:16:10.000000000 +0000
+@@ -234,6 +234,7 @@
+         self._battery_saver_listener_remove = None
+         self._battery_saver_task: asyncio.Task[None] | None = None
+         self._battery_saver_volume_restore_task: asyncio.Task[None] | None = None
++        self._battery_saver_shutdown_guard_task: asyncio.Task[None] | None = None
+         self._battery_saver_saved_volume: int | None = None
+         self._battery_saver_action_lock = asyncio.Lock()
+         self._task_store: Store[dict[str, Any]] = Store(
+@@ -477,6 +478,13 @@
+             except asyncio.CancelledError:
+                 pass
+             self._battery_saver_volume_restore_task = None
++        if self._battery_saver_shutdown_guard_task is not None:
++            self._battery_saver_shutdown_guard_task.cancel()
++            try:
++                await self._battery_saver_shutdown_guard_task
++            except asyncio.CancelledError:
++                pass
++            self._battery_saver_shutdown_guard_task = None
+         await self._async_restore_voice_volume()
+ 
+     def async_schedule_battery_saver_evaluation(self) -> None:
+@@ -580,15 +588,82 @@
+         await self._async_save_battery_saver_state()
+         await asyncio.sleep(1)
+ 
++    def _ensure_shutdown_guard(self) -> None:
++        """Start the 55+1 minute anti-shutdown guard while charger power is off."""
++        if not self._battery_saver_enabled:
++            return
++        if (
++            self._battery_saver_shutdown_guard_task is not None
++            and not self._battery_saver_shutdown_guard_task.done()
++        ):
++            return
++        self._battery_saver_shutdown_guard_task = self.hass.async_create_background_task(
++            self._async_shutdown_guard_loop(),
++            f"anthbot_shutdown_guard_{self.client.serial_number}",
++        )
++
++    async def _async_shutdown_guard_loop(self) -> None:
++        """Pulse charger power for one minute after each 55-minute idle-off period."""
++        try:
++            while self._battery_saver_enabled:
++                await asyncio.sleep(55 * 60)
++                config = self.battery_saver_config
++                entity_id = config.get(CONF_CHARGER_SWITCH)
++                if not isinstance(entity_id, str) or not entity_id:
++                    return
++                switch_state = self.hass.states.get(entity_id)
++                if switch_state is not None and switch_state.state == "on":
++                    return
++                status = self._robot_status(self.reported_state)
++                battery = self._battery_percentage(self.reported_state)
++                if status not in _DOCKED_STATUS_VALUES or battery is None:
++                    return
++                # At/below the maintenance threshold this is no longer a short
++                # keep-awake pulse: normal maintenance charging must take over.
++                if battery <= config[CONF_MAINTENANCE_LEVEL]:
++                    await self._async_set_charger(True)
++                    return
++                _LOGGER.info(
++                    "Battery saver anti-shutdown pulse starting for %s",
++                    self.client.serial_number,
++                )
++                await self._async_set_charger(True)
++                await asyncio.sleep(60)
++                status = self._robot_status(self.reported_state)
++                battery = self._battery_percentage(self.reported_state)
++                if not self._battery_saver_enabled or status not in _DOCKED_STATUS_VALUES:
++                    return
++                if battery is None or battery <= config[CONF_MAINTENANCE_LEVEL]:
++                    # A real charge is now required; leave the charger on.
++                    return
++                await self._async_set_charger(False)
++                _LOGGER.info(
++                    "Battery saver anti-shutdown pulse completed for %s",
++                    self.client.serial_number,
++                )
++        except asyncio.CancelledError:
++            raise
++        finally:
++            if asyncio.current_task() is self._battery_saver_shutdown_guard_task:
++                self._battery_saver_shutdown_guard_task = None
++
+     async def _async_set_charger(self, enabled: bool) -> None:
+         if not self._battery_saver_enabled:
+             return
+         entity_id = self.battery_saver_config.get(CONF_CHARGER_SWITCH)
+         if not isinstance(entity_id, str) or not entity_id:
+             return
++        current_task = asyncio.current_task()
++        if enabled:
++            guard = self._battery_saver_shutdown_guard_task
++            if guard is not None and guard is not current_task and not guard.done():
++                guard.cancel()
++                self._battery_saver_shutdown_guard_task = None
+         state = self.hass.states.get(entity_id)
+         desired = "on" if enabled else "off"
+         if state is not None and state.state == desired:
++            if not enabled:
++                self._ensure_shutdown_guard()
+             return
+         if enabled:
+             await self._async_mute_charging_announcement()
+@@ -609,6 +684,8 @@
+                         f"anthbot_restore_volume_{self.client.serial_number}",
+                     )
+                 )
++        if not enabled:
++            self._ensure_shutdown_guard()
+ 
+     @staticmethod
+     def _state_
