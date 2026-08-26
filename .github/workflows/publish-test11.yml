@@ -1,0 +1,63 @@
+name: Publish v2.4.0-test11
+
+on:
+  push:
+    branches:
+      - release/v2.4.0-test11
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout staging branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build, validate and publish release source
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat .release/test11.patch.part00 \
+              .release/test11.patch.part01 \
+              .release/test11.patch.part02 \
+              .release/test11.patch.part03 \
+              .release/test11.patch.part04 \
+              .release/test11.patch.part05 \
+              .release/test11.patch.part06 \
+              .release/test11.patch.rem00 \
+              .release/test11.patch.rem01 \
+              .release/test11.patch.rem02 \
+              .release/test11.patch.rem03 \
+              .release/test11.patch.rem04 \
+              .release/test11.patch.rem05 \
+              .release/test11.patch.rem06 \
+              .release/test11.patch.rem07 \
+              .release/test11.patch.rem08 > /tmp/test11.patch
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin main fix/live-battery-saver-rtk-responsive
+          git checkout -B publish-test11 origin/main
+          git merge --no-edit origin/fix/live-battery-saver-rtk-responsive
+
+          patch --dry-run -p1 --forward < /tmp/test11.patch
+          patch -p1 --forward < /tmp/test11.patch
+
+          python -m unittest discover -s tests -v
+          python -m json.tool custom_components/anthbot_map/manifest.json >/dev/null
+          find custom_components www -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          cmp custom_components/anthbot_map/frontend/anthbot-map-card.js www/anthbot-map/anthbot-map-card.js
+          cmp custom_components/anthbot_map/frontend/i18n.js www/anthbot-map/i18n.js
+          cmp custom_components/anthbot_map/frontend/renderer.js www/anthbot-map/renderer.js
+          cmp custom_components/anthbot_map/frontend/styles.css www/anthbot-map/styles.css
+          test -z "$(find custom_components -type f \( -name '*.pyc' -o -name '*.gz' \) -print -quit)"
+
+          git add -A
+          git commit -m "Publish battery saver profiles and shutdown guard [release v2.4.0-test11]"
+          git push origin HEAD:main
