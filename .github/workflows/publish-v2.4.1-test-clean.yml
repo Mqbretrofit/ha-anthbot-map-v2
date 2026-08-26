@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: publish-v2.4.1-test
+  cancel-in-progress: true
+
 jobs:
   publish:
     if: github.actor != 'github-actions[bot]'
@@ -18,58 +22,21 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Patch duplicate custom-element registration
+      - name: Validate safe loader hotfix
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-
-          old = '''customElements.define("anthbot-map-card", AnthbotMapCard);\n\nwindow.customCards = window.customCards || [];\nwindow.customCards.push({\n  type: "anthbot-map-card",\n  name: "Anthbot Map Card",\n  description: "Canvas map display and controls for Anthbot map sensors",\n});'''
-
-          new = '''if (!customElements.get("anthbot-map-card")) {\n  customElements.define("anthbot-map-card", AnthbotMapCard);\n}\n\nwindow.customCards = window.customCards || [];\nif (!window.customCards.some((card) => card.type === "anthbot-map-card")) {\n  window.customCards.push({\n    type: "anthbot-map-card",\n    name: "Anthbot Map Card",\n    description: "Canvas map display and controls for Anthbot map sensors",\n  });\n}'''
-
-          for path in [
-              Path('custom_components/anthbot_map/frontend/anthbot-map-card.js'),
-              Path('www/anthbot-map/anthbot-map-card.js'),
-          ]:
-              text = path.read_text(encoding='utf-8')
-              if new in text:
-                  print(f'{path}: already patched')
-                  continue
-              if old not in text:
-                  raise SystemExit(f'{path}: expected registration block not found')
-              path.write_text(text.replace(old, new, 1), encoding='utf-8')
-              print(f'{path}: patched')
-          PY
-
-      - name: Validate hotfix
-        env:
-          PYTHONDONTWRITEBYTECODE: "1"
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m unittest discover -s tests -v
           python -m json.tool custom_components/anthbot_map/manifest.json >/dev/null
-          find custom_components www -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          node --check custom_components/anthbot_map/frontend/anthbot-map-card.js
+          node --check custom_components/anthbot_map/frontend/anthbot-map-card-core.js
+          node --check www/anthbot-map/anthbot-map-card.js
+          node --check www/anthbot-map/anthbot-map-card-core.js
           cmp custom_components/anthbot_map/frontend/anthbot-map-card.js www/anthbot-map/anthbot-map-card.js
-          grep -F 'if (!customElements.get("anthbot-map-card"))' custom_components/anthbot_map/frontend/anthbot-map-card.js
-          grep -F 'if (!window.customCards.some((card) => card.type === "anthbot-map-card"))' custom_components/anthbot_map/frontend/anthbot-map-card.js
+          cmp custom_components/anthbot_map/frontend/anthbot-map-card-core.js www/anthbot-map/anthbot-map-card-core.js
+          grep -F 'registry.get(name)' custom_components/anthbot_map/frontend/anthbot-map-card.js
+          grep -F 'anthbot-map-card-core.js?v=2.4.1-test-hotfix1' custom_components/anthbot_map/frontend/anthbot-map-card.js
+          grep -F 'customElements.define("anthbot-map-card", AnthbotMapCard);' custom_components/anthbot_map/frontend/anthbot-map-card-core.js
           test -z "$(find custom_components -type f \( -name '*.pyc' -o -name '*.gz' \) -print -quit)"
-
-      - name: Commit hotfix
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add custom_components/anthbot_map/frontend/anthbot-map-card.js www/anthbot-map/anthbot-map-card.js
-          if git diff --cached --quiet; then
-            echo 'Hotfix already committed.'
-          else
-            git commit -m 'Fix duplicate anthbot-map-card registration'
-            git push origin HEAD:release/v2.4.1-test
-          fi
 
       - name: Build complete installer
         shell: bash
