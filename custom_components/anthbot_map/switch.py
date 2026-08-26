@@ -14,8 +14,88 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .api import AnthbotGenieApiError
 from .const import DOMAIN
+from . import coordinator as coordinator_module
 from .coordinator import AnthbotGenieDataUpdateCoordinator
 from .zones import async_update_zone_settings, auto_zones, manual_zones
+
+
+# v2.4.1-test runtime hotfix: the mower can report "standby" while it is
+# physically docked with charger power removed. Treat that as a docked state,
+# and make the 55+1 minute guard resilient to short telemetry gaps.
+coordinator_module._DOCKED_STATUS_VALUES.add("standby")
+
+
+async def _battery_saver_shutdown_guard_loop_patched(self) -> None:
+    """Pulse charger power after 55 minutes and retry transient telemetry gaps."""
+    transient_statuses = {"", "unknown", "unavailable", "none"}
+    try:
+        while self._battery_saver_enabled:
+            await asyncio.sleep(55 * 60)
+            while self._battery_saver_enabled:
+                config = self.battery_saver_config
+                entity_id = config.get(coordinator_module.CONF_CHARGER_SWITCH)
+                if not isinstance(entity_id, str) or not entity_id:
+                    return
+                switch_state = self.hass.states.get(entity_id)
+                if switch_state is not None and switch_state.state == "on":
+                    return
+
+                status = self._robot_status(self.reported_state)
+                battery = self._battery_percentage(self.reported_state)
+                if battery is None or status in transient_statuses:
+                    coordinator_module._LOGGER.debug(
+                        "Battery saver guard telemetry unavailable for %s; retrying in 60 seconds",
+                        self.client.serial_number,
+                    )
+                    await asyncio.sleep(60)
+                    continue
+                if status not in coordinator_module._DOCKED_STATUS_VALUES:
+                    return
+
+                if battery <= config[coordinator_module.CONF_MAINTENANCE_LEVEL]:
+                    await self._async_set_charger(True)
+                    return
+
+                coordinator_module._LOGGER.info(
+                    "Battery saver anti-shutdown pulse starting for %s",
+                    self.client.serial_number,
+                )
+                await self._async_set_charger(True)
+                await asyncio.sleep(60)
+
+                status = self._robot_status(self.reported_state)
+                battery = self._battery_percentage(self.reported_state)
+                if not self._battery_saver_enabled:
+                    return
+                if status in coordinator_module._LIVE_STATUS_VALUES or status == "backtodock":
+                    return
+                if battery is None or status in transient_statuses:
+                    coordinator_module._LOGGER.debug(
+                        "Battery saver guard lost telemetry after pulse for %s; leaving charger power on",
+                        self.client.serial_number,
+                    )
+                    return
+                if status not in coordinator_module._DOCKED_STATUS_VALUES:
+                    return
+                if battery <= config[coordinator_module.CONF_MAINTENANCE_LEVEL]:
+                    return
+
+                await self._async_set_charger(False)
+                coordinator_module._LOGGER.info(
+                    "Battery saver anti-shutdown pulse completed for %s",
+                    self.client.serial_number,
+                )
+                break
+    except asyncio.CancelledError:
+        raise
+    finally:
+        if asyncio.current_task() is self._battery_saver_shutdown_guard_task:
+            self._battery_saver_shutdown_guard_task = None
+
+
+AnthbotGenieDataUpdateCoordinator._async_shutdown_guard_loop = (
+    _battery_saver_shutdown_guard_loop_patched
+)
 
 
 def _coerce_enabled_value(value: object) -> bool:
@@ -70,6 +150,26 @@ async def async_setup_entry(
     coordinators: list[AnthbotGenieDataUpdateCoordinator] = hass.data[DOMAIN][
         entry.entry_id
     ]
+
+    # If an old guard coroutine was started before the switch platform loaded,
+    # restart it so the patched implementation is used immediately after HA
+    # startup instead of waiting for the next charger-off transition.
+    for coordinator in coordinators:
+        guard = coordinator._battery_saver_shutdown_guard_task
+        if guard is not None and not guard.done():
+            guard.cancel()
+            coordinator._battery_saver_shutdown_guard_task = None
+        config = coordinator.battery_saver_config
+        entity_id = config.get(coordinator_module.CONF_CHARGER_SWITCH)
+        switch_state = hass.states.get(entity_id) if isinstance(entity_id, str) else None
+        if (
+            coordinator.battery_saver_enabled
+            and isinstance(entity_id, str)
+            and entity_id
+            and (switch_state is None or switch_state.state != "on")
+        ):
+            coordinator._ensure_shutdown_guard()
+
     entities: list[SwitchEntity] = [
         AnthbotSwitchEntity(coordinator, description)
         for coordinator in coordinators
@@ -312,7 +412,6 @@ class AnthbotSwitchEntity(
             await self._async_set_param_toggle("nest_switch", False)
             return
         await self._async_set_custom_direction_enabled(False)
-
 
 
 class AnthbotZoneSwitchEntity(
