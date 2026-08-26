@@ -1,0 +1,1 @@
+v2.4.1-test hotfix: anthbot-map-card.js will act as a safe loader for anthbot-map-card-core.js to make custom-element registration idempotent when Home Assistant loads the resource more than once.
