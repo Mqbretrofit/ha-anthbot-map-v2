@@ -1,0 +1,88 @@
+umber" min="10" max="99" value="${Number(attrs.resume_level ?? 40)}"></label>
+-        <label class="battery-saver-check"><span>${escapeHtml(this.t("sharedRtkPower"))}</span><input name="shared_rtk_power" type="checkbox" ${attrs.shared_rtk_power ? "checked" : ""}></label>
+-        <div class="battery-saver-actions">
+-          <button type="button" class="secondary">${escapeHtml(this.t("close"))}</button>
+-          <button type="button" class="primary">${escapeHtml(this.t("save"))}</button>
++      <div class="battery-saver-layout">
++        <div class="battery-profile-list">
++          <div style="font-weight:700;margin-bottom:2px">${escapeHtml(this.t("batteryProfileSelect"))}</div>
++          <label class="battery-profile-card" data-profile="max">
++            <input type="radio" name="battery_profile" value="max">
++            <div><div class="battery-profile-title">🌿 ${escapeHtml(this.t("batteryProfileMax"))}</div><div class="battery-profile-note">${escapeHtml(this.t("batteryProfileMaxNote"))}</div></div>
++            <div class="battery-profile-range max">60–80%</div>
++          </label>
++          <label class="battery-profile-card" data-profile="balanced">
++            <input type="radio" name="battery_profile" value="balanced">
++            <div><div class="battery-profile-title">⚖️ ${escapeHtml(this.t("batteryProfileBalanced"))}</div><div class="battery-profile-note">${escapeHtml(this.t("batteryProfileBalancedNote"))}</div></div>
++            <div class="battery-profile-range balanced">65–80%</div>
++          </label>
++          <label class="battery-profile-card" data-profile="ready">
++            <input type="radio" name="battery_profile" value="ready">
++            <div><div class="battery-profile-title">⚡ ${escapeHtml(this.t("batteryProfileReady"))}</div><div class="battery-profile-note">${escapeHtml(this.t("batteryProfileReadyNote"))}</div></div>
++            <div class="battery-profile-range ready">80–90%</div>
++          </label>
++          <label class="battery-profile-card" data-profile="custom">
++            <input type="radio" name="battery_profile" value="custom">
++            <div><div class="battery-profile-title">⚙️ ${escapeHtml(this.t("batteryProfileCustom"))}</div><div class="battery-profile-note">${escapeHtml(this.t("batteryProfileCustomNote"))}</div></div>
++            <div class="battery-profile-range">${escapeHtml(this.t("batteryAdjustable"))}</div>
++          </label>
++          <div class="battery-info-box"><strong>${escapeHtml(this.t("batteryImportant"))}</strong> ${escapeHtml(this.t("batteryStandbyInfo"))}</div>
++        </div>
++        <div class="battery-profile-details">
++          <div style="font-weight:700;margin-bottom:2px">${escapeHtml(this.t("batteryProfileDetails"))}</div>
++          <label class="battery-detail-row"><div><span>${escapeHtml(this.t("batteryChargeLimit"))}</span><small>${escapeHtml(this.t("batteryChargeLimitNote"))}</small></div><input name="charge_limit" type="number" min="20" max="100" value="${currentCharge}"></label>
++          <label class="battery-detail-row"><div><span>${escapeHtml(this.t("batteryMaintenanceLevel"))}</span><small>${escapeHtml(this.t("batteryMaintenanceLevelNote"))}</small></div><input name="maintenance_level" type="number" min="10" max="99" value="${currentMaintenance}"></label>
++          <label class="battery-detail-row"><div><span>${escapeHtml(this.t("batteryResumeLevel"))}</span><small>${escapeHtml(this.t("batteryResumeLevelNote"))}</small></div><input name="resume_level" type="number" min="10" max="99" value="${currentResume}"></label>
++          <label class="battery-saver-check"><span>${escapeHtml(this.t("sharedRtkPower"))}<small style="display:block;opacity:.68;margin-top:3px">${escapeHtml(this.t("sharedRtkPowerNote"))}</small></span><input name="shared_rtk_power" type="checkbox" ${attrs.shared_rtk_power ? "checked" : ""}></label>
++          <div class="battery-anti-shutdown"><strong>◷ ${escapeHtml(this.t("batteryShutdownGuardTitle"))}</strong><div style="margin-top:5px;line-height:1.42">${escapeHtml(this.t("batteryShutdownGuardText"))}</div><div style="opacity:.68;font-size:.86em;margin-top:7px">${escapeHtml(this.t("batteryShutdownGuardNote"))}</div></div>
+         </div>
++      </div>
++      <div class="battery-saver-actions">
++        <button type="button" class="secondary">${escapeHtml(this.t("close"))}</button>
++        <button type="button" class="primary">${escapeHtml(this.t("save"))}</button>
+       </div>`;
++
++    const profileValues = {
++      max: { charge: 80, maintenance: 60, resume: 50 },
++      balanced: { charge: 80, maintenance: 65, resume: 50 },
++      ready: { charge: 90, maintenance: 80, resume: 50 },
++    };
++    const chargeInput = dialog.querySelector('[name="charge_limit"]');
++    const maintenanceInput = dialog.querySelector('[name="maintenance_level"]');
++    const resumeInput = dialog.querySelector('[name="resume_level"]');
++    const selectProfile = (profile, applyValues = true) => {
++      dialog.querySelectorAll('.battery-profile-card').forEach((card) => card.classList.toggle('active', card.dataset.profile === profile));
++      const radio = dialog.querySelector(`[name="battery_profile"][value="${profile}"]`);
++      if (radio) radio.checked = true;
++      if (applyValues && profileValues[profile]) {
++        chargeInput.value = profileValues[profile].charge;
++        maintenanceInput.value = profileValues[profile].maintenance;
++        resumeInput.value = profileValues[profile].resume;
++      }
++      const custom = profile === 'custom';
++      chargeInput.disabled = !custom;
++      maintenanceInput.disabled = !custom;
++      resumeInput.disabled = !custom;
++    };
++    selectProfile(detectedProfile, false);
++    dialog.querySelectorAll('[name="battery_profile"]').forEach((radio) => {
++      radio.addEventListener('change', () => selectProfile(radio.value, true));
++    });
++
+     dialog.querySelector(".mowing-record-detail-close").addEventListener("click", close);
+     dialog.querySelector(".secondary").addEventListener("click", close);
+     dialog.querySelector(".primary").addEventListener("click", async () => {
+-      const chargeLimit = Number(dialog.querySelector('[name="charge_limit"]').value);
+-      const maintenanceLevel = Number(dialog.querySelector('[name="maintenance_level"]').value);
+-      const resumeLevel = Number(dialog.querySelector('[name="resume_level"]').value);
++      const chargeLimit = Number(chargeInput.value);
++      const maintenanceLevel = Number(maintenanceInput.value);
++      const resumeLevel = Number(resumeInput.value);
+       if (maintenanceLevel >= chargeLimit || resumeLevel >= chargeLimit) {
+         this.notify(this.t("batteryLevelsInvalid"));
+         return;
+diff -ruN t8local/www/anthbot-map/i18n.js t11pub/www/anthbot-map/i18n.js
+--- t8local/www/anthbot-map/i18n.js	2026-08-25 16:04:51.000000000 +0000
++++ t11pub/www/anthbot-map/i18n.js	2026-08-26 13:30:56.000000000 +0000
+@@ -1,4 +1,4 @@
+-import { TRANSLATION_COMP
