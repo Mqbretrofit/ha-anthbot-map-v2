@@ -1,0 +1,104 @@
+ions[language] || (translations[language] = {}), values);
++}
++
+ export function normalizeLanguage(value) {
+   const raw = String(value || "en").replace("_", "-");
+   const lower = raw.toLowerCase();
+diff -ruN t8local/custom_components/anthbot_map/manifest.json t11pub/custom_components/anthbot_map/manifest.json
+--- t8local/custom_components/anthbot_map/manifest.json	2026-08-24 17:58:08.000000000 +0000
++++ t11pub/custom_components/anthbot_map/manifest.json	2026-08-26 13:41:03.000000000 +0000
+@@ -13,5 +13,5 @@
+   "iot_class": "cloud_push",
+   "issue_tracker": "https://github.com/Mqbretrofit/ha-anthbot-map-v2/issues",
+   "requirements": [],
+-  "version": "2.4.0"
++  "version": "2.4.0-test11"
+ }
+diff -ruN t8local/tests/test_mowing_history_v230.py t11pub/tests/test_mowing_history_v230.py
+--- t8local/tests/test_mowing_history_v230.py	2026-08-25 16:04:36.000000000 +0000
++++ t11pub/tests/test_mowing_history_v230.py	2026-08-26 13:42:21.000000000 +0000
+@@ -98,8 +98,8 @@
+         init_source = (INTEGRATION / "__init__.py").read_text(encoding="utf-8")
+         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+ 
+-        self.assertEqual(manifest["version"], "2.4.0")
+-        self.assertIn('?v=2.4.0-test7"', init_source)
++        self.assertEqual(manifest["version"], "2.4.0-test11")
++        self.assertIn('?v=2.4.0-test11"', init_source)
+         self.assertIn("Release tag $tag does not match manifest version", workflow)
+         for filename in ("anthbot-map-card.js", "i18n.js", "styles.css"):
+             self.assertEqual(
+diff -ruN t8local/tests/test_translation_coverage.py t11pub/tests/test_translation_coverage.py
+--- t8local/tests/test_translation_coverage.py	2026-08-25 16:04:36.000000000 +0000
++++ t11pub/tests/test_translation_coverage.py	2026-08-26 13:42:21.000000000 +0000
+@@ -20,7 +20,7 @@
+         ).decode("ascii")
+         source = (FRONTEND / "i18n.js").read_text(encoding="utf-8")
+         source = source.replace(
+-            'from "./i18n-complements.js?v=140"',
++            'from "./i18n-complements.js?v=141"',
+             f'from "data:text/javascript;base64,{complements}"',
+             1,
+         )
+diff -ruN t8local/www/anthbot-map/anthbot-map-card.js t11pub/www/anthbot-map/anthbot-map-card.js
+--- t8local/www/anthbot-map/anthbot-map-card.js	2026-08-25 16:04:51.000000000 +0000
++++ t11pub/www/anthbot-map/anthbot-map-card.js	2026-08-26 13:30:56.000000000 +0000
+@@ -1,7 +1,7 @@
+ import { AnthbotMapRenderer } from "./renderer.js?v=149";
+ import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=149";
+ import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=22000";
+-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=242";
++import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=244";
+ import {
+   adjustCalibration,
+   cardToYaml,
+@@ -1863,27 +1863,119 @@
+     overlay.addEventListener("click", (event) => {
+       if (event.target === overlay) close();
+     });
++
++    const currentCharge = Number(attrs.charge_limit ?? 80);
++    const currentMaintenance = Number(attrs.maintenance_level ?? 65);
++    const currentResume = Number(attrs.resume_level ?? 50);
++    const detectedProfile = (
++      currentCharge === 80 && currentMaintenance === 60 && currentResume === 50 ? "max" :
++      currentCharge === 80 && currentMaintenance === 65 && currentResume === 50 ? "balanced" :
++      currentCharge === 90 && currentMaintenance === 80 && currentResume === 50 ? "ready" :
++      "custom"
++    );
++
+     dialog.innerHTML = `
++      <style>
++        .battery-saver-dialog{width:min(920px,94vw);max-width:920px}
++        .battery-saver-layout{display:grid;grid-template-columns:minmax(260px,.95fr) minmax(320px,1.25fr);gap:18px;margin-top:14px}
++        .battery-profile-list,.battery-profile-details{display:flex;flex-direction:column;gap:10px}
++        .battery-profile-card{display:grid;grid-template-columns:32px 1fr auto;align-items:center;gap:10px;padding:12px 14px;border:1px solid var(--divider-color,#3a4653);border-radius:12px;cursor:pointer;background:rgba(255,255,255,.02)}
++        .battery-profile-card.active{border-color:var(--primary-color,#3b82f6);background:color-mix(in srgb,var(--primary-color,#3b82f6) 12%,transparent)}
++        .battery-profile-card input{margin:0}
++        .battery-profile-title{font-weight:700}
++        .battery-profile-note{font-size:.85em;opacity:.72;margin-top:2px}
++        .battery-profile-range{font-weight:700;white-space:nowrap}
++        .battery-profile-range.max{color:#63d34e}.battery-profile-range.balanced{color:#55a6ff}.battery-profile-range.ready{color:#ffc23d}
++        .battery-detail-row{display:grid;grid-template-columns:1fr 100px;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--divider-color,#3a4653);border-radius:12px}
++        .battery-detail-row span{font-weight:600}
++        .battery-detail-row small{display:block;opacity:.68;margin-top:3px}
++        .battery-detail-row input[type=number]{width:88px;text-align:center}
++        .battery-anti-shutdown{padding:13px 14px;border:1px solid #7356b8;border-radius:12px;background:rgba(105,72,180,.10)}
++        .battery-anti-shutdown strong{color:#a98cff}
++        .battery-info-box{padding:12px 14px;border:1px solid color-mix(in srgb,var(--primary-color,#3b82f6) 55%,transparent);border-radius:12px;background:color-mix(in srgb,var(--primary-color,#3b82f6) 8%,transparent);font-size:.9em;line-height:1.45}
++        .battery-saver-check{display:flex!important;justify-content:space-between;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--divider-color,#3a4653);border-radius:12px}
++        .battery-saver-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
++        @media(max-width:760px){.battery-saver-layout{grid-template-columns:1fr}.battery-detail-row{grid-template-columns:1fr 90px}}
++      </style>
+       <div class="mowing-record-detail-head">
+-        <div class="mowing-record-detail-title">${escapeHtml(this.t("batterySaverMode"))}</div>
++        <div>
++          <div class="mowing-record-detail-title">${escapeHtml(this.t("batterySaverMode"))}</div>
++          <div style="opacity:.68;font-size:.9em;margin-top:3px">${escapeHtml(this.t("batterySaverDescription"))}</div>
++        </div>
+         <button type="button" class="mowing-record-detail-close" aria-label="${escapeHtml(this.t("close"))}">×</button>
+       </div>
+-      <div class="battery-saver-form">
+-        <label><span>${escapeHtml(this.t("batteryChargeLimit"))}</span><input name="charge_limit" type="number" min="20" max="100" value="${Number(attrs.charge_limit ?? 80)}"></label>
+-        <label><span>${escapeHtml(this.t("batteryMaintenanceLevel"))}</span><input name="maintenance_level" type="number" min="10" max="99" value="${Number(attrs.maintenance_level ?? 60)}"></label>
+-        <label><span>${escapeHtml(this.t("batteryResumeLevel"))}</span><input name="resume_level" type="n
