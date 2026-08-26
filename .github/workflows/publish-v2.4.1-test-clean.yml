@@ -24,8 +24,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-
-          # Restore the temporary release payload from the last known-good staging commit.
           git checkout b22619046ee5d5b62ceba9bb1b144e9e378711b3 -- .release/v241
 
           python - <<'PY'
@@ -58,14 +56,18 @@ jobs:
               raise SystemExit('bytecode check anchor not found')
           script = script.replace(strict, cleanup, 1)
 
-          # The Actions token may publish code but may not modify workflow files.
+          patch_block = "patch --dry-run -p1 --forward < /tmp/coord.normalized.patch\npatch -p1 --forward < /tmp/coord.normalized.patch\n"
+          patch_safe = "if patch --dry-run -p1 --forward < /tmp/coord.normalized.patch; then\n  patch -p1 --forward < /tmp/coord.normalized.patch\nelse\n  echo 'Coordinator patch already applied; continuing to full validation.'\nfi\n"
+          if patch_block not in script:
+              raise SystemExit('coordinator patch block not found')
+          script = script.replace(patch_block, patch_safe, 1)
+
           script = script.replace(
               'git rm .github/workflows/publish-v2.4.1-test.yml\n',
               'git checkout -- .github/workflows/publish-v2.4.1-test.yml\n',
               1,
           )
 
-          # patch(1) can leave a .orig backup when applying with offsets; never ship it.
           script = script.replace(
               'git add -A\n',
               "rm -f custom_components/anthbot_map/coordinator.py.orig\ngit add -A\n",
