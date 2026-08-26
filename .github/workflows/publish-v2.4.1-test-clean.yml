@@ -74,6 +74,18 @@ jobs:
               1,
           )
 
+          script = script.replace(
+              'git commit -m "Prepare Anthbot Map v2.4.1-test"\n',
+              'git diff --cached --quiet || git commit -m "Prepare Anthbot Map v2.4.1-test"\n',
+              1,
+          )
+
+          script = script.replace(
+              '--target HEAD \\\n',
+              '--target "$(git rev-parse HEAD)" \\\n',
+              1,
+          )
+
           Path('/tmp/publish-v241.sh').write_text(script, encoding='utf-8')
           PY
           bash -euxo pipefail /tmp/publish-v241.sh
