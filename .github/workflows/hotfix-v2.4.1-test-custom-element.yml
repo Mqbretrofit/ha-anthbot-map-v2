@@ -1,0 +1,102 @@
+name: Hotfix v2.4.1-test custom element
+
+on:
+  push:
+    branches:
+      - release/v2.4.1-test
+    paths:
+      - .github/workflows/hotfix-v2.4.1-test-custom-element.yml
+
+permissions:
+  contents: write
+
+jobs:
+  hotfix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch duplicate custom-element registration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          old = '''customElements.define("anthbot-map-card", AnthbotMapCard);\n\nwindow.customCards = window.customCards || [];\nwindow.customCards.push({\n  type: "anthbot-map-card",\n  name: "Anthbot Map Card",\n  description: "Canvas map display and controls for Anthbot map sensors",\n});'''
+
+          new = '''if (!customElements.get("anthbot-map-card")) {\n  customElements.define("anthbot-map-card", AnthbotMapCard);\n}\n\nwindow.customCards = window.customCards || [];\nif (!window.customCards.some((card) => card.type === "anthbot-map-card")) {\n  window.customCards.push({\n    type: "anthbot-map-card",\n    name: "Anthbot Map Card",\n    description: "Canvas map display and controls for Anthbot map sensors",\n  });\n}'''
+
+          paths = [
+              Path('custom_components/anthbot_map/frontend/anthbot-map-card.js'),
+              Path('www/anthbot-map/anthbot-map-card.js'),
+          ]
+          for path in paths:
+              text = path.read_text(encoding='utf-8')
+              if new in text:
+                  print(f'{path}: already patched')
+                  continue
+              if old not in text:
+                  raise SystemExit(f'{path}: expected registration block not found')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+              print(f'{path}: patched')
+          PY
+
+      - name: Validate hotfix
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -v
+          node --check custom_components/anthbot_map/frontend/anthbot-map-card.js
+          node --check www/anthbot-map/anthbot-map-card.js
+          cmp custom_components/anthbot_map/frontend/anthbot-map-card.js www/anthbot-map/anthbot-map-card.js
+          grep -F 'if (!customElements.get("anthbot-map-card"))' custom_components/anthbot_map/frontend/anthbot-map-card.js
+          grep -F 'if (!window.customCards.some((card) => card.type === "anthbot-map-card"))' custom_components/anthbot_map/frontend/anthbot-map-card.js
+
+      - name: Commit hotfix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/anthbot_map/frontend/anthbot-map-card.js www/anthbot-map/anthbot-map-card.js
+          git commit -m 'Fix duplicate anthbot-map-card registration'
+          git push origin HEAD:release/v2.4.1-test
+
+      - name: Rebuild v2.4.1-test installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f anthbot-map-v2.4.1-test.zip
+          zip -r anthbot-map-v2.4.1-test.zip \
+            custom_components \
+            www \
+            examples \
+            README.md \
+            README_HU.md \
+            CHANGELOG.md \
+            CHANGELOG*.md \
+            RELEASE_NOTES*.md \
+            LICENSE \
+            NOTICE.md \
+            hacs.json
+
+      - name: Update v2.4.1-test prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          head_sha="$(git rev-parse HEAD)"
+          gh api --method PATCH \
+            "repos/${GITHUB_REPOSITORY}/git/refs/tags/v2.4.1-test" \
+            -f sha="$head_sha" \
+            -F force=true
+          gh release upload v2.4.1-test anthbot-map-v2.4.1-test.zip --clobber
+          gh release edit v2.4.1-test --prerelease
