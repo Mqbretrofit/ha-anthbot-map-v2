@@ -6,13 +6,19 @@ on:
       - main
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (for example v2.4.1-beta)"
+        required: true
+        default: "v2.4.1-beta"
 
 permissions:
   contents: write
 
 jobs:
   release:
-    if: startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[release v')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[release v')
     runs-on: ubuntu-latest
     env:
       RELEASE_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
@@ -29,7 +35,9 @@ jobs:
         id: release
         shell: bash
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            tag="${{ inputs.tag }}"
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             tag="${GITHUB_REF_NAME}"
           else
             tag="$(printf '%s\n' "$RELEASE_COMMIT_MESSAGE" | sed -n 's/.*\[release \(v[^]]*\)\].*/\1/p')"
@@ -77,7 +85,9 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
+          set -euo pipefail
           tag="${{ steps.release.outputs.tag }}"
           version="${tag#v}"
           : > /tmp/release-notes.md
@@ -90,16 +100,22 @@ jobs:
           if [ ! -s /tmp/release-notes.md ]; then
             printf '# Anthbot Map %s\n\nSee CHANGELOG.md for details.\n' "$tag" > /tmp/release-notes.md
           fi
+
+          release_flags=()
+          if [[ "$tag" == *-* ]]; then
+            release_flags+=(--prerelease)
+          else
+            release_flags+=(--latest)
+          fi
+
           if gh release view "$tag" >/dev/null 2>&1; then
-            # Reissuing an existing version must update both the downloadable
-            # asset and the tag used by HACS/source archives.
             gh api --method PATCH \
               "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}" \
               -f sha="${GITHUB_SHA}" \
               -F force=true
             gh release edit "$tag" \
               --title "Anthbot Map $tag" \
-              --latest \
+              "${release_flags[@]}" \
               --notes-file /tmp/release-notes.md
             gh release upload "$tag" \
               "anthbot-map-${tag}.zip" \
@@ -109,6 +125,6 @@ jobs:
               "anthbot-map-${tag}.zip" \
               --target "${GITHUB_SHA}" \
               --title "Anthbot Map $tag" \
-              --latest \
+              "${release_flags[@]}" \
               --notes-file /tmp/release-notes.md
           fi
