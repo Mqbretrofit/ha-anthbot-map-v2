@@ -28,6 +28,7 @@ async def async_prepare_cloud_connection(
     *,
     attempts: int = 2,
     wait_seconds: int = 4,
+    mowing_start: bool = False,
 ) -> bool:
     """Request app-style MQTT properties and wait for live shadow state.
 
@@ -37,6 +38,8 @@ async def async_prepare_cloud_connection(
     that the cloud path is usable, so do not block commands on the Genie-only
     wake acknowledgement.
     """
+    if mowing_start:
+        await coordinator.async_prepare_mowing_power()
     m_series = _is_m_series(coordinator)
 
     for attempt in range(attempts):
@@ -100,7 +103,7 @@ async def async_start_mowing(
     """Wake the mower, start it, verify the mode and retry once if needed."""
     expected = expected_modes or {"globalmowing", "mowing", "gototarget"}
 
-    if not await async_prepare_cloud_connection(coordinator):
+    if not await async_prepare_cloud_connection(coordinator, mowing_start=True):
         raise AnthbotGenieApiError(
             "The mower did not confirm its cloud connection; start command was not sent"
         )
@@ -134,7 +137,7 @@ async def async_start_outer_edge_mowing(
     coordinator: AnthbotGenieDataUpdateCoordinator,
 ) -> bool:
     """Start outer-edge mowing with the command used by the official app."""
-    if not await async_prepare_cloud_connection(coordinator):
+    if not await async_prepare_cloud_connection(coordinator, mowing_start=True):
         raise AnthbotGenieApiError(
             "The mower did not confirm its cloud connection; edge command was not sent"
         )

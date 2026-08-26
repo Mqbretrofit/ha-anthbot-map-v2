@@ -105,6 +105,9 @@ class BatterySaverSourceTests(unittest.TestCase):
         self.assertIn("CONF_CHARGE_LIMIT", config_flow)
         self.assertIn("CONF_MAINTENANCE_LEVEL", config_flow)
         self.assertIn("CONF_RESUME_LEVEL", config_flow)
+        self.assertIn("async_update_battery_saver_config(user_input)", config_flow)
+        self.assertIn("async def async_update_battery_saver_config", coordinator)
+        self.assertIn("self.async_schedule_battery_saver_evaluation()", coordinator)
         self.assertIn("return AnthbotGenieOptionsFlow()", config_flow)
         self.assertNotIn("self._config_entry", config_flow)
         self.assertIn("AnthbotBatterySaverSwitchEntity", switch)
@@ -116,6 +119,30 @@ class BatterySaverSourceTests(unittest.TestCase):
         self.assertIn("_async_mute_charging_announcement", coordinator)
         self.assertIn("_async_delayed_voice_volume_restore", coordinator)
         self.assertIn('cmd="volume_ctl", data={"volume": 0}', coordinator)
+
+    def test_shared_station_rtk_supply_stays_on_for_mowing(self) -> None:
+        coordinator = (COMPONENT / "coordinator.py").read_text(encoding="utf-8")
+        commands = (COMPONENT / "commands.py").read_text(encoding="utf-8")
+        mowing_block = coordinator.split("if is_mowing:", 1)[1].split(
+            "if self._battery_saver_phase == \"initial_charge\"", 1
+        )[0]
+        self.assertIn("await self._async_set_charger(True)", mowing_block)
+        self.assertNotIn("await self._async_set_charger(False)", mowing_block)
+        self.assertIn("async def async_prepare_mowing_power", coordinator)
+        self.assertIn("await coordinator.async_prepare_mowing_power()", commands)
+        self.assertEqual(commands.count("mowing_start=True"), 2)
+
+    def test_mowed_path_stays_visible_during_recovery_charging(self) -> None:
+        renderer = (
+            ROOT / "custom_components" / "anthbot_map" / "frontend" / "renderer.js"
+        ).read_text(encoding="utf-8")
+        draw_path = renderer.split("drawMowedPath(ctx, geometry) {", 1)[1].split(
+            "mowedCoverageScreenWidth", 1
+        )[0]
+
+        self.assertNotIn("isDockingOrChargingState(this.state)", draw_path)
+        self.assertIn("mowedPathSessionId(state)", renderer)
+        self.assertIn("nextSession !== this.currentMowedPathSessionId", renderer)
 
     def test_card_exposes_battery_saver_without_fake_progress(self) -> None:
         card = (COMPONENT / "frontend" / "anthbot-map-card.js").read_text(

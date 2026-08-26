@@ -229,13 +229,9 @@ export class AnthbotMapRenderer {
     if (this.options.showMowedPath === false) {
       return;
     }
-    // Match the official app: a completed route must not remain painted while
-    // the mower is returning to, docked at, or charging on the station.  The
-    // cloud can keep the previous path payload after the task has ended, so
-    // checking only whether path points exist would display stale coverage.
-    if (isDockingOrChargingState(this.state)) {
-      return;
-    }
+    // Charging is part of the same mowing session when the mower returns with
+    // a low battery. Keep that session's trail visible until a new cloud path
+    // session (path_id/path_time) starts, matching the official application.
 
     const pathSource = String(this.options.mowedPathSource || "auto").toLowerCase();
     const cloudOnly = pathSource === "cloud";
