@@ -18,82 +18,87 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Run proven publisher with bytecode cleanup
+      - name: Patch duplicate custom-element registration
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git checkout b22619046ee5d5b62ceba9bb1b144e9e378711b3 -- .release/v241
-
           python - <<'PY'
           from pathlib import Path
 
-          src = Path('.github/workflows/publish-v2.4.1-test.yml').read_text(encoding='utf-8').splitlines()
-          start = None
-          end = None
-          for i, line in enumerate(src):
-              if line.strip() == 'run: |' and i > 0 and 'Build exact v2.4.1-test source' in src[i - 2]:
-                  start = i + 1
-                  break
-          if start is None:
-              raise SystemExit('publisher run block not found')
-          for i in range(start, len(src)):
-              if src[i].startswith('        env:'):
-                  end = i
-                  break
-          if end is None:
-              raise SystemExit('publisher run block end not found')
+          old = '''customElements.define("anthbot-map-card", AnthbotMapCard);\n\nwindow.customCards = window.customCards || [];\nwindow.customCards.push({\n  type: "anthbot-map-card",\n  name: "Anthbot Map Card",\n  description: "Canvas map display and controls for Anthbot map sensors",\n});'''
 
-          lines = []
-          for line in src[start:end]:
-              lines.append(line[10:] if line.startswith('          ') else line)
-          script = '\n'.join(lines) + '\n'
+          new = '''if (!customElements.get("anthbot-map-card")) {\n  customElements.define("anthbot-map-card", AnthbotMapCard);\n}\n\nwindow.customCards = window.customCards || [];\nif (!window.customCards.some((card) => card.type === "anthbot-map-card")) {\n  window.customCards.push({\n    type: "anthbot-map-card",\n    name: "Anthbot Map Card",\n    description: "Canvas map display and controls for Anthbot map sensors",\n  });\n}'''
 
-          strict = 'test -z "$(find custom_components -type f \\( -name \'*.pyc\' -o -name \'*.gz\' \\) -print -quit)"'
-          cleanup = "find custom_components -type d -name '__pycache__' -prune -exec rm -rf {} +\nfind custom_components -type f -name '*.pyc' -delete\n" + strict
-          if strict not in script:
-              raise SystemExit('bytecode check anchor not found')
-          script = script.replace(strict, cleanup, 1)
-
-          patch_block = "patch --dry-run -p1 --forward < /tmp/coord.normalized.patch\npatch -p1 --forward < /tmp/coord.normalized.patch\n"
-          patch_safe = "if patch --dry-run -p1 --forward < /tmp/coord.normalized.patch; then\n  patch -p1 --forward < /tmp/coord.normalized.patch\nelse\n  echo 'Coordinator patch already applied; continuing to full validation.'\nfi\n"
-          if patch_block not in script:
-              raise SystemExit('coordinator patch block not found')
-          script = script.replace(patch_block, patch_safe, 1)
-
-          script = script.replace(
-              'git rm .github/workflows/publish-v2.4.1-test.yml\n',
-              'git checkout -- .github/workflows/publish-v2.4.1-test.yml\n',
-              1,
-          )
-
-          script = script.replace(
-              'git add -A\n',
-              "rm -f custom_components/anthbot_map/coordinator.py.orig\ngit add -A\n",
-              1,
-          )
-
-          commit_push = '''git commit -m "Prepare Anthbot Map v2.4.1-test"
-git push origin HEAD:release/v2.4.1-test
-'''
-          safe_commit_push = '''if git diff --cached --quiet; then
-  echo "Release source already committed; skipping branch push."
-else
-  git commit -m "Prepare Anthbot Map v2.4.1-test"
-  git push origin HEAD:release/v2.4.1-test
-fi
-'''
-          if commit_push not in script:
-              raise SystemExit('commit/push block not found')
-          script = script.replace(commit_push, safe_commit_push, 1)
-
-          script = script.replace(
-              '--target HEAD \\\n',
-              '--target "$(git rev-parse HEAD)" \\\n',
-              1,
-          )
-
-          Path('/tmp/publish-v241.sh').write_text(script, encoding='utf-8')
+          for path in [
+              Path('custom_components/anthbot_map/frontend/anthbot-map-card.js'),
+              Path('www/anthbot-map/anthbot-map-card.js'),
+          ]:
+              text = path.read_text(encoding='utf-8')
+              if new in text:
+                  print(f'{path}: already patched')
+                  continue
+              if old not in text:
+                  raise SystemExit(f'{path}: expected registration block not found')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+              print(f'{path}: patched')
           PY
-          bash -euxo pipefail /tmp/publish-v241.sh
+
+      - name: Validate hotfix
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -v
+          python -m json.tool custom_components/anthbot_map/manifest.json >/dev/null
+          find custom_components www -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          cmp custom_components/anthbot_map/frontend/anthbot-map-card.js www/anthbot-map/anthbot-map-card.js
+          grep -F 'if (!customElements.get("anthbot-map-card"))' custom_components/anthbot_map/frontend/anthbot-map-card.js
+          grep -F 'if (!window.customCards.some((card) => card.type === "anthbot-map-card"))' custom_components/anthbot_map/frontend/anthbot-map-card.js
+          test -z "$(find custom_components -type f \( -name '*.pyc' -o -name '*.gz' \) -print -quit)"
+
+      - name: Commit hotfix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/anthbot_map/frontend/anthbot-map-card.js www/anthbot-map/anthbot-map-card.js
+          if git diff --cached --quiet; then
+            echo 'Hotfix already committed.'
+          else
+            git commit -m 'Fix duplicate anthbot-map-card registration'
+            git push origin HEAD:release/v2.4.1-test
+          fi
+
+      - name: Build complete installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f anthbot-map-v2.4.1-test.zip
+          zip -r anthbot-map-v2.4.1-test.zip \
+            custom_components \
+            www \
+            examples \
+            README.md \
+            README_HU.md \
+            CHANGELOG.md \
+            CHANGELOG*.md \
+            RELEASE_NOTES*.md \
+            LICENSE \
+            NOTICE.md \
+            hacs.json
+
+      - name: Refresh v2.4.1-test prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          head_sha="$(git rev-parse HEAD)"
+          gh api --method PATCH \
+            "repos/${GITHUB_REPOSITORY}/git/refs/tags/v2.4.1-test" \
+            -f sha="$head_sha" \
+            -F force=true
+          gh release upload v2.4.1-test anthbot-map-v2.4.1-test.zip --clobber
+          gh release edit v2.4.1-test --prerelease
