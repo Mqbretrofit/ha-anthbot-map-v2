@@ -1,0 +1,8 @@
+name: Validate v2.4.1-test placeholder
+on:
+  workflow_dispatch:
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Manual only"
