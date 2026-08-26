@@ -67,7 +67,7 @@ _LIVE_STATUS_VALUES = {
     "munka",
     "vagas",
 }
-_DOCKED_STATUS_VALUES = {"charge", "charging", "chargestart", "idle", "sleep"}
+_DOCKED_STATUS_VALUES = {"charge", "charging", "chargestart", "idle", "sleep", "standby"}
 _ROBOT_STATUS_BY_CODE = {
     0: "idle",
     2: "charge",
@@ -606,8 +606,21 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     return
                 status = self._robot_status(self.reported_state)
                 battery = self._battery_percentage(self.reported_state)
-                if status not in _DOCKED_STATUS_VALUES or battery is None:
-                    return
+                if battery is None:
+                    _LOGGER.debug(
+                        "Battery saver anti-shutdown guard has no battery value for %s; retrying in 60 seconds",
+                        self.client.serial_number,
+                    )
+                    await asyncio.sleep(60)
+                    continue
+                if status not in _DOCKED_STATUS_VALUES:
+                    _LOGGER.debug(
+                        "Battery saver anti-shutdown guard saw transient status %s for %s; retrying in 60 seconds",
+                        status,
+                        self.client.serial_number,
+                    )
+                    await asyncio.sleep(60)
+                    continue
                 # At/below the maintenance threshold this is no longer a short
                 # keep-awake pulse: normal maintenance charging must take over.
                 if battery <= config[CONF_MAINTENANCE_LEVEL]:
