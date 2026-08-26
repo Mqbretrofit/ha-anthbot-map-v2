@@ -24,6 +24,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+
+          # Restore the temporary release payload from the last known-good staging commit.
+          git checkout b22619046ee5d5b62ceba9bb1b144e9e378711b3 -- .release/v241
+
           python - <<'PY'
           from pathlib import Path
 
@@ -55,7 +59,6 @@ jobs:
           script = script.replace(strict, cleanup, 1)
 
           # The Actions token may publish code but may not modify workflow files.
-          # Keep the one-shot workflow in the branch; it is excluded from the ZIP.
           script = script.replace(
               'git rm .github/workflows/publish-v2.4.1-test.yml\n',
               'git checkout -- .github/workflows/publish-v2.4.1-test.yml\n',
