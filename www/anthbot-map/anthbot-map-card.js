@@ -1,7 +1,7 @@
 import { AnthbotMapRenderer } from "./renderer.js?v=149";
 import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=149";
 import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=22000";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=240";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=244";
 import {
   adjustCalibration,
   cardToYaml,
@@ -203,7 +203,7 @@ class AnthbotMapCard extends HTMLElement {
       .join(" ");
     root.innerHTML = `
       <ha-card class="${cardClasses}">
-        <link rel="stylesheet" href="${this.resolveAsset("styles.css?v=142")}">
+        <link rel="stylesheet" href="${this.resolveAsset("styles.css?v=143")}">
         <style>
           .anthbot-menu-toggle { position:absolute; right:14px; bottom:14px; z-index:40; min-height:46px; padding:9px 15px; border:1px solid rgba(255,255,255,.38); border-radius:999px; background:rgba(10,18,26,.66); color:#fff; backdrop-filter:blur(12px); box-shadow:0 8px 28px rgba(0,0,0,.32); font:inherit; font-weight:800; cursor:pointer; }
           .anthbot-glass-panel { display:none; position:absolute; z-index:39; right:12px; bottom:70px; width:min(1100px,calc(100% - 24px)); max-height:calc(100% - 84px); overflow:auto; border:1px solid rgba(255,255,255,.34); border-radius:18px; background:rgba(9,18,27,.16); color:#fff; backdrop-filter:blur(9px) saturate(115%); box-shadow:0 16px 44px rgba(0,0,0,.24); overscroll-behavior:contain; }
@@ -1842,8 +1842,155 @@ class AnthbotMapCard extends HTMLElement {
       <input type="checkbox" ${checked ? "checked" : ""} ${entityId ? "" : "disabled"}>
     `;
     const input = tile.querySelector("input");
-    input.addEventListener("change", () => this.toggleSwitchEntity(key, entityId, input.checked, input));
+    input.addEventListener("change", async () => {
+      await this.toggleSwitchEntity(key, entityId, input.checked, input);
+      if (key === "batterySaver" && input.checked) {
+        this.openBatterySaverDialog(entityId);
+      }
+    });
     return tile;
+  }
+
+  openBatterySaverDialog(entityId) {
+    const state = entityId ? this._hass.states[entityId] : null;
+    const attrs = state?.attributes || {};
+    const overlay = document.createElement("div");
+    overlay.className = "mowing-record-detail-overlay";
+    const dialog = document.createElement("div");
+    dialog.className = "mowing-record-detail-dialog battery-saver-dialog";
+    overlay.appendChild(dialog);
+    const close = () => overlay.remove();
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) close();
+    });
+
+    const currentCharge = Number(attrs.charge_limit ?? 80);
+    const currentMaintenance = Number(attrs.maintenance_level ?? 65);
+    const currentResume = Number(attrs.resume_level ?? 50);
+    const detectedProfile = (
+      currentCharge === 80 && currentMaintenance === 60 && currentResume === 50 ? "max" :
+      currentCharge === 80 && currentMaintenance === 65 && currentResume === 50 ? "balanced" :
+      currentCharge === 90 && currentMaintenance === 80 && currentResume === 50 ? "ready" :
+      "custom"
+    );
+
+    dialog.innerHTML = `
+      <style>
+        .battery-saver-dialog{width:min(920px,94vw);max-width:920px}
+        .battery-saver-layout{display:grid;grid-template-columns:minmax(260px,.95fr) minmax(320px,1.25fr);gap:18px;margin-top:14px}
+        .battery-profile-list,.battery-profile-details{display:flex;flex-direction:column;gap:10px}
+        .battery-profile-card{display:grid;grid-template-columns:32px 1fr auto;align-items:center;gap:10px;padding:12px 14px;border:1px solid var(--divider-color,#3a4653);border-radius:12px;cursor:pointer;background:rgba(255,255,255,.02)}
+        .battery-profile-card.active{border-color:var(--primary-color,#3b82f6);background:color-mix(in srgb,var(--primary-color,#3b82f6) 12%,transparent)}
+        .battery-profile-card input{margin:0}
+        .battery-profile-title{font-weight:700}
+        .battery-profile-note{font-size:.85em;opacity:.72;margin-top:2px}
+        .battery-profile-range{font-weight:700;white-space:nowrap}
+        .battery-profile-range.max{color:#63d34e}.battery-profile-range.balanced{color:#55a6ff}.battery-profile-range.ready{color:#ffc23d}
+        .battery-detail-row{display:grid;grid-template-columns:1fr 100px;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--divider-color,#3a4653);border-radius:12px}
+        .battery-detail-row span{font-weight:600}
+        .battery-detail-row small{display:block;opacity:.68;margin-top:3px}
+        .battery-detail-row input[type=number]{width:88px;text-align:center}
+        .battery-anti-shutdown{padding:13px 14px;border:1px solid #7356b8;border-radius:12px;background:rgba(105,72,180,.10)}
+        .battery-anti-shutdown strong{color:#a98cff}
+        .battery-info-box{padding:12px 14px;border:1px solid color-mix(in srgb,var(--primary-color,#3b82f6) 55%,transparent);border-radius:12px;background:color-mix(in srgb,var(--primary-color,#3b82f6) 8%,transparent);font-size:.9em;line-height:1.45}
+        .battery-saver-check{display:flex!important;justify-content:space-between;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--divider-color,#3a4653);border-radius:12px}
+        .battery-saver-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
+        @media(max-width:760px){.battery-saver-layout{grid-template-columns:1fr}.battery-detail-row{grid-template-columns:1fr 90px}}
+      </style>
+      <div class="mowing-record-detail-head">
+        <div>
+          <div class="mowing-record-detail-title">${escapeHtml(this.t("batterySaverMode"))}</div>
+          <div style="opacity:.68;font-size:.9em;margin-top:3px">${escapeHtml(this.t("batterySaverDescription"))}</div>
+        </div>
+        <button type="button" class="mowing-record-detail-close" aria-label="${escapeHtml(this.t("close"))}">×</button>
+      </div>
+      <div class="battery-saver-layout">
+        <div class="battery-profile-list">
+          <div style="font-weight:700;margin-bottom:2px">${escapeHtml(this.t("batteryProfileSelect"))}</div>
+          <label class="battery-profile-card" data-profile="max">
+            <input type="radio" name="battery_profile" value="max">
+            <div><div class="battery-profile-title">🌿 ${escapeHtml(this.t("batteryProfileMax"))}</div><div class="battery-profile-note">${escapeHtml(this.t("batteryProfileMaxNote"))}</div></div>
+            <div class="battery-profile-range max">60–80%</div>
+          </label>
+          <label class="battery-profile-card" data-profile="balanced">
+            <input type="radio" name="battery_profile" value="balanced">
+            <div><div class="battery-profile-title">⚖️ ${escapeHtml(this.t("batteryProfileBalanced"))}</div><div class="battery-profile-note">${escapeHtml(this.t("batteryProfileBalancedNote"))}</div></div>
+            <div class="battery-profile-range balanced">65–80%</div>
+          </label>
+          <label class="battery-profile-card" data-profile="ready">
+            <input type="radio" name="battery_profile" value="ready">
+            <div><div class="battery-profile-title">⚡ ${escapeHtml(this.t("batteryProfileReady"))}</div><div class="battery-profile-note">${escapeHtml(this.t("batteryProfileReadyNote"))}</div></div>
+            <div class="battery-profile-range ready">80–90%</div>
+          </label>
+          <label class="battery-profile-card" data-profile="custom">
+            <input type="radio" name="battery_profile" value="custom">
+            <div><div class="battery-profile-title">⚙️ ${escapeHtml(this.t("batteryProfileCustom"))}</div><div class="battery-profile-note">${escapeHtml(this.t("batteryProfileCustomNote"))}</div></div>
+            <div class="battery-profile-range">${escapeHtml(this.t("batteryAdjustable"))}</div>
+          </label>
+          <div class="battery-info-box"><strong>${escapeHtml(this.t("batteryImportant"))}</strong> ${escapeHtml(this.t("batteryStandbyInfo"))}</div>
+        </div>
+        <div class="battery-profile-details">
+          <div style="font-weight:700;margin-bottom:2px">${escapeHtml(this.t("batteryProfileDetails"))}</div>
+          <label class="battery-detail-row"><div><span>${escapeHtml(this.t("batteryChargeLimit"))}</span><small>${escapeHtml(this.t("batteryChargeLimitNote"))}</small></div><input name="charge_limit" type="number" min="20" max="100" value="${currentCharge}"></label>
+          <label class="battery-detail-row"><div><span>${escapeHtml(this.t("batteryMaintenanceLevel"))}</span><small>${escapeHtml(this.t("batteryMaintenanceLevelNote"))}</small></div><input name="maintenance_level" type="number" min="10" max="99" value="${currentMaintenance}"></label>
+          <label class="battery-detail-row"><div><span>${escapeHtml(this.t("batteryResumeLevel"))}</span><small>${escapeHtml(this.t("batteryResumeLevelNote"))}</small></div><input name="resume_level" type="number" min="10" max="99" value="${currentResume}"></label>
+          <label class="battery-saver-check"><span>${escapeHtml(this.t("sharedRtkPower"))}<small style="display:block;opacity:.68;margin-top:3px">${escapeHtml(this.t("sharedRtkPowerNote"))}</small></span><input name="shared_rtk_power" type="checkbox" ${attrs.shared_rtk_power ? "checked" : ""}></label>
+          <div class="battery-anti-shutdown"><strong>◷ ${escapeHtml(this.t("batteryShutdownGuardTitle"))}</strong><div style="margin-top:5px;line-height:1.42">${escapeHtml(this.t("batteryShutdownGuardText"))}</div><div style="opacity:.68;font-size:.86em;margin-top:7px">${escapeHtml(this.t("batteryShutdownGuardNote"))}</div></div>
+        </div>
+      </div>
+      <div class="battery-saver-actions">
+        <button type="button" class="secondary">${escapeHtml(this.t("close"))}</button>
+        <button type="button" class="primary">${escapeHtml(this.t("save"))}</button>
+      </div>`;
+
+    const profileValues = {
+      max: { charge: 80, maintenance: 60, resume: 50 },
+      balanced: { charge: 80, maintenance: 65, resume: 50 },
+      ready: { charge: 90, maintenance: 80, resume: 50 },
+    };
+    const chargeInput = dialog.querySelector('[name="charge_limit"]');
+    const maintenanceInput = dialog.querySelector('[name="maintenance_level"]');
+    const resumeInput = dialog.querySelector('[name="resume_level"]');
+    const selectProfile = (profile, applyValues = true) => {
+      dialog.querySelectorAll('.battery-profile-card').forEach((card) => card.classList.toggle('active', card.dataset.profile === profile));
+      const radio = dialog.querySelector(`[name="battery_profile"][value="${profile}"]`);
+      if (radio) radio.checked = true;
+      if (applyValues && profileValues[profile]) {
+        chargeInput.value = profileValues[profile].charge;
+        maintenanceInput.value = profileValues[profile].maintenance;
+        resumeInput.value = profileValues[profile].resume;
+      }
+      const custom = profile === 'custom';
+      chargeInput.disabled = !custom;
+      maintenanceInput.disabled = !custom;
+      resumeInput.disabled = !custom;
+    };
+    selectProfile(detectedProfile, false);
+    dialog.querySelectorAll('[name="battery_profile"]').forEach((radio) => {
+      radio.addEventListener('change', () => selectProfile(radio.value, true));
+    });
+
+    dialog.querySelector(".mowing-record-detail-close").addEventListener("click", close);
+    dialog.querySelector(".secondary").addEventListener("click", close);
+    dialog.querySelector(".primary").addEventListener("click", async () => {
+      const chargeLimit = Number(chargeInput.value);
+      const maintenanceLevel = Number(maintenanceInput.value);
+      const resumeLevel = Number(resumeInput.value);
+      if (maintenanceLevel >= chargeLimit || resumeLevel >= chargeLimit) {
+        this.notify(this.t("batteryLevelsInvalid"));
+        return;
+      }
+      await this._hass.callService("anthbot_map", "set_battery_saver_config", {
+        entity_id: this.config.entity,
+        charge_limit: chargeLimit,
+        maintenance_level: maintenanceLevel,
+        resume_level: resumeLevel,
+        shared_rtk_power: dialog.querySelector('[name="shared_rtk_power"]').checked,
+      });
+      this.scheduleRefresh();
+      close();
+    });
+    (this.shadowRoot || document.body).appendChild(overlay);
   }
 
   createMapOverlaySwitch(label, key) {
