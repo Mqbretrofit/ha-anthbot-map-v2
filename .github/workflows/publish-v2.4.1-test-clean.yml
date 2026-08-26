@@ -12,6 +12,7 @@ concurrency:
   group: publish-v2.4.1-test
   cancel-in-progress: true
 
+# Manual refresh marker: safe-loader hotfix publication retry.
 jobs:
   publish:
     if: github.actor != 'github-actions[bot]'
