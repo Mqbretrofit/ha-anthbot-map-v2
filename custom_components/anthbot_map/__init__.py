@@ -88,7 +88,7 @@ PLATFORMS = [
 _LOGGER = logging.getLogger(__name__)
 VALID_MOW_HEIGHTS = list(range(30, 75, 5))
 FRONTEND_RESOURCE_PATH = "/anthbot-map-v2/anthbot-map-card.js"
-FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.1-beta"
+FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.1-beta.1"
 LEGACY_ENTITY_SUFFIXES: tuple[str, ...] = (
     "enable_custom_mowing_direction",
     "custom_mowing_direction_enable",
@@ -993,37 +993,37 @@ async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload Anthbot Genie config entry."""
     coordinators = hass.data.get(DOMAIN, {}).get(entry.entry_id, [])
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if not unloaded:
+        return False
+
     for coordinator in coordinators:
         await coordinator.async_stop_battery_saver_monitor()
         await coordinator.async_stop_live_shadow()
-    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if unloaded:
-        hass.data[DOMAIN].pop(entry.entry_id)
-        if not hass.data[DOMAIN]:
-            for service_name in (
-                SERVICE_START_FULL_MOW,
-                SERVICE_START_OUTER_EDGE_MOW,
-                SERVICE_START_NO_GO_EDGE_MOW,
-                SERVICE_START_DOCK_EDGE_MOW,
-                SERVICE_START_ALL_EDGES_MOW,
-                SERVICE_STOP_MOW,
-                SERVICE_PAUSE_MOW,
-                SERVICE_RESUME_MOW,
-                SERVICE_RETURN_TO_DOCK,
-                SERVICE_SET_MOW_HEIGHT,
-                SERVICE_SET_EDGE_SETTINGS,
-                SERVICE_SET_VOICE_VOLUME,
-                SERVICE_SET_CUSTOM_MOWING_DIRECTION,
-                SERVICE_CONNECT_CLOUD,
-                SERVICE_SET_RAIN_CONTINUE_TIME,
-                SERVICE_SET_RAIN_PERCEPTION,
-                SERVICE_START_ZONE_MOW,
-                SERVICE_START_AUTO_ZONE_MOW,
-                SERVICE_RESET_BLADE_MAINTENANCE,
-                SERVICE_RESET_CAMERA_MAINTENANCE,
-                SERVICE_RESET_DOCK_CONTACT_MAINTENANCE,
-                SERVICE_GET_MOWING_RECORD_DETAIL,
-            ):
-                if hass.services.has_service(DOMAIN, service_name):
-                    hass.services.async_remove(DOMAIN, service_name)
-    return unloaded
+    hass.data[DOMAIN].pop(entry.entry_id)
+    if not hass.data[DOMAIN]:
+        for service_name in (
+            SERVICE_START_FULL_MOW,
+            SERVICE_START_OUTER_EDGE_MOW,
+            SERVICE_START_DOCK_EDGE_MOW,
+            SERVICE_STOP_MOW,
+            SERVICE_PAUSE_MOW,
+            SERVICE_RESUME_MOW,
+            SERVICE_RETURN_TO_DOCK,
+            SERVICE_SET_MOW_HEIGHT,
+            SERVICE_SET_EDGE_SETTINGS,
+            SERVICE_SET_VOICE_VOLUME,
+            SERVICE_SET_CUSTOM_MOWING_DIRECTION,
+            SERVICE_CONNECT_CLOUD,
+            SERVICE_SET_RAIN_CONTINUE_TIME,
+            SERVICE_SET_RAIN_PERCEPTION,
+            SERVICE_START_ZONE_MOW,
+            SERVICE_START_AUTO_ZONE_MOW,
+            SERVICE_RESET_BLADE_MAINTENANCE,
+            SERVICE_RESET_CAMERA_MAINTENANCE,
+            SERVICE_RESET_DOCK_CONTACT_MAINTENANCE,
+            SERVICE_GET_MOWING_RECORD_DETAIL,
+        ):
+            if hass.services.has_service(DOMAIN, service_name):
+                hass.services.async_remove(DOMAIN, service_name)
+    return True
