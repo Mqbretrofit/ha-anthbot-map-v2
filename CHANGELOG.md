@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.4.1-beta.2 — 2026-08-27
+
+- Restored the backend service used by the card to save battery-saver profiles.
+- Battery-saver thresholds and the shared RTK power option are now persisted in
+  config-entry options and applied to the running coordinator immediately.
+- Separate RTK power now allows the charger plug to switch off while mowing;
+  shared RTK power keeps the plug on and waits for RTK readiness before start.
+- Added regression coverage for frontend/backend service parity and persistent
+  battery-saver configuration.
+
+See `RELEASE_NOTES_v2.4.1-beta.2.md` for details.
+
 ## 2.4.0 — 2026-08-24
 
 - Added an optional smart-plug battery-saving mode with configurable upper,

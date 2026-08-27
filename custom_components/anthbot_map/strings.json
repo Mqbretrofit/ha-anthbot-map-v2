@@ -39,7 +39,8 @@
           "charger_switch": "Smart-plug switch",
           "charge_limit": "Upper charge limit (%)",
           "maintenance_level": "Idle recharge start level (%)",
-          "resume_level": "Resume charge level (%)"
+          "resume_level": "Resume charge level (%)",
+          "shared_rtk_power": "Charging station and RTK share the same smart plug"
         }
       }
     },

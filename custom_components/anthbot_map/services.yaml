@@ -12,6 +12,56 @@ start_full_mow:
       selector:
         text:
 
+set_battery_saver_config:
+  name: Set Battery Saver Configuration
+  description: Update and persist battery-saver thresholds for a selected mower.
+  target:
+    entity:
+      integration: anthbot_map
+  fields:
+    charge_limit:
+      name: Upper charge limit
+      description: Stop charging at this battery percentage.
+      required: true
+      selector:
+        number:
+          min: 20
+          max: 100
+          step: 1
+          mode: box
+    maintenance_level:
+      name: Maintenance level
+      description: Restart idle charging at this battery percentage.
+      required: true
+      selector:
+        number:
+          min: 10
+          max: 99
+          step: 1
+          mode: box
+    resume_level:
+      name: Resume level
+      description: Resume an interrupted mowing task at this battery percentage.
+      required: true
+      selector:
+        number:
+          min: 10
+          max: 99
+          step: 1
+          mode: box
+    shared_rtk_power:
+      name: Shared RTK power
+      description: Charging station and RTK base use the same switched supply.
+      required: false
+      default: false
+      selector:
+        boolean:
+    serial_number:
+      name: Serial number
+      description: Optional mower serial number or list of serial numbers.
+      selector:
+        text:
+
 start_outer_edge_mow:
   name: Start Outer Edge Mow
   description: Mow only the outer lawn boundary.

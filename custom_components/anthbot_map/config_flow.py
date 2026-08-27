@@ -24,6 +24,7 @@ from .const import (
     CONF_CHARGER_SWITCH,
     CONF_MAINTENANCE_LEVEL,
     CONF_RESUME_LEVEL,
+    CONF_SHARED_RTK_POWER,
     CONF_USERNAME,
     COUNTRY_AREA_CODES,
     DEFAULT_API_HOST,
@@ -216,6 +217,10 @@ class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
                             DEFAULT_BATTERY_SAVER_RESUME_LEVEL,
                         ),
                     ): vol.All(vol.Coerce(int), vol.Range(min=10, max=99)),
+                    vol.Required(
+                        CONF_SHARED_RTK_POWER,
+                        default=bool(current.get(CONF_SHARED_RTK_POWER, False)),
+                    ): selector.BooleanSelector(),
                 }
             ),
             errors=errors,

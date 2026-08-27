@@ -105,6 +105,7 @@ class BatterySaverSourceTests(unittest.TestCase):
         self.assertIn("CONF_CHARGE_LIMIT", config_flow)
         self.assertIn("CONF_MAINTENANCE_LEVEL", config_flow)
         self.assertIn("CONF_RESUME_LEVEL", config_flow)
+        self.assertIn("CONF_SHARED_RTK_POWER", config_flow)
         self.assertIn("async_update_battery_saver_config(user_input)", config_flow)
         self.assertIn("async def async_update_battery_saver_config", coordinator)
         self.assertIn("self.async_schedule_battery_saver_evaluation()", coordinator)
@@ -126,11 +127,43 @@ class BatterySaverSourceTests(unittest.TestCase):
         mowing_block = coordinator.split("if is_mowing:", 1)[1].split(
             "if self._battery_saver_phase == \"initial_charge\"", 1
         )[0]
-        self.assertIn("await self._async_set_charger(True)", mowing_block)
-        self.assertNotIn("await self._async_set_charger(False)", mowing_block)
+        self.assertIn("config[CONF_SHARED_RTK_POWER]", mowing_block)
         self.assertIn("async def async_prepare_mowing_power", coordinator)
+        prepare_power = coordinator.split(
+            "async def async_prepare_mowing_power", 1
+        )[1].split("async def _async_maintain_idle_charge", 1)[0]
+        self.assertIn("CONF_SHARED_RTK_POWER", prepare_power)
         self.assertIn("await coordinator.async_prepare_mowing_power()", commands)
         self.assertEqual(commands.count("mowing_start=True"), 2)
+
+    def test_card_battery_saver_settings_have_a_persistent_backend(self) -> None:
+        init_source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
+        const_source = (COMPONENT / "const.py").read_text(encoding="utf-8")
+        coordinator = (COMPONENT / "coordinator.py").read_text(encoding="utf-8")
+        card = (COMPONENT / "frontend" / "anthbot-map-card.js").read_text(
+            encoding="utf-8"
+        )
+        services = (COMPONENT / "services.yaml").read_text(encoding="utf-8")
+
+        self.assertIn(
+            'SERVICE_SET_BATTERY_SAVER_CONFIG = "set_battery_saver_config"',
+            const_source,
+        )
+        self.assertIn("battery_saver_config_schema", init_source)
+        self.assertIn("_handle_set_battery_saver_config", init_source)
+        self.assertIn(
+            "hass.config_entries.async_update_entry(entry, options=options)",
+            init_source,
+        )
+        self.assertIn(
+            "SERVICE_SET_BATTERY_SAVER_CONFIG,\n            _handle_set_battery_saver_config",
+            init_source,
+        )
+        self.assertIn("SERVICE_SET_BATTERY_SAVER_CONFIG,", init_source)
+        self.assertIn("CONF_SHARED_RTK_POWER", coordinator)
+        self.assertIn('"set_battery_saver_config"', card)
+        self.assertIn("shared_rtk_power", card)
+        self.assertIn("set_battery_saver_config:", services)
 
     def test_mowed_path_stays_visible_during_recovery_charging(self) -> None:
         renderer = (

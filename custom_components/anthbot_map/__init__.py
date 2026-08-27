@@ -38,9 +38,13 @@ from .const import (
     CONF_API_HOST,
     CONF_AREA_CODE,
     CONF_BEARER_TOKEN,
+    CONF_CHARGE_LIMIT,
+    CONF_MAINTENANCE_LEVEL,
     CONF_PASSWORD,
+    CONF_RESUME_LEVEL,
     CONF_SCAN_INTERVAL,
     CONF_BATTERY_SAVER_CONFIGS,
+    CONF_SHARED_RTK_POWER,
     CONF_USERNAME,
     DEFAULT_AREA_CODE,
     DEFAULT_SCAN_INTERVAL,
@@ -65,6 +69,7 @@ from .const import (
     SERVICE_RESET_CAMERA_MAINTENANCE,
     SERVICE_RESET_DOCK_CONTACT_MAINTENANCE,
     SERVICE_GET_MOWING_RECORD_DETAIL,
+    SERVICE_SET_BATTERY_SAVER_CONFIG,
 )
 from .coordinator import AnthbotGenieDataUpdateCoordinator
 from .commands import (
@@ -88,7 +93,7 @@ PLATFORMS = [
 _LOGGER = logging.getLogger(__name__)
 VALID_MOW_HEIGHTS = list(range(30, 75, 5))
 FRONTEND_RESOURCE_PATH = "/anthbot-map-v2/anthbot-map-card.js"
-FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.1-beta.1"
+FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.1-beta.2"
 LEGACY_ENTITY_SUFFIXES: tuple[str, ...] = (
     "enable_custom_mowing_direction",
     "custom_mowing_direction_enable",
@@ -108,6 +113,16 @@ def _all_coordinators(hass: HomeAssistant) -> list[AnthbotGenieDataUpdateCoordin
     for entry_coordinators in entries.values():
         coordinators.extend(entry_coordinators)
     return coordinators
+
+
+def _config_entry_id_for_coordinator(
+    hass: HomeAssistant, coordinator: AnthbotGenieDataUpdateCoordinator
+) -> str | None:
+    """Return the config entry that owns a loaded mower coordinator."""
+    for entry_id, entry_coordinators in hass.data.get(DOMAIN, {}).items():
+        if coordinator in entry_coordinators:
+            return entry_id
+    return None
 
 
 def _resolve_target_coordinators(
@@ -356,6 +371,24 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         },
         extra=vol.ALLOW_EXTRA,
     )
+    battery_saver_config_schema = vol.Schema(
+        {
+            vol.Required(CONF_CHARGE_LIMIT): vol.All(
+                vol.Coerce(int), vol.Range(min=20, max=100)
+            ),
+            vol.Required(CONF_MAINTENANCE_LEVEL): vol.All(
+                vol.Coerce(int), vol.Range(min=10, max=99)
+            ),
+            vol.Required(CONF_RESUME_LEVEL): vol.All(
+                vol.Coerce(int), vol.Range(min=10, max=99)
+            ),
+            vol.Optional(CONF_SHARED_RTK_POWER, default=False): cv.boolean,
+            vol.Optional(ATTR_SERIAL_NUMBER): vol.Any(cv.string, [cv.string]),
+            vol.Optional("entity_id"): vol.Any(cv.entity_id, [cv.entity_id]),
+        },
+        extra=vol.ALLOW_EXTRA,
+    )
+
     async def _handle_start_full_mow(service_call) -> None:
         targets = _resolve_target_coordinators(hass, service_call.data)
         if not targets:
@@ -637,6 +670,56 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             coordinator.remember_mowing_task("auto_zone", {"points": points})
             await _async_sync_after_command(coordinator)
 
+    async def _handle_set_battery_saver_config(service_call) -> None:
+        """Persist card battery-saver settings and apply them immediately."""
+        targets = _resolve_target_coordinators(hass, service_call.data)
+        if not targets:
+            raise AnthbotGenieApiError("No target Anthbot mower found")
+
+        charge_limit = service_call.data[CONF_CHARGE_LIMIT]
+        maintenance_level = service_call.data[CONF_MAINTENANCE_LEVEL]
+        resume_level = service_call.data[CONF_RESUME_LEVEL]
+        if maintenance_level >= charge_limit or resume_level >= charge_limit:
+            raise AnthbotGenieApiError(
+                "Maintenance and resume levels must be below the charge limit"
+            )
+
+        entry_configs: dict[str, dict] = {}
+        for coordinator in targets:
+            config = coordinator.battery_saver_config
+            config.update(
+                {
+                    CONF_CHARGE_LIMIT: charge_limit,
+                    CONF_MAINTENANCE_LEVEL: maintenance_level,
+                    CONF_RESUME_LEVEL: resume_level,
+                    CONF_SHARED_RTK_POWER: service_call.data[
+                        CONF_SHARED_RTK_POWER
+                    ],
+                }
+            )
+            await coordinator.async_update_battery_saver_config(config)
+
+            entry_id = _config_entry_id_for_coordinator(hass, coordinator)
+            if entry_id is None:
+                continue
+            if entry_id not in entry_configs:
+                entry = hass.config_entries.async_get_entry(entry_id)
+                if entry is None:
+                    continue
+                stored = entry.options.get(CONF_BATTERY_SAVER_CONFIGS, {})
+                entry_configs[entry_id] = (
+                    dict(stored) if isinstance(stored, dict) else {}
+                )
+            entry_configs[entry_id][coordinator.client.serial_number] = config
+
+        for entry_id, configs in entry_configs.items():
+            entry = hass.config_entries.async_get_entry(entry_id)
+            if entry is None:
+                continue
+            options = dict(entry.options)
+            options[CONF_BATTERY_SAVER_CONFIGS] = configs
+            hass.config_entries.async_update_entry(entry, options=options)
+
     if not hass.services.has_service(DOMAIN, SERVICE_START_FULL_MOW):
         hass.services.async_register(
             DOMAIN,
@@ -747,6 +830,14 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             _handle_start_auto_zone_mow,
             schema=auto_zone_schema,
         )
+    if not hass.services.has_service(DOMAIN, SERVICE_SET_BATTERY_SAVER_CONFIG):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_SET_BATTERY_SAVER_CONFIG,
+            _handle_set_battery_saver_config,
+            schema=battery_saver_config_schema,
+        )
+
 
 def _async_cleanup_legacy_entities(
     hass: HomeAssistant, entry: ConfigEntry, serial_number: str
@@ -1023,6 +1114,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             SERVICE_RESET_CAMERA_MAINTENANCE,
             SERVICE_RESET_DOCK_CONTACT_MAINTENANCE,
             SERVICE_GET_MOWING_RECORD_DETAIL,
+            SERVICE_SET_BATTERY_SAVER_CONFIG,
         ):
             if hass.services.has_service(DOMAIN, service_name):
                 hass.services.async_remove(DOMAIN, service_name)
