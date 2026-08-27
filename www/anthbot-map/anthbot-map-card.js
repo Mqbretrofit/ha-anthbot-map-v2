@@ -3924,15 +3924,14 @@ if (!AnthbotMapCard.__batterySaverDialogTogglePatched) {
     }
 
     const entityId = this.getSwitchEntity(key);
-    const entity = entityId ? this._hass.states[entityId] : null;
-    const checked = entity?.state === "on";
-    const tile = document.createElement("label");
+    const tile = document.createElement("div");
     tile.className = "panel-tile switch-tile battery-saver-open-tile";
     tile.title = entityId || this.t("switchMissing");
     tile.tabIndex = entityId ? 0 : -1;
+    tile.setAttribute("role", "button");
+    tile.setAttribute("aria-disabled", entityId ? "false" : "true");
     tile.innerHTML = `
       <span>${label}</span>
-      <input type="checkbox" ${checked ? "checked" : ""} ${entityId ? "" : "disabled"} tabindex="-1" aria-hidden="true">
     `;
     const openDialog = (event) => {
       event?.preventDefault?.();
@@ -3961,7 +3960,7 @@ if (!AnthbotMapCard.__batterySaverDialogTogglePatched) {
     modeRow.style.marginTop = "14px";
     modeRow.innerHTML = `
       <span><strong>${this.t("batterySaverMode")}</strong><small style="display:block;opacity:.68;margin-top:3px">${this.t("batterySaverDescription")}</small></span>
-      <input type="checkbox" ${enabled ? "checked" : ""}>
+      <input class="battery-saver-enabled-checkbox" type="checkbox" ${enabled ? "checked" : ""} style="width:28px;height:28px;min-width:28px;accent-color:var(--primary-color,#03a9f4)">
     `;
     const header = dialog.querySelector(".mowing-record-detail-head");
     header?.insertAdjacentElement("afterend", modeRow);

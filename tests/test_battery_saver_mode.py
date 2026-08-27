@@ -165,6 +165,22 @@ class BatterySaverSourceTests(unittest.TestCase):
         self.assertIn("shared_rtk_power", card)
         self.assertIn("set_battery_saver_config:", services)
 
+    def test_battery_saver_tile_only_opens_large_popup_toggle(self) -> None:
+        card = (COMPONENT / "frontend" / "anthbot-map-card.js").read_text(
+            encoding="utf-8"
+        )
+        patch = card.split(
+            "if (!AnthbotMapCard.__batterySaverDialogTogglePatched)", 1
+        )[1]
+        tile_override, popup_override = patch.split(
+            "proto.openBatterySaverDialog = function", 1
+        )
+
+        self.assertIn('tile.setAttribute("role", "button")', tile_override)
+        self.assertNotIn('<input type="checkbox"', tile_override)
+        self.assertIn('class="battery-saver-enabled-checkbox"', popup_override)
+        self.assertIn("width:28px;height:28px;min-width:28px", popup_override)
+
     def test_mowed_path_stays_visible_during_recovery_charging(self) -> None:
         renderer = (
             ROOT / "custom_components" / "anthbot_map" / "frontend" / "renderer.js"
