@@ -9,6 +9,8 @@
 - Preserves the 55+1 minute anti-shutdown guard, `standby` handling, normal maintenance charging, and mowing/RTK power behavior.
 - The release workflow verifies the full test suite, JavaScript syntax, frontend mirrors, Battery saver popup UI, backend service presence, and charger-restore ordering before publishing.
 
+This build supersedes the earlier v2.4.1 beta builds for Battery saver validation.
+
 This is a beta / pre-release build intended for validation before the next stable release.
 
 ---
@@ -23,5 +25,7 @@ This is a beta / pre-release build intended for validation before the next stabl
 - Battery saver kikapcsolásakor a rendszer előbb visszaállítja a normál töltőtápot, ezért a konfigurált töltőállomás-okoskonnektor azonnal visszakapcsol.
 - Megmarad az 55+1 perces anti-shutdown védelem, a `standby` kezelés, a normál fenntartó töltés és a nyírás/RTK tápkezelés.
 - A kiadási workflow publikálás előtt ellenőrzi a teljes tesztkészletet, a JavaScript szintaxist, a frontend tükrök egyezését, a Battery saver popup felületét, a backend szolgáltatást és a töltő-visszakapcsolás helyes sorrendjét.
+
+Ez a build váltja a korábbi v2.4.1 béta kiadásokat az akkumulátorkímélő mód teszteléséhez.
 
 Ez **béta / előzetes kiadás**, a következő stabil verzió előtti teszteléshez.
