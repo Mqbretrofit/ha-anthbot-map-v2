@@ -26,6 +26,7 @@ from .const import (
     CONF_CHARGER_SWITCH,
     CONF_MAINTENANCE_LEVEL,
     CONF_RESUME_LEVEL,
+    CONF_SHARED_RTK_POWER,
     DEFAULT_BATTERY_SAVER_CHARGE_LIMIT,
     DEFAULT_BATTERY_SAVER_MAINTENANCE_LEVEL,
     DEFAULT_BATTERY_SAVER_RESUME_LEVEL,
@@ -384,6 +385,9 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             CONF_CHARGE_LIMIT: max(20, min(100, charge_limit)),
             CONF_MAINTENANCE_LEVEL: max(10, min(99, maintenance_level)),
             CONF_RESUME_LEVEL: max(10, min(99, resume_level)),
+            CONF_SHARED_RTK_POWER: bool(
+                self._battery_saver_config.get(CONF_SHARED_RTK_POWER, False)
+            ),
         }
 
     async def async_update_battery_saver_config(
@@ -717,7 +721,7 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         switch_state = self.hass.states.get(entity_id)
         was_off = switch_state is None or switch_state.state != "on"
         await self._async_set_charger(True)
-        if not was_off:
+        if not self.battery_saver_config[CONF_SHARED_RTK_POWER] or not was_off:
             return
 
         # A shared smart plug may also supply the RTK base. Give it time to
@@ -803,9 +807,9 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if self._battery_saver_phase != "mowing":
                     self._battery_saver_phase = "mowing"
                     await self._async_save_battery_saver_state()
-                # The configured plug may power both the charging station and
-                # the RTK base, so it must remain energised while mowing.
-                await self._async_set_charger(True)
+                # Keep a shared station/RTK supply energised while mowing. If
+                # RTK has separate power, the charger plug can remain off.
+                await self._async_set_charger(config[CONF_SHARED_RTK_POWER])
                 return
 
             if self._battery_saver_phase == "initial_charge":
