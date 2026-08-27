@@ -19,7 +19,7 @@ on:
       tag:
         description: "Release tag"
         required: true
-        default: "v2.4.1-beta"
+        default: "v2.4.1-beta.4"
 
 permissions:
   contents: write
@@ -78,6 +78,34 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
+      - name: Restore charger before disabling battery saver
+        if: steps.release.outputs.skip != 'true' && steps.release.outputs.tag == 'v2.4.1-beta.4'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('custom_components/anthbot_map/coordinator.py')
+          source = path.read_text(encoding='utf-8')
+          marker = '        was_enabled = self._battery_saver_enabled\n'
+          if marker not in source:
+              old = '''    async def async_set_battery_saver_enabled(self, enabled: bool) -> None:\n        """Persist the local battery-saver switch without changing mower settings."""\n        self._battery_saver_enabled = enabled\n        if enabled:\n'''
+              new = '''    async def async_set_battery_saver_enabled(self, enabled: bool) -> None:\n        """Persist the local battery-saver switch without changing mower settings."""\n        was_enabled = self._battery_saver_enabled\n        if not enabled and was_enabled:\n            # Restore normal charger operation before disabling the guard.\n            # _async_set_charger intentionally ignores calls after the mode is\n            # disabled, so the plug must be energised first.\n            await self._async_set_charger(True)\n        self._battery_saver_enabled = enabled\n        if enabled:\n'''
+              if old not in source:
+                  raise SystemExit('Battery saver enable/disable block not found')
+              source = source.replace(old, new, 1)
+              path.write_text(source, encoding='utf-8')
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/anthbot_map/coordinator.py
+          if ! git diff --cached --quiet; then
+            git commit -m "Restore charger before disabling battery saver"
+            git push origin HEAD:main
+          fi
+
       - name: Finalize release metadata
         if: steps.release.outputs.skip != 'true'
         id: finalize
@@ -135,6 +163,14 @@ jobs:
           test ! -e www/anthbot-map/anthbot-map-card-core.js
           grep -q 'if (!customElements.get("anthbot-map-card"))' custom_components/anthbot_map/frontend/anthbot-map-card.js
           grep -q 'data-role="battery-saver-enabled"' custom_components/anthbot_map/frontend/anthbot-map-card.js
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('custom_components/anthbot_map/coordinator.py').read_text(encoding='utf-8')
+          block = source.split('async def async_set_battery_saver_enabled', 1)[1].split('def start_battery_saver_monitor', 1)[0]
+          assert 'was_enabled = self._battery_saver_enabled' in block
+          assert 'if not enabled and was_enabled:' in block
+          assert block.index('await self._async_set_charger(True)') < block.index('self._battery_saver_enabled = enabled')
+          PY
           test -z "$(find custom_components -type f \( -name '*.pyc' -o -name '*.gz' \) -print -quit)"
 
       - name: Build complete installer
