@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.4.1-beta.3 — 2026-08-27
+
+- Restores the battery-saver tile as a dialog opener without an inline checkbox.
+- Enlarges the battery-saver enable checkbox inside the settings dialog for
+  clear, touch-friendly mode control.
+- Adds regression coverage that prevents the tile toggle from returning.
+
+See `RELEASE_NOTES_v2.4.1-beta.3.md` for details.
+
 ## 2.4.1-beta.2 — 2026-08-27
 
 - Restored the backend service used by the card to save battery-saver profiles.
