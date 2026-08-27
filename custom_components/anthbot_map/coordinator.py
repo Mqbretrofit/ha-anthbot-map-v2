@@ -427,6 +427,12 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_set_battery_saver_enabled(self, enabled: bool) -> None:
         """Persist the local battery-saver switch without changing mower settings."""
+        was_enabled = self._battery_saver_enabled
+        if not enabled and was_enabled:
+            # Restore normal charger operation before disabling the guard.
+            # _async_set_charger intentionally ignores calls after the mode is
+            # disabled, so the plug must be energised first.
+            await self._async_set_charger(True)
         self._battery_saver_enabled = enabled
         if enabled:
             status = self._robot_status(self.reported_state)
