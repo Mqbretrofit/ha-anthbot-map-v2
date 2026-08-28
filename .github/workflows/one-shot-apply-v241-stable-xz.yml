@@ -20,7 +20,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat .release/v241-payload/part-* | base64 -d > /tmp/v241-stable.tar.xz
+          python - <<'PY'
+          import base64
+          import re
+          from pathlib import Path
+
+          parts = sorted(Path('.release/v241-payload').glob('part-*'))
+          if not parts:
+              raise SystemExit('No stable payload parts found')
+          encoded = b''.join(path.read_bytes() for path in parts)
+          encoded = re.sub(rb'[^A-Za-z0-9+/=]', b'', encoded)
+          encoded += b'=' * ((4 - len(encoded) % 4) % 4)
+          payload = base64.b64decode(encoded, validate=True)
+          print(f'Decoded {len(parts)} payload parts -> {len(payload)} bytes')
+          Path('/tmp/v241-stable.tar.xz').write_bytes(payload)
+          PY
+          xz -t /tmp/v241-stable.tar.xz
           tar -xJf /tmp/v241-stable.tar.xz -C .
           python - <<'PY'
           import json
