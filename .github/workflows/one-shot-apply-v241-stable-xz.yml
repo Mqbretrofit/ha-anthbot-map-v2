@@ -1,0 +1,52 @@
+name: Apply v2.4.1 stable payload (xz)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".release/v241-stable-trigger-xz.txt"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Decode and apply validated stable payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .release/v241-payload/part-* | base64 -d > /tmp/v241-stable.tar.xz
+          tar -xJf /tmp/v241-stable.tar.xz -C .
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path('custom_components/anthbot_map/manifest.json').read_text(encoding='utf-8'))
+          assert manifest.get('version') == '2.4.1', manifest
+          init_source = Path('custom_components/anthbot_map/__init__.py').read_text(encoding='utf-8')
+          assert '?v=2.4.1' in init_source
+          coordinator = Path('custom_components/anthbot_map/coordinator.py').read_text(encoding='utf-8')
+          for marker in ('shutdown_guard_due_at','shutdown_guard_pulse_until','_battery_saver_shutdown_guard_due_at','_battery_saver_shutdown_guard_pulse_until'):
+              assert marker in coordinator, marker
+          services = Path('custom_components/anthbot_map/services.yaml').read_text(encoding='utf-8')
+          assert 'set_battery_saver_config:' in services
+          card = Path('custom_components/anthbot_map/frontend/anthbot-map-card.js').read_text(encoding='utf-8')
+          assert 'data-role="battery-saver-enabled"' in card
+          assert 'shutdown_guard_remaining_seconds' in card
+          PY
+          cmp custom_components/anthbot_map/frontend/anthbot-map-card.js www/anthbot-map/anthbot-map-card.js
+          cmp custom_components/anthbot_map/frontend/i18n.js www/anthbot-map/i18n.js
+          cmp custom_components/anthbot_map/frontend/i18n-complements.js www/anthbot-map/i18n-complements.js
+          cmp custom_components/anthbot_map/frontend/styles.css www/anthbot-map/styles.css
+          rm -rf .release/v241-payload
+          rm -f .release/v241-stable-trigger-xz.txt
+          rm -f .github/workflows/one-shot-apply-v241-stable.yml .github/workflows/one-shot-apply-v241-stable-xz.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Publish validated stable source [release v2.4.1]"
+          git push origin HEAD:main
