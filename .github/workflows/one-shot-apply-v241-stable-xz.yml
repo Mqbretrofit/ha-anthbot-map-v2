@@ -24,7 +24,6 @@ jobs:
           import base64
           import re
           from pathlib import Path
-
           parts = sorted(Path('.release/v241-payload').glob('part-*'))
           if not parts:
               raise SystemExit('No stable payload parts found')
@@ -35,7 +34,17 @@ jobs:
           print(f'Decoded {len(parts)} payload parts -> {len(payload)} bytes')
           Path('/tmp/v241-stable.tar.xz').write_bytes(payload)
           PY
-          xz -t /tmp/v241-stable.tar.xz
+          if ! xz -t /tmp/v241-stable.tar.xz; then
+            echo 'PAYLOAD_XZ_INCOMPLETE'
+            set +e
+            xz -dc /tmp/v241-stable.tar.xz > /tmp/v241-partial.tar
+            rc=$?
+            set -e
+            echo "partial xz exit=$rc bytes=$(wc -c < /tmp/v241-partial.tar)"
+            echo 'Recoverable tar entries:'
+            tar -tf /tmp/v241-partial.tar 2>/dev/null || true
+            exit 2
+          fi
           tar -xJf /tmp/v241-stable.tar.xz -C .
           python - <<'PY'
           import json
