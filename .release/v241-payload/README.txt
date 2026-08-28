@@ -1,1 +1,0 @@
-Temporary payload parts for the one-shot v2.4.1 stable publisher. These files are removed automatically by the apply workflow.

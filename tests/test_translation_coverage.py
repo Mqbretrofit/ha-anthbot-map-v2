@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 from pathlib import Path
+import re
 import subprocess
 import unittest
 
@@ -19,11 +20,13 @@ class TranslationCoverageTests(unittest.TestCase):
             (FRONTEND / "i18n-complements.js").read_bytes()
         ).decode("ascii")
         source = (FRONTEND / "i18n.js").read_text(encoding="utf-8")
-        source = source.replace(
-            'from "./i18n-complements.js?v=141"',
-            f'from "data:text/javascript;base64,{complements}"',
-            1,
+        source, replacements = re.subn(
+            r'from "\./i18n-complements\.js(?:\?v=[^"]+)?"',
+            lambda _: f'from "data:text/javascript;base64,{complements}"',
+            source,
+            count=1,
         )
+        self.assertEqual(replacements, 1)
         source += "\nexport { translations, settingsTranslations, feedbackTranslations, commandStageTranslations, commandTranslations, menuTranslations };\n"
         module = base64.b64encode(source.encode("utf-8")).decode("ascii")
         script = f"""

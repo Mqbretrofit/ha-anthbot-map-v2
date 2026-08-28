@@ -1,4 +1,4 @@
-import { createGeometry, getBoundaryPaths, getWorldBounds, getZonePoints, getZones } from "./geometry.js?v=149";
+import { createGeometry, getBoundaryPaths, getWorldBounds, getZonePoints, getZones } from "./geometry.js?v=2411";
 
 const COLORS = Object.freeze({
   background: "#18202a",

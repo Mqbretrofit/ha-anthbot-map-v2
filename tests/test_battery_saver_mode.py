@@ -97,8 +97,9 @@ class BatterySaverSourceTests(unittest.TestCase):
         self.assertIn('"initial_charge"', coordinator)
         self.assertIn('"recovery_charge"', coordinator)
         self.assertIn('"manual_charge"', coordinator)
-        self.assertIn("latest_task_cycle_signal", coordinator)
-        self.assertIn("SERVICE_RESUME_MOW", coordinator)
+        self.assertIn("def _battery_saver_task_signal", coordinator)
+        self.assertIn("task_event_items(payload)", coordinator)
+        self.assertIn('cmd="mow_continue"', coordinator)
         self.assertNotIn("mowing_progress(self.reported_state)", coordinator)
         self.assertIn("/api/v1/device/v2/code/list", api)
         self.assertIn("CONF_CHARGER_SWITCH", config_flow)
@@ -106,7 +107,10 @@ class BatterySaverSourceTests(unittest.TestCase):
         self.assertIn("CONF_MAINTENANCE_LEVEL", config_flow)
         self.assertIn("CONF_RESUME_LEVEL", config_flow)
         self.assertIn("CONF_SHARED_RTK_POWER", config_flow)
-        self.assertIn("async_update_battery_saver_config(user_input)", config_flow)
+        self.assertIn("options[CONF_BATTERY_SAVER_CONFIGS] = configs", config_flow)
+        self.assertIn(
+            'return self.async_create_entry(title="", data=options)', config_flow
+        )
         self.assertIn("async def async_update_battery_saver_config", coordinator)
         self.assertIn("self.async_schedule_battery_saver_evaluation()", coordinator)
         self.assertIn("return AnthbotGenieOptionsFlow()", config_flow)
@@ -169,17 +173,22 @@ class BatterySaverSourceTests(unittest.TestCase):
         card = (COMPONENT / "frontend" / "anthbot-map-card.js").read_text(
             encoding="utf-8"
         )
-        patch = card.split(
-            "if (!AnthbotMapCard.__batterySaverDialogTogglePatched)", 1
-        )[1]
-        tile_override, popup_override = patch.split(
-            "proto.openBatterySaverDialog = function", 1
-        )
+        tile = card.split('if (key === "batterySaver") {', 1)[1].split(
+            'const tile = document.createElement("label")', 1
+        )[0]
+        popup = card.split("openBatterySaverDialog(entityId) {", 1)[1]
 
-        self.assertIn('tile.setAttribute("role", "button")', tile_override)
-        self.assertNotIn('<input type="checkbox"', tile_override)
-        self.assertIn('class="battery-saver-enabled-checkbox"', popup_override)
-        self.assertIn("width:28px;height:28px;min-width:28px", popup_override)
+        self.assertIn('tile.setAttribute("role", "button")', tile)
+        self.assertNotIn('type="checkbox"', tile)
+        self.assertIn('data-role="battery-saver-enabled"', popup)
+        self.assertIn(
+            'input name="battery_saver_enabled" type="checkbox"', popup
+        )
+        self.assertIn(
+            ".battery-saver-mode-toggle input[type=checkbox]"
+            "{width:28px;height:28px;min-width:28px;min-height:28px",
+            popup,
+        )
 
     def test_mowed_path_stays_visible_during_recovery_charging(self) -> None:
         renderer = (

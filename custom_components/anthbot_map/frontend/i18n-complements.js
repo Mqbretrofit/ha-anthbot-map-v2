@@ -379,8 +379,8 @@ export const TRANSLATION_COMPLEMENTS = {
 };
 
 const EXTRA_TERMS = {
-  hu: { zone: "Zóna", firmware: "Belső vezérlőprogram", gpsLatitude: "GPS-szélesség", gpsLongitude: "GPS-hosszúság" },
-  de: { zone: "Zone", firmware: "Firmware", gpsLatitude: "GPS-Breitengrad", gpsLongitude: "GPS-Längengrad" },
+  hu: { zone: "Zóna", firmware: "Belső vezérlőprogram", gpsLatitude: "GPS-szélesség", gpsLongitude: "GPS-hosszúság", save:"Mentés", batteryChargeLimit:"Felső töltési határ (%)", batteryMaintenanceLevel:"Fenntartó töltés indítási szintje (%)", batteryResumeLevel:"Feladat folytatásának töltési szintje (%)", sharedRtkPower:"A töltőállomás és az RTK közös okoskonnektorról működik", batteryLevelsInvalid:"A fenntartási és folytatási szintnek a felső töltési határ alatt kell lennie.", rtkInitializing:"RTK inicializálása", mowingStarting:"Nyírás indítása…" },
+  de: { zone: "Zone", firmware: "Firmware", gpsLatitude: "GPS-Breitengrad", gpsLongitude: "GPS-Längengrad", save:"Speichern", batteryChargeLimit:"Obere Ladegrenze (%)", batteryMaintenanceLevel:"Startwert der Erhaltungsladung (%)", batteryResumeLevel:"Ladestand zum Fortsetzen (%)", sharedRtkPower:"Ladestation und RTK verwenden dieselbe WLAN-Steckdose", batteryLevelsInvalid:"Erhaltungs- und Fortsetzungswert müssen unter der oberen Ladegrenze liegen.", rtkInitializing:"RTK wird initialisiert", mowingStarting:"Mähen wird gestartet…" },
   fr: { zone: "Zone", firmware: "Micrologiciel", gpsLatitude: "Latitude GPS", gpsLongitude: "Longitude GPS" },
   es: { zone: "Zona", firmware: "Firmware", gpsLatitude: "Latitud GPS", gpsLongitude: "Longitud GPS" },
   it: { zone: "Zona", firmware: "Firmware", gpsLatitude: "Latitudine GPS", gpsLongitude: "Longitudine GPS" },

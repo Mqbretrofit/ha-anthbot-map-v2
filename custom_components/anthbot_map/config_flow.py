@@ -175,11 +175,14 @@ class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
             ):
                 errors["base"] = "invalid_battery_thresholds"
             else:
-                configs[self._serial_number] = dict(user_input)
-                for coordinator in self._coordinators():
-                    if coordinator.client.serial_number == self._serial_number:
-                        await coordinator.async_update_battery_saver_config(user_input)
-                        break
+                saved_config = dict(user_input)
+                saved_config[CONF_SHARED_RTK_POWER] = bool(
+                    user_input.get(
+                        CONF_SHARED_RTK_POWER,
+                        current.get(CONF_SHARED_RTK_POWER, False),
+                    )
+                )
+                configs[self._serial_number] = saved_config
                 options = dict(self.config_entry.options)
                 options[CONF_BATTERY_SAVER_CONFIGS] = configs
                 return self.async_create_entry(title="", data=options)
@@ -189,40 +192,39 @@ class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
             if isinstance(charger_entity, str) and charger_entity
             else vol.Required(CONF_CHARGER_SWITCH)
         )
+        schema_fields = {
+            charger_field: selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="switch")
+            ),
+            vol.Required(
+                CONF_CHARGE_LIMIT,
+                default=current.get(
+                    CONF_CHARGE_LIMIT,
+                    DEFAULT_BATTERY_SAVER_CHARGE_LIMIT,
+                ),
+            ): vol.All(vol.Coerce(int), vol.Range(min=20, max=100)),
+            vol.Required(
+                CONF_MAINTENANCE_LEVEL,
+                default=current.get(
+                    CONF_MAINTENANCE_LEVEL,
+                    DEFAULT_BATTERY_SAVER_MAINTENANCE_LEVEL,
+                ),
+            ): vol.All(vol.Coerce(int), vol.Range(min=10, max=99)),
+            vol.Required(
+                CONF_RESUME_LEVEL,
+                default=current.get(
+                    CONF_RESUME_LEVEL,
+                    DEFAULT_BATTERY_SAVER_RESUME_LEVEL,
+                ),
+            ): vol.All(vol.Coerce(int), vol.Range(min=10, max=99)),
+            vol.Required(
+                CONF_SHARED_RTK_POWER,
+                default=bool(current.get(CONF_SHARED_RTK_POWER, False)),
+            ): selector.BooleanSelector(),
+        }
         return self.async_show_form(
             step_id="battery_saver",
-            data_schema=vol.Schema(
-                {
-                    charger_field: selector.EntitySelector(
-                        selector.EntitySelectorConfig(domain="switch")
-                    ),
-                    vol.Required(
-                        CONF_CHARGE_LIMIT,
-                        default=current.get(
-                            CONF_CHARGE_LIMIT,
-                            DEFAULT_BATTERY_SAVER_CHARGE_LIMIT,
-                        ),
-                    ): vol.All(vol.Coerce(int), vol.Range(min=20, max=100)),
-                    vol.Required(
-                        CONF_MAINTENANCE_LEVEL,
-                        default=current.get(
-                            CONF_MAINTENANCE_LEVEL,
-                            DEFAULT_BATTERY_SAVER_MAINTENANCE_LEVEL,
-                        ),
-                    ): vol.All(vol.Coerce(int), vol.Range(min=10, max=99)),
-                    vol.Required(
-                        CONF_RESUME_LEVEL,
-                        default=current.get(
-                            CONF_RESUME_LEVEL,
-                            DEFAULT_BATTERY_SAVER_RESUME_LEVEL,
-                        ),
-                    ): vol.All(vol.Coerce(int), vol.Range(min=10, max=99)),
-                    vol.Required(
-                        CONF_SHARED_RTK_POWER,
-                        default=bool(current.get(CONF_SHARED_RTK_POWER, False)),
-                    ): selector.BooleanSelector(),
-                }
-            ),
+            data_schema=vol.Schema(schema_fields),
             errors=errors,
             description_placeholders={"serial_number": self._serial_number},
         )

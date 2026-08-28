@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.4.1 — 2026-08-28
+
+- Promotes the field-tested `2.4.1` battery-saver improvements to a stable
+  release.
+- Adds three ready-made battery-care profiles plus a custom profile, persistent
+  per-mower settings, and immediate runtime application.
+- Adds a restart-safe 55+1 minute anti-shutdown charge pulse with live status
+  and countdown information.
+- Corrects charger handling for manual charging, disabled battery saver, mowing,
+  return-to-dock, and shared/separate RTK power configurations.
+- Fixes integration unload/reload and keeps the battery-saver control solely in
+  its settings dialog.
+- Completes the new battery-saver interface text for all 23 supported languages.
+
+See `RELEASE_NOTES_v2.4.1.md` and `CHANGELOG_v2.4.1_HU.md` for details.
+
 ## 2.4.1-beta.3 — 2026-08-27
 
 - Restores the battery-saver tile as a dialog opener without an inline checkbox.

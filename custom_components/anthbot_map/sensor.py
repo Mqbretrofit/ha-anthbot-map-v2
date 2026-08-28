@@ -85,6 +85,7 @@ def _battery_level(data: dict[str, Any]) -> int | None:
     return value
 
 
+
 def _as_datetime(value: Any) -> datetime | None:
     """Parse Unix-epoch integers and 'YYYYMMDDHHMMSS' strings to UTC datetimes."""
     if isinstance(value, (int, float)) and value > 0:
@@ -310,6 +311,7 @@ SENSORS: tuple[AnthbotSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda data: _safe_get(data, "mowing_area_new", "value"),
     ),
+
     AnthbotSensorDescription(
         key="custom_mowing_direction",
         translation_key="custom_mowing_direction",
@@ -842,6 +844,7 @@ class AnthbotSensorEntity(
                 for zone in auto_zone_list
                 if isinstance((zone_name := zone.get("name")), str) and zone_name
             ]
+
         if self.entity_description.key == "cloud_task_event_code":
             payload = state.get("_task_events")
             attributes["latest_task_event"] = latest_task_event(payload)

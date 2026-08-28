@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 from pathlib import Path
+import re
 import subprocess
 import unittest
 
@@ -223,11 +224,13 @@ process.stdout.write(JSON.stringify({{ legacy, explicit }}));
     def test_cloud_heading_mirrors_only_the_horizontal_axis(self) -> None:
         geometry_source = base64.b64encode((FRONTEND / "geometry.js").read_bytes()).decode("ascii")
         renderer_source = (FRONTEND / "renderer.js").read_text(encoding="utf-8")
-        renderer_source = renderer_source.replace(
-            'from "./geometry.js?v=149"',
-            f'from "data:text/javascript;base64,{geometry_source}"',
-            1,
+        renderer_source, replacements = re.subn(
+            r'from "\./geometry\.js(?:\?v=[^"]+)?"',
+            lambda _: f'from "data:text/javascript;base64,{geometry_source}"',
+            renderer_source,
+            count=1,
         )
+        self.assertEqual(replacements, 1)
         renderer_data = base64.b64encode(renderer_source.encode("utf-8")).decode("ascii")
         script = f"""
 const renderer = await import("data:text/javascript;base64,{renderer_data}");

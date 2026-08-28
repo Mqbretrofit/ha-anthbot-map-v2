@@ -1,7 +1,7 @@
-import { AnthbotMapRenderer } from "./renderer.js?v=149";
-import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=149";
-import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=22000";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=244";
+import { AnthbotMapRenderer } from "./renderer.js?v=2411";
+import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=2411";
+import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=2411";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=2411";
 import {
   adjustCalibration,
   cardToYaml,
@@ -10,7 +10,7 @@ import {
   readMowingPathCalibration,
   readRobotCalibration,
   resetCalibration,
-} from "./calibration.js?v=149";
+} from "./calibration.js?v=2411";
 
 const ENTITY_MAP = {
   battery: ["sensor", ["battery_level"]],
@@ -203,7 +203,7 @@ class AnthbotMapCard extends HTMLElement {
       .join(" ");
     root.innerHTML = `
       <ha-card class="${cardClasses}">
-        <link rel="stylesheet" href="${this.resolveAsset("styles.css?v=143")}">
+        <link rel="stylesheet" href="${this.resolveAsset("styles.css?v=2411")}">
         <style>
           .anthbot-menu-toggle { position:absolute; right:14px; bottom:14px; z-index:40; min-height:46px; padding:9px 15px; border:1px solid rgba(255,255,255,.38); border-radius:999px; background:rgba(10,18,26,.66); color:#fff; backdrop-filter:blur(12px); box-shadow:0 8px 28px rgba(0,0,0,.32); font:inherit; font-weight:800; cursor:pointer; }
           .anthbot-glass-panel { display:none; position:absolute; z-index:39; right:12px; bottom:70px; width:min(1100px,calc(100% - 24px)); max-height:calc(100% - 84px); overflow:auto; border:1px solid rgba(255,255,255,.34); border-radius:18px; background:rgba(9,18,27,.16); color:#fff; backdrop-filter:blur(9px) saturate(115%); box-shadow:0 16px 44px rgba(0,0,0,.24); overscroll-behavior:contain; }
@@ -1114,7 +1114,57 @@ class AnthbotMapCard extends HTMLElement {
     ]) {
       grid.appendChild(this.createInfoTile(item[0], item[1]));
     }
+    grid.appendChild(this.createShutdownGuardTile());
     body.appendChild(grid);
+  }
+
+  createShutdownGuardTile() {
+    const tile = document.createElement("div");
+    tile.className = "panel-tile info-tile shutdown-guard-tile";
+    const label = this.t("batteryShutdownGuardStatusTitle");
+    tile.innerHTML = `<span>${label}</span><strong>-</strong>`;
+    const value = tile.querySelector("strong");
+
+    const formatDuration = (seconds) => {
+      const total = Math.max(0, Math.ceil(Number(seconds) || 0));
+      const minutes = Math.floor(total / 60);
+      const secs = total % 60;
+      return `${minutes}:${String(secs).padStart(2, "0")}`;
+    };
+
+    const update = () => {
+      if (!tile.isConnected) return;
+      const entityId = this.getSwitchEntity("batterySaver");
+      const entity = entityId ? this._hass?.states?.[entityId] : null;
+      const attrs = entity?.attributes || {};
+      const now = Date.now() / 1000;
+      const dueAt = Number(attrs.shutdown_guard_due_at);
+      const pulseUntil = Number(attrs.shutdown_guard_pulse_until);
+
+      if (!entityId || !entity) {
+        value.textContent = "-";
+      } else if (entity.state !== "on") {
+        value.textContent = this.t("batteryShutdownGuardDisabled");
+      } else if (Number.isFinite(pulseUntil) && pulseUntil > now) {
+        value.textContent = `${this.t("batteryShutdownGuardPulse")} ${formatDuration(pulseUntil - now)}`;
+      } else if (Number.isFinite(dueAt) && dueAt > 0) {
+        if (dueAt <= now) {
+          value.textContent = this.t("batteryShutdownGuardDue");
+        } else {
+          value.textContent = `${this.t("batteryShutdownGuardNext")} ${formatDuration(dueAt - now)}`;
+        }
+      } else {
+        const state = String(attrs.shutdown_guard_state || "");
+        value.textContent = state === "inactive"
+          ? this.t("batteryShutdownGuardInactive")
+          : this.t("batteryShutdownGuardInitializing");
+      }
+
+      window.setTimeout(update, 1000);
+    };
+
+    window.setTimeout(update, 0);
+    return tile;
   }
 
   renderDiagnosticsPanel(body) {
@@ -1834,6 +1884,27 @@ class AnthbotMapCard extends HTMLElement {
     const entityId = this.getSwitchEntity(key);
     const entity = entityId ? this._hass.states[entityId] : null;
     const checked = entity?.state === "on";
+
+    if (key === "batterySaver") {
+      const tile = document.createElement("div");
+      tile.className = "panel-tile switch-tile battery-saver-open-tile";
+      tile.title = entityId || this.t("switchMissing");
+      tile.tabIndex = entityId ? 0 : -1;
+      tile.setAttribute("role", "button");
+      tile.setAttribute("aria-disabled", entityId ? "false" : "true");
+      tile.innerHTML = `<span>${label}</span>`;
+      const openDialog = (event) => {
+        event?.preventDefault?.();
+        if (!entityId) return;
+        this.openBatterySaverDialog(entityId);
+      };
+      tile.addEventListener("click", openDialog);
+      tile.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") openDialog(event);
+      });
+      return tile;
+    }
+
     const tile = document.createElement("label");
     tile.className = "panel-tile switch-tile";
     tile.title = entityId || this.t("switchMissing");
@@ -1844,9 +1915,6 @@ class AnthbotMapCard extends HTMLElement {
     const input = tile.querySelector("input");
     input.addEventListener("change", async () => {
       await this.toggleSwitchEntity(key, entityId, input.checked, input);
-      if (key === "batterySaver" && input.checked) {
-        this.openBatterySaverDialog(entityId);
-      }
     });
     return tile;
   }
@@ -1894,6 +1962,8 @@ class AnthbotMapCard extends HTMLElement {
         .battery-anti-shutdown strong{color:#a98cff}
         .battery-info-box{padding:12px 14px;border:1px solid color-mix(in srgb,var(--primary-color,#3b82f6) 55%,transparent);border-radius:12px;background:color-mix(in srgb,var(--primary-color,#3b82f6) 8%,transparent);font-size:.9em;line-height:1.45}
         .battery-saver-check{display:flex!important;justify-content:space-between;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--divider-color,#3a4653);border-radius:12px}
+        .battery-saver-mode-toggle{margin-top:14px}
+        .battery-saver-mode-toggle input[type=checkbox]{width:28px;height:28px;min-width:28px;min-height:28px;cursor:pointer;accent-color:var(--primary-color,#3b82f6)}
         .battery-saver-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
         @media(max-width:760px){.battery-saver-layout{grid-template-columns:1fr}.battery-detail-row{grid-template-columns:1fr 90px}}
       </style>
@@ -1904,6 +1974,10 @@ class AnthbotMapCard extends HTMLElement {
         </div>
         <button type="button" class="mowing-record-detail-close" aria-label="${escapeHtml(this.t("close"))}">×</button>
       </div>
+      <label class="battery-saver-check battery-saver-mode-toggle" data-role="battery-saver-enabled">
+        <span><strong>${escapeHtml(this.t("batterySaverMode"))}</strong><small style="display:block;opacity:.68;margin-top:3px">${escapeHtml(this.t("batterySaverDescription"))}</small></span>
+        <input name="battery_saver_enabled" type="checkbox" ${state?.state === "on" ? "checked" : ""}>
+      </label>
       <div class="battery-saver-layout">
         <div class="battery-profile-list">
           <div style="font-weight:700;margin-bottom:2px">${escapeHtml(this.t("batteryProfileSelect"))}</div>
@@ -1951,6 +2025,19 @@ class AnthbotMapCard extends HTMLElement {
     const chargeInput = dialog.querySelector('[name="charge_limit"]');
     const maintenanceInput = dialog.querySelector('[name="maintenance_level"]');
     const resumeInput = dialog.querySelector('[name="resume_level"]');
+    const modeInput = dialog.querySelector('[name="battery_saver_enabled"]');
+    modeInput?.addEventListener("change", async () => {
+      modeInput.disabled = true;
+      try {
+        await this.toggleSwitchEntity("batterySaver", entityId, modeInput.checked, modeInput);
+        this.scheduleRefresh(200);
+      } catch (error) {
+        // toggleSwitchEntity() already restores the checkbox and reports the failure.
+        console.error("Battery saver mode toggle failed", error);
+      } finally {
+        modeInput.disabled = false;
+      }
+    });
     const selectProfile = (profile, applyValues = true) => {
       dialog.querySelectorAll('.battery-profile-card').forEach((card) => card.classList.toggle('active', card.dataset.profile === profile));
       const radio = dialog.querySelector(`[name="battery_profile"][value="${profile}"]`);
@@ -2074,7 +2161,7 @@ class AnthbotMapCard extends HTMLElement {
       robotCalibration: this.robotCalibration,
       mowingPathCalibration: this.mowingPathCalibration,
       decodedBoundaryCalibration: this.decodedBoundaryCalibration,
-      robotImage: this.config.robot_image || this.config.robotImage || this.resolveAsset("robot.png?v=133"),
+      robotImage: this.config.robot_image || this.config.robotImage || this.resolveAsset("robot.png?v=2411"),
       noGoLabel: this.t("forbidden"),
       showNoGoZones: this.showNoGoZones,
       showNoGoLabels: this.showNoGoLabels,
@@ -2278,14 +2365,20 @@ class AnthbotMapCard extends HTMLElement {
       dock: "return_to_dock",
       pause: "pause_mow",
       resume: "resume_mow",
+      "outer-edge": "start_outer_edge_mow",
+      "dock-edge": "start_dock_edge_mow",
     })[command];
     const label = this.commandLabel(service || command);
-    this.notify(this.feedback("commandSentWaiting", label));
+    const stopRtkStatus = this.beginRtkInitializationStatus(service);
+    if (!stopRtkStatus) this.notify(this.feedback("commandSentWaiting", label));
     try {
       await this._hass.callService("button", "press", { entity_id: entityId });
+      stopRtkStatus?.();
+      if (this.isMowingStartService(service)) this.notify(this.t("mowingStarting"));
       this.scheduleRefresh(200);
       if (service) void this.waitForCommandConfirmation(service);
     } catch (error) {
+      stopRtkStatus?.();
       this.notify(this.feedback("commandFailed", label));
       throw error;
     }
@@ -2293,19 +2386,45 @@ class AnthbotMapCard extends HTMLElement {
 
   async callAnthbotService(service, data = {}) {
     const label = this.commandLabel(service);
-    this.notify(this.feedback("commandSentWaiting", label));
+    const stopRtkStatus = this.beginRtkInitializationStatus(service);
+    if (!stopRtkStatus) this.notify(this.feedback("commandSentWaiting", label));
     try {
       const domain = this.resolveServiceDomain(service);
       await this._hass.callService(domain, service, {
         ...data,
         entity_id: this._activeEntityId || this.config.entity,
       });
+      stopRtkStatus?.();
+      if (this.isMowingStartService(service)) this.notify(this.t("mowingStarting"));
       this.scheduleRefresh(200);
       void this.waitForCommandConfirmation(service);
     } catch (error) {
+      stopRtkStatus?.();
       this.notify(this.feedback("commandFailed", label));
       throw error;
     }
+  }
+
+  isMowingStartService(service) {
+    return ["start_full_mow", "start_outer_edge_mow", "start_dock_edge_mow", "start_zone_mow", "start_auto_zone_mow", "resume_mow"].includes(service);
+  }
+
+  sharedRtkPowerIsEnabled() {
+    const entityId = this.getSwitchEntity("batterySaver");
+    const state = entityId ? this._hass.states[entityId] : null;
+    return state?.state === "on" && state?.attributes?.shared_rtk_power === true;
+  }
+
+  beginRtkInitializationStatus(service) {
+    if (!this.isMowingStartService(service) || !this.sharedRtkPowerIsEnabled()) return null;
+    let count = 1;
+    const render = () => {
+      showAnthbotCommandToast(`${this.t("rtkInitializing")}${".".repeat(count)}`);
+      count = count % 3 + 1;
+    };
+    render();
+    const timer = window.setInterval(render, 450);
+    return () => window.clearInterval(timer);
   }
 
   resolveServiceDomain(service) {
@@ -3912,79 +4031,8 @@ if (!customElements.get("anthbot-map-card")) {
   customElements.define("anthbot-map-card", AnthbotMapCard);
 }
 
-
-if (!AnthbotMapCard.__batterySaverDialogTogglePatched) {
-  const proto = AnthbotMapCard.prototype;
-  const originalCreateSwitchControl = proto.createSwitchControl;
-  const originalOpenBatterySaverDialog = proto.openBatterySaverDialog;
-
-  proto.createSwitchControl = function(label, key) {
-    if (key !== "batterySaver") {
-      return originalCreateSwitchControl.call(this, label, key);
-    }
-
-    const entityId = this.getSwitchEntity(key);
-    const tile = document.createElement("div");
-    tile.className = "panel-tile switch-tile battery-saver-open-tile";
-    tile.title = entityId || this.t("switchMissing");
-    tile.tabIndex = entityId ? 0 : -1;
-    tile.setAttribute("role", "button");
-    tile.setAttribute("aria-disabled", entityId ? "false" : "true");
-    tile.innerHTML = `
-      <span>${label}</span>
-    `;
-    const openDialog = (event) => {
-      event?.preventDefault?.();
-      if (!entityId) return;
-      this.openBatterySaverDialog(entityId);
-    };
-    tile.addEventListener("click", openDialog);
-    tile.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") openDialog(event);
-    });
-    return tile;
-  };
-
-  proto.openBatterySaverDialog = function(entityId) {
-    originalOpenBatterySaverDialog.call(this, entityId);
-    const root = this.shadowRoot || document.body;
-    const dialogs = root.querySelectorAll(".battery-saver-dialog");
-    const dialog = dialogs[dialogs.length - 1];
-    if (!dialog || dialog.querySelector('[data-role="battery-saver-enabled"]')) return;
-
-    const state = entityId ? this._hass.states[entityId] : null;
-    const enabled = state?.state === "on";
-    const modeRow = document.createElement("label");
-    modeRow.className = "battery-saver-check";
-    modeRow.dataset.role = "battery-saver-enabled";
-    modeRow.style.marginTop = "14px";
-    modeRow.innerHTML = `
-      <span><strong>${this.t("batterySaverMode")}</strong><small style="display:block;opacity:.68;margin-top:3px">${this.t("batterySaverDescription")}</small></span>
-      <input class="battery-saver-enabled-checkbox" type="checkbox" ${enabled ? "checked" : ""} style="width:28px;height:28px;min-width:28px;accent-color:var(--primary-color,#03a9f4)">
-    `;
-    const header = dialog.querySelector(".mowing-record-detail-head");
-    header?.insertAdjacentElement("afterend", modeRow);
-
-    const input = modeRow.querySelector("input");
-    input.addEventListener("change", async () => {
-      input.disabled = true;
-      try {
-        await this.toggleSwitchEntity("batterySaver", entityId, input.checked, input);
-        this.scheduleRefresh(200);
-      } catch (error) {
-        input.checked = !input.checked;
-        throw error;
-      } finally {
-        input.disabled = false;
-      }
-    });
-  };
-
-  AnthbotMapCard.__batterySaverDialogTogglePatched = true;
-}
-
 window.customCards = window.customCards || [];
-if (!window.customCards.some((card) => card?.type === "anthbot-map-card")) {
+if (!window.customCards.some((card) => card.type === "anthbot-map-card")) {
   window.customCards.push({
     type: "anthbot-map-card",
     name: "Anthbot Map Card",

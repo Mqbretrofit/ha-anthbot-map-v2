@@ -19,7 +19,7 @@ on:
       tag:
         description: "Release tag"
         required: true
-        default: "v2.4.1-beta.4"
+        default: "v2.4.1"
 
 permissions:
   contents: write

@@ -12,6 +12,7 @@ start_full_mow:
       selector:
         text:
 
+
 set_battery_saver_config:
   name: Set Battery Saver Configuration
   description: Update and persist battery-saver thresholds for a selected mower.
