@@ -169,6 +169,41 @@ class BatterySaverSourceTests(unittest.TestCase):
         self.assertIn("shared_rtk_power", card)
         self.assertIn("set_battery_saver_config:", services)
 
+    def test_custom_button_actions_are_saved_per_mower_in_home_assistant(self) -> None:
+        init_source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
+        const_source = (COMPONENT / "const.py").read_text(encoding="utf-8")
+        coordinator = (COMPONENT / "coordinator.py").read_text(encoding="utf-8")
+        card = (COMPONENT / "frontend" / "anthbot-map-card.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            'CONF_CUSTOM_BUTTON_CONFIGS = "custom_button_configs"', const_source
+        )
+        self.assertIn("_handle_set_custom_button_actions", init_source)
+        self.assertIn("options[CONF_CUSTOM_BUTTON_CONFIGS] = configs", init_source)
+        self.assertIn("async_update_custom_button_config", coordinator)
+        self.assertIn('"set_custom_button_actions"', card)
+        self.assertIn("effectiveCustomButtonAction(command)", card)
+
+    def test_charger_change_restarts_only_the_guard_for_the_new_plug(self) -> None:
+        coordinator = (COMPONENT / "coordinator.py").read_text(encoding="utf-8")
+        update_block = coordinator.split(
+            "async def async_update_battery_saver_config", 1
+        )[1].split("def custom_button_actions_configured", 1)[0]
+
+        self.assertIn("previous_entity_id != current_entity_id", update_block)
+        self.assertIn("guard.cancel()", update_block)
+        self.assertIn("await guard", update_block)
+        self.assertIn(
+            "self._battery_saver_shutdown_guard_due_at = None", update_block
+        )
+        self.assertIn("self._ensure_shutdown_guard()", update_block)
+        self.assertLess(
+            update_block.index("previous_entity_id != current_entity_id"),
+            update_block.index("self._ensure_shutdown_guard()"),
+        )
+
     def test_battery_saver_tile_only_opens_large_popup_toggle(self) -> None:
         card = (COMPONENT / "frontend" / "anthbot-map-card.js").read_text(
             encoding="utf-8"

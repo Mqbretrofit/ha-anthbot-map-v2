@@ -22,7 +22,19 @@ valamint egy saját légi vagy drónfelvétel a kertről.
 
 ## Aktuális verzió
 
-Stabil verzió: **2.4.1**
+Stabil verzió: **2.4.2**
+
+### A 2.4.2 legfontosabb változásai
+
+- Bekerültek a robotonként, Home Assistantban mentett egyéni
+  kártyagomb-műveletek; a korábbi YAML `button_actions` beállítás továbbra is
+  használható.
+- Másik töltő-okoskonnektor kiválasztásakor az 55+1 perces anti-shutdown
+  védelem azonnal az új konnektorhoz igazodik.
+- A százalékok egyszerű módosítása nem indítja újra a futó időzítést, a hibás
+  régi értékeket pedig biztonságosan korrigálja.
+- Minden meglévő profil, fordítás, vezérlés, RTK-kezelés és újraindítás utáni
+  állapotmentés változatlanul megmaradt.
 
 ### A 2.4.1 legfontosabb változásai
 
@@ -202,7 +214,7 @@ kézzel hozzáadni.
 2. Adj hozzá egy új erőforrást:
 
    ```text
-   /anthbot-map-v2/anthbot-map-card.js?v=2.4.1
+   /anthbot-map-v2/anthbot-map-card.js?v=2.4.2
    ```
 
 3. Típusnak válaszd a **JavaScript module** lehetőséget.
@@ -440,7 +452,7 @@ HACS használata esetén:
 Storage módú Lovelace esetén az integráció automatikusan frissíti az erőforrás
 verzióparaméterét. YAML erőforrásmódban frissítés után módosítsd a
 gyorsítótárat megkerülő verzióparamétert, például:
-`/anthbot-map-v2/anthbot-map-card.js?v=2.4.1`.
+`/anthbot-map-v2/anthbot-map-card.js?v=2.4.2`.
 
 # Hibaelhárítás
 

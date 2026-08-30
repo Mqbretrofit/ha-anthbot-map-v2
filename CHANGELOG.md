@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.4.1 maintenance update — 2026-08-30
+## 2.4.2 — 2026-08-30
 
 - Adds per-mower custom card-button actions that are configured in the card and persisted in Home Assistant config-entry options.
 - Keeps the existing YAML `button_actions` format compatible while allowing Home Assistant services, scripts, targets, and previously configured action data.
@@ -8,6 +8,7 @@
 - Safely normalizes invalid legacy battery thresholds before the battery-saver state machine uses them.
 - Preserves all existing battery-saver profiles, shared/separate RTK handling, restart persistence, translations, and mower controls.
 
+See `RELEASE_NOTES_v2.4.2.md` and `CHANGELOG_v2.4.2_HU.md` for details.
 
 ## 2.4.1 — 2026-08-28
 
