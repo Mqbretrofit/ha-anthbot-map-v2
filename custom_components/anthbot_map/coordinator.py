@@ -179,6 +179,7 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         device: AnthbotBoundDevice,
         update_interval: timedelta,
         battery_saver_config: dict[str, Any] | None = None,
+        custom_button_config: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(
             hass,
@@ -231,6 +232,7 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._live_flush_task: asyncio.Task[None] | None = None
         self._last_mowing_task: dict[str, Any] | None = None
         self._battery_saver_config = dict(battery_saver_config or {})
+        self._custom_button_config = dict(custom_button_config or {})
         self._battery_saver_enabled = False
         self._battery_saver_phase = "disabled"
         self._battery_saver_listener_remove = None
@@ -426,11 +428,17 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         except (TypeError, ValueError):
             resume_level = DEFAULT_BATTERY_SAVER_RESUME_LEVEL
+        charge_limit = max(20, min(100, charge_limit))
+        # Older/manually edited config-entry options may predate the service
+        # validation below.  Keep valid saved values unchanged, but make an
+        # invalid legacy combination safe before the state machine uses it.
+        maintenance_level = max(10, min(99, maintenance_level, charge_limit - 1))
+        resume_level = max(10, min(99, resume_level, charge_limit - 1))
         return {
             CONF_CHARGER_SWITCH: self._battery_saver_config.get(CONF_CHARGER_SWITCH),
-            CONF_CHARGE_LIMIT: max(20, min(100, charge_limit)),
-            CONF_MAINTENANCE_LEVEL: max(10, min(99, maintenance_level)),
-            CONF_RESUME_LEVEL: max(10, min(99, resume_level)),
+            CONF_CHARGE_LIMIT: charge_limit,
+            CONF_MAINTENANCE_LEVEL: maintenance_level,
+            CONF_RESUME_LEVEL: resume_level,
             CONF_SHARED_RTK_POWER: bool(
                 self._battery_saver_config.get(CONF_SHARED_RTK_POWER, False)
             ),
@@ -440,12 +448,73 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self, config: dict[str, Any]
     ) -> None:
         """Apply validated battery-saver options without restarting Home Assistant."""
+        previous_entity_id = self.battery_saver_config.get(CONF_CHARGER_SWITCH)
         self._battery_saver_config = dict(config)
+        current_entity_id = self.battery_saver_config.get(CONF_CHARGER_SWITCH)
+
+        # A running guard can be sleeping until the old plug's deadline.  When
+        # the configured plug changes, stop that wait and start a fresh cycle
+        # for the new entity immediately.  Other config edits keep the existing
+        # countdown, so a harmless threshold change cannot postpone the pulse.
+        if previous_entity_id != current_entity_id:
+            guard = self._battery_saver_shutdown_guard_task
+            if (
+                guard is not None
+                and guard is not asyncio.current_task()
+                and not guard.done()
+            ):
+                guard.cancel()
+                try:
+                    await guard
+                except asyncio.CancelledError:
+                    pass
+            self._battery_saver_shutdown_guard_task = None
+            self._battery_saver_shutdown_guard_due_at = None
+            self._battery_saver_shutdown_guard_pulse_until = None
+            self._battery_saver_shutdown_guard_entity_id = (
+                current_entity_id if isinstance(current_entity_id, str) else None
+            )
+            await self._async_save_battery_saver_state()
+
         if self.reported_state:
             state = dict(self.reported_state)
             state["_battery_saver_config"] = self.battery_saver_config
             self.async_set_updated_data(state)
+        if self._battery_saver_enabled:
+            self._ensure_shutdown_guard()
         self.async_schedule_battery_saver_evaluation()
+
+    @property
+    def custom_button_actions_configured(self) -> bool:
+        """Return whether GUI custom button actions have a HA-side configuration."""
+        return self._custom_button_config.get("configured") is True
+
+    @property
+    def custom_button_actions_enabled(self) -> bool:
+        """Return whether HA-side custom button actions are enabled."""
+        return bool(
+            self.custom_button_actions_configured
+            and self._custom_button_config.get("enabled") is True
+        )
+
+    @property
+    def custom_button_actions(self) -> dict[str, Any]:
+        """Return a copy of the HA-side per-mower custom button actions."""
+        actions = self._custom_button_config.get("actions", {})
+        return dict(actions) if isinstance(actions, dict) else {}
+
+    async def async_update_custom_button_config(
+        self, config: dict[str, Any]
+    ) -> None:
+        """Apply HA-side per-mower custom button actions without a restart."""
+        self._custom_button_config = dict(config) if isinstance(config, dict) else {}
+        state = dict(self.reported_state)
+        state["_custom_button_config"] = {
+            "configured": self.custom_button_actions_configured,
+            "enabled": self.custom_button_actions_enabled,
+            "actions": self.custom_button_actions,
+        }
+        self.async_set_updated_data(state)
 
     async def async_load_battery_saver_state(self) -> None:
         """Restore the local battery-saver switch after a restart."""
@@ -725,18 +794,34 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # finish only the remaining part of that same pulse. Do not start it over.
                 pulse_until = self._battery_saver_shutdown_guard_pulse_until
                 if pulse_until is not None:
-                    if not charger_on:
-                        # The plug is already off, so the pulse ended externally. Start
-                        # the next 55-minute window from that actual OFF transition.
-                        self._battery_saver_shutdown_guard_pulse_until = None
-                        self._battery_saver_shutdown_guard_due_at = None
-                        await self._async_initialize_shutdown_guard_due(
-                            entity_id, switch_state
-                        )
-                        continue
                     remaining = pulse_until - now
                     if remaining > 0:
                         await asyncio.sleep(remaining)
+                        continue
+
+                    # Re-read the plug after the pulse deadline. Some smart plugs
+                    # acknowledge the ON command before their HA state changes; the
+                    # stale OFF state must not cancel a pulse that has just started.
+                    switch_state = self.hass.states.get(entity_id)
+                    switch_value = (
+                        str(switch_state.state).strip().lower()
+                        if switch_state is not None
+                        else "unavailable"
+                    )
+                    if switch_value in transient_statuses:
+                        await asyncio.sleep(5)
+                        continue
+                    charger_on = switch_value == "on"
+                    if not charger_on:
+                        # The pulse never engaged or ended externally. Start a fresh
+                        # 55-minute window instead of deriving it from stale history.
+                        self._battery_saver_shutdown_guard_pulse_until = None
+                        self._battery_saver_shutdown_guard_due_at = (
+                            time.time() + 55 * 60
+                        )
+                        self._battery_saver_shutdown_guard_entity_id = entity_id
+                        await self._async_save_battery_saver_state()
+                        continue
                     status = self._robot_status(self.reported_state)
                     battery = self._battery_percentage(self.reported_state)
                     if not self._battery_saver_enabled:
