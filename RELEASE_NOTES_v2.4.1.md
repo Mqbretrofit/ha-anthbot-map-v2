@@ -2,6 +2,14 @@
 
 ## Stable battery-saver release
 
+### Maintenance update — 2026-08-30
+
+- Adds Home Assistant-persisted, per-mower custom actions for the card controls while retaining YAML `button_actions` compatibility.
+- Applies a newly selected charger smart plug to the restart-safe 55+1 minute anti-shutdown guard immediately.
+- Keeps a running guard deadline unchanged for ordinary threshold edits and safely repairs invalid legacy threshold combinations.
+- Preserves the existing battery-saver UI, profiles, translations, RTK behavior, and controls.
+
+
 - Adds three ready-made battery-care profiles — Maximum battery care,
   Balanced, and Always ready — plus fully adjustable custom settings.
 - Persists the upper charge limit, idle recharge level, interrupted-task resume
