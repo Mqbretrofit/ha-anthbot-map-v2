@@ -3,6 +3,7 @@
 [English](README.md) | Magyar
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
+[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Mqbretrofit&repository=ha-anthbot-map-v2&category=integration)
 [![Licenc: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Nem hivatalos Home Assistant-integráció és egyedi térképkártya ANTHBOT
@@ -21,7 +22,35 @@ valamint egy saját légi vagy drónfelvétel a kertről.
 
 ## Aktuális verzió
 
-Stabil verzió: **2.4.0**
+Stabil verzió: **2.4.1**
+
+### A 2.4.1 legfontosabb változásai
+
+- Három kész akkukímélő profil került be: **Max. akkukímélés**,
+  **Kiegyensúlyozott** és **Mindig indulásra kész**, valamint megmaradt a
+  teljesen állítható **Egyéni** profil.
+- Robotenként tartósan menti a felső töltési határt, a fenntartó töltés
+  indítási szintjét, a félbehagyott feladat folytatási szintjét, a közös
+  RTK-táp beállítását, az aktuális működési fázist és a shutdown-védelem
+  időzítését. A Home Assistant újraindítása már nem indítja újra az aktív
+  akkukímélő ciklust.
+- Bekerült az **55+1 perces anti-shutdown védelem**: dokkolt, készenléti
+  robotnál, kikapcsolt töltőtáp esetén 55 perc után egy percre bekapcsolja a
+  töltőt, majd újrakezdi a ciklust.
+- A kártyán látható a shutdown-védelem állapota és a következő impulzusig
+  hátralévő idő, beleértve az inicializálást és az aktív ébresztő töltést.
+- A normál fenntartó töltés különválik a rövid ébresztő impulzustól, és hiányzó
+  robot-telemetria esetén a rendszer nem kapcsolja le vakon a tápot.
+- Helyesen kezeli a közös és a külön RTK-tápot nyírás, dokkhoz visszatérés,
+  töltés és RTK-inicializálás közben.
+- Az akkumulátorkímélő mód kikapcsolásakor azonnal visszakapcsolja a töltőtápot,
+  a kézzel elindított töltést pedig nem téveszti össze automatikus
+  akkukímélő-váltással.
+- Javult az integráció leállítása és újratöltése; a mentett beállítások Home
+  Assistant-újraindítás nélkül, azonnal életbe lépnek.
+- Az akkukímélő csempe csak a beállítóablakot nyitja meg; a nagyobb be- és
+  kikapcsoló jelölőnégyzet a popupban marad.
+- Az új akkukímélő felület mind a 23 támogatott nyelven elérhető.
 
 ### A 2.4.0 legfontosabb változásai
 
@@ -173,7 +202,7 @@ kézzel hozzáadni.
 2. Adj hozzá egy új erőforrást:
 
    ```text
-   /anthbot-map-v2/anthbot-map-card.js?v=2.3.0
+   /anthbot-map-v2/anthbot-map-card.js?v=2.4.1
    ```
 
 3. Típusnak válaszd a **JavaScript module** lehetőséget.
@@ -411,7 +440,7 @@ HACS használata esetén:
 Storage módú Lovelace esetén az integráció automatikusan frissíti az erőforrás
 verzióparaméterét. YAML erőforrásmódban frissítés után módosítsd a
 gyorsítótárat megkerülő verzióparamétert, például:
-`/anthbot-map-v2/anthbot-map-card.js?v=2.3.0`.
+`/anthbot-map-v2/anthbot-map-card.js?v=2.4.1`.
 
 # Hibaelhárítás
 
