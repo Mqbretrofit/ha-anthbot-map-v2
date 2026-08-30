@@ -30,8 +30,10 @@ Stable version: **2.4.2**
   preserving the existing YAML `button_actions` format.
 - Immediately rebinds the restart-safe 55+1 minute anti-shutdown guard when
   the configured charger smart plug changes.
-- Keeps ordinary threshold edits from resetting an active guard countdown and
-  safely normalizes invalid legacy threshold combinations.
+- Changing the battery-saver percentage thresholds does not reset timers that
+  are already running.
+- Invalid settings left over from previous versions are automatically corrected
+  to safe values.
 - Preserves all existing battery-saver profiles, translations, RTK handling,
   mower controls, and restart persistence.
 
