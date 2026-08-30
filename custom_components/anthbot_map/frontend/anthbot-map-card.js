@@ -1,7 +1,7 @@
 import { AnthbotMapRenderer } from "./renderer.js?v=2411";
 import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=2411";
 import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=2411";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=2411";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=2411-fix3-ha-custom-buttons";
 import {
   adjustCalibration,
   cardToYaml,
@@ -89,6 +89,11 @@ class AnthbotMapCard extends HTMLElement {
     this.selectedMowingTarget = { type: "full" };
     this.mowingZoneGroupsOpen = { "zone-set": true, "auto-zone-set": false };
     this.panelInteractionUntil = 0;
+    this.customButtonActions = {};
+    this.customButtonActionsEnabled = false;
+    this.customButtonServerConfigured = false;
+    this.customButtonSavePending = 0;
+    this.customButtonSaveQueue = Promise.resolve();
   }
 
   setConfig(config) {
@@ -98,6 +103,10 @@ class AnthbotMapCard extends HTMLElement {
 
     this.config = config;
     const savedInterface = this.readInterfaceSettings(config.entity);
+    const configuredButtonActions = config.button_actions || config.buttonActions || {};
+    this.customButtonActions = { ...configuredButtonActions };
+    this.customButtonActionsEnabled = Object.keys(configuredButtonActions).length > 0;
+    this.customButtonServerConfigured = false;
     this.mapOnly = typeof config.map_only === "boolean"
       ? config.map_only
       : typeof config.mapOnly === "boolean" ? config.mapOnly : Boolean(savedInterface.mapOnly);
@@ -157,8 +166,9 @@ class AnthbotMapCard extends HTMLElement {
     this._hass = hass;
     this._activeEntityId = this.resolveMapEntityId();
     this.entity = hass.states[this._activeEntityId];
+    const customButtonsChanged = this.syncCustomButtonActionsFromServer();
     this.startRefreshTimer();
-    if (previousLanguage !== this.language) {
+    if (previousLanguage !== this.language || customButtonsChanged) {
       this.render();
     } else {
       this.updateRenderer();
@@ -238,6 +248,19 @@ class AnthbotMapCard extends HTMLElement {
           .settings-section[open] > summary::after, .zone-settings[open] > summary::after { transform:rotate(180deg); }
           .settings-section-body, .zone-settings-body { padding:0 10px 12px; }
           .zone-settings { margin:8px 0; background:rgba(7,15,23,.28); }
+          .custom-button-actions-note { margin:0 2px 12px; color:#aeb7c2; font-size:12px; line-height:1.45; }
+          .custom-button-action-grid { display:grid; gap:10px; }
+          .custom-button-action-row { display:grid; grid-template-columns:minmax(120px,.7fr) minmax(190px,1.5fr) minmax(170px,1.1fr); gap:9px; align-items:end; padding:11px; border:1px solid rgba(255,255,255,.14); border-radius:13px; background:rgba(255,255,255,.055); }
+          .custom-button-action-row label { display:grid; gap:5px; min-width:0; }
+          .custom-button-action-row label > span { font-size:11px; color:#aeb7c2; }
+          .custom-button-action-row strong { align-self:center; font-size:14px; overflow-wrap:anywhere; }
+          .custom-button-action-row input { box-sizing:border-box; width:100%; min-width:0; min-height:38px; padding:7px 9px; border:1px solid rgba(255,255,255,.18); border-radius:9px; background:rgba(8,16,24,.76); color:#fff; font:inherit; }
+          .custom-button-action-row input::placeholder { color:rgba(255,255,255,.42); }
+          .custom-button-action-enabled { margin-bottom:10px; }
+          .custom-button-actions-disabled .custom-button-action-grid { opacity:.45; pointer-events:none; }
+          .custom-button-actions-footer { display:flex; justify-content:flex-end; gap:8px; margin-top:11px; }
+          .custom-button-actions-footer button { min-height:38px; padding:7px 12px; border:1px solid rgba(255,255,255,.18); border-radius:10px; background:rgba(255,255,255,.10); color:#fff; font:inherit; font-weight:800; cursor:pointer; }
+          @media (max-width:720px) { .custom-button-action-row { grid-template-columns:1fr; } }
           .obstacle-combined .obstacle-levels { margin-top:12px; }
           .obstacle-combined.disabled .obstacle-levels { display:none; }
           .maintenance-tile { display:flex; flex-direction:column; align-items:stretch; gap:10px; }
@@ -872,8 +895,177 @@ class AnthbotMapCard extends HTMLElement {
     );
     globalSection.querySelector(".settings-section-body").appendChild(grid);
     body.appendChild(globalSection);
+    body.appendChild(this.createCustomButtonActionsSection());
     renderAnthbotEdgeSettings(this, body);
     this.renderZoneSettings(body);
+  }
+
+  createCustomButtonActionsSection() {
+    const section = this.createSettingsSection(this.t("customButtonActions"), "custom-button-actions");
+    const content = section.querySelector(".settings-section-body");
+    content.classList.toggle("custom-button-actions-disabled", !this.customButtonActionsEnabled);
+
+    const enabled = document.createElement("label");
+    enabled.className = "panel-tile switch-tile custom-button-action-enabled";
+    enabled.innerHTML = `<span><strong>${escapeHtml(this.t("customButtonActionsEnable"))}</strong><small style="display:block;opacity:.68;margin-top:3px">${escapeHtml(this.t("customButtonActionsEnableNote"))}</small></span><input type="checkbox" ${this.customButtonActionsEnabled ? "checked" : ""}>`;
+    const enabledInput = enabled.querySelector("input");
+    enabledInput.addEventListener("change", async () => {
+      this.customButtonActionsEnabled = enabledInput.checked;
+      content.classList.toggle("custom-button-actions-disabled", !this.customButtonActionsEnabled);
+      this.updateYaml();
+      await this.persistCustomButtonActions();
+    });
+    content.appendChild(enabled);
+
+    const note = document.createElement("div");
+    note.className = "custom-button-actions-note";
+    note.textContent = this.t("customButtonActionsNote");
+    content.appendChild(note);
+
+    const serviceListId = `anthbot-services-${this.entityBase()}-${Math.random().toString(36).slice(2, 8)}`;
+    const entityListId = `anthbot-entities-${this.entityBase()}-${Math.random().toString(36).slice(2, 8)}`;
+    const serviceList = document.createElement("datalist");
+    serviceList.id = serviceListId;
+    for (const serviceName of this.customButtonServiceSuggestions()) {
+      const option = document.createElement("option");
+      option.value = serviceName;
+      serviceList.appendChild(option);
+    }
+    const entityList = document.createElement("datalist");
+    entityList.id = entityListId;
+    for (const entityId of Object.keys(this._hass?.states || {}).sort()) {
+      const option = document.createElement("option");
+      option.value = entityId;
+      entityList.appendChild(option);
+    }
+    content.append(serviceList, entityList);
+
+    const commandDefinitions = [
+      ["start", this.t("startLabel")],
+      ["stop", this.t("stopLabel")],
+      ["dock", this.t("homeLabel")],
+      ["pause", this.t("pauseTask")],
+      ["resume", this.t("resumeTask")],
+      ["outer-edge", this.t("commandOuterEdge")],
+      ["dock-edge", this.t("commandDockEdge")],
+      ["connect", this.t("cloud")],
+      ["reset-blade", this.t("resetBlade")],
+      ["reset-camera", this.t("resetCamera")],
+      ["reset-contact", this.t("resetDockContact")],
+    ];
+    const rows = document.createElement("div");
+    rows.className = "custom-button-action-grid";
+    for (const [command, label] of commandDefinitions) {
+      const current = this.normalizeCustomButtonAction(this.customButtonActions?.[command]);
+      const row = document.createElement("div");
+      row.className = "custom-button-action-row";
+      row.dataset.command = command;
+      row.innerHTML = `
+        <strong>${escapeHtml(label)}</strong>
+        <label><span>${escapeHtml(this.t("customButtonService"))}</span><input data-field="service" list="${serviceListId}" value="${escapeHtml(current.service || "")}" placeholder="script.anthbot_safe_start"></label>
+        <label><span>${escapeHtml(this.t("customButtonTarget"))}</span><input data-field="target" list="${entityListId}" value="${escapeHtml(current.target?.entity_id || "")}" placeholder="${escapeHtml(this.t("customButtonTargetOptional"))}"></label>`;
+      const saveRow = () => {
+        const service = row.querySelector('[data-field="service"]').value.trim();
+        const targetEntity = row.querySelector('[data-field="target"]').value.trim();
+        if (!service) {
+          delete this.customButtonActions[command];
+        } else {
+          const previous = this.normalizeCustomButtonAction(this.customButtonActions?.[command]);
+          const definition = { ...previous, service };
+          if (targetEntity) definition.target = { ...(previous.target || {}), entity_id: targetEntity };
+          else delete definition.target;
+          this.customButtonActions[command] = definition;
+        }
+        this.updateYaml();
+        void this.persistCustomButtonActions();
+      };
+      row.querySelectorAll("input").forEach((input) => input.addEventListener("change", saveRow));
+      rows.appendChild(row);
+    }
+    content.appendChild(rows);
+
+    const footer = document.createElement("div");
+    footer.className = "custom-button-actions-footer";
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.textContent = this.t("customButtonClear");
+    clear.addEventListener("click", async () => {
+      this.customButtonActions = {};
+      this.customButtonActionsEnabled = false;
+      this.updateYaml();
+      await this.persistCustomButtonActions();
+      const panelBody = this.shadowRoot.querySelector('[data-role="panel-body"]');
+      if (panelBody && this.activePanel === "settings") this.renderSettingsPanel(panelBody);
+    });
+    footer.appendChild(clear);
+    content.appendChild(footer);
+    return section;
+  }
+
+  syncCustomButtonActionsFromServer() {
+    if (this.customButtonSavePending > 0) return false;
+    const attrs = this.entity?.attributes || {};
+    const serverConfigured = attrs.custom_button_actions_configured === true;
+    const yamlActions = this.config.button_actions || this.config.buttonActions || {};
+    const nextActions = serverConfigured && attrs.custom_button_actions && typeof attrs.custom_button_actions === "object"
+      ? attrs.custom_button_actions
+      : yamlActions;
+    const nextEnabled = serverConfigured
+      ? attrs.custom_button_actions_enabled === true
+      : Object.keys(yamlActions).length > 0;
+    const before = JSON.stringify([this.customButtonServerConfigured, this.customButtonActionsEnabled, this.customButtonActions]);
+    const after = JSON.stringify([serverConfigured, nextEnabled, nextActions]);
+    if (before === after) return false;
+    this.customButtonServerConfigured = serverConfigured;
+    this.customButtonActionsEnabled = nextEnabled;
+    this.customButtonActions = { ...nextActions };
+    return true;
+  }
+
+  persistCustomButtonActions() {
+    if (!this._hass?.callService) return Promise.resolve();
+    const payload = {
+      entity_id: this._activeEntityId || this.config.entity,
+      enabled: this.customButtonActionsEnabled,
+      actions: JSON.parse(JSON.stringify(this.customButtonActions || {})),
+    };
+    this.customButtonServerConfigured = true;
+    this.customButtonSavePending += 1;
+    const save = async () => {
+      try {
+        await this._hass.callService("anthbot_map", "set_custom_button_actions", payload);
+        this.scheduleRefresh(100);
+      } catch (error) {
+        this.notify(this.t("settingFailed"));
+        throw error;
+      } finally {
+        this.customButtonSavePending = Math.max(0, this.customButtonSavePending - 1);
+      }
+    };
+    this.customButtonSaveQueue = this.customButtonSaveQueue.catch(() => {}).then(save);
+    return this.customButtonSaveQueue;
+  }
+
+  normalizeCustomButtonAction(action) {
+    if (typeof action === "string") return { service: action, target: {} };
+    return action && typeof action === "object" ? action : { service: "", target: {} };
+  }
+
+  customButtonServiceSuggestions() {
+    const preferred = [];
+    const other = [];
+    for (const [domain, services] of Object.entries(this._hass?.services || {})) {
+      for (const service of Object.keys(services || {})) {
+        const fullName = `${domain}.${service}`;
+        if (domain === "script") preferred.push(fullName); else other.push(fullName);
+      }
+    }
+    return [...new Set([...preferred.sort(), ...other.sort()])];
+  }
+
+  effectiveCustomButtonAction(command) {
+    if (!this.customButtonActionsEnabled) return null;
+    return this.customButtonActions?.[command] || null;
   }
 
   renderMaintenancePanel(body) {
@@ -1932,6 +2124,25 @@ class AnthbotMapCard extends HTMLElement {
       if (event.target === overlay) close();
     });
 
+    const currentChargerSwitch = attrs.charger_switch || "";
+    const switchEntities = Object.keys(this._hass.states)
+      .filter((id) => id.startsWith("switch."))
+      .map((id) => ({
+        id,
+        name: this._hass.states[id]?.attributes?.friendly_name || id,
+      }))
+      .sort((left, right) => {
+        if (left.id === currentChargerSwitch) return -1;
+        if (right.id === currentChargerSwitch) return 1;
+        return left.name.localeCompare(right.name);
+      });
+    const switchOptionsHtml = switchEntities
+      .map((item) => {
+        const selected = item.id === currentChargerSwitch ? " selected" : "";
+        return `<option value="${escapeHtml(item.id)}"${selected}>${escapeHtml(item.name)} — ${escapeHtml(item.id)}</option>`;
+      })
+      .join("");
+
     const currentCharge = Number(attrs.charge_limit ?? 80);
     const currentMaintenance = Number(attrs.maintenance_level ?? 65);
     const currentResume = Number(attrs.resume_level ?? 50);
@@ -1958,6 +2169,8 @@ class AnthbotMapCard extends HTMLElement {
         .battery-detail-row span{font-weight:600}
         .battery-detail-row small{display:block;opacity:.68;margin-top:3px}
         .battery-detail-row input[type=number]{width:88px;text-align:center}
+        .battery-detail-row select{width:100%;min-width:0;max-width:100%;padding:8px;border-radius:8px;color:var(--primary-text-color);background:var(--card-background-color);border:1px solid var(--divider-color,#3a4653)}
+        .battery-charger-row{grid-template-columns:minmax(160px,.75fr) minmax(240px,1.25fr)}
         .battery-anti-shutdown{padding:13px 14px;border:1px solid #7356b8;border-radius:12px;background:rgba(105,72,180,.10)}
         .battery-anti-shutdown strong{color:#a98cff}
         .battery-info-box{padding:12px 14px;border:1px solid color-mix(in srgb,var(--primary-color,#3b82f6) 55%,transparent);border-radius:12px;background:color-mix(in srgb,var(--primary-color,#3b82f6) 8%,transparent);font-size:.9em;line-height:1.45}
@@ -2005,6 +2218,7 @@ class AnthbotMapCard extends HTMLElement {
         </div>
         <div class="battery-profile-details">
           <div style="font-weight:700;margin-bottom:2px">${escapeHtml(this.t("batteryProfileDetails"))}</div>
+          <label class="battery-detail-row battery-charger-row"><div><span>🔌 ${escapeHtml(this.t("chargerSmartPlug"))}</span><small>${escapeHtml(this.t("chargerSmartPlugNote"))}</small></div><select name="charger_switch">${switchOptionsHtml}</select></label>
           <label class="battery-detail-row"><div><span>${escapeHtml(this.t("batteryChargeLimit"))}</span><small>${escapeHtml(this.t("batteryChargeLimitNote"))}</small></div><input name="charge_limit" type="number" min="20" max="100" value="${currentCharge}"></label>
           <label class="battery-detail-row"><div><span>${escapeHtml(this.t("batteryMaintenanceLevel"))}</span><small>${escapeHtml(this.t("batteryMaintenanceLevelNote"))}</small></div><input name="maintenance_level" type="number" min="10" max="99" value="${currentMaintenance}"></label>
           <label class="battery-detail-row"><div><span>${escapeHtml(this.t("batteryResumeLevel"))}</span><small>${escapeHtml(this.t("batteryResumeLevelNote"))}</small></div><input name="resume_level" type="number" min="10" max="99" value="${currentResume}"></label>
@@ -2025,6 +2239,7 @@ class AnthbotMapCard extends HTMLElement {
     const chargeInput = dialog.querySelector('[name="charge_limit"]');
     const maintenanceInput = dialog.querySelector('[name="maintenance_level"]');
     const resumeInput = dialog.querySelector('[name="resume_level"]');
+    const chargerSwitchInput = dialog.querySelector('[name="charger_switch"]');
     const modeInput = dialog.querySelector('[name="battery_saver_enabled"]');
     modeInput?.addEventListener("change", async () => {
       modeInput.disabled = true;
@@ -2063,12 +2278,17 @@ class AnthbotMapCard extends HTMLElement {
       const chargeLimit = Number(chargeInput.value);
       const maintenanceLevel = Number(maintenanceInput.value);
       const resumeLevel = Number(resumeInput.value);
+      if (!chargerSwitchInput.value) {
+        this.notify(this.t("switchMissing"));
+        return;
+      }
       if (maintenanceLevel >= chargeLimit || resumeLevel >= chargeLimit) {
         this.notify(this.t("batteryLevelsInvalid"));
         return;
       }
       await this._hass.callService("anthbot_map", "set_battery_saver_config", {
         entity_id: this.config.entity,
+        charger_switch: chargerSwitchInput.value,
         charge_limit: chargeLimit,
         maintenance_level: maintenanceLevel,
         resume_level: resumeLevel,
@@ -2294,7 +2514,7 @@ class AnthbotMapCard extends HTMLElement {
       "reset-contact": this.t("resetDockContact"),
     })[command] || String(command || this.t("control"));
     showAnthbotCommandToast(this.feedback("commandSentWaiting", commandText));
-    const customAction = this.config.button_actions?.[command] || this.config.buttonActions?.[command];
+    const customAction = this.effectiveCustomButtonAction(command);
     if (customAction) {
       await this.callCustomButtonAction(command, customAction);
       return;
@@ -2832,6 +3052,7 @@ class AnthbotMapCard extends HTMLElement {
   configForYaml() {
     return {
       ...this.config,
+      button_actions: this.customButtonActionsEnabled ? this.customButtonActions : {},
       map_only: this.mapOnly,
       theme_background: this.themeBackground,
       glass_background: this.glassBackground,
@@ -4325,6 +4546,16 @@ window.__anthbotFeedbackClickHandler = (event) => {
       "start", "stop", "dock", "outer-edge", "dock-edge", "pause", "resume", "reset-blade", "reset-camera", "reset-contact",
     ].find((name) => control.classList?.contains(name));
     const command = control.dataset?.command || classCommand || "zone";
+    const configHost = path.find((item) => item?.config?.button_actions || item?._config?.button_actions);
+    const config = configHost?.config || configHost?._config || card?.config || {};
+    const customAction = typeof card?.effectiveCustomButtonAction === "function"
+      ? card.effectiveCustomButtonAction(command)
+      : (config.button_actions?.[command] || config.buttonActions?.[command]);
+    if (customAction) {
+      // Let the card's own click listener run callCustomButtonAction(). The
+      // document-level feedback handler must not replace configured actions.
+      return;
+    }
     const details = [anthbotCommandLabel(card, hass, command, control), ({
       start: "start_full_mow",
       stop: "stop_mow",
@@ -4342,8 +4573,6 @@ window.__anthbotFeedbackClickHandler = (event) => {
       showAnthbotCommandToast(anthbotFeedback(card, hass, "commandFailed", details[0]));
       return;
     }
-    const configHost = path.find((item) => item?.config?.controls || item?._config?.controls);
-    const config = configHost?.config || configHost?._config || card?.config || {};
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();

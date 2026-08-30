@@ -41,6 +41,7 @@ from .const import (
     CONF_PASSWORD,
     CONF_SCAN_INTERVAL,
     CONF_BATTERY_SAVER_CONFIGS,
+    CONF_CUSTOM_BUTTON_CONFIGS,
     CONF_CHARGE_LIMIT,
     CONF_CHARGER_SWITCH,
     CONF_MAINTENANCE_LEVEL,
@@ -71,6 +72,7 @@ from .const import (
     SERVICE_RESET_DOCK_CONTACT_MAINTENANCE,
     SERVICE_GET_MOWING_RECORD_DETAIL,
     SERVICE_SET_BATTERY_SAVER_CONFIG,
+    SERVICE_SET_CUSTOM_BUTTON_ACTIONS,
 )
 from .coordinator import AnthbotGenieDataUpdateCoordinator
 from .commands import (
@@ -94,7 +96,7 @@ PLATFORMS = [
 _LOGGER = logging.getLogger(__name__)
 VALID_MOW_HEIGHTS = list(range(30, 75, 5))
 FRONTEND_RESOURCE_PATH = "/anthbot-map-v2/anthbot-map-card.js"
-FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.1"
+FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.1-fix4-ha-custom-buttons"
 LEGACY_ENTITY_SUFFIXES: tuple[str, ...] = (
     "enable_custom_mowing_direction",
     "custom_mowing_direction_enable",
@@ -251,6 +253,77 @@ def _resolve_auto_zone_points(
     return resolved
 
 
+_CUSTOM_BUTTON_COMMANDS = {
+    "start",
+    "stop",
+    "dock",
+    "pause",
+    "resume",
+    "outer-edge",
+    "dock-edge",
+    "connect",
+    "reset-blade",
+    "reset-camera",
+    "reset-contact",
+}
+
+
+def _normalize_custom_button_actions(value: object) -> dict[str, dict]:
+    """Validate and normalize custom card-button service definitions."""
+    if not isinstance(value, dict):
+        raise AnthbotGenieApiError("Custom button actions must be an object")
+
+    normalized: dict[str, dict] = {}
+    for raw_command, raw_action in value.items():
+        command = str(raw_command)
+        if command not in _CUSTOM_BUTTON_COMMANDS:
+            raise AnthbotGenieApiError(f"Unsupported custom button command: {command}")
+
+        if isinstance(raw_action, str):
+            action: dict = {"service": raw_action}
+        elif isinstance(raw_action, dict):
+            action = dict(raw_action)
+        else:
+            raise AnthbotGenieApiError(
+                f"Invalid custom action definition for {command}"
+            )
+
+        service = action.get("service")
+        if not isinstance(service, str):
+            raise AnthbotGenieApiError(
+                f"Custom action for {command} must contain domain.service"
+            )
+        service = service.strip()
+        if "." not in service:
+            raise AnthbotGenieApiError(
+                f"Custom action for {command} must contain domain.service"
+            )
+        domain, service_name = service.split(".", 1)
+        if not domain or not service_name:
+            raise AnthbotGenieApiError(
+                f"Custom action for {command} must contain domain.service"
+            )
+
+        definition: dict = {"service": service}
+        target = action.get("target")
+        if target is not None:
+            if not isinstance(target, dict):
+                raise AnthbotGenieApiError(
+                    f"Custom action target for {command} must be an object"
+                )
+            definition["target"] = dict(target)
+        data = action.get("data", action.get("service_data"))
+        if data is not None:
+            if not isinstance(data, dict):
+                raise AnthbotGenieApiError(
+                    f"Custom action data for {command} must be an object"
+                )
+            definition["data"] = dict(data)
+        normalized[command] = definition
+
+    return normalized
+
+
 async def _async_register_services(hass: HomeAssistant) -> None:
     async def _async_sync_after_command(
         coordinator: AnthbotGenieDataUpdateCoordinator,
@@ -334,6 +407,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
     )
     battery_saver_config_schema = vol.Schema(
         {
+            vol.Optional(CONF_CHARGER_SWITCH): cv.entity_id,
             vol.Required(CONF_CHARGE_LIMIT): vol.All(
                 vol.Coerce(int), vol.Range(min=20, max=100)
             ),
@@ -344,6 +418,15 @@ async def _async_register_services(hass: HomeAssistant) -> None:
                 vol.Coerce(int), vol.Range(min=10, max=99)
             ),
             vol.Required(CONF_SHARED_RTK_POWER, default=False): cv.boolean,
+            vol.Optional(ATTR_SERIAL_NUMBER): vol.Any(cv.string, [cv.string]),
+            vol.Optional("entity_id"): vol.Any(cv.entity_id, [cv.entity_id]),
+        },
+        extra=vol.ALLOW_EXTRA,
+    )
+    custom_button_actions_schema = vol.Schema(
+        {
+            vol.Required("enabled"): cv.boolean,
+            vol.Required("actions"): dict,
             vol.Optional(ATTR_SERIAL_NUMBER): vol.Any(cv.string, [cv.string]),
             vol.Optional("entity_id"): vol.Any(cv.entity_id, [cv.entity_id]),
         },
@@ -647,8 +730,9 @@ async def _async_register_services(hass: HomeAssistant) -> None:
                 config = dict(previous) if isinstance(previous, dict) else {}
                 config.update(
                     {
-                        CONF_CHARGER_SWITCH: coordinator.battery_saver_config.get(
-                            CONF_CHARGER_SWITCH
+                        CONF_CHARGER_SWITCH: service_call.data.get(
+                            CONF_CHARGER_SWITCH,
+                            coordinator.battery_saver_config.get(CONF_CHARGER_SWITCH),
                         ),
                         CONF_CHARGE_LIMIT: charge_limit,
                         CONF_MAINTENANCE_LEVEL: maintenance_level,
@@ -661,6 +745,38 @@ async def _async_register_services(hass: HomeAssistant) -> None:
                 configs[coordinator.client.serial_number] = config
             options[CONF_BATTERY_SAVER_CONFIGS] = configs
             hass.config_entries.async_update_entry(entry, options=options)
+            await _async_update_entry_options(hass, entry)
+
+    async def _handle_set_custom_button_actions(service_call) -> None:
+        enabled = bool(service_call.data["enabled"])
+        actions = _normalize_custom_button_actions(service_call.data["actions"])
+        targets = _resolve_target_coordinators(hass, service_call.data)
+        if not targets:
+            raise AnthbotGenieApiError("No target Anthbot mower found")
+        target_serials = {item.client.serial_number for item in targets}
+        for entry_id, coordinators in hass.data.get(DOMAIN, {}).items():
+            matching = [
+                item
+                for item in coordinators
+                if item.client.serial_number in target_serials
+            ]
+            if not matching:
+                continue
+            entry = hass.config_entries.async_get_entry(entry_id)
+            if entry is None:
+                continue
+            options = dict(entry.options)
+            stored = options.get(CONF_CUSTOM_BUTTON_CONFIGS, {})
+            configs = dict(stored) if isinstance(stored, dict) else {}
+            for coordinator in matching:
+                configs[coordinator.client.serial_number] = {
+                    "configured": True,
+                    "enabled": enabled,
+                    "actions": actions,
+                }
+            options[CONF_CUSTOM_BUTTON_CONFIGS] = configs
+            hass.config_entries.async_update_entry(entry, options=options)
+            await _async_update_entry_options(hass, entry)
 
     async def _handle_start_zone_mow(service_call) -> None:
         targets = _resolve_target_coordinators(hass, service_call.data)
@@ -809,6 +925,13 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             _handle_set_battery_saver_config,
             schema=battery_saver_config_schema,
         )
+    if not hass.services.has_service(DOMAIN, SERVICE_SET_CUSTOM_BUTTON_ACTIONS):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_SET_CUSTOM_BUTTON_ACTIONS,
+            _handle_set_custom_button_actions,
+            schema=custom_button_actions_schema,
+        )
     if not hass.services.has_service(DOMAIN, SERVICE_START_ZONE_MOW):
         hass.services.async_register(
             DOMAIN,
@@ -912,6 +1035,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         _LOGGER.exception("Unable to register the Anthbot Map Lovelace resource")
     return True
 
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Anthbot Genie from a config entry."""
     session = async_get_clientsession(hass)
@@ -940,6 +1064,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     battery_saver_configs = entry.options.get(CONF_BATTERY_SAVER_CONFIGS, {})
     if not isinstance(battery_saver_configs, dict):
         battery_saver_configs = {}
+    custom_button_configs = entry.options.get(CONF_CUSTOM_BUTTON_CONFIGS, {})
+    if not isinstance(custom_button_configs, dict):
+        custom_button_configs = {}
     coordinators: list[AnthbotGenieDataUpdateCoordinator] = []
     for device in devices:
         if device.is_owner is False:
@@ -1036,6 +1163,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             device=device,
             update_interval=timedelta(seconds=scan_interval),
             battery_saver_config=battery_saver_configs.get(device.serial_number),
+            custom_button_config=custom_button_configs.get(device.serial_number),
         )
         await coordinator.async_load_last_mowing_task()
         await coordinator.async_load_battery_saver_state()
@@ -1064,14 +1192,21 @@ async def _async_update_entry_options(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> None:
     """Apply per-mower options without unloading the live integration."""
-    configs = entry.options.get(CONF_BATTERY_SAVER_CONFIGS, {})
-    if not isinstance(configs, dict):
-        configs = {}
+    battery_configs = entry.options.get(CONF_BATTERY_SAVER_CONFIGS, {})
+    if not isinstance(battery_configs, dict):
+        battery_configs = {}
+    custom_button_configs = entry.options.get(CONF_CUSTOM_BUTTON_CONFIGS, {})
+    if not isinstance(custom_button_configs, dict):
+        custom_button_configs = {}
     coordinators = hass.data.get(DOMAIN, {}).get(entry.entry_id, [])
     for coordinator in coordinators:
-        config = configs.get(coordinator.client.serial_number)
+        battery_config = battery_configs.get(coordinator.client.serial_number)
         await coordinator.async_update_battery_saver_config(
-            config if isinstance(config, dict) else {}
+            battery_config if isinstance(battery_config, dict) else {}
+        )
+        custom_button_config = custom_button_configs.get(coordinator.client.serial_number)
+        await coordinator.async_update_custom_button_config(
+            custom_button_config if isinstance(custom_button_config, dict) else {}
         )
 
 
@@ -1110,6 +1245,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             SERVICE_RESET_DOCK_CONTACT_MAINTENANCE,
             SERVICE_GET_MOWING_RECORD_DETAIL,
             SERVICE_SET_BATTERY_SAVER_CONFIG,
+            SERVICE_SET_CUSTOM_BUTTON_ACTIONS,
         ):
             if hass.services.has_service(DOMAIN, service_name):
                 hass.services.async_remove(DOMAIN, service_name)

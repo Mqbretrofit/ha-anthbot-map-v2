@@ -2,6 +2,14 @@
 
 ## Stabil akkumulátorkímélő kiadás
 
+### Karbantartási frissítés — 2026-08-30
+
+- Bekerültek a robotonként, Home Assistantban mentett egyéni kártyagomb-műveletek; a korábbi YAML `button_actions` beállítás továbbra is használható.
+- Másik töltő-okoskonnektor kiválasztásakor az 55+1 perces anti-shutdown védelem azonnal az új konnektorhoz igazodik.
+- A töltési százalékok egyszerű módosítása nem indítja újra feleslegesen a futó 55 perces időzítést, a hibás régi értékeket pedig biztonságosan korrigálja.
+- Minden meglévő profil, felirat, vezérlés, RTK-kezelés és újraindítás utáni állapotmentés változatlanul megmaradt.
+
+
 - Három kész akkukímélő profil került be: **Max. akkukímélés**,
   **Kiegyensúlyozott** és **Mindig indulásra kész**, valamint megmaradt a teljesen
   állítható **Egyéni** profil.
