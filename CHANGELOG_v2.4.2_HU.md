@@ -9,10 +9,10 @@
   eredeti ANTHBOT parancsok tartalék működése megmarad.
 - Másik töltő-okoskonnektor kiválasztásakor az 55+1 perces anti-shutdown
   védelem azonnal az új konnektorhoz igazodik.
-- A százalékok egyszerű módosítása nem indítja újra feleslegesen a futó
-  55 perces időzítést.
-- A hibásan eltárolt régi százalékértékeket használat előtt biztonságosan
-  korrigálja.
+- Az akkukímélő mód százalékos határértékeinek módosítása nem nullázza a már
+  futó időzítéseket.
+- A korábbi verziókból megmaradt érvénytelen beállításokat a rendszer
+  automatikusan biztonságos értékre állítja.
 - Minden meglévő profil, a 23 fordítás, a vezérlések, a közös/külön RTK-kezelés
   és az újraindítás utáni állapotmentés változatlanul megmaradt.
 
