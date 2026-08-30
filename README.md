@@ -22,7 +22,33 @@ aerial or drone photograph of the garden.
 
 ## Current version
 
-Stable version: **2.4.0**
+Stable version: **2.4.1**
+
+### Highlights in 2.4.1
+
+- Added three ready-made battery-care profiles: **Maximum battery care**,
+  **Balanced**, and **Always ready**, plus fully adjustable custom settings.
+- Battery-saver settings and operating state are persisted per mower, including
+  charge limits, shared RTK power, current phase, and anti-shutdown timing.
+  Home Assistant restarts no longer reset the active battery-saver cycle.
+- Added the **55+1 minute anti-shutdown protection**: while the mower is docked
+  in standby with charger power off, the charger is enabled for one minute
+  after 55 minutes, then the cycle restarts.
+- The card shows anti-shutdown status and the countdown to the next keep-awake
+  pulse, including initialization and active pulse states.
+- Normal maintenance charging is kept separate from the short keep-awake pulse,
+  and charger power is not switched blindly while mower telemetry is unavailable.
+- Shared and separate RTK power are handled correctly during mowing, return to
+  dock, charging, and RTK initialization.
+- Disabling Battery saver mode immediately restores charger power, while
+  deliberate manual charging remains separate from automatic battery-saver
+  transitions.
+- Fixed integration unload/reload handling and made saved settings apply to the
+  running coordinator without requiring a Home Assistant restart.
+- The Battery saver tile remains a settings-dialog opener; the larger mode
+  checkbox stays inside the dialog.
+- The complete battery-saver interface is available in all 23 supported
+  languages.
 
 ### Highlights in 2.4.0
 
@@ -165,7 +191,7 @@ Resource type: **JavaScript module**. No manual setup is normally required.
 2. Add:
 
    ```text
-   /anthbot-map-v2/anthbot-map-card.js?v=2.3.0
+   /anthbot-map-v2/anthbot-map-card.js?v=2.4.1
    ```
 
 3. Select type **JavaScript module**.
@@ -391,7 +417,7 @@ When using HACS:
 
 In Lovelace storage mode, the integration updates the resource version
 automatically. In YAML resource mode, update the cache-busting query after an
-upgrade, for example `/anthbot-map-v2/anthbot-map-card.js?v=2.3.0`.
+upgrade, for example `/anthbot-map-v2/anthbot-map-card.js?v=2.4.1`.
 
 # Troubleshooting
 
