@@ -22,7 +22,18 @@ aerial or drone photograph of the garden.
 
 ## Current version
 
-Stable version: **2.4.1**
+Stable version: **2.4.2**
+
+### Highlights in 2.4.2
+
+- Adds per-mower custom card-button actions saved in Home Assistant while
+  preserving the existing YAML `button_actions` format.
+- Immediately rebinds the restart-safe 55+1 minute anti-shutdown guard when
+  the configured charger smart plug changes.
+- Keeps ordinary threshold edits from resetting an active guard countdown and
+  safely normalizes invalid legacy threshold combinations.
+- Preserves all existing battery-saver profiles, translations, RTK handling,
+  mower controls, and restart persistence.
 
 ### Highlights in 2.4.1
 
@@ -191,7 +202,7 @@ Resource type: **JavaScript module**. No manual setup is normally required.
 2. Add:
 
    ```text
-   /anthbot-map-v2/anthbot-map-card.js?v=2.4.1
+   /anthbot-map-v2/anthbot-map-card.js?v=2.4.2
    ```
 
 3. Select type **JavaScript module**.
@@ -417,7 +428,7 @@ When using HACS:
 
 In Lovelace storage mode, the integration updates the resource version
 automatically. In YAML resource mode, update the cache-busting query after an
-upgrade, for example `/anthbot-map-v2/anthbot-map-card.js?v=2.4.1`.
+upgrade, for example `/anthbot-map-v2/anthbot-map-card.js?v=2.4.2`.
 
 # Troubleshooting
 
