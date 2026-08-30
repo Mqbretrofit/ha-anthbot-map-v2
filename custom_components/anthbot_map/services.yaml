@@ -20,6 +20,12 @@ set_battery_saver_config:
     entity:
       integration: anthbot_map
   fields:
+    charger_switch:
+      name: Charger smart plug
+      description: Switch entity controlling the charging station power.
+      selector:
+        entity:
+          domain: switch
     charge_limit:
       name: Upper charge limit
       description: Stop charging at this battery percentage.
@@ -57,6 +63,31 @@ set_battery_saver_config:
       default: false
       selector:
         boolean:
+    serial_number:
+      name: Serial number
+      description: Optional mower serial number or list of serial numbers.
+      selector:
+        text:
+
+set_custom_button_actions:
+  name: Set Custom Button Actions
+  description: Persist per-mower card button actions in Home Assistant.
+  target:
+    entity:
+      integration: anthbot_map
+  fields:
+    enabled:
+      name: Enabled
+      description: Use the saved custom actions instead of the original command for configured buttons.
+      required: true
+      selector:
+        boolean:
+    actions:
+      name: Actions
+      description: Mapping of card command names to Home Assistant service/script definitions.
+      required: true
+      selector:
+        object:
     serial_number:
       name: Serial number
       description: Optional mower serial number or list of serial numbers.
