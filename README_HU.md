@@ -31,8 +31,10 @@ Stabil verzió: **2.4.2**
   használható.
 - Másik töltő-okoskonnektor kiválasztásakor az 55+1 perces anti-shutdown
   védelem azonnal az új konnektorhoz igazodik.
-- A százalékok egyszerű módosítása nem indítja újra a futó időzítést, a hibás
-  régi értékeket pedig biztonságosan korrigálja.
+- Az akkukímélő mód százalékos határértékeinek módosítása nem nullázza a már
+  futó időzítéseket.
+- A korábbi verziókból megmaradt érvénytelen beállításokat a rendszer
+  automatikusan biztonságos értékre állítja.
 - Minden meglévő profil, fordítás, vezérlés, RTK-kezelés és újraindítás utáni
   állapotmentés változatlanul megmaradt.
 
