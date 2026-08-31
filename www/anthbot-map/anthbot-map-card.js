@@ -86,6 +86,7 @@ class AnthbotMapCard extends HTMLElement {
     this.selectedLanguage = "auto";
     this.languageOverride = false;
     this.floatingMenuOpen = false;
+    this.defaultSubmenu = "";
     this.selectedMowingTarget = { type: "full" };
     this.mowingZoneGroupsOpen = { "zone-set": true, "auto-zone-set": false };
     this.panelInteractionUntil = 0;
@@ -102,6 +103,18 @@ class AnthbotMapCard extends HTMLElement {
     }
 
     this.config = config;
+    const validPanels = new Set(["control", "settings", "interface", "status", "maintenance", "diagnostics"]);
+    const configuredPanel = String(config.default_panel ?? config.defaultPanel ?? "control").trim();
+    this.activePanel = validPanels.has(configuredPanel) ? configuredPanel : "control";
+    this.floatingMenuOpen = typeof config.menu_open === "boolean"
+      ? config.menu_open
+      : typeof config.menuOpen === "boolean" ? config.menuOpen : false;
+    this.defaultSubmenu = String(config.default_submenu ?? config.defaultSubmenu ?? "").trim();
+    this.mowingZoneGroupsOpen = this.defaultSubmenu === "auto-zone-set"
+      ? { "zone-set": false, "auto-zone-set": true }
+      : this.defaultSubmenu === "zone-set"
+        ? { "zone-set": true, "auto-zone-set": false }
+        : { "zone-set": true, "auto-zone-set": false };
     const savedInterface = this.readInterfaceSettings(config.entity);
     const configuredButtonActions = config.button_actions || config.buttonActions || {};
     this.customButtonActions = { ...configuredButtonActions };
@@ -1120,7 +1133,12 @@ class AnthbotMapCard extends HTMLElement {
     const details = document.createElement("details");
     details.className = "settings-section";
     details.dataset.settingsKey = key;
-    details.open = this.readOpenSettingsKey() === key || (defaultOpen && !window.localStorage.getItem(this.settingsStorageKey()));
+    const configuredOpen = this.defaultSubmenu === key
+      || ((key === "manual" || key === "auto") && this.defaultSubmenu.startsWith(`${key}-`));
+    details.open = configuredOpen || (
+      !this.defaultSubmenu
+      && (this.readOpenSettingsKey() === key || (defaultOpen && !window.localStorage.getItem(this.settingsStorageKey())))
+    );
     details.innerHTML = `<summary>${title}</summary><div class="settings-section-body"></div>`;
     details.addEventListener("toggle", () => {
       if (!details.open) return;
@@ -1146,7 +1164,10 @@ class AnthbotMapCard extends HTMLElement {
         const zoneKey = `${kind}-${zone.id}`;
         const details = document.createElement("details");
         details.className = "zone-settings";
-        details.open = window.localStorage.getItem(`${this.settingsStorageKey()}-zone`) === zoneKey;
+        details.open = this.defaultSubmenu === zoneKey || (
+          !this.defaultSubmenu
+          && window.localStorage.getItem(`${this.settingsStorageKey()}-zone`) === zoneKey
+        );
         details.innerHTML = `<summary>${zone.name ? String(zone.name) : `${kind === "auto" ? this.t("autoZone") : this.t("zone")} ${zone.id}`}</summary><div class="zone-settings-body"></div>`;
         details.addEventListener("toggle", () => {
           if (!details.open) return;
