@@ -1,0 +1,29 @@
+name: Dispatch v2.4.3-beta.1 prerelease
+
+on:
+  push:
+    branches:
+      - beta/v2.4.3-beta.1-progress-pr24
+    paths:
+      - .github/workflows/dispatch-v243-beta1-release.yml
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch existing Release workflow on beta tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run release.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref v2.4.3-beta.1 \
+            -f action=publish \
+            -f tag=v2.4.3-beta.1
+          echo "Dispatched Release workflow for v2.4.3-beta.1"
