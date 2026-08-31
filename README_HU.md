@@ -307,6 +307,30 @@ decodedBoundaryCalibration:
   rotation: 0
 ```
 
+## Alapértelmezett menüelrendezés
+
+A kártya megadható főpanellel indulhat, a lebegő menü eleve nyitva lehet, és
+egy kiválasztott almenü is automatikusan lenyitható. Ezek az opciók nem
+kötelezőek; ha nincsenek megadva, a jelenlegi működés változatlan marad.
+
+```yaml
+type: custom:anthbot-map-card
+entity: sensor.YOUR_MOWER_map
+default_panel: settings
+menu_open: true
+default_submenu: edgeSettings
+```
+
+A `default_panel` támogatott értékei: `control`, `settings`, `interface`,
+`status`, `maintenance` és `diagnostics`.
+
+Hasznos `default_submenu` értékek például: `global`,
+`custom-button-actions`, `edgeSettings`, `manual`, `auto`, `zone-set`
+és `auto-zone-set`. Egy konkrét zóna almenüje is megadható a generált
+kulcsával, például `manual-3` vagy `auto-2`. Ha a `default_submenu`
+meg van adva YAML-ban, ez induláskor elsőbbséget élvez a böngészőben korábban
+megjegyzett almenüvel szemben.
+
 # Kalibráció
 
 A négy kalibrációs rész eltérő térképréteget szabályoz.
