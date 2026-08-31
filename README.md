@@ -293,6 +293,29 @@ decodedBoundaryCalibration:
   rotation: 0
 ```
 
+## Default menu layout
+
+The card can start on a selected main panel, with the floating menu already open,
+and with a selected submenu expanded. These options are optional; when omitted,
+the existing behaviour remains unchanged.
+
+```yaml
+type: custom:anthbot-map-card
+entity: sensor.YOUR_MOWER_map
+default_panel: settings
+menu_open: true
+default_submenu: edgeSettings
+```
+
+Supported `default_panel` values are `control`, `settings`, `interface`,
+`status`, `maintenance`, and `diagnostics`.
+
+Useful `default_submenu` values include `global`, `custom-button-actions`,
+`edgeSettings`, `manual`, `auto`, `zone-set`, and `auto-zone-set`.
+A specific zone submenu can also be selected with its generated key, for example
+`manual-3` or `auto-2`. YAML defaults take precedence over the previously
+remembered browser submenu only when `default_submenu` is configured.
+
 # Calibration
 
 The four calibration sections control different map layers.
