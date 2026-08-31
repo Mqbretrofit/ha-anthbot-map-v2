@@ -1,0 +1,120 @@
+--- a/www/anthbot-map/anthbot-map-card.js
++++ b/www/anthbot-map/anthbot-map-card.js
+@@ -19,6 +19,7 @@
+   connection: ["binary_sensor", ["connection"]],
+   cuttingHeight: ["sensor", ["cutting_height"]],
+   mowingArea: ["sensor", ["mowing_area_session", "mowing_area"]],
++  mowingProgress: ["sensor", ["mowing_progress", "mowing_progress_test"]],
+   mowingTime: ["sensor", ["mowing_time_session", "mowing_time"]],
+   rtkFix: ["sensor", ["rtk_fix_state"]],
+   totalArea: ["sensor", ["total_mapped_area"]],
+@@ -95,6 +96,10 @@
+     this.customButtonServerConfigured = false;
+     this.customButtonSavePending = 0;
+     this.customButtonSaveQueue = Promise.resolve();
++    // Keep a near-complete task at 100% after the mower has accepted it as
++    // finished. The cloud may keep a final geometry value such as 98.8%
++    // after return/charge transitions into standby.
++    this.mowingCompletionLatched = null;
+   }
+ 
+   setConfig(config) {
+@@ -202,6 +207,7 @@
+     window.clearTimeout(this.commandFeedbackTimer);
+     document.getElementById(this.feedbackToastId)?.remove();
+     this.resizeObserver?.disconnect();
++    this.mapLiveStatusResizeObserver?.disconnect();
+     this.renderer?.destroy();
+     this.renderer = null;
+   }
+@@ -241,6 +247,25 @@
+           .cloud-status[data-state="online"] { color:#55e58a; }
+           .cloud-status[data-state="waiting"] { color:#ffd45c; }
+           .cloud-status[data-state="offline"] { color:#ff6b6b; }
++          .mowing-live-line { display:flex; align-items:center; gap:7px; margin-top:4px; min-width:0; font-size:12px; line-height:1.25; color:#cbd5df; }
++          .mowing-live-line[hidden] { display:none !important; }
++          .mowing-live-line .mowing-live-target { min-width:0; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
++          .mowing-live-line .mowing-live-progress { flex:0 0 auto; padding:2px 7px; border-radius:999px; background:rgba(85,229,138,.14); border:1px solid rgba(85,229,138,.34); color:#72efa0; font-weight:900; }
++          .map-live-status { position:absolute; top:12px; right:12px; z-index:36; display:flex; align-items:center; gap:10px; max-width:calc(100% - 24px); box-sizing:border-box; padding:8px 11px; border:1px solid rgba(255,255,255,.38); border-radius:17px; background:rgba(10,18,26,.72); color:#fff; backdrop-filter:blur(12px) saturate(115%); box-shadow:0 8px 28px rgba(0,0,0,.30); pointer-events:auto; cursor:grab; touch-action:none; user-select:none; -webkit-user-select:none; }
++          .map-live-status.dragging { cursor:grabbing; }
++          .map-live-status .battery-ring { flex:0 0 auto; width:46px; height:46px; }
++          .map-live-status .status-copy { min-width:0; }
++          .map-live-status .status-label { font-size:10px; opacity:.72; }
++          .map-live-status [data-role="mower-status"] { display:block; max-width:230px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; line-height:1.15; }
++          .map-live-status .mowing-live-line { margin-top:3px; font-size:11px; }
++          .map-live-status .mowing-live-line .mowing-live-target { max-width:185px; }
++          @media (max-width:720px) {
++            .map-live-status:not([data-user-positioned="true"]) { top:9px; right:9px; padding:7px 9px; gap:8px; border-radius:15px; }
++            .map-live-status[data-user-positioned="true"] { padding:7px 9px; gap:8px; border-radius:15px; }
++            .map-live-status .battery-ring { width:42px; height:42px; }
++            .map-live-status [data-role="mower-status"] { max-width:180px; font-size:13px; }
++            .map-live-status .mowing-live-line .mowing-live-target { max-width:130px; }
++          }
+           .mowing-target-tile { border:1px solid rgba(255,255,255,.15) !important; transition:none !important; }
+           .mowing-target-tile:hover { background:var(--anthbot-secondary-background) !important; }
+           .mowing-target-tile.active,.mowing-target-tile.active:hover { background:linear-gradient(145deg,#5ee083,#43c96c) !important; border-color:#8cf2aa !important; color:#07140c !important; box-shadow:0 0 0 2px rgba(114,239,160,.30) inset,0 8px 24px rgba(0,0,0,.22); }
+@@ -320,6 +345,10 @@
+               <div class="status-copy">
+                 <span class="status-label">${this.t("status")}</span>
+                 <strong data-role="mower-status">-</strong>
++                <span class="mowing-live-line" data-role="mowing-live-line" hidden>
++                  <span class="mowing-live-target" data-role="mowing-live-target">-</span>
++                  <strong class="mowing-live-progress" data-role="mowing-live-progress">--%</strong>
++                </span>
+                 <span class="cloud-status" data-role="cloud-status">${this.t("cloudChecking")}</span>
+               </div>
+             </div>
+@@ -335,6 +364,19 @@
+         </section>
+         <div class="canvas-wrap">
+           <canvas></canvas>
++          <div class="map-live-status" data-role="map-live-status">
++            <div class="battery-ring" data-role="battery-ring">
++              <span data-role="battery-value">--</span>
++            </div>
++            <div class="status-copy">
++              <span class="status-label">${this.t("status")}</span>
++              <strong data-role="mower-status">-</strong>
++              <span class="mowing-live-line" data-role="mowing-live-line" hidden>
++                <span class="mowing-live-target" data-role="mowing-live-target">-</span>
++                <strong class="mowing-live-progress" data-role="mowing-live-progress">--%</strong>
++              </span>
++            </div>
++          </div>
+           <div class="map-overlay map-title">
+             <div class="name">${this.config.name || "Anthbot Map"}</div>
+             <div class="state" data-role="map-state">${this.t("waiting")}</div>
+@@ -482,6 +524,7 @@
+     const canvas = root.querySelector("canvas");
+     const canvasWrap = root.querySelector(".canvas-wrap");
+     this.applyAutomaticMapSize(canvasWrap);
++    this.setupMapLiveStatusDrag(canvasWrap);
+     const pointerStarts = new Map();
+     let mapGestureMoved = false;
+     canvasWrap?.addEventListener("pointerdown", (event) => {
+@@ -720,27 +763,295 @@
+     }
+   }
+ 
++  mapLiveStatusStorageKey() {
++    return `anthbot-map-live-status-position:${String(this.config?.entity || "default")}`;
++  }
++
++  readMapLiveStatusPosition() {
++    try {
++      const parsed = JSON.parse(window.localStorage.getItem(this.mapLiveStatusStorageKey()) || "null");
++      const x = Number(parsed?.x);
++      const y = Number(parsed?.y);
++      return Number.isFinite(x) && Number.isFinite(y)
++        ? { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) }
++        : null;
++    } catch (_error) {
++      return null;
++    }
++  }
++
++  writeMapLiveStatusPosition(position) {
++    try {
++      window.localStorage.setItem(this.mapLiveStatusStorageKey(), JSON.stringify(position));
++    } catch (_error) {
++      // localStorage can be unavailabl
