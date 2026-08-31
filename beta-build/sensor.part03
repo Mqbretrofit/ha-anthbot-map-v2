@@ -1,0 +1,34 @@
+(
++        key="active_zone_area",
++        name="Active zone area",
++        native_unit_of_measurement=UnitOfArea.SQUARE_METERS,
++        device_class=SensorDeviceClass.AREA,
++        state_class=SensorStateClass.MEASUREMENT,
++        entity_category=EntityCategory.DIAGNOSTIC,
++        value_fn=_active_zone_area,
++    ),
+     AnthbotSensorDescription(
+         key="custom_mowing_direction",
+         translation_key="custom_mowing_direction",
+@@ -845,6 +1435,21 @@
+                 if isinstance((zone_name := zone.get("name")), str) and zone_name
+             ]
+ 
++
++        # --- MOWING PROGRESS v2.4.3-beta.1 ---
++        if self.entity_description.key in {
++            "mowing_progress",
++            "active_zone_area",
++        }:
++            zone_debug = _progress_active_zone_debug(state)
++            attributes["progress_source"] = zone_debug.get("area_source")
++            attributes["progress_mowing_area_m2"] = _progress_float(
++                _safe_get(state, "mowing_area_new", "value")
++            )
++            attributes["progress_map_area_m2"] = _progress_float(
++                state.get("map_area")
++            )
++            attributes.update(zone_debug)
+         if self.entity_description.key == "cloud_task_event_code":
+             payload = state.get("_task_events")
+             attributes["latest_task_event"] = latest_task_event(payload)
