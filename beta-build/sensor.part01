@@ -1,0 +1,209 @@
+ngs are additional x-events. Between two consecutive
++    # events the vertical coverage length is linear, so midpoint integration
++    # is exact for that slab.
++    for first_idx in range(len(tagged_segments)):
++        first_set, first_polygon, first_segment = tagged_segments[first_idx]
++        for second_idx in range(first_idx + 1, len(tagged_segments)):
++            second_set, second_polygon, second_segment = tagged_segments[second_idx]
++            if first_set == second_set and first_polygon == second_polygon:
++                continue
++            x_value = _progress_segment_intersection_x(first_segment, second_segment)
++            if x_value is not None:
++                events.append(x_value)
++
++    events.sort()
++    unique_events: list[float] = []
++    for value in events:
++        if not unique_events or abs(value - unique_events[-1]) > 1e-7:
++            unique_events.append(value)
++
++    total_area = 0.0
++    for low_x, high_x in zip(unique_events, unique_events[1:]):
++        width = high_x - low_x
++        if width <= 1e-9:
++            continue
++        mid_x = (low_x + high_x) / 2.0
++        first_intervals = _progress_union_intervals_at_x(first_polygons, mid_x)
++        second_intervals = _progress_union_intervals_at_x(second_polygons, mid_x)
++        overlap_height = _progress_interval_intersection_length(
++            first_intervals, second_intervals
++        )
++        total_area += overlap_height * width
++
++    return max(0.0, total_area)
++
++
++_PROGRESS_EXPLICIT_AREA_KEYS = (
++    "area_m2",
++    "area",
++    "area_size",
++    "zone_area",
++    "mow_area",
++    "region_area",
++    "size",
++)
++
++
++_PROGRESS_NO_GO_KEYS = (
++    "forbid_areas",
++    "forbidAreas",
++    "remote_forbid_areas",
++    "remoteForbidAreas",
++    "no_go_areas",
++    "noGoAreas",
++)
++
++
++def _progress_explicit_zone_area(zone: dict[str, Any]) -> tuple[float | None, str | None]:
++    for key in _PROGRESS_EXPLICIT_AREA_KEYS:
++        value = _progress_float(zone.get(key))
++        if value is not None and value > 0:
++            return value, key
++    return None, None
++
++
++def _progress_area_definition(data: dict[str, Any]) -> dict[str, Any] | None:
++    direct = data.get("area_definition")
++    if isinstance(direct, dict):
++        return direct
++
++    # The coordinator shape has changed between integration versions. Find
++    # the area-definition object without depending on one exact nesting path.
++    stack: list[tuple[Any, int]] = [(data, 0)]
++    seen: set[int] = set()
++    while stack:
++        current, depth = stack.pop()
++        if not isinstance(current, dict):
++            continue
++        object_id = id(current)
++        if object_id in seen:
++            continue
++        seen.add(object_id)
++
++        if any(
++            key in current
++            for key in (
++                "custom_areas",
++                "customAreas",
++                "forbid_areas",
++                "remote_forbid_areas",
++                "no_go_areas",
++            )
++        ):
++            return current
++
++        if depth >= 5:
++            continue
++        for value in current.values():
++            if isinstance(value, dict):
++                stack.append((value, depth + 1))
++    return None
++
++
++def _progress_no_go_zones(data: dict[str, Any]) -> list[dict[str, Any]]:
++    area_definition = _progress_area_definition(data)
++    if not isinstance(area_definition, dict):
++        return []
++
++    result: list[dict[str, Any]] = []
++    signatures: set[tuple[Any, tuple[tuple[float, float], ...]]] = set()
++    for key in _PROGRESS_NO_GO_KEYS:
++        value = area_definition.get(key)
++        if not isinstance(value, (list, tuple)):
++            continue
++        for zone in value:
++            if not isinstance(zone, dict):
++                continue
++            points = _progress_zone_points(zone)
++            if len(points) < 3:
++                continue
++            signature = (_progress_zone_id(zone.get("id")), tuple(points))
++            if signature in signatures:
++                continue
++            signatures.add(signature)
++            result.append(zone)
++    return result
++
++
++def _progress_all_zone_polygon_raw(data: dict[str, Any]) -> tuple[float | None, int, int]:
++    zones = list(manual_zones(data))
++    if not zones:
++        return None, 0, 0
++
++    total = 0.0
++    valid = 0
++    for zone in zones:
++        raw_area = _progress_polygon_area_raw(_progress_zone_points(zone))
++        if raw_area is None:
++            # A partial denominator would make the calibration misleading.
++            return None, valid, len(zones)
++        total += raw_area
++        valid += 1
++
++    return (total if total > 0 else None), valid, len(zones)
++
++
++def _progress_active_zone_debug(data: dict[str, Any]) -> dict[str, Any]:
++    active_ids = active_manual_zone_ids(data)
++    id_set = set(active_ids)
++    all_zones = list(manual_zones(data))
++    selected = [
++        zone
++        for zone in all_zones
++        if _progress_zone_id(zone.get("id")) in id_set
++    ]
++
++    map_area = _progress_float(data.get("map_area"))
++    all_raw, all_raw_valid_count, all_zone_count = _progress_all_zone_polygon_raw(data)
++    polygon_scale = None
++    if (
++        all_raw is not None
++        and all_raw > 0
++        and map_area is not None
++        and map_area > 0
++    ):
++        polygon_scale = map_area / all_raw
++
++    no_go_zones = _progress_no_go_zones(data)
++    no_go_polygons = [_progress_zone_points(zone) for zone in no_go_zones]
++    no_go_polygons = [points for points in no_go_polygons if len(points) >= 3]
++
++    explicit_total = 0.0
++    explicit_complete = bool(selected)
++    raw_total = 0.0
++    raw_complete = bool(selected)
++    selected_polygons: list[list[tuple[float, float]]] = []
++    selected_zone_no_go_overlaps: list[float] = []
++    zones_debug: list[dict[str, Any]] = []
++
++    for zone in selected:
++        zone_id = _progress_zone_id(zone.get("id"))
++        explicit_area, explicit_key = _progress_explicit_zone_area(zone)
++        points = _progress_zone_points(zone)
++        raw_area = _progress_polygon_area_raw(points)
++
++        if explicit_area is None:
++            explicit_complete = False
++        else:
++            explicit_total += explicit_area
++
++        if raw_area is None:
++            raw_complete = False
++        else:
++            raw_total += raw_area
++            selected_polygons.append(points)
++
++        zone_no_go_raw = _progress_polygon_union_intersection_area_raw(
++            [points] if len(points) >= 3 else [], no_go_polygons
++        )
++        if raw_area is not None:
++            selected_zone_no_go_overlaps.append(zone_no_go_raw)
++        zone_no_go_m2 = (
++            zone_no_go_raw * polygon_scale
++            if polygon_scale is not None
++            else None
++        )
++        zone_gross_m2 = (
++            raw_area * polygon_scale
++            if raw_area is not None and polygon_scale is not None
++            else explicit_are
