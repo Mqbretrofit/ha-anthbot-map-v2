@@ -1,0 +1,152 @@
+  if (id !== undefined && id !== null) byId.set(String(id), zone);
++      const key = historyZoneMatchKey(zone?.name || zone?.label);
++      if (key) byName.set(key, zone);
++    }
++
++    const selected = [];
++    const add = (zone) => {
++      if (!zone || selected.includes(zone)) return;
++      selected.push(zone);
++    };
++
++    const zoneListRaw = pickRecordValue(record, MOWING_RECORD_ZONE_LIST_KEYS);
++    const zoneList = Array.isArray(zoneListRaw) ? zoneListRaw : [];
++    for (const item of zoneList) {
++      if (item && typeof item === "object") {
++        const id = pickRecordValue(item, ["id", "zone_id", "zoneId", "region_id", "regionId", "area_id", "areaId"]);
++        if (id !== undefined && byId.has(String(id))) add(byId.get(String(id)));
++        const name = pickRecordValue(item, MOWING_RECORD_ZONE_NAME_KEYS);
++        const key = historyZoneMatchKey(name);
++        if (key && byName.has(key)) add(byName.get(key));
++      } else {
++        const value = String(item ?? "").trim();
++        if (byId.has(value)) add(byId.get(value));
++        const key = historyZoneMatchKey(value);
++        if (key && byName.has(key)) add(byName.get(key));
++      }
++    }
++
++    for (const raw of historyRecordZoneIdCandidates(record)) {
++      const value = String(raw ?? "").trim();
++      if (byId.has(value)) add(byId.get(value));
++      const key = historyZoneMatchKey(value);
++      if (key && byName.has(key)) add(byName.get(key));
++    }
++    return selected;
++  }
++
++  calculateMowingHistoryProgress(record, areaDefinition = this.entity?.attributes?.area_definition || {}, selectedZonesOverride = null) {
++    const mowedArea = Number(pickRecordValue(record, MOWING_RECORD_AREA_KEYS));
++    if (!Number.isFinite(mowedArea) || mowedArea < 0) return null;
++
++    const mapArea = this.historyMapAreaM2();
++    if (!Number.isFinite(mapArea) || mapArea <= 0) return null;
++
++    const allZones = getZones(areaDefinition || {}, ["custom_areas", "zones", "customAreas", "ridable_areas"])
++      .filter((zone) => historyZonePoints(zone).length >= 3);
++    if (!allZones.length) return null;
++
++    const allPolygons = allZones.map(historyZonePoints);
++    const allRaw = allPolygons.reduce((sum, points) => sum + historyPolygonAreaRaw(points), 0);
++    if (!Number.isFinite(allRaw) || allRaw <= 0) return null;
++    const scale = mapArea / allRaw;
++
++    const kind = this.historyMowingModeKind(record);
++    let selectedZones = Array.isArray(selectedZonesOverride) ? selectedZonesOverride : this.historyRecordSelectedZones(record, areaDefinition);
++    if (kind === "full") selectedZones = allZones;
++    if (!selectedZones.length) return null;
++
++    const selectedPolygons = selectedZones
++      .map(historyZonePoints)
++      .filter((points) => points.length >= 3);
++    if (!selectedPolygons.length) return null;
++
++    const noGoZones = getZones(areaDefinition || {}, [
++      "forbid_areas", "forbidAreas", "remote_forbid_areas", "remoteForbidAreas", "no_go_areas", "noGoAreas",
++    ]);
++    const noGoPolygons = noGoZones.map(historyZonePoints).filter((points) => points.length >= 3);
++    const noGoOverlapRaw = historyPolygonUnionIntersectionAreaRaw(selectedPolygons, noGoPolygons);
++    const noGoOverlapM2 = noGoOverlapRaw * scale;
++
++    let grossTargetM2;
++    if (kind === "full") {
++      grossTargetM2 = mapArea;
++    } else {
++      grossTargetM2 = selectedPolygons.reduce((sum, points) => sum + historyPolygonAreaRaw(points), 0) * scale;
++    }
++    const targetM2 = Math.max(0, grossTargetM2 - noGoOverlapM2);
++    if (!Number.isFinite(targetM2) || targetM2 <= 0) return null;
++
++    const calculated = Math.max(0, Math.min(100, (mowedArea / targetM2) * 100));
++    // Historical entries are already closed mowing tasks. The calculated area
++    // can remain a few percent below the mower's own completion point because
++    // trees, bushes and dynamically avoided obstacles are not represented by
++    // No-Go polygons. Use the same 95% completion tolerance as the live badge:
++    // a finished history record at >=95% is displayed as 100%.
++    return calculated >= 95 ? 100 : calculated;
++  }
++
++  historyProgressNeedsDetail(record) {
++    if (this.historyMowingModeKind(record) !== "zones") return false;
++    const areaDefinition = this.entity?.attributes?.area_definition || {};
++    if (this.historyRecordSelectedZones(record, areaDefinition).length) return false;
++    return Boolean(
++      pickRecordValue(record, MOWING_RECORD_PATH_URL_KEYS)
++      && pickRecordValue(record, MOWING_RECORD_AREA_URL_KEYS)
++    );
++  }
++
++  async fetchMowingHistoryDetailForProgress(record) {
++    const cacheKey = historyRecordCacheKey(record);
++    this._historyProgressDetailPromises ||= new Map();
++    if (this._historyProgressDetailPromises.has(cacheKey)) return this._historyProgressDetailPromises.get(cacheKey);
++
++    const promise = (async () => {
++      if (!this._hass?.connection) return null;
++      const serviceData = {};
++      const areaUrl = pickRecordValue(record, MOWING_RECORD_AREA_URL_KEYS);
++      const mapUrl = pickRecordValue(record, MOWING_RECORD_MAP_URL_KEYS);
++      const pathUrl = pickRecordValue(record, MOWING_RECORD_PATH_URL_KEYS);
++      if (areaUrl) serviceData.area_url = areaUrl;
++      if (mapUrl) serviceData.map_url = mapUrl;
++      if (pathUrl) serviceData.path_url = pathUrl;
++      const entityId = this.entity?.entity_id;
++      if (entityId) serviceData.entity_id = entityId;
++      try {
++        const result = await this._hass.connection.sendMessagePromise({
++          type: "call_service",
++          domain: "anthbot_map",
++          service: "get_mowing_record_detail",
++          service_data: serviceData,
++          return_response: true,
++        });
++        return result?.response || null;
++      } catch (_error) {
++        return null;
++      }
++    })();
++    this._historyProgressDetailPromises.set(cacheKey, promise);
++    return promise;
++  }
++
++  inferMowingHistoryZonesFromDetail(record, detail) {
++    const areaDefinition = detail?.area;
++    if (!areaDefinition || typeof areaDefinition !== "object") return [];
++    const zones = getZones(areaDefinition, ["custom_areas", "zones", "customAreas", "ridable_areas"])
++      .filter((zone) => historyZonePoints(zone).length >= 3);
++    if (!zones.length) return [];
++
++    const anchorMetersX = Number(pickRecordValue(record, MOWING_RECORD_START_X_KEYS));
++    const anchorMetersY = Number(pickRecordValue(record, MOWING_RECORD_START_Y_KEYS));
++    const anchor = {
++      x: Number.isFinite(anchorMetersX) ? anchorMetersX * 1000 : 0,
++      y: Number.isFinite(anchorMetersY) ? anchorMetersY * 1000 : 0,
++    };
++    const pathPoints = extractDetailPathPoints(detail?.path, anchor);
++    if (!pathPoints.length) return [];
++
++    const scored = zones.map((zone) => {
++      const polygon = historyZonePoints(zone);
++      let inside = 0;
++      // Sampling caps the work for very long historical paths while preserving
++      // their spatial distr
