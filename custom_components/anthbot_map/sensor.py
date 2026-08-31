@@ -86,6 +86,577 @@ def _battery_level(data: dict[str, Any]) -> int | None:
 
 
 
+
+# --- MOWING PROGRESS v2.4.3-beta.1 ---
+def _progress_float(value: Any) -> float | None:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    if result != result or result in (float("inf"), float("-inf")):
+        return None
+    return result
+
+
+def _progress_zone_id(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _progress_zone_points(zone: dict[str, Any]) -> list[tuple[float, float]]:
+    candidate = None
+    for key in ("vertexs", "vertices", "points", "path", "polygon"):
+        value = zone.get(key)
+        if isinstance(value, (list, tuple)) and value:
+            candidate = value
+            break
+    if candidate is None:
+        return []
+
+    points: list[tuple[float, float]] = []
+
+    if all(isinstance(item, (int, float, str)) for item in candidate):
+        if len(candidate) % 2:
+            return []
+        for idx in range(0, len(candidate), 2):
+            x = _progress_float(candidate[idx])
+            y = _progress_float(candidate[idx + 1])
+            if x is not None and y is not None:
+                points.append((x, y))
+        return points
+
+    for item in candidate:
+        if isinstance(item, dict):
+            x = _progress_float(item.get("x"))
+            y = _progress_float(item.get("y"))
+        elif isinstance(item, (list, tuple)) and len(item) >= 2:
+            x = _progress_float(item[0])
+            y = _progress_float(item[1])
+        else:
+            continue
+        if x is not None and y is not None:
+            points.append((x, y))
+    return points
+
+
+def _progress_polygon_area_raw(points: list[tuple[float, float]]) -> float | None:
+    if len(points) < 3:
+        return None
+    area2 = 0.0
+    for idx, (x1, y1) in enumerate(points):
+        x2, y2 = points[(idx + 1) % len(points)]
+        area2 += x1 * y2 - x2 * y1
+    area = abs(area2) / 2.0
+    return area if area > 0 else None
+
+
+def _progress_polygon_segments(
+    points: list[tuple[float, float]],
+) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+    if len(points) < 2:
+        return []
+    result = []
+    for idx, first in enumerate(points):
+        second = points[(idx + 1) % len(points)]
+        if first != second:
+            result.append((first, second))
+    return result
+
+
+def _progress_segment_intersection_x(
+    first: tuple[tuple[float, float], tuple[float, float]],
+    second: tuple[tuple[float, float], tuple[float, float]],
+) -> float | None:
+    (ax, ay), (bx, by) = first
+    (cx, cy), (dx, dy) = second
+    rx = bx - ax
+    ry = by - ay
+    sx = dx - cx
+    sy = dy - cy
+    denominator = rx * sy - ry * sx
+    if abs(denominator) < 1e-12:
+        # Parallel/collinear segments can only change topology at their
+        # endpoints, which are already included as sweep events.
+        return None
+
+    qx = cx - ax
+    qy = cy - ay
+    t = (qx * sy - qy * sx) / denominator
+    u = (qx * ry - qy * rx) / denominator
+    tolerance = 1e-9
+    if not (-tolerance <= t <= 1.0 + tolerance):
+        return None
+    if not (-tolerance <= u <= 1.0 + tolerance):
+        return None
+    return ax + t * rx
+
+
+def _progress_union_intervals_at_x(
+    polygons: list[list[tuple[float, float]]],
+    x_value: float,
+) -> list[tuple[float, float]]:
+    intervals: list[tuple[float, float]] = []
+    for points in polygons:
+        y_values: list[float] = []
+        for (x1, y1), (x2, y2) in _progress_polygon_segments(points):
+            if abs(x2 - x1) < 1e-12:
+                continue
+            low_x = min(x1, x2)
+            high_x = max(x1, x2)
+            # x_value is always inside a sweep slab, never on a vertex event.
+            if not (low_x < x_value < high_x):
+                continue
+            ratio = (x_value - x1) / (x2 - x1)
+            y_values.append(y1 + ratio * (y2 - y1))
+
+        y_values.sort()
+        for idx in range(0, len(y_values) - 1, 2):
+            low_y = y_values[idx]
+            high_y = y_values[idx + 1]
+            if high_y > low_y:
+                intervals.append((low_y, high_y))
+
+    intervals.sort()
+    merged: list[list[float]] = []
+    for low_y, high_y in intervals:
+        if not merged or low_y > merged[-1][1] + 1e-9:
+            merged.append([low_y, high_y])
+        elif high_y > merged[-1][1]:
+            merged[-1][1] = high_y
+    return [(item[0], item[1]) for item in merged]
+
+
+def _progress_interval_intersection_length(
+    first: list[tuple[float, float]],
+    second: list[tuple[float, float]],
+) -> float:
+    first_idx = 0
+    second_idx = 0
+    total = 0.0
+    while first_idx < len(first) and second_idx < len(second):
+        low_y = max(first[first_idx][0], second[second_idx][0])
+        high_y = min(first[first_idx][1], second[second_idx][1])
+        if high_y > low_y:
+            total += high_y - low_y
+        if first[first_idx][1] < second[second_idx][1]:
+            first_idx += 1
+        else:
+            second_idx += 1
+    return total
+
+
+def _progress_polygon_union_intersection_area_raw(
+    first_polygons: list[list[tuple[float, float]]],
+    second_polygons: list[list[tuple[float, float]]],
+) -> float:
+    """Exact sweep-area of union(first) intersect union(second).
+
+    This handles multiple overlapping No-Go polygons without subtracting the
+    overlap twice and also handles No-Go polygons that cross a mowing-zone
+    boundary. No external geometry package is required.
+    """
+    first_polygons = [points for points in first_polygons if len(points) >= 3]
+    second_polygons = [points for points in second_polygons if len(points) >= 3]
+    if not first_polygons or not second_polygons:
+        return 0.0
+
+    first_x = [point[0] for points in first_polygons for point in points]
+    first_y = [point[1] for points in first_polygons for point in points]
+    second_x = [point[0] for points in second_polygons for point in points]
+    second_y = [point[1] for points in second_polygons for point in points]
+    if (
+        max(first_x) <= min(second_x)
+        or max(second_x) <= min(first_x)
+        or max(first_y) <= min(second_y)
+        or max(second_y) <= min(first_y)
+    ):
+        return 0.0
+
+    events: list[float] = []
+    tagged_segments: list[
+        tuple[int, int, tuple[tuple[float, float], tuple[float, float]]]
+    ] = []
+
+    for set_index, polygons in enumerate((first_polygons, second_polygons)):
+        for polygon_index, points in enumerate(polygons):
+            events.extend(point[0] for point in points)
+            for segment in _progress_polygon_segments(points):
+                tagged_segments.append((set_index, polygon_index, segment))
+
+    # Boundary crossings are additional x-events. Between two consecutive
+    # events the vertical coverage length is linear, so midpoint integration
+    # is exact for that slab.
+    for first_idx in range(len(tagged_segments)):
+        first_set, first_polygon, first_segment = tagged_segments[first_idx]
+        for second_idx in range(first_idx + 1, len(tagged_segments)):
+            second_set, second_polygon, second_segment = tagged_segments[second_idx]
+            if first_set == second_set and first_polygon == second_polygon:
+                continue
+            x_value = _progress_segment_intersection_x(first_segment, second_segment)
+            if x_value is not None:
+                events.append(x_value)
+
+    events.sort()
+    unique_events: list[float] = []
+    for value in events:
+        if not unique_events or abs(value - unique_events[-1]) > 1e-7:
+            unique_events.append(value)
+
+    total_area = 0.0
+    for low_x, high_x in zip(unique_events, unique_events[1:]):
+        width = high_x - low_x
+        if width <= 1e-9:
+            continue
+        mid_x = (low_x + high_x) / 2.0
+        first_intervals = _progress_union_intervals_at_x(first_polygons, mid_x)
+        second_intervals = _progress_union_intervals_at_x(second_polygons, mid_x)
+        overlap_height = _progress_interval_intersection_length(
+            first_intervals, second_intervals
+        )
+        total_area += overlap_height * width
+
+    return max(0.0, total_area)
+
+
+_PROGRESS_EXPLICIT_AREA_KEYS = (
+    "area_m2",
+    "area",
+    "area_size",
+    "zone_area",
+    "mow_area",
+    "region_area",
+    "size",
+)
+
+
+_PROGRESS_NO_GO_KEYS = (
+    "forbid_areas",
+    "forbidAreas",
+    "remote_forbid_areas",
+    "remoteForbidAreas",
+    "no_go_areas",
+    "noGoAreas",
+)
+
+
+def _progress_explicit_zone_area(zone: dict[str, Any]) -> tuple[float | None, str | None]:
+    for key in _PROGRESS_EXPLICIT_AREA_KEYS:
+        value = _progress_float(zone.get(key))
+        if value is not None and value > 0:
+            return value, key
+    return None, None
+
+
+def _progress_area_definition(data: dict[str, Any]) -> dict[str, Any] | None:
+    direct = data.get("area_definition")
+    if isinstance(direct, dict):
+        return direct
+
+    # The coordinator shape has changed between integration versions. Find
+    # the area-definition object without depending on one exact nesting path.
+    stack: list[tuple[Any, int]] = [(data, 0)]
+    seen: set[int] = set()
+    while stack:
+        current, depth = stack.pop()
+        if not isinstance(current, dict):
+            continue
+        object_id = id(current)
+        if object_id in seen:
+            continue
+        seen.add(object_id)
+
+        if any(
+            key in current
+            for key in (
+                "custom_areas",
+                "customAreas",
+                "forbid_areas",
+                "remote_forbid_areas",
+                "no_go_areas",
+            )
+        ):
+            return current
+
+        if depth >= 5:
+            continue
+        for value in current.values():
+            if isinstance(value, dict):
+                stack.append((value, depth + 1))
+    return None
+
+
+def _progress_no_go_zones(data: dict[str, Any]) -> list[dict[str, Any]]:
+    area_definition = _progress_area_definition(data)
+    if not isinstance(area_definition, dict):
+        return []
+
+    result: list[dict[str, Any]] = []
+    signatures: set[tuple[Any, tuple[tuple[float, float], ...]]] = set()
+    for key in _PROGRESS_NO_GO_KEYS:
+        value = area_definition.get(key)
+        if not isinstance(value, (list, tuple)):
+            continue
+        for zone in value:
+            if not isinstance(zone, dict):
+                continue
+            points = _progress_zone_points(zone)
+            if len(points) < 3:
+                continue
+            signature = (_progress_zone_id(zone.get("id")), tuple(points))
+            if signature in signatures:
+                continue
+            signatures.add(signature)
+            result.append(zone)
+    return result
+
+
+def _progress_all_zone_polygon_raw(data: dict[str, Any]) -> tuple[float | None, int, int]:
+    zones = list(manual_zones(data))
+    if not zones:
+        return None, 0, 0
+
+    total = 0.0
+    valid = 0
+    for zone in zones:
+        raw_area = _progress_polygon_area_raw(_progress_zone_points(zone))
+        if raw_area is None:
+            # A partial denominator would make the calibration misleading.
+            return None, valid, len(zones)
+        total += raw_area
+        valid += 1
+
+    return (total if total > 0 else None), valid, len(zones)
+
+
+def _progress_active_zone_debug(data: dict[str, Any]) -> dict[str, Any]:
+    active_ids = active_manual_zone_ids(data)
+    id_set = set(active_ids)
+    all_zones = list(manual_zones(data))
+    selected = [
+        zone
+        for zone in all_zones
+        if _progress_zone_id(zone.get("id")) in id_set
+    ]
+
+    map_area = _progress_float(data.get("map_area"))
+    all_raw, all_raw_valid_count, all_zone_count = _progress_all_zone_polygon_raw(data)
+    polygon_scale = None
+    if (
+        all_raw is not None
+        and all_raw > 0
+        and map_area is not None
+        and map_area > 0
+    ):
+        polygon_scale = map_area / all_raw
+
+    no_go_zones = _progress_no_go_zones(data)
+    no_go_polygons = [_progress_zone_points(zone) for zone in no_go_zones]
+    no_go_polygons = [points for points in no_go_polygons if len(points) >= 3]
+
+    explicit_total = 0.0
+    explicit_complete = bool(selected)
+    raw_total = 0.0
+    raw_complete = bool(selected)
+    selected_polygons: list[list[tuple[float, float]]] = []
+    selected_zone_no_go_overlaps: list[float] = []
+    zones_debug: list[dict[str, Any]] = []
+
+    for zone in selected:
+        zone_id = _progress_zone_id(zone.get("id"))
+        explicit_area, explicit_key = _progress_explicit_zone_area(zone)
+        points = _progress_zone_points(zone)
+        raw_area = _progress_polygon_area_raw(points)
+
+        if explicit_area is None:
+            explicit_complete = False
+        else:
+            explicit_total += explicit_area
+
+        if raw_area is None:
+            raw_complete = False
+        else:
+            raw_total += raw_area
+            selected_polygons.append(points)
+
+        zone_no_go_raw = _progress_polygon_union_intersection_area_raw(
+            [points] if len(points) >= 3 else [], no_go_polygons
+        )
+        if raw_area is not None:
+            selected_zone_no_go_overlaps.append(zone_no_go_raw)
+        zone_no_go_m2 = (
+            zone_no_go_raw * polygon_scale
+            if polygon_scale is not None
+            else None
+        )
+        zone_gross_m2 = (
+            raw_area * polygon_scale
+            if raw_area is not None and polygon_scale is not None
+            else explicit_area
+        )
+        zone_net_m2 = (
+            max(0.0, zone_gross_m2 - (zone_no_go_m2 or 0.0))
+            if zone_gross_m2 is not None
+            else None
+        )
+
+        zones_debug.append(
+            {
+                "id": zone_id,
+                "name": zone.get("name"),
+                "explicit_area": explicit_area,
+                "explicit_area_key": explicit_key,
+                "point_count": len(points),
+                "polygon_area_raw": round(raw_area, 3) if raw_area is not None else None,
+                "no_go_overlap_raw": round(zone_no_go_raw, 3),
+                "no_go_overlap_m2": round(zone_no_go_m2, 3)
+                if zone_no_go_m2 is not None
+                else None,
+                "gross_calibrated_area_m2": round(zone_gross_m2, 3)
+                if zone_gross_m2 is not None
+                else None,
+                "net_mowable_area_m2": round(zone_net_m2, 3)
+                if zone_net_m2 is not None
+                else None,
+            }
+        )
+
+    selected_raw = raw_total if raw_complete and raw_total > 0 else None
+    explicit_value = explicit_total if explicit_complete and explicit_total > 0 else None
+
+    # For zone mowing, subtract the UNION of all No-Go overlap with the UNION
+    # of all selected zones. This avoids double subtraction when No-Go areas
+    # overlap each other or when multiple mowing zones are selected.
+    if active_ids:
+        overlap_zone_polygons = selected_polygons
+    else:
+        overlap_zone_polygons = [
+            points
+            for zone in all_zones
+            if len(points := _progress_zone_points(zone)) >= 3
+        ]
+
+    if (
+        active_ids
+        and len(selected_polygons) == 1
+        and len(selected_zone_no_go_overlaps) == 1
+    ):
+        no_go_overlap_raw = selected_zone_no_go_overlaps[0]
+    else:
+        no_go_overlap_raw = _progress_polygon_union_intersection_area_raw(
+            overlap_zone_polygons, no_go_polygons
+        )
+    no_go_overlap_m2 = (
+        no_go_overlap_raw * polygon_scale
+        if polygon_scale is not None
+        else None
+    )
+
+    gross_calibrated_area = None
+    calibrated_area = None
+    area_source = None
+
+    if active_ids:
+        if explicit_value is not None:
+            gross_calibrated_area = explicit_value
+            calibrated_area = max(
+                0.0,
+                gross_calibrated_area - (no_go_overlap_m2 or 0.0),
+            )
+            area_source = (
+                "active_zone_explicit_area_no_go_adjusted"
+                if no_go_overlap_m2 is not None and no_go_overlap_m2 > 0
+                else "active_zone_explicit_area"
+            )
+        elif selected_raw is not None and polygon_scale is not None:
+            gross_calibrated_area = selected_raw * polygon_scale
+            calibrated_area = max(
+                0.0,
+                gross_calibrated_area - (no_go_overlap_m2 or 0.0),
+            )
+            area_source = (
+                "active_zone_polygon_calibrated_to_map_area_no_go_adjusted"
+                if no_go_overlap_m2 is not None and no_go_overlap_m2 > 0
+                else "active_zone_polygon_calibrated_to_map_area"
+            )
+        else:
+            area_source = "active_zone_area_unavailable"
+    else:
+        gross_calibrated_area = map_area if map_area is not None and map_area > 0 else None
+        if gross_calibrated_area is not None:
+            calibrated_area = max(
+                0.0,
+                gross_calibrated_area - (no_go_overlap_m2 or 0.0),
+            )
+            area_source = (
+                "full_map_area_no_go_adjusted"
+                if no_go_overlap_m2 is not None and no_go_overlap_m2 > 0
+                else "full_map_area"
+            )
+        else:
+            area_source = "full_map_area_unavailable"
+
+    no_go_polygon_raw_sum = 0.0
+    for points in no_go_polygons:
+        raw_area = _progress_polygon_area_raw(points)
+        if raw_area is not None:
+            no_go_polygon_raw_sum += raw_area
+
+    return {
+        "active_zone_ids": active_ids,
+        "matched_zone_count": len(selected),
+        "explicit_area_total": round(explicit_value, 3) if explicit_value is not None else None,
+        "polygon_area_raw_total": round(selected_raw, 3) if selected_raw is not None else None,
+        "all_zone_polygon_raw_total": round(all_raw, 3) if all_raw is not None else None,
+        "all_zone_polygon_valid_count": all_raw_valid_count,
+        "all_zone_count": all_zone_count,
+        "polygon_scale_m2_per_raw_unit2": polygon_scale,
+        "no_go_count": len(no_go_zones),
+        "no_go_valid_polygon_count": len(no_go_polygons),
+        "no_go_polygon_raw_sum": round(no_go_polygon_raw_sum, 3),
+        "no_go_active_overlap_raw_total": round(no_go_overlap_raw, 3),
+        "no_go_active_overlap_m2": round(no_go_overlap_m2, 3)
+        if no_go_overlap_m2 is not None
+        else None,
+        "gross_calibrated_area_total_m2": round(gross_calibrated_area, 3)
+        if gross_calibrated_area is not None
+        else None,
+        "calibrated_area_total_m2": round(calibrated_area, 3)
+        if calibrated_area is not None
+        else None,
+        "area_source": area_source,
+        "zones_debug": zones_debug,
+    }
+
+
+def _progress_target_area(data: dict[str, Any]) -> tuple[float | None, str]:
+    debug = _progress_active_zone_debug(data)
+    target = _progress_float(debug.get("calibrated_area_total_m2"))
+    source = str(debug.get("area_source") or "unavailable")
+    if target is None or target <= 0:
+        return None, source
+    return target, source
+
+
+def _mowing_progress(data: dict[str, Any]) -> float | None:
+    mowing_area = _progress_float(_safe_get(data, "mowing_area_new", "value"))
+    if mowing_area is None or mowing_area < 0:
+        return None
+
+    target, _source = _progress_target_area(data)
+    if target is None or target <= 0:
+        return None
+
+    progress = (mowing_area / target) * 100.0
+    return round(max(0.0, min(progress, 100.0)), 1)
+
+
+def _active_zone_area(data: dict[str, Any]) -> float | None:
+    debug = _progress_active_zone_debug(data)
+    return _progress_float(debug.get("calibrated_area_total_m2"))
+
+
 def _as_datetime(value: Any) -> datetime | None:
     """Parse Unix-epoch integers and 'YYYYMMDDHHMMSS' strings to UTC datetimes."""
     if isinstance(value, (int, float)) and value > 0:
@@ -312,6 +883,25 @@ SENSORS: tuple[AnthbotSensorDescription, ...] = (
         value_fn=lambda data: _safe_get(data, "mowing_area_new", "value"),
     ),
 
+
+    # --- MOWING PROGRESS v2.4.3-beta.1 ---
+    AnthbotSensorDescription(
+        key="mowing_progress",
+        name="Mowing progress",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_mowing_progress,
+    ),
+    AnthbotSensorDescription(
+        key="active_zone_area",
+        name="Active zone area",
+        native_unit_of_measurement=UnitOfArea.SQUARE_METERS,
+        device_class=SensorDeviceClass.AREA,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_active_zone_area,
+    ),
     AnthbotSensorDescription(
         key="custom_mowing_direction",
         translation_key="custom_mowing_direction",
@@ -845,6 +1435,21 @@ class AnthbotSensorEntity(
                 if isinstance((zone_name := zone.get("name")), str) and zone_name
             ]
 
+
+        # --- MOWING PROGRESS v2.4.3-beta.1 ---
+        if self.entity_description.key in {
+            "mowing_progress",
+            "active_zone_area",
+        }:
+            zone_debug = _progress_active_zone_debug(state)
+            attributes["progress_source"] = zone_debug.get("area_source")
+            attributes["progress_mowing_area_m2"] = _progress_float(
+                _safe_get(state, "mowing_area_new", "value")
+            )
+            attributes["progress_map_area_m2"] = _progress_float(
+                state.get("map_area")
+            )
+            attributes.update(zone_debug)
         if self.entity_description.key == "cloud_task_event_code":
             payload = state.get("_task_events")
             attributes["latest_task_event"] = latest_task_event(payload)

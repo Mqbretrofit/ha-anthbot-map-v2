@@ -19,6 +19,7 @@ const ENTITY_MAP = {
   connection: ["binary_sensor", ["connection"]],
   cuttingHeight: ["sensor", ["cutting_height"]],
   mowingArea: ["sensor", ["mowing_area_session", "mowing_area"]],
+  mowingProgress: ["sensor", ["mowing_progress", "mowing_progress_test"]],
   mowingTime: ["sensor", ["mowing_time_session", "mowing_time"]],
   rtkFix: ["sensor", ["rtk_fix_state"]],
   totalArea: ["sensor", ["total_mapped_area"]],
@@ -95,6 +96,10 @@ class AnthbotMapCard extends HTMLElement {
     this.customButtonServerConfigured = false;
     this.customButtonSavePending = 0;
     this.customButtonSaveQueue = Promise.resolve();
+    // Keep a near-complete task at 100% after the mower has accepted it as
+    // finished. The cloud may keep a final geometry value such as 98.8%
+    // after return/charge transitions into standby.
+    this.mowingCompletionLatched = null;
   }
 
   setConfig(config) {
@@ -202,6 +207,7 @@ class AnthbotMapCard extends HTMLElement {
     window.clearTimeout(this.commandFeedbackTimer);
     document.getElementById(this.feedbackToastId)?.remove();
     this.resizeObserver?.disconnect();
+    this.mapLiveStatusResizeObserver?.disconnect();
     this.renderer?.destroy();
     this.renderer = null;
   }
@@ -241,6 +247,25 @@ class AnthbotMapCard extends HTMLElement {
           .cloud-status[data-state="online"] { color:#55e58a; }
           .cloud-status[data-state="waiting"] { color:#ffd45c; }
           .cloud-status[data-state="offline"] { color:#ff6b6b; }
+          .mowing-live-line { display:flex; align-items:center; gap:7px; margin-top:4px; min-width:0; font-size:12px; line-height:1.25; color:#cbd5df; }
+          .mowing-live-line[hidden] { display:none !important; }
+          .mowing-live-line .mowing-live-target { min-width:0; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+          .mowing-live-line .mowing-live-progress { flex:0 0 auto; padding:2px 7px; border-radius:999px; background:rgba(85,229,138,.14); border:1px solid rgba(85,229,138,.34); color:#72efa0; font-weight:900; }
+          .map-live-status { position:absolute; top:12px; right:12px; z-index:36; display:flex; align-items:center; gap:10px; max-width:calc(100% - 24px); box-sizing:border-box; padding:8px 11px; border:1px solid rgba(255,255,255,.38); border-radius:17px; background:rgba(10,18,26,.72); color:#fff; backdrop-filter:blur(12px) saturate(115%); box-shadow:0 8px 28px rgba(0,0,0,.30); pointer-events:auto; cursor:grab; touch-action:none; user-select:none; -webkit-user-select:none; }
+          .map-live-status.dragging { cursor:grabbing; }
+          .map-live-status .battery-ring { flex:0 0 auto; width:46px; height:46px; }
+          .map-live-status .status-copy { min-width:0; }
+          .map-live-status .status-label { font-size:10px; opacity:.72; }
+          .map-live-status [data-role="mower-status"] { display:block; max-width:230px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; line-height:1.15; }
+          .map-live-status .mowing-live-line { margin-top:3px; font-size:11px; }
+          .map-live-status .mowing-live-line .mowing-live-target { max-width:185px; }
+          @media (max-width:720px) {
+            .map-live-status:not([data-user-positioned="true"]) { top:9px; right:9px; padding:7px 9px; gap:8px; border-radius:15px; }
+            .map-live-status[data-user-positioned="true"] { padding:7px 9px; gap:8px; border-radius:15px; }
+            .map-live-status .battery-ring { width:42px; height:42px; }
+            .map-live-status [data-role="mower-status"] { max-width:180px; font-size:13px; }
+            .map-live-status .mowing-live-line .mowing-live-target { max-width:130px; }
+          }
           .mowing-target-tile { border:1px solid rgba(255,255,255,.15) !important; transition:none !important; }
           .mowing-target-tile:hover { background:var(--anthbot-secondary-background) !important; }
           .mowing-target-tile.active,.mowing-target-tile.active:hover { background:linear-gradient(145deg,#5ee083,#43c96c) !important; border-color:#8cf2aa !important; color:#07140c !important; box-shadow:0 0 0 2px rgba(114,239,160,.30) inset,0 8px 24px rgba(0,0,0,.22); }
@@ -320,6 +345,10 @@ class AnthbotMapCard extends HTMLElement {
               <div class="status-copy">
                 <span class="status-label">${this.t("status")}</span>
                 <strong data-role="mower-status">-</strong>
+                <span class="mowing-live-line" data-role="mowing-live-line" hidden>
+                  <span class="mowing-live-target" data-role="mowing-live-target">-</span>
+                  <strong class="mowing-live-progress" data-role="mowing-live-progress">--%</strong>
+                </span>
                 <span class="cloud-status" data-role="cloud-status">${this.t("cloudChecking")}</span>
               </div>
             </div>
@@ -335,6 +364,19 @@ class AnthbotMapCard extends HTMLElement {
         </section>
         <div class="canvas-wrap">
           <canvas></canvas>
+          <div class="map-live-status" data-role="map-live-status">
+            <div class="battery-ring" data-role="battery-ring">
+              <span data-role="battery-value">--</span>
+            </div>
+            <div class="status-copy">
+              <span class="status-label">${this.t("status")}</span>
+              <strong data-role="mower-status">-</strong>
+              <span class="mowing-live-line" data-role="mowing-live-line" hidden>
+                <span class="mowing-live-target" data-role="mowing-live-target">-</span>
+                <strong class="mowing-live-progress" data-role="mowing-live-progress">--%</strong>
+              </span>
+            </div>
+          </div>
           <div class="map-overlay map-title">
             <div class="name">${this.config.name || "Anthbot Map"}</div>
             <div class="state" data-role="map-state">${this.t("waiting")}</div>
@@ -482,6 +524,7 @@ class AnthbotMapCard extends HTMLElement {
     const canvas = root.querySelector("canvas");
     const canvasWrap = root.querySelector(".canvas-wrap");
     this.applyAutomaticMapSize(canvasWrap);
+    this.setupMapLiveStatusDrag(canvasWrap);
     const pointerStarts = new Map();
     let mapGestureMoved = false;
     canvasWrap?.addEventListener("pointerdown", (event) => {
@@ -720,27 +763,295 @@ class AnthbotMapCard extends HTMLElement {
     }
   }
 
+  mapLiveStatusStorageKey() {
+    return `anthbot-map-live-status-position:${String(this.config?.entity || "default")}`;
+  }
+
+  readMapLiveStatusPosition() {
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(this.mapLiveStatusStorageKey()) || "null");
+      const x = Number(parsed?.x);
+      const y = Number(parsed?.y);
+      return Number.isFinite(x) && Number.isFinite(y)
+        ? { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) }
+        : null;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  writeMapLiveStatusPosition(position) {
+    try {
+      window.localStorage.setItem(this.mapLiveStatusStorageKey(), JSON.stringify(position));
+    } catch (_error) {
+      // localStorage can be unavailable in restricted browser contexts.
+    }
+  }
+
+  applyMapLiveStatusPosition(canvasWrap, status, position = this.readMapLiveStatusPosition()) {
+    if (!canvasWrap || !status || !position) return false;
+    const maxX = Math.max(0, canvasWrap.clientWidth - status.offsetWidth);
+    const maxY = Math.max(0, canvasWrap.clientHeight - status.offsetHeight);
+    status.style.left = `${Math.round(maxX * position.x)}px`;
+    status.style.top = `${Math.round(maxY * position.y)}px`;
+    status.style.right = "auto";
+    status.style.bottom = "auto";
+    status.dataset.userPositioned = "true";
+    return true;
+  }
+
+  setupMapLiveStatusDrag(canvasWrap) {
+    const status = this.shadowRoot.querySelector('[data-role="map-live-status"]');
+    if (!canvasWrap || !status) return;
+
+    const savedPosition = this.readMapLiveStatusPosition();
+    requestAnimationFrame(() => this.applyMapLiveStatusPosition(canvasWrap, status, savedPosition));
+
+    let drag = null;
+    const move = (event) => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const dx = event.clientX - drag.clientX;
+      const dy = event.clientY - drag.clientY;
+      if (Math.hypot(dx, dy) > 3) drag.moved = true;
+      const maxX = Math.max(0, canvasWrap.clientWidth - status.offsetWidth);
+      const maxY = Math.max(0, canvasWrap.clientHeight - status.offsetHeight);
+      const left = Math.max(0, Math.min(maxX, drag.left + dx));
+      const top = Math.max(0, Math.min(maxY, drag.top + dy));
+      status.style.left = `${Math.round(left)}px`;
+      status.style.top = `${Math.round(top)}px`;
+      status.style.right = "auto";
+      status.style.bottom = "auto";
+      status.dataset.userPositioned = "true";
+    };
+
+    const finish = (event) => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      try { status.releasePointerCapture(event.pointerId); } catch (_error) {}
+      status.classList.remove("dragging");
+      if (drag.moved) {
+        const maxX = Math.max(0, canvasWrap.clientWidth - status.offsetWidth);
+        const maxY = Math.max(0, canvasWrap.clientHeight - status.offsetHeight);
+        const left = Number.parseFloat(status.style.left) || 0;
+        const top = Number.parseFloat(status.style.top) || 0;
+        this.writeMapLiveStatusPosition({
+          x: maxX > 0 ? Math.max(0, Math.min(1, left / maxX)) : 0,
+          y: maxY > 0 ? Math.max(0, Math.min(1, top / maxY)) : 0,
+        });
+        this.suppressMapExpandClickUntil = Date.now() + 350;
+      }
+      drag = null;
+    };
+
+    status.addEventListener("pointerdown", (event) => {
+      if (event.button !== undefined && event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const wrapRect = canvasWrap.getBoundingClientRect();
+      const statusRect = status.getBoundingClientRect();
+      drag = {
+        pointerId: event.pointerId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        left: statusRect.left - wrapRect.left,
+        top: statusRect.top - wrapRect.top,
+        moved: false,
+      };
+      status.style.left = `${Math.round(drag.left)}px`;
+      status.style.top = `${Math.round(drag.top)}px`;
+      status.style.right = "auto";
+      status.style.bottom = "auto";
+      status.dataset.userPositioned = "true";
+      status.classList.add("dragging");
+      try { status.setPointerCapture(event.pointerId); } catch (_error) {}
+    });
+    status.addEventListener("pointermove", move);
+    status.addEventListener("pointerup", finish);
+    status.addEventListener("pointercancel", finish);
+    status.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+
+    const resizeObserver = new ResizeObserver(() => {
+      const position = this.readMapLiveStatusPosition();
+      if (position && !drag) this.applyMapLiveStatusPosition(canvasWrap, status, position);
+    });
+    resizeObserver.observe(canvasWrap);
+    this.mapLiveStatusResizeObserver?.disconnect();
+    this.mapLiveStatusResizeObserver = resizeObserver;
+  }
+
   updateBatteryAndStatus() {
-    const batteryRing = this.shadowRoot.querySelector('[data-role="battery-ring"]');
-    const batteryValue = this.shadowRoot.querySelector('[data-role="battery-value"]');
     const batteryEntity = this.getRelatedEntity("battery");
     const batteryPercent = Number(batteryEntity?.state);
+    const percent = Number.isFinite(batteryPercent) ? Math.max(0, Math.min(100, batteryPercent)) : 0;
+    const charging = this.getRelatedEntity("charging")?.state === "on";
 
-    if (batteryValue) {
+    this.shadowRoot.querySelectorAll('[data-role="battery-value"]').forEach((batteryValue) => {
       batteryValue.textContent = Number.isFinite(batteryPercent) ? `${batteryPercent}` : "--";
-    }
-    if (batteryRing) {
-      const percent = Number.isFinite(batteryPercent) ? Math.max(0, Math.min(100, batteryPercent)) : 0;
+    });
+    this.shadowRoot.querySelectorAll('[data-role="battery-ring"]').forEach((batteryRing) => {
       batteryRing.style.setProperty("--battery", `${percent * 3.6}deg`);
       batteryRing.classList.toggle("low", percent > 0 && percent < 25);
-      batteryRing.classList.toggle("charging", this.getRelatedEntity("charging")?.state === "on");
+      batteryRing.classList.toggle("charging", charging);
+    });
+
+    const statusEntity = this.getRelatedEntity("status");
+    this.shadowRoot.querySelectorAll('[data-role="mower-status"]').forEach((mowerStatus) => {
+      mowerStatus.textContent = statusEntity ? this.translateStatus(statusEntity.state) : "-";
+    });
+
+    this.updateMowingProgressStatus();
+  }
+
+  mowingCompletionStorageKey() {
+    const entityId = String(this.config?.entity || this.entity?.entity_id || "default");
+    return `anthbot-map-mowing-completion:${entityId}`;
+  }
+
+  readMowingCompletionLatch() {
+    if (this.mowingCompletionLatched !== null) return this.mowingCompletionLatched === true;
+    try {
+      this.mowingCompletionLatched = window.localStorage.getItem(this.mowingCompletionStorageKey()) === "1";
+    } catch (_error) {
+      this.mowingCompletionLatched = false;
+    }
+    return this.mowingCompletionLatched === true;
+  }
+
+  setMowingCompletionLatch(enabled) {
+    this.mowingCompletionLatched = Boolean(enabled);
+    try {
+      if (enabled) window.localStorage.setItem(this.mowingCompletionStorageKey(), "1");
+      else window.localStorage.removeItem(this.mowingCompletionStorageKey());
+    } catch (_error) {}
+  }
+
+  updateMowingProgressStatus() {
+    const lines = Array.from(this.shadowRoot.querySelectorAll('[data-role="mowing-live-line"]'));
+    if (!lines.length) return;
+
+    const progressEntity = this.getRelatedEntity("mowingProgress");
+    const progress = Number(progressEntity?.state);
+    const attrs = progressEntity?.attributes || {};
+    const mapAttrs = this.entity?.attributes || {};
+    const statusEntity = this.getRelatedEntity("status");
+    const rawStatus = String(
+      mapAttrs.robot_status_raw
+      ?? progressEntity?.attributes?.robot_status_raw
+      ?? statusEntity?.attributes?.robot_status_raw
+      ?? statusEntity?.state
+      ?? ""
+    ).trim().toLowerCase().replace(/[_\s-]+/g, "");
+
+    const activeIdsRaw = attrs.active_zone_ids;
+    const activeIds = Array.isArray(activeIdsRaw)
+      ? activeIdsRaw.map(String)
+      : String(activeIdsRaw ?? "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean);
+
+    const debugZones = Array.isArray(attrs.zones_debug) ? attrs.zones_debug : [];
+    const debugNamesById = new Map(
+      debugZones
+        .filter((zone) => zone && zone.id !== undefined && zone.id !== null)
+        .map((zone) => [String(zone.id), String(zone.name || "").trim()])
+    );
+    const configuredNamesById = new Map(
+      this.currentZones()
+        .filter((zone) => zone && zone.id !== undefined && zone.id !== null)
+        .map((zone) => [String(zone.id), String(zone.name || `${this.t("zone")} ${zone.id}`).trim()])
+    );
+
+    const zoneNames = activeIds.map((id) =>
+      debugNamesById.get(id) || configuredNamesById.get(id) || `${this.t("zone")} ${id}`
+    );
+
+    let target = "";
+    if (zoneNames.length) {
+      target = zoneNames.join(" + ");
+    } else if (rawStatus.includes("nestmowing")) {
+      target = this.t("dockEdgeLabel");
+    } else if (rawStatus.includes("edgemowing") || rawStatus.includes("bordermowing")) {
+      target = this.t("commandOuterEdge");
+    } else if (rawStatus.includes("pointmowing") || rawStatus.includes("spotmowing")) {
+      target = this.translateStatus("point_mowing");
+    } else if (rawStatus.includes("globalmowing") || rawStatus === "mowing") {
+      target = this.t("fullArea");
     }
 
-    const mowerStatus = this.shadowRoot.querySelector('[data-role="mower-status"]');
-    if (mowerStatus) {
-      const statusEntity = this.getRelatedEntity("status");
-      mowerStatus.textContent = statusEntity ? this.translateStatus(statusEntity.state) : "-";
+    const activeMowingStatus = [
+      "mowing", "zonemowing", "regionmowing", "globalmowing", "nestmowing",
+      "edgemowing", "bordermowing", "pointmowing", "spotmowing",
+    ].some((value) => rawStatus.includes(value));
+    const mowingLike = zoneNames.length > 0 || activeMowingStatus;
+
+    const displayStatus = String(statusEntity?.state || "")
+      .trim().toLowerCase().replace(/[_\s-]+/g, "");
+
+    // IMPORTANT: robot_status_raw / active_zone_ids can remain stale after a
+    // completed task (for example raw "zonemowing" while the real mower-status
+    // entity is already "standby"). Never use that stale raw value to clear
+    // the completion latch. Prefer the canonical HA mower_status entity for
+    // lifecycle decisions and only fall back to raw status when it is missing.
+    const hasCanonicalStatus = Boolean(statusEntity && String(statusEntity.state || "").trim());
+    const lifecycleMowing = hasCanonicalStatus
+      ? displayStatus === "mowing"
+      : activeMowingStatus;
+    const lifecycleFinished = hasCanonicalStatus
+      ? [
+          "returningtodock", "backtodock", "returntodock", "docking",
+          "charging", "charge", "docked", "standby", "idle",
+        ].some((value) => displayStatus.includes(value))
+      : [
+          "returning", "returningtodock", "backtodock", "returntodock",
+          "docking", "charging", "charge", "docked", "standby", "idle",
+          "visszaatoltore", "toltes", "dokkolva", "keszenlet",
+        ].some((value) => rawStatus.includes(value));
+
+    const boundedProgress = Number.isFinite(progress)
+      ? Math.max(0, Math.min(100, progress))
+      : NaN;
+
+    // A genuinely new mowing task clears the previous completion latch. Once
+    // a task has reached >=95% and the mower is in a finished/return/docked/
+    // standby state, keep 100% latched until the next real mowing state starts.
+    // Including standby here also repairs the latch if the browser missed the
+    // short return/charging transition entirely.
+    let completionLatched = this.readMowingCompletionLatch();
+    if (lifecycleMowing) {
+      if (completionLatched) this.setMowingCompletionLatch(false);
+      completionLatched = false;
+    } else if (lifecycleFinished && Number.isFinite(boundedProgress) && boundedProgress >= 95) {
+      if (!completionLatched) this.setMowingCompletionLatch(true);
+      completionLatched = true;
     }
+
+    lines.forEach((line) => {
+      const targetNode = line.querySelector('[data-role="mowing-live-target"]');
+      const progressNode = line.querySelector('[data-role="mowing-live-progress"]');
+      if (!targetNode || !progressNode) return;
+
+      if (!Number.isFinite(progress) || (!mowingLike && !completionLatched)) {
+        line.hidden = true;
+        return;
+      }
+
+      targetNode.textContent = target || this.translateStatus(statusEntity?.state || "mowing");
+
+      // Completion tolerance: once a >=95% task has been accepted as finished
+      // during return/docking, keep showing 100% through charging and standby
+      // until a new mowing state begins. A manual early return below 95% never
+      // sets the latch and therefore keeps its actual percentage.
+      const displayProgress = completionLatched ? 100 : boundedProgress;
+      progressNode.textContent = `${displayProgress.toFixed(1)}%`;
+      line.hidden = false;
+    });
   }
 
   setPanel(panel) {
@@ -1436,6 +1747,241 @@ class AnthbotMapCard extends HTMLElement {
     container.appendChild(list);
   }
 
+  historyMapAreaM2() {
+    const progressEntity = this.getRelatedEntity("mowingProgress");
+    const candidates = [
+      progressEntity?.attributes?.progress_map_area_m2,
+      progressEntity?.attributes?.progress_test_map_area_m2,
+      progressEntity?.attributes?.gross_calibrated_area_total_m2,
+      this.entity?.attributes?.map_area,
+      this.getRelatedEntity("totalArea")?.state,
+    ];
+    for (const value of candidates) {
+      const number = Number(value);
+      if (Number.isFinite(number) && number > 0) return number;
+    }
+    return null;
+  }
+
+  historyMowingModeKind(record) {
+    const value = pickRecordValue(record, MOWING_RECORD_MODE_KEYS);
+    const normalized = String(value ?? "").trim().toLowerCase();
+    if (normalized === "1" || normalized.includes("zone") || normalized.includes("zona") || normalized.includes("zóna")) return "zones";
+    if (normalized === "0" || normalized.includes("global") || normalized.includes("full") || normalized.includes("teljes")) return "full";
+    return null;
+  }
+
+  historyRecordSelectedZones(record, areaDefinition) {
+    const zones = getZones(areaDefinition || {}, ["custom_areas", "zones", "customAreas", "ridable_areas"]);
+    if (!zones.length) return [];
+
+    const byId = new Map();
+    const byName = new Map();
+    for (const zone of zones) {
+      const id = zone?.id;
+       if (id !== undefined && id !== null) byId.set(String(id), zone);
+      const key = historyZoneMatchKey(zone?.name || zone?.label);
+      if (key) byName.set(key, zone);
+    }
+
+    const selected = [];
+    const add = (zone) => {
+      if (!zone || selected.includes(zone)) return;
+      selected.push(zone);
+    };
+
+    const zoneListRaw = pickRecordValue(record, MOWING_RECORD_ZONE_LIST_KEYS);
+    const zoneList = Array.isArray(zoneListRaw) ? zoneListRaw : [];
+    for (const item of zoneList) {
+      if (item && typeof item === "object") {
+        const id = pickRecordValue(item, ["id", "zone_id", "zoneId", "region_id", "regionId", "area_id", "areaId"]);
+        if (id !== undefined && byId.has(String(id))) add(byId.get(String(id)));
+        const name = pickRecordValue(item, MOWING_RECORD_ZONE_NAME_KEYS);
+        const key = historyZoneMatchKey(name);
+        if (key && byName.has(key)) add(byName.get(key));
+      } else {
+        const value = String(item ?? "").trim();
+        if (byId.has(value)) add(byId.get(value));
+        const key = historyZoneMatchKey(value);
+        if (key && byName.has(key)) add(byName.get(key));
+      }
+    }
+
+    for (const raw of historyRecordZoneIdCandidates(record)) {
+      const value = String(raw ?? "").trim();
+      if (byId.has(value)) add(byId.get(value));
+      const key = historyZoneMatchKey(value);
+      if (key && byName.has(key)) add(byName.get(key));
+    }
+    return selected;
+  }
+
+  calculateMowingHistoryProgress(record, areaDefinition = this.entity?.attributes?.area_definition || {}, selectedZonesOverride = null) {
+    const mowedArea = Number(pickRecordValue(record, MOWING_RECORD_AREA_KEYS));
+    if (!Number.isFinite(mowedArea) || mowedArea < 0) return null;
+
+    const mapArea = this.historyMapAreaM2();
+    if (!Number.isFinite(mapArea) || mapArea <= 0) return null;
+
+    const allZones = getZones(areaDefinition || {}, ["custom_areas", "zones", "customAreas", "ridable_areas"])
+      .filter((zone) => historyZonePoints(zone).length >= 3);
+    if (!allZones.length) return null;
+
+    const allPolygons = allZones.map(historyZonePoints);
+    const allRaw = allPolygons.reduce((sum, points) => sum + historyPolygonAreaRaw(points), 0);
+    if (!Number.isFinite(allRaw) || allRaw <= 0) return null;
+    const scale = mapArea / allRaw;
+
+    const kind = this.historyMowingModeKind(record);
+    let selectedZones = Array.isArray(selectedZonesOverride) ? selectedZonesOverride : this.historyRecordSelectedZones(record, areaDefinition);
+    if (kind === "full") selectedZones = allZones;
+    if (!selectedZones.length) return null;
+
+    const selectedPolygons = selectedZones
+      .map(historyZonePoints)
+      .filter((points) => points.length >= 3);
+    if (!selectedPolygons.length) return null;
+
+    const noGoZones = getZones(areaDefinition || {}, [
+      "forbid_areas", "forbidAreas", "remote_forbid_areas", "remoteForbidAreas", "no_go_areas", "noGoAreas",
+    ]);
+    const noGoPolygons = noGoZones.map(historyZonePoints).filter((points) => points.length >= 3);
+    const noGoOverlapRaw = historyPolygonUnionIntersectionAreaRaw(selectedPolygons, noGoPolygons);
+    const noGoOverlapM2 = noGoOverlapRaw * scale;
+
+    let grossTargetM2;
+    if (kind === "full") {
+      grossTargetM2 = mapArea;
+    } else {
+      grossTargetM2 = selectedPolygons.reduce((sum, points) => sum + historyPolygonAreaRaw(points), 0) * scale;
+    }
+    const targetM2 = Math.max(0, grossTargetM2 - noGoOverlapM2);
+    if (!Number.isFinite(targetM2) || targetM2 <= 0) return null;
+
+    const calculated = Math.max(0, Math.min(100, (mowedArea / targetM2) * 100));
+    // Historical entries are already closed mowing tasks. The calculated area
+    // can remain a few percent below the mower's own completion point because
+    // trees, bushes and dynamically avoided obstacles are not represented by
+    // No-Go polygons. Use the same 95% completion tolerance as the live badge:
+    // a finished history record at >=95% is displayed as 100%.
+    return calculated >= 95 ? 100 : calculated;
+  }
+
+  historyProgressNeedsDetail(record) {
+    if (this.historyMowingModeKind(record) !== "zones") return false;
+    const areaDefinition = this.entity?.attributes?.area_definition || {};
+    if (this.historyRecordSelectedZones(record, areaDefinition).length) return false;
+    return Boolean(
+      pickRecordValue(record, MOWING_RECORD_PATH_URL_KEYS)
+      && pickRecordValue(record, MOWING_RECORD_AREA_URL_KEYS)
+    );
+  }
+
+  async fetchMowingHistoryDetailForProgress(record) {
+    const cacheKey = historyRecordCacheKey(record);
+    this._historyProgressDetailPromises ||= new Map();
+    if (this._historyProgressDetailPromises.has(cacheKey)) return this._historyProgressDetailPromises.get(cacheKey);
+
+    const promise = (async () => {
+      if (!this._hass?.connection) return null;
+      const serviceData = {};
+      const areaUrl = pickRecordValue(record, MOWING_RECORD_AREA_URL_KEYS);
+      const mapUrl = pickRecordValue(record, MOWING_RECORD_MAP_URL_KEYS);
+      const pathUrl = pickRecordValue(record, MOWING_RECORD_PATH_URL_KEYS);
+      if (areaUrl) serviceData.area_url = areaUrl;
+      if (mapUrl) serviceData.map_url = mapUrl;
+      if (pathUrl) serviceData.path_url = pathUrl;
+      const entityId = this.entity?.entity_id;
+      if (entityId) serviceData.entity_id = entityId;
+      try {
+        const result = await this._hass.connection.sendMessagePromise({
+          type: "call_service",
+          domain: "anthbot_map",
+          service: "get_mowing_record_detail",
+          service_data: serviceData,
+          return_response: true,
+        });
+        return result?.response || null;
+      } catch (_error) {
+        return null;
+      }
+    })();
+    this._historyProgressDetailPromises.set(cacheKey, promise);
+    return promise;
+  }
+
+  inferMowingHistoryZonesFromDetail(record, detail) {
+    const areaDefinition = detail?.area;
+    if (!areaDefinition || typeof areaDefinition !== "object") return [];
+    const zones = getZones(areaDefinition, ["custom_areas", "zones", "customAreas", "ridable_areas"])
+      .filter((zone) => historyZonePoints(zone).length >= 3);
+    if (!zones.length) return [];
+
+    const anchorMetersX = Number(pickRecordValue(record, MOWING_RECORD_START_X_KEYS));
+    const anchorMetersY = Number(pickRecordValue(record, MOWING_RECORD_START_Y_KEYS));
+    const anchor = {
+      x: Number.isFinite(anchorMetersX) ? anchorMetersX * 1000 : 0,
+      y: Number.isFinite(anchorMetersY) ? anchorMetersY * 1000 : 0,
+    };
+    const pathPoints = extractDetailPathPoints(detail?.path, anchor);
+    if (!pathPoints.length) return [];
+
+    const scored = zones.map((zone) => {
+      const polygon = historyZonePoints(zone);
+      let inside = 0;
+      // Sampling caps the work for very long historical paths while preserving
+      // their spatial distribution.
+      const step = Math.max(1, Math.floor(pathPoints.length / 2500));
+      for (let index = 0; index < pathPoints.length; index += step) {
+        if (historyPointInPolygon(pathPoints[index], polygon)) inside += 1;
+      }
+      return { zone, inside };
+    });
+    const maxInside = Math.max(0, ...scored.map((item) => item.inside));
+    if (maxInside <= 0) return [];
+    const threshold = Math.max(3, Math.ceil(maxInside * 0.12));
+    return scored.filter((item) => item.inside >= threshold).map((item) => item.zone);
+  }
+
+  scheduleMowingHistoryProgressDetail(card, record, valueElement) {
+    if (!card || !valueElement || !this.historyProgressNeedsDetail(record)) return;
+    const cacheKey = historyRecordCacheKey(record);
+    this._historyProgressCache ||= new Map();
+
+    const applyValue = (value) => {
+      if (!valueElement.isConnected) return;
+      valueElement.textContent = Number.isFinite(value) ? formatCalculatedRecordPercent(value) : "–";
+    };
+    if (this._historyProgressCache.has(cacheKey)) {
+      applyValue(this._historyProgressCache.get(cacheKey));
+      return;
+    }
+
+    const load = async () => {
+      const detail = await this.fetchMowingHistoryDetailForProgress(record);
+      let value = null;
+      if (detail) {
+        const selected = this.inferMowingHistoryZonesFromDetail(record, detail);
+        if (selected.length) {
+          value = this.calculateMowingHistoryProgress(record, detail.area, selected);
+        }
+      }
+      this._historyProgressCache.set(cacheKey, value);
+      applyValue(value);
+    };
+
+    if (typeof IntersectionObserver !== "function") {
+      load();
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      observer.disconnect();
+      load();
+    }, { root: null, rootMargin: "250px 0px" });
+    observer.observe(card);
+  }
+
   buildMowingHistorySummary(payload) {
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
     const total = pickRecordValue(payload, ["total", "total_times", "totalTimes"]);
@@ -1462,7 +2008,7 @@ class AnthbotMapCard extends HTMLElement {
 
     const { start, end } = resolveMowingRecordTimeRange(record);
     const area = pickRecordValue(record, MOWING_RECORD_AREA_KEYS);
-    const percent = pickRecordValue(record, MOWING_RECORD_PERCENT_KEYS);
+    const reportedPercent = pickRecordValue(record, MOWING_RECORD_PERCENT_KEYS);
     const durationEntry = pickRecordEntry(record, MOWING_RECORD_DURATION_KEYS);
     const rawDuration = durationEntry?.value;
     const mode = pickRecordValue(record, MOWING_RECORD_MODE_KEYS);
@@ -1502,28 +2048,46 @@ class AnthbotMapCard extends HTMLElement {
       durationSeconds = normalizeRecordDurationSeconds(rawDuration, durationEntry?.key);
     }
 
+    const calculatedProgress = this.calculateMowingHistoryProgress(record);
+    const progressNeedsDetail = calculatedProgress === null && this.historyProgressNeedsDetail(record);
     const statItems = [];
-    if (area !== undefined) statItems.push([this.t("mowingHistoryArea"), formatRecordArea(area)]);
-    if (percent !== undefined) {
-      const pct = formatRecordPercent(percent);
-      if (pct) statItems.push([this.t("mowingHistoryProgress"), pct]);
-    }
+    if (area !== undefined) statItems.push([this.t("mowingHistoryArea"), formatRecordArea(area), null]);
+    statItems.push([
+      this.t("mowingHistoryProgress"),
+      Number.isFinite(calculatedProgress)
+        ? formatCalculatedRecordPercent(calculatedProgress)
+        : progressNeedsDetail ? "…" : "–",
+      "calculated-progress",
+    ]);
     if (durationSeconds !== null) {
-      statItems.push([this.t("mowingHistoryDuration"), formatRecordDurationSeconds(durationSeconds)]);
+      statItems.push([this.t("mowingHistoryDuration"), formatRecordDurationSeconds(durationSeconds), null]);
     }
-    if (mode !== undefined) statItems.push([this.t("mowingHistoryMode"), this.formatRecordMode(mode)]);
-    if (source !== undefined) statItems.push([this.t("mowingHistoryStartedBy"), this.formatRecordSource(source)]);
+    if (mode !== undefined) statItems.push([this.t("mowingHistoryMode"), this.formatRecordMode(mode), null]);
+    if (source !== undefined) statItems.push([this.t("mowingHistoryStartedBy"), this.formatRecordSource(source), null]);
 
+    let calculatedProgressElement = null;
     if (statItems.length) {
       const stats = document.createElement("div");
       stats.className = "mowing-history-stats";
-      for (const [label, value] of statItems) {
+      for (const [label, value, role] of statItems) {
         const stat = document.createElement("div");
         stat.className = "mowing-history-stat";
         stat.innerHTML = `<span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong>`;
+        if (role === "calculated-progress") {
+          stat.dataset.progressSource = Number.isFinite(calculatedProgress) ? "calculated" : progressNeedsDetail ? "detail" : "unavailable";
+          stat.title = Number.isFinite(calculatedProgress)
+            ? "A lenyírt területből és a nettó (No-Go-val csökkentett) célterületből újraszámolva."
+            : reportedPercent !== undefined
+              ? `A gyári rekord ${formatRecordPercent(reportedPercent) || reportedPercent} értékét nem használjuk valódi területi százalékként.`
+              : "A célterület ebből a rekordból nem állapítható meg biztosan.";
+          calculatedProgressElement = stat.querySelector("strong");
+        }
         stats.appendChild(stat);
       }
       card.appendChild(stats);
+    }
+    if (progressNeedsDetail && calculatedProgressElement) {
+      this.scheduleMowingHistoryProgressDetail(card, record, calculatedProgressElement);
     }
 
     if (zoneList.length) {
@@ -3354,6 +3918,204 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (char) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;",
   })[char]);
+}
+
+// --- Calculated mowing-history target geometry -----------------------------
+// Mirrors the backend v3 progress test: polygon areas are kept in raw map
+// units, then calibrated to m² with map_area / sum(all mowing-zone polygons).
+// No-Go subtraction uses an exact vertical sweep over union(zone) ∩ union(no-go)
+// so overlapping No-Go polygons are not subtracted twice.
+function historyZonePoints(zone) {
+  const points = getZonePoints(zone || {});
+  return points
+    .map((point) => ({ x: Number(point?.x), y: Number(point?.y) }))
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+}
+
+function historyPolygonAreaRaw(points) {
+  if (!Array.isArray(points) || points.length < 3) return 0;
+  let area2 = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const first = points[index];
+    const second = points[(index + 1) % points.length];
+    area2 += first.x * second.y - second.x * first.y;
+  }
+  return Math.abs(area2) / 2;
+}
+
+function historyPolygonSegments(points) {
+  if (!Array.isArray(points) || points.length < 2) return [];
+  const result = [];
+  for (let index = 0; index < points.length; index += 1) {
+    const first = points[index];
+    const second = points[(index + 1) % points.length];
+    if (first.x !== second.x || first.y !== second.y) result.push([first, second]);
+  }
+  return result;
+}
+
+function historySegmentIntersectionX(first, second) {
+  const [a, b] = first;
+  const [c, d] = second;
+  const rx = b.x - a.x, ry = b.y - a.y;
+  const sx = d.x - c.x, sy = d.y - c.y;
+  const denominator = rx * sy - ry * sx;
+  if (Math.abs(denominator) < 1e-12) return null;
+  const qx = c.x - a.x, qy = c.y - a.y;
+  const t = (qx * sy - qy * sx) / denominator;
+  const u = (qx * ry - qy * rx) / denominator;
+  const tolerance = 1e-9;
+  if (t < -tolerance || t > 1 + tolerance || u < -tolerance || u > 1 + tolerance) return null;
+  return a.x + t * rx;
+}
+
+function historyUnionIntervalsAtX(polygons, xValue) {
+  const intervals = [];
+  for (const points of polygons) {
+    const yValues = [];
+    for (const [first, second] of historyPolygonSegments(points)) {
+      if (Math.abs(second.x - first.x) < 1e-12) continue;
+      const lowX = Math.min(first.x, second.x);
+      const highX = Math.max(first.x, second.x);
+      if (!(lowX < xValue && xValue < highX)) continue;
+      const ratio = (xValue - first.x) / (second.x - first.x);
+      yValues.push(first.y + ratio * (second.y - first.y));
+    }
+    yValues.sort((a, b) => a - b);
+    for (let index = 0; index + 1 < yValues.length; index += 2) {
+      const lowY = yValues[index], highY = yValues[index + 1];
+      if (highY > lowY) intervals.push([lowY, highY]);
+    }
+  }
+  intervals.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const merged = [];
+  for (const [lowY, highY] of intervals) {
+    const last = merged[merged.length - 1];
+    if (!last || lowY > last[1] + 1e-9) merged.push([lowY, highY]);
+    else if (highY > last[1]) last[1] = highY;
+  }
+  return merged;
+}
+
+function historyIntervalIntersectionLength(first, second) {
+  let firstIndex = 0, secondIndex = 0, total = 0;
+  while (firstIndex < first.length && secondIndex < second.length) {
+    const lowY = Math.max(first[firstIndex][0], second[secondIndex][0]);
+    const highY = Math.min(first[firstIndex][1], second[secondIndex][1]);
+    if (highY > lowY) total += highY - lowY;
+    if (first[firstIndex][1] < second[secondIndex][1]) firstIndex += 1;
+    else secondIndex += 1;
+  }
+  return total;
+}
+
+function historyPolygonUnionIntersectionAreaRaw(firstPolygons, secondPolygons) {
+  const first = (firstPolygons || []).filter((points) => Array.isArray(points) && points.length >= 3);
+  const second = (secondPolygons || []).filter((points) => Array.isArray(points) && points.length >= 3);
+  if (!first.length || !second.length) return 0;
+
+  const firstPoints = first.flat();
+  const secondPoints = second.flat();
+  const firstX = firstPoints.map((p) => p.x), firstY = firstPoints.map((p) => p.y);
+  const secondX = secondPoints.map((p) => p.x), secondY = secondPoints.map((p) => p.y);
+  if (
+    Math.max(...firstX) <= Math.min(...secondX)
+    || Math.max(...secondX) <= Math.min(...firstX)
+    || Math.max(...firstY) <= Math.min(...secondY)
+    || Math.max(...secondY) <= Math.min(...firstY)
+  ) return 0;
+
+  const events = [];
+  const taggedSegments = [];
+  [first, second].forEach((polygons, setIndex) => {
+    polygons.forEach((points, polygonIndex) => {
+      points.forEach((point) => events.push(point.x));
+      historyPolygonSegments(points).forEach((segment) => taggedSegments.push({ setIndex, polygonIndex, segment }));
+    });
+  });
+  for (let firstIndex = 0; firstIndex < taggedSegments.length; firstIndex += 1) {
+    const a = taggedSegments[firstIndex];
+    for (let secondIndex = firstIndex + 1; secondIndex < taggedSegments.length; secondIndex += 1) {
+      const b = taggedSegments[secondIndex];
+      if (a.setIndex === b.setIndex && a.polygonIndex === b.polygonIndex) continue;
+      const x = historySegmentIntersectionX(a.segment, b.segment);
+      if (x !== null) events.push(x);
+    }
+  }
+  events.sort((a, b) => a - b);
+  const unique = [];
+  for (const value of events) {
+    if (!unique.length || Math.abs(value - unique[unique.length - 1]) > 1e-7) unique.push(value);
+  }
+
+  let totalArea = 0;
+  for (let index = 0; index + 1 < unique.length; index += 1) {
+    const lowX = unique[index], highX = unique[index + 1];
+    const width = highX - lowX;
+    if (width <= 1e-9) continue;
+    const midX = (lowX + highX) / 2;
+    const overlapHeight = historyIntervalIntersectionLength(
+      historyUnionIntervalsAtX(first, midX),
+      historyUnionIntervalsAtX(second, midX),
+    );
+    totalArea += overlapHeight * width;
+  }
+  return Math.max(0, totalArea);
+}
+
+function historyPointInPolygon(point, polygon) {
+  if (!point || !Array.isArray(polygon) || polygon.length < 3) return false;
+  const x = Number(point.x), y = Number(point.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+    const xi = polygon[i].x, yi = polygon[i].y;
+    const xj = polygon[j].x, yj = polygon[j].y;
+    const crosses = ((yi > y) !== (yj > y))
+      && x < ((xj - xi) * (y - yi)) / ((yj - yi) || Number.EPSILON) + xi;
+    if (crosses) inside = !inside;
+  }
+  return inside;
+}
+
+function historyZoneMatchKey(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const normalized = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const zoneNumber = normalized.match(/(?:zone|zona)\s*[-_#:]?\s*(\d+)/);
+  if (zoneNumber) return `zone:${zoneNumber[1]}`;
+  return normalized.replace(/[^a-z0-9]+/g, "");
+}
+
+function historyRecordZoneIdCandidates(record) {
+  const result = [];
+  const keys = [
+    "zone_id", "zoneId", "zone_ids", "zoneIds", "mow_zone", "mowZone",
+    "region_id", "regionId", "region_ids", "regionIds", "area_id", "areaId",
+  ];
+  for (const key of keys) {
+    const value = record?.[key];
+    if (Array.isArray(value)) result.push(...value);
+    else if (value !== undefined && value !== null && value !== "") result.push(value);
+  }
+  return result;
+}
+
+function historyRecordCacheKey(record) {
+  const id = pickRecordValue(record, MOWING_RECORD_ID_KEYS);
+  if (id !== undefined) return `id:${id}`;
+  return [
+    pickRecordValue(record, MOWING_RECORD_START_KEYS),
+    pickRecordValue(record, MOWING_RECORD_END_KEYS),
+    pickRecordValue(record, MOWING_RECORD_AREA_URL_KEYS),
+    pickRecordValue(record, MOWING_RECORD_PATH_URL_KEYS),
+  ].map((value) => String(value ?? "")).join("|");
+}
+
+function formatCalculatedRecordPercent(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "–";
+  return `${Math.round(number * 10) / 10}%`;
 }
 
 // --- Mowing history (previous mowing-task records) -------------------------

@@ -243,7 +243,7 @@ class BatterySaverSourceTests(unittest.TestCase):
         )
         self.assertIn('batterySaver: ["battery_saver_mode"', card)
         self.assertIn('this.t("batterySaverMode")', card)
-        self.assertNotIn('mowingProgress: ["sensor"', card)
+        self.assertIn('mowingProgress: ["sensor", ["mowing_progress", "mowing_progress_test"]]', card)
 
     def test_card_label_exists_for_every_supported_language(self) -> None:
         source = (COMPONENT / "frontend" / "i18n.js").read_text(encoding="utf-8")

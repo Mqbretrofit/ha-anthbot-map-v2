@@ -102,8 +102,8 @@ process.stdout.write(JSON.stringify({longSeconds, explicitMilliseconds, filtered
         init_source = (INTEGRATION / "__init__.py").read_text(encoding="utf-8")
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 
-        self.assertEqual(manifest["version"], "2.4.2")
-        self.assertIn('?v=2.4.2', init_source)
+        self.assertEqual(manifest["version"], "2.4.3-beta.1")
+        self.assertIn('?v=2.4.3-beta.1', init_source)
         self.assertIn("Release tag $tag does not match manifest version", workflow)
         for filename in ("anthbot-map-card.js", "i18n.js", "styles.css"):
             self.assertEqual(

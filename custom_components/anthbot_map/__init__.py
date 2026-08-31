@@ -96,14 +96,13 @@ PLATFORMS = [
 _LOGGER = logging.getLogger(__name__)
 VALID_MOW_HEIGHTS = list(range(30, 75, 5))
 FRONTEND_RESOURCE_PATH = "/anthbot-map-v2/anthbot-map-card.js"
-FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.2"
+FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.3-beta.1"
 LEGACY_ENTITY_SUFFIXES: tuple[str, ...] = (
     "enable_custom_mowing_direction",
     "custom_mowing_direction_enable",
     "custom_mowing_direction_enabled_button",
     "mow_count",
     "last_service_command_state",
-    "mowing_progress",
     "mowing_progress_source",
     "mowing_finish_cause",
     "mowing_incomplete",
