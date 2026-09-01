@@ -1816,6 +1816,27 @@ class AnthbotMapCard extends HTMLElement {
     return selected;
   }
 
+  historyLearnedMowingArea(kind, selectedZones) {
+    const progressEntity = this.getRelatedEntity("mowingProgress");
+    const profiles = progressEntity?.attributes?.learned_zone_mowing_profiles;
+    if (!profiles || typeof profiles !== "object") return null;
+
+    let key = null;
+    if (kind === "full") {
+      key = "full";
+    } else if (kind === "zones" && Array.isArray(selectedZones) && selectedZones.length) {
+      const ids = selectedZones
+        .map((zone) => Number(zone?.id))
+        .filter((id) => Number.isInteger(id))
+        .sort((left, right) => left - right);
+      if (ids.length === selectedZones.length) key = `manual:${[...new Set(ids)].join(",")}`;
+    }
+    if (!key) return null;
+
+    const reference = Number(profiles[key]?.reference_m2);
+    return Number.isFinite(reference) && reference > 0 ? reference : null;
+  }
+
   calculateMowingHistoryProgress(record, areaDefinition = this.entity?.attributes?.area_definition || {}, selectedZonesOverride = null) {
     const mowedArea = Number(pickRecordValue(record, MOWING_RECORD_AREA_KEYS));
     if (!Number.isFinite(mowedArea) || mowedArea < 0) return null;
@@ -1855,7 +1876,9 @@ class AnthbotMapCard extends HTMLElement {
     } else {
       grossTargetM2 = selectedPolygons.reduce((sum, points) => sum + historyPolygonAreaRaw(points), 0) * scale;
     }
-    const targetM2 = Math.max(0, grossTargetM2 - noGoOverlapM2);
+    const geometricTargetM2 = Math.max(0, grossTargetM2 - noGoOverlapM2);
+    const learnedTargetM2 = this.historyLearnedMowingArea(kind, selectedZones);
+    const targetM2 = learnedTargetM2 ?? geometricTargetM2;
     if (!Number.isFinite(targetM2) || targetM2 <= 0) return null;
 
     const calculated = Math.max(0, Math.min(100, (mowedArea / targetM2) * 100));

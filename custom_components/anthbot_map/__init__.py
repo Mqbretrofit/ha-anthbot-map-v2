@@ -96,7 +96,7 @@ PLATFORMS = [
 _LOGGER = logging.getLogger(__name__)
 VALID_MOW_HEIGHTS = list(range(30, 75, 5))
 FRONTEND_RESOURCE_PATH = "/anthbot-map-v2/anthbot-map-card.js"
-FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.3-beta.1"
+FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.3-beta.2"
 LEGACY_ENTITY_SUFFIXES: tuple[str, ...] = (
     "enable_custom_mowing_direction",
     "custom_mowing_direction_enable",
@@ -1166,6 +1166,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         await coordinator.async_load_last_mowing_task()
         await coordinator.async_load_battery_saver_state()
+        await coordinator.async_load_mowing_area_learning()
         # The mobile app establishes the named-shadow MQTT session first.
         # Ancillary REST data can refresh independently afterwards.
         await coordinator.async_start_live_shadow()

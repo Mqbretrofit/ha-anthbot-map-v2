@@ -87,7 +87,7 @@ def _battery_level(data: dict[str, Any]) -> int | None:
 
 
 
-# --- MOWING PROGRESS v2.4.3-beta.1 ---
+# --- MOWING PROGRESS v2.4.3-beta.2 ---
 def _progress_float(value: Any) -> float | None:
     try:
         result = float(value)
@@ -630,7 +630,74 @@ def _progress_active_zone_debug(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _progress_learning_key(data: dict[str, Any]) -> str:
+    active_ids = sorted(set(active_manual_zone_ids(data)))
+    if active_ids:
+        return "manual:" + ",".join(str(zone_id) for zone_id in active_ids)
+    learning = data.get("_mowing_area_learning")
+    if isinstance(learning, dict):
+        current_key = learning.get("current_key")
+        if isinstance(current_key, str) and current_key:
+            return current_key
+    return "full"
+
+
+def _progress_learning_debug(data: dict[str, Any]) -> dict[str, Any]:
+    learning = data.get("_mowing_area_learning")
+    key = _progress_learning_key(data)
+    profile = None
+    sample_limit = 3
+    if isinstance(learning, dict):
+        raw_limit = learning.get("sample_limit")
+        if isinstance(raw_limit, int) and raw_limit > 0:
+            sample_limit = raw_limit
+        profiles = learning.get("profiles")
+        if isinstance(profiles, dict):
+            candidate = profiles.get(key)
+            if isinstance(candidate, dict):
+                profile = candidate
+
+    reference = _progress_float(profile.get("reference_m2")) if profile else None
+    raw_samples = profile.get("samples_m2") if profile else None
+    samples = (
+        [
+            number
+            for value in raw_samples
+            if (number := _progress_float(value)) is not None and number > 0
+        ]
+        if isinstance(raw_samples, list)
+        else []
+    )
+    sample_count = len(samples)
+    return {
+        "learned_zone_mowing_key": key,
+        "learned_zone_mowing_area_m2": round(reference, 3)
+        if reference is not None and reference > 0
+        else None,
+        "learned_zone_mowing_samples_m2": [round(value, 3) for value in samples],
+        "learned_zone_mowing_sample_count": sample_count,
+        "learned_zone_mowing_sample_limit": sample_limit,
+        "learned_zone_mowing_confidence": (
+            "stable"
+            if sample_count >= sample_limit
+            else "building"
+            if sample_count > 1
+            else "provisional"
+            if sample_count == 1
+            else "unlearned"
+        ),
+        "learned_zone_mowing_profiles": learning.get("profiles", {})
+        if isinstance(learning, dict) and isinstance(learning.get("profiles"), dict)
+        else {},
+    }
+
+
 def _progress_target_area(data: dict[str, Any]) -> tuple[float | None, str]:
+    learning = _progress_learning_debug(data)
+    learned_target = _progress_float(learning.get("learned_zone_mowing_area_m2"))
+    if learned_target is not None and learned_target > 0:
+        return learned_target, "learned_zone_mowing_area"
+
     debug = _progress_active_zone_debug(data)
     target = _progress_float(debug.get("calibrated_area_total_m2"))
     source = str(debug.get("area_source") or "unavailable")
@@ -884,7 +951,7 @@ SENSORS: tuple[AnthbotSensorDescription, ...] = (
     ),
 
 
-    # --- MOWING PROGRESS v2.4.3-beta.1 ---
+    # --- MOWING PROGRESS v2.4.3-beta.2 ---
     AnthbotSensorDescription(
         key="mowing_progress",
         name="Mowing progress",
@@ -1436,13 +1503,18 @@ class AnthbotSensorEntity(
             ]
 
 
-        # --- MOWING PROGRESS v2.4.3-beta.1 ---
+        # --- MOWING PROGRESS v2.4.3-beta.2 ---
         if self.entity_description.key in {
             "mowing_progress",
             "active_zone_area",
         }:
             zone_debug = _progress_active_zone_debug(state)
-            attributes["progress_source"] = zone_debug.get("area_source")
+            progress_target, progress_source = _progress_target_area(state)
+            learning_debug = _progress_learning_debug(state)
+            attributes["progress_source"] = progress_source
+            attributes["progress_target_area_m2"] = (
+                round(progress_target, 3) if progress_target is not None else None
+            )
             attributes["progress_mowing_area_m2"] = _progress_float(
                 _safe_get(state, "mowing_area_new", "value")
             )
@@ -1450,6 +1522,7 @@ class AnthbotSensorEntity(
                 state.get("map_area")
             )
             attributes.update(zone_debug)
+            attributes.update(learning_debug)
         if self.entity_description.key == "cloud_task_event_code":
             payload = state.get("_task_events")
             attributes["latest_task_event"] = latest_task_event(payload)

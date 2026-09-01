@@ -1,4 +1,4 @@
-"""Regression checks for v2.4.3-beta.1 mowing progress features."""
+"""Regression checks for v2.4.3-beta.2 mowing progress features."""
 from pathlib import Path
 import unittest
 
@@ -6,6 +6,7 @@ ROOT = Path(__file__).parents[1]
 SENSOR = ROOT / "custom_components/anthbot_map/sensor.py"
 CARD = ROOT / "www/anthbot-map/anthbot-map-card.js"
 INIT = ROOT / "custom_components/anthbot_map/__init__.py"
+COORDINATOR = ROOT / "custom_components/anthbot_map/coordinator.py"
 
 class TestMowingProgressBeta(unittest.TestCase):
     @classmethod
@@ -13,6 +14,7 @@ class TestMowingProgressBeta(unittest.TestCase):
         cls.sensor = SENSOR.read_text(encoding="utf-8-sig")
         cls.card = CARD.read_text(encoding="utf-8-sig")
         cls.init = INIT.read_text(encoding="utf-8-sig")
+        cls.coordinator = COORDINATOR.read_text(encoding="utf-8-sig")
 
     def test_production_sensor_names_have_no_test_suffix(self) -> None:
         self.assertIn('key="mowing_progress"', self.sensor)
@@ -50,6 +52,24 @@ class TestMowingProgressBeta(unittest.TestCase):
         self.assertIn("config.default_panel ?? config.defaultPanel", self.card)
         self.assertIn("config.default_submenu ?? config.defaultSubmenu", self.card)
         self.assertIn('typeof config.menu_open === "boolean"', self.card)
+
+    def test_completed_mowings_are_learned_persistently(self) -> None:
+        self.assertIn("async_load_mowing_area_learning", self.coordinator)
+        self.assertIn("_mowing_area_learning_store.async_save", self.coordinator)
+        self.assertIn("_TASK_FINISHED_EVENT_CODE", self.coordinator)
+        self.assertIn("_MOWING_AREA_LEARNING_SAMPLE_LIMIT = 3", self.coordinator)
+        self.assertIn("_mowing_area_reference", self.coordinator)
+
+    def test_progress_prefers_learned_target_without_changing_zone_area(self) -> None:
+        self.assertIn('return learned_target, "learned_zone_mowing_area"', self.sensor)
+        self.assertIn('return _progress_float(debug.get("calibrated_area_total_m2"))', self.sensor)
+        self.assertIn("learned_zone_mowing_area_m2", self.sensor)
+        self.assertIn("learned_zone_mowing_samples_m2", self.sensor)
+
+    def test_history_uses_the_matching_learned_profile(self) -> None:
+        self.assertIn("historyLearnedMowingArea", self.card)
+        self.assertIn("learned_zone_mowing_profiles", self.card)
+        self.assertIn("learnedTargetM2 ?? geometricTargetM2", self.card)
 
     def test_v242_custom_buttons_remain_present(self) -> None:
         self.assertIn("customButtonActions", self.card)

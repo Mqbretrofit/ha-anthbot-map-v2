@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+import json
 import logging
 import time
 from typing import Any
@@ -18,7 +19,7 @@ from .api import (
     AnthbotGenieApiError,
     AnthbotShadowApiClient,
 )
-from .zones import ridable_areas
+from .zones import active_manual_zone_ids, ridable_areas
 from .const import DOMAIN
 from .const import (
     CONF_CHARGE_LIMIT,
@@ -87,6 +88,8 @@ _RAIN_RETURN_EVENT_CODE = 1036
 _TASK_ACTIVITY_EVENT_CODES = {1015, 1017, 1018}
 _TASK_FINISHED_EVENT_CODE = 1014
 _LOW_BATTERY_RETURN_EVENT_CODE = 1021
+_MOWING_AREA_LEARNING_SAMPLE_LIMIT = 3
+_MOWING_AREA_LEARNING_PROCESSED_EVENT_LIMIT = 20
 
 _HISTORY_PATH_URL_KEYS = {
     "hisPathUrl",
@@ -231,6 +234,10 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._pending_live_service: dict[str, Any] = {}
         self._live_flush_task: asyncio.Task[None] | None = None
         self._last_mowing_task: dict[str, Any] | None = None
+        self._mowing_area_learning_profiles: dict[str, dict[str, Any]] = {}
+        self._mowing_area_learning_processed_events: list[str] = []
+        self._mowing_area_session_key: str | None = None
+        self._mowing_area_session_value: float | None = None
         self._battery_saver_config = dict(battery_saver_config or {})
         self._custom_button_config = dict(custom_button_config or {})
         self._battery_saver_enabled = False
@@ -257,6 +264,11 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             1,
             f"{DOMAIN}.battery_saver_{client.serial_number}",
         )
+        self._mowing_area_learning_store: Store[dict[str, Any]] = Store(
+            hass,
+            1,
+            f"{DOMAIN}.mowing_area_learning_{client.serial_number}",
+        )
 
     @property
     def reported_state(self) -> dict[str, Any]:
@@ -271,6 +283,19 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def remember_mowing_task(self, task_type: str, data: Any = None) -> None:
         """Remember and persist the task that Pause must later resume."""
         self._last_mowing_task = {"type": task_type, "data": data}
+        self._mowing_area_session_value = None
+        if task_type == "manual_zone" and isinstance(data, dict):
+            raw_ids = data.get("id")
+            ids = (
+                [item for item in raw_ids if isinstance(item, int)]
+                if isinstance(raw_ids, list)
+                else []
+            )
+            self._mowing_area_session_key = self._manual_mowing_area_key(ids)
+        elif task_type == "full":
+            self._mowing_area_session_key = "full"
+        else:
+            self._mowing_area_session_key = None
         if self.reported_state:
             state = dict(self.reported_state)
             state["_last_mowing_task"] = dict(self._last_mowing_task)
@@ -351,6 +376,226 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def last_mowing_task(self) -> dict[str, Any] | None:
         """Return a copy of the most recently started mowing task."""
         return dict(self._last_mowing_task) if self._last_mowing_task else None
+
+    @staticmethod
+    def _mowing_area_number(value: Any) -> float | None:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if number != number or number in (float("inf"), float("-inf")):
+            return None
+        return number
+
+    @staticmethod
+    def _mowing_area_reference(samples: list[float]) -> float | None:
+        """Return a robust reference from the most recent completed mowings."""
+        valid = sorted(value for value in samples if value > 0)
+        if not valid:
+            return None
+        middle = len(valid) // 2
+        if len(valid) % 2:
+            return valid[middle]
+        return (valid[middle - 1] + valid[middle]) / 2
+
+    @staticmethod
+    def _manual_mowing_area_key(zone_ids: list[int]) -> str | None:
+        ids = sorted(set(zone_ids))
+        if not ids:
+            return None
+        return "manual:" + ",".join(str(zone_id) for zone_id in ids)
+
+    def _mowing_area_selection_key(self, state: dict[str, Any]) -> str | None:
+        key = self._manual_mowing_area_key(active_manual_zone_ids(state))
+        if key is not None:
+            return key
+        if self._mowing_area_session_key is not None:
+            return self._mowing_area_session_key
+
+        task = self._last_mowing_task
+        if isinstance(task, dict):
+            task_type = task.get("type")
+            task_data = task.get("data")
+            if task_type == "manual_zone" and isinstance(task_data, dict):
+                raw_ids = task_data.get("id")
+                if isinstance(raw_ids, list):
+                    ids = [item for item in raw_ids if isinstance(item, int)]
+                    key = self._manual_mowing_area_key(ids)
+                    if key is not None:
+                        return key
+            if task_type == "full":
+                return "full"
+
+        robot_sta = state.get("robot_sta")
+        if isinstance(robot_sta, dict):
+            robot_sta = robot_sta.get("value")
+        if isinstance(robot_sta, str) and "globalmowing" in _normalize_status(robot_sta):
+            return "full"
+        return None
+
+    def _observe_mowing_area_state(self, state: dict[str, Any]) -> None:
+        """Remember the active selection and its latest area across docking."""
+        if not _is_live_position_state(state):
+            return
+        key = self._mowing_area_selection_key(state)
+        if key is not None:
+            self._mowing_area_session_key = key
+        area_value = state.get("mowing_area_new")
+        if isinstance(area_value, dict):
+            area_value = area_value.get("value")
+        area = self._mowing_area_number(area_value)
+        if area is not None and area >= 0:
+            self._mowing_area_session_value = area
+
+    @staticmethod
+    def _mowing_area_completion_event(payload: Any) -> dict[str, Any] | None:
+        """Return the newest task-cycle event only when it is completion."""
+        for event in task_event_items(payload):
+            try:
+                code = int(event.get("code"))
+            except (TypeError, ValueError):
+                continue
+            if code == _TASK_FINISHED_EVENT_CODE:
+                return event
+            if code == _LOW_BATTERY_RETURN_EVENT_CODE or code in _TASK_ACTIVITY_EVENT_CODES:
+                return None
+        return None
+
+    @staticmethod
+    def _mowing_area_event_signature(event: dict[str, Any]) -> str:
+        """Build a stable id even when the API omits a dedicated event id."""
+        identity = {
+            key: event.get(key)
+            for key in (
+                "id",
+                "event_id",
+                "eventId",
+                "create_time",
+                "createTime",
+                "code",
+            )
+            if event.get(key) is not None
+        }
+        if len(identity) <= 1:
+            identity = event
+        return json.dumps(identity, sort_keys=True, separators=(",", ":"), default=str)
+
+    def mowing_area_learning_state(self) -> dict[str, Any]:
+        """Return sanitized learned profiles for progress sensors and the card."""
+        profiles: dict[str, dict[str, Any]] = {}
+        for key, profile in self._mowing_area_learning_profiles.items():
+            raw_samples = profile.get("samples")
+            samples = (
+                [
+                    number
+                    for value in raw_samples
+                    if (number := self._mowing_area_number(value)) is not None
+                    and number > 0
+                ][-_MOWING_AREA_LEARNING_SAMPLE_LIMIT:]
+                if isinstance(raw_samples, list)
+                else []
+            )
+            reference = self._mowing_area_reference(samples)
+            if reference is None:
+                continue
+            profiles[key] = {
+                "samples_m2": [round(value, 3) for value in samples],
+                "sample_count": len(samples),
+                "reference_m2": round(reference, 3),
+                "updated_at": profile.get("updated_at"),
+            }
+        return {
+            "sample_limit": _MOWING_AREA_LEARNING_SAMPLE_LIMIT,
+            "current_key": self._mowing_area_session_key,
+            "profiles": profiles,
+        }
+
+    async def async_load_mowing_area_learning(self) -> None:
+        """Restore learned target areas after a Home Assistant restart."""
+        stored = await self._mowing_area_learning_store.async_load()
+        if not isinstance(stored, dict):
+            return
+        raw_profiles = stored.get("profiles")
+        if isinstance(raw_profiles, dict):
+            for key, profile in raw_profiles.items():
+                if not isinstance(key, str) or not isinstance(profile, dict):
+                    continue
+                raw_samples = profile.get("samples")
+                if not isinstance(raw_samples, list):
+                    continue
+                samples = [
+                    number
+                    for value in raw_samples
+                    if (number := self._mowing_area_number(value)) is not None
+                    and number > 0
+                ][-_MOWING_AREA_LEARNING_SAMPLE_LIMIT:]
+                if samples:
+                    self._mowing_area_learning_profiles[key] = {
+                        "samples": samples,
+                        "updated_at": profile.get("updated_at"),
+                    }
+        processed = stored.get("processed_events")
+        if isinstance(processed, list):
+            self._mowing_area_learning_processed_events = [
+                value for value in processed if isinstance(value, str)
+            ][-_MOWING_AREA_LEARNING_PROCESSED_EVENT_LIMIT:]
+
+    async def _async_save_mowing_area_learning(self) -> None:
+        await self._mowing_area_learning_store.async_save(
+            {
+                "profiles": self._mowing_area_learning_profiles,
+                "processed_events": self._mowing_area_learning_processed_events,
+            }
+        )
+
+    async def _async_update_mowing_area_learning(
+        self,
+        state: dict[str, Any],
+        task_events: Any,
+    ) -> bool:
+        """Learn one sample from a cloud-confirmed completed mowing task."""
+        self._observe_mowing_area_state(state)
+        if _is_live_position_state(state):
+            return False
+        event = self._mowing_area_completion_event(task_events)
+        if event is None:
+            return False
+        signature = self._mowing_area_event_signature(event)
+        if signature in self._mowing_area_learning_processed_events:
+            return False
+
+        key = self._mowing_area_selection_key(state)
+        area_value = state.get("mowing_area_new")
+        if isinstance(area_value, dict):
+            area_value = area_value.get("value")
+        area = self._mowing_area_number(area_value)
+        if area is None or area <= 0:
+            area = self._mowing_area_session_value
+        if key is None or area is None or area <= 0:
+            return False
+
+        profile = self._mowing_area_learning_profiles.setdefault(key, {})
+        raw_samples = profile.get("samples")
+        samples = list(raw_samples) if isinstance(raw_samples, list) else []
+        samples.append(area)
+        profile["samples"] = samples[-_MOWING_AREA_LEARNING_SAMPLE_LIMIT:]
+        profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+        self._mowing_area_learning_processed_events.append(signature)
+        self._mowing_area_learning_processed_events = (
+            self._mowing_area_learning_processed_events[
+                -_MOWING_AREA_LEARNING_PROCESSED_EVENT_LIMIT:
+            ]
+        )
+        await self._async_save_mowing_area_learning()
+        _LOGGER.info(
+            "Learned mowing area sample for %s selection %s: %.3f m2 (%d/%d)",
+            self.client.serial_number,
+            key,
+            area,
+            len(profile["samples"]),
+            _MOWING_AREA_LEARNING_SAMPLE_LIMIT,
+        )
+        return True
 
     @property
     def battery_saver_enabled(self) -> bool:
@@ -1109,10 +1354,15 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 page_size=20,
             )
             self._task_events_error = None
+            await self._async_update_mowing_area_learning(
+                self.reported_state,
+                self._task_events,
+            )
             if self.reported_state:
                 state = dict(self.reported_state)
                 state["_task_events"] = self._task_events
                 state["_task_events_error"] = None
+                state["_mowing_area_learning"] = self.mowing_area_learning_state()
                 self.async_set_updated_data(state)
         except AnthbotGenieApiError as err:
             self._task_events_error = str(err)
@@ -1404,6 +1654,11 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 state["_cloud_last_success"] = datetime.now(timezone.utc).isoformat()
                 state["_live_shadow_connected"] = True
                 state["_live_shadow_error"] = None
+                await self._async_update_mowing_area_learning(
+                    state,
+                    self._task_events,
+                )
+                state["_mowing_area_learning"] = self.mowing_area_learning_state()
                 # Publish live telemetry immediately. A rare map archive
                 # download must not delay the mower's position/status update.
                 self.async_set_updated_data(state)
@@ -1760,6 +2015,10 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
                 self._task_events_error = None
                 self._last_task_event_download_monotonic = now
+                await self._async_update_mowing_area_learning(
+                    property_state,
+                    self._task_events,
+                )
             except AnthbotGenieApiError as err:
                 self._task_events_error = str(err)
                 self._last_task_event_download_monotonic = now
@@ -1823,6 +2082,7 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             merged_state["_live_shadow_error"] = self._live_shadow_error
             merged_state["_battery_saver_enabled"] = self._battery_saver_enabled
             merged_state["_battery_saver_phase"] = self._battery_saver_phase
+            merged_state["_mowing_area_learning"] = self.mowing_area_learning_state()
             self._consecutive_cloud_failures = 0
             return merged_state
         except AnthbotGenieApiError as err:
