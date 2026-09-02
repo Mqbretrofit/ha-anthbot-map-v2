@@ -1,7 +1,7 @@
 import { AnthbotMapRenderer } from "./renderer.js?v=2411";
 import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=2411";
 import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=2411";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=243b2-mowing-mode-test";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=243b2-mowing-mode-help2";
 import {
   adjustCalibration,
   cardToYaml,
