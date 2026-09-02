@@ -93,9 +93,6 @@ async def async_setup_entry(
                         AnthbotZoneSwitchEntity(
                             coordinator, zone_kind, zone_id, "custom_direction"
                         ),
-                        AnthbotZoneSwitchEntity(
-                            coordinator, zone_kind, zone_id, "edge_cutting"
-                        ),
                     )
                 )
     async_add_entities(entities)
@@ -352,7 +349,6 @@ class AnthbotZoneSwitchEntity(
         label = {
             "visual_obstacle": "Visual obstacle detection",
             "custom_direction": "Custom mowing direction",
-            "edge_cutting": "Edge cutting",
         }[setting]
         self._attr_name = f"{prefix} {label}"
         self._attr_device_info = DeviceInfo(
@@ -379,15 +375,11 @@ class AnthbotZoneSwitchEntity(
             return _coerce_enabled_value(
                 zone.get("visual_ignore_obstacle_switch")
             )
-        if self._setting == "edge_cutting":
-            return _coerce_enabled_value(zone.get("mow_mode"))
         return _is_custom_direction_enabled(zone.get("enable_adaptive_head"))
 
     async def _async_set_enabled(self, enabled: bool) -> None:
         if self._setting == "visual_obstacle":
             updates = {"visual_ignore_obstacle_switch": 1 if enabled else 0}
-        elif self._setting == "edge_cutting":
-            updates = {"mow_mode": 1 if enabled else 0}
         else:
             updates = {"enable_adaptive_head": 0 if enabled else 1}
         await async_update_zone_settings(
