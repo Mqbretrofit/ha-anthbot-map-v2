@@ -334,12 +334,12 @@ class AnthbotMapCard extends HTMLElement {
         
         .mowing-mode-info { border:0; background:transparent; color:var(--primary-color); cursor:pointer; font-size:16px; padding:0 2px; vertical-align:middle; }
         .mowing-mode-info-overlay { position:fixed; inset:0; z-index:10000; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(0,0,0,.45); }
-        .mowing-mode-info-dialog { width:min(480px,100%); max-height:80vh; overflow:auto; box-sizing:border-box; padding:20px; border-radius:16px; background:var(--card-background-color,#fff); color:var(--primary-text-color); box-shadow:0 12px 36px rgba(0,0,0,.3); }
+        .mowing-mode-info-dialog { width:min(480px,100%); max-height:80vh; overflow:auto; box-sizing:border-box; padding:20px; border:1px solid rgba(255,255,255,.10); border-radius:18px; background:#1f1f1f; color:#f5f5f5; box-shadow:0 16px 44px rgba(0,0,0,.45); }
         .mowing-mode-info-dialog h3 { margin:0 0 18px; font-size:20px; }
         .mowing-mode-info-dialog > strong { display:block; margin-top:14px; }
-        .mowing-mode-info-dialog p { margin:6px 0 0; line-height:1.5; color:var(--secondary-text-color); }
-        .mowing-mode-edge-highlight { color:var(--primary-text-color); font-weight:700; }
-        .mowing-mode-info-close { width:100%; margin-top:20px; padding:10px 14px; border:0; border-radius:10px; background:var(--primary-color); color:var(--text-primary-color,#fff); font-weight:600; cursor:pointer; }
+        .mowing-mode-info-dialog p { margin:6px 0 0; line-height:1.5; color:#b8b8b8; }
+        .mowing-mode-edge-highlight { color:#ffffff; font-weight:800; }
+        .mowing-mode-info-close { width:100%; margin-top:20px; padding:11px 14px; border:0; border-radius:12px; background:#03a9d9; color:#ffffff; font-weight:700; cursor:pointer; }
 
           .mowing-mode-tile .control-head { gap:8px; }
           .mowing-mode-tile .control-head > span { display:flex; align-items:center; gap:5px; min-width:0; }
