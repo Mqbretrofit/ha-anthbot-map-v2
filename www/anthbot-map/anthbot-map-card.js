@@ -1625,7 +1625,7 @@ class AnthbotMapCard extends HTMLElement {
       efficientText.append(document.createTextNode(efficientDescription.slice(0, edgeIndex)));
       const highlight = document.createElement("strong");
       highlight.className = "mowing-mode-edge-highlight";
-      highlight.textContent = edgeText;
+      highlight.textContent = `${this.t("mowingModeImportant")} ${edgeText}`;
       efficientText.append(highlight, document.createTextNode(efficientDescription.slice(edgeIndex + edgeText.length)));
     } else {
       efficientText.textContent = efficientDescription;
