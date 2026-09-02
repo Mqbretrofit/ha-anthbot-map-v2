@@ -53,6 +53,23 @@ def _safe_get(data: dict[str, Any], *path: str) -> Any:
     return current
 
 
+def _raw_mowing_setting(data: dict[str, Any], key: str) -> Any:
+    """Return a raw mowing-related setting from known Anthbot payload locations."""
+    candidates = (
+        (key,),
+        ("param_set", key),
+        ("mow_remote", key),
+        ("mow_setting", key),
+    )
+    for path in candidates:
+        value = _safe_get(data, *path)
+        if isinstance(value, dict) and "value" in value:
+            value = value.get("value")
+        if value is not None:
+            return value
+    return None
+
+
 def _as_int(value: Any) -> int | None:
     if isinstance(value, bool):
         return int(value)
@@ -969,6 +986,26 @@ SENSORS: tuple[AnthbotSensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=_active_zone_area,
     ),
+    # --- Mowing speed / mode diagnostics ---------------------------------
+    AnthbotSensorDescription(
+        key="mow_speed",
+        name="Mow speed",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _raw_mowing_setting(data, "mow_speed"),
+    ),
+    AnthbotSensorDescription(
+        key="mowing_mode_efficient",
+        name="Mowing mode efficient",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _raw_mowing_setting(data, "mowing_mode_efficient"),
+    ),
+    AnthbotSensorDescription(
+        key="mowing_mode_normal",
+        name="Mowing mode normal",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _raw_mowing_setting(data, "mowing_mode_normal"),
+    ),
+
     AnthbotSensorDescription(
         key="custom_mowing_direction",
         translation_key="custom_mowing_direction",
@@ -1476,6 +1513,24 @@ class AnthbotSensorEntity(
             "voice_status": voice_status,
             "rain_continue_time": rain_continue_time,
         }
+        if self.entity_description.key in {
+            "mow_speed",
+            "mowing_mode_efficient",
+            "mowing_mode_normal",
+        }:
+            raw_sources: dict[str, Any] = {}
+            key = self.entity_description.key
+            for source_name, source_path in (
+                ("top_level", (key,)),
+                ("param_set", ("param_set", key)),
+                ("mow_remote", ("mow_remote", key)),
+                ("mow_setting", ("mow_setting", key)),
+            ):
+                value = _safe_get(state, *source_path)
+                if value is not None:
+                    raw_sources[source_name] = value
+            attributes["raw_sources"] = raw_sources
+
         if self.entity_description.key == "zones":
             manual_zone_list = manual_zones(state)
             attributes["zone_ids"] = [
