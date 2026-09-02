@@ -84,6 +84,46 @@ def _raw_mowing_matches(data: dict[str, Any], key: str) -> list[dict[str, Any]]:
     return matches
 
 
+def _raw_mowing_key_scan(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Collect all reported-state keys whose names mention mow or speed."""
+    matches: list[dict[str, Any]] = []
+    stack: list[tuple[Any, str, int]] = [(data, "", 0)]
+    seen: set[int] = set()
+    while stack:
+        current, path, depth = stack.pop()
+        if depth > 10:
+            continue
+        if isinstance(current, dict):
+            object_id = id(current)
+            if object_id in seen:
+                continue
+            seen.add(object_id)
+            for child_key, child_value in current.items():
+                child_path = f"{path}.{child_key}" if path else str(child_key)
+                key_text = str(child_key).lower()
+                if "mow" in key_text or "speed" in key_text:
+                    if isinstance(child_value, dict) and "value" in child_value:
+                        display_value = child_value.get("value")
+                    elif isinstance(child_value, (str, int, float, bool)) or child_value is None:
+                        display_value = child_value
+                    else:
+                        display_value = type(child_value).__name__
+                    matches.append({
+                        "path": child_path,
+                        "key": str(child_key),
+                        "value": display_value,
+                    })
+                if isinstance(child_value, (dict, list, tuple)):
+                    stack.append((child_value, child_path, depth + 1))
+        elif isinstance(current, (list, tuple)):
+            for index, child_value in enumerate(current):
+                child_path = f"{path}[{index}]"
+                if isinstance(child_value, (dict, list, tuple)):
+                    stack.append((child_value, child_path, depth + 1))
+    matches.sort(key=lambda item: item["path"])
+    return matches
+
+
 def _raw_mowing_setting(data: dict[str, Any], key: str) -> Any:
     """Return the first scalar value for a mowing-related key."""
     for match in _raw_mowing_matches(data, key):
@@ -1012,6 +1052,12 @@ SENSORS: tuple[AnthbotSensorDescription, ...] = (
     ),
     # --- Mowing speed / mode diagnostics ---------------------------------
     AnthbotSensorDescription(
+        key="mowing_protocol_debug",
+        name="Mowing protocol debug",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: len(_raw_mowing_key_scan(data)),
+    ),
+    AnthbotSensorDescription(
         key="mow_speed",
         name="Mow speed",
         entity_category=EntityCategory.DIAGNOSTIC,
@@ -1537,6 +1583,8 @@ class AnthbotSensorEntity(
             "voice_status": voice_status,
             "rain_continue_time": rain_continue_time,
         }
+        if self.entity_description.key == "mowing_protocol_debug":
+            attributes["mowing_keys"] = _raw_mowing_key_scan(state)
         if self.entity_description.key in {
             "mow_speed",
             "mow_regular",
