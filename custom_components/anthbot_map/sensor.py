@@ -53,20 +53,44 @@ def _safe_get(data: dict[str, Any], *path: str) -> Any:
     return current
 
 
+def _raw_mowing_matches(data: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    """Find an exact mowing-related key anywhere in the reported payload."""
+    matches: list[dict[str, Any]] = []
+    stack: list[tuple[Any, str, int]] = [(data, "", 0)]
+    seen: set[int] = set()
+    while stack:
+        current, path, depth = stack.pop()
+        if depth > 10:
+            continue
+        if isinstance(current, dict):
+            object_id = id(current)
+            if object_id in seen:
+                continue
+            seen.add(object_id)
+            for child_key, child_value in current.items():
+                child_path = f"{path}.{child_key}" if path else str(child_key)
+                if child_key == key:
+                    value = child_value
+                    if isinstance(value, dict) and "value" in value:
+                        value = value.get("value")
+                    matches.append({"path": child_path, "value": value})
+                if isinstance(child_value, (dict, list, tuple)):
+                    stack.append((child_value, child_path, depth + 1))
+        elif isinstance(current, (list, tuple)):
+            for index, child_value in enumerate(current):
+                child_path = f"{path}[{index}]"
+                if isinstance(child_value, (dict, list, tuple)):
+                    stack.append((child_value, child_path, depth + 1))
+    return matches
+
+
 def _raw_mowing_setting(data: dict[str, Any], key: str) -> Any:
-    """Return a raw mowing-related setting from known Anthbot payload locations."""
-    candidates = (
-        (key,),
-        ("param_set", key),
-        ("mow_remote", key),
-        ("mow_setting", key),
-    )
-    for path in candidates:
-        value = _safe_get(data, *path)
-        if isinstance(value, dict) and "value" in value:
-            value = value.get("value")
-        if value is not None:
-            return value
+    """Return the first scalar value for a mowing-related key."""
+    for match in _raw_mowing_matches(data, key):
+        value = match.get("value")
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            if value is not None:
+                return value
     return None
 
 
@@ -994,16 +1018,16 @@ SENSORS: tuple[AnthbotSensorDescription, ...] = (
         value_fn=lambda data: _raw_mowing_setting(data, "mow_speed"),
     ),
     AnthbotSensorDescription(
-        key="mowing_mode_efficient",
-        name="Mowing mode efficient",
+        key="mow_regular",
+        name="Mow regular",
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: _raw_mowing_setting(data, "mowing_mode_efficient"),
+        value_fn=lambda data: _raw_mowing_setting(data, "mow_regular"),
     ),
     AnthbotSensorDescription(
-        key="mowing_mode_normal",
-        name="Mowing mode normal",
+        key="mow_shred",
+        name="Mow shred",
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: _raw_mowing_setting(data, "mowing_mode_normal"),
+        value_fn=lambda data: _raw_mowing_setting(data, "mow_shred"),
     ),
 
     AnthbotSensorDescription(
@@ -1515,21 +1539,12 @@ class AnthbotSensorEntity(
         }
         if self.entity_description.key in {
             "mow_speed",
-            "mowing_mode_efficient",
-            "mowing_mode_normal",
+            "mow_regular",
+            "mow_shred",
         }:
-            raw_sources: dict[str, Any] = {}
-            key = self.entity_description.key
-            for source_name, source_path in (
-                ("top_level", (key,)),
-                ("param_set", ("param_set", key)),
-                ("mow_remote", ("mow_remote", key)),
-                ("mow_setting", ("mow_setting", key)),
-            ):
-                value = _safe_get(state, *source_path)
-                if value is not None:
-                    raw_sources[source_name] = value
-            attributes["raw_sources"] = raw_sources
+            attributes["raw_matches"] = _raw_mowing_matches(
+                state, self.entity_description.key
+            )
 
         if self.entity_description.key == "zones":
             manual_zone_list = manual_zones(state)
