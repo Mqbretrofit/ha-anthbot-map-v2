@@ -14,8 +14,8 @@ from .coordinator import AnthbotGenieDataUpdateCoordinator
 from .zones import async_update_zone_settings, auto_zones, manual_zones
 
 _MODE_TO_RAW: dict[str, int] = {
-    "Mode 0": 0,
-    "Mode 1": 1,
+    "Normal": 0,
+    "Efficient": 1,
 }
 _RAW_TO_MODE = {value: key for key, value in _MODE_TO_RAW.items()}
 
@@ -49,7 +49,7 @@ async def async_setup_entry(
 class AnthbotZoneMowingModeSelect(
     CoordinatorEntity[AnthbotGenieDataUpdateCoordinator], SelectEntity
 ):
-    """Raw mow_mode selector persisted through app-compatible area_set."""
+    """Zone mowing mode selector persisted through app-compatible area_set."""
 
     _attr_has_entity_name = True
     _attr_icon = "mdi:format-list-bulleted"
@@ -72,7 +72,7 @@ class AnthbotZoneMowingModeSelect(
         zone = self._find_zone()
         zone_name = zone.get("name") if isinstance(zone, dict) else None
         kind_label = "Auto zone" if zone_kind == "auto" else "Zone"
-        self._attr_name = f"{kind_label} {zone_name or zone_id} mowing mode raw"
+        self._attr_name = f"{kind_label} {zone_name or zone_id} mowing mode"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, coordinator.client.serial_number)},
             manufacturer="Anthbot",
@@ -93,7 +93,7 @@ class AnthbotZoneMowingModeSelect(
 
     @property
     def current_option(self) -> str | None:
-        """Return the zone's currently reported raw mow_mode."""
+        """Return the zone's currently reported mowing mode."""
         zone = self._find_zone()
         if not isinstance(zone, dict):
             return None
@@ -121,7 +121,7 @@ class AnthbotZoneMowingModeSelect(
         }
 
     async def async_select_option(self, option: str) -> None:
-        """Persist mow_mode on this zone through area_set."""
+        """Persist mowing mode on this zone through area_set."""
         raw_value = _MODE_TO_RAW.get(option)
         if raw_value is None:
             raise ValueError(f"Unsupported mowing mode: {option}")
