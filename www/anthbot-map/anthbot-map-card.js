@@ -1549,29 +1549,37 @@ class AnthbotMapCard extends HTMLElement {
     const rawOptions = Array.isArray(entity?.attributes?.options)
       ? entity.attributes.options
       : ["Normal", "Efficient"];
-    const tile = document.createElement("label");
+    const tile = document.createElement("div");
     tile.className = "panel-tile control-tile";
-    const title = document.createElement("span");
-    title.textContent = label;
-    const select = document.createElement("select");
-    select.disabled = !entityId;
-    select.setAttribute("aria-label", label);
+    tile.innerHTML = `
+      <div class="control-head">
+        <span>${label}</span>
+        <strong>${translatedOptions[rawOptions.indexOf(current)] || current || "-"}</strong>
+      </div>
+      <div class="height-options" role="group" aria-label="${label}"></div>
+    `;
+    const options = tile.querySelector(".height-options");
     rawOptions.forEach((option, index) => {
-      const item = document.createElement("option");
-      item.value = option;
-      item.textContent = translatedOptions[index] || option;
-      item.selected = option === current;
-      select.appendChild(item);
-    });
-    select.addEventListener("change", async () => {
-      if (!entityId) return;
-      await this._hass.callService("select", "select_option", {
-        entity_id: entityId,
-        option: select.value,
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "height-option";
+      button.textContent = translatedOptions[index] || option;
+      button.classList.toggle("active", option === current);
+      button.disabled = !entityId;
+      button.addEventListener("click", async () => {
+        if (!entityId) return;
+        options.querySelectorAll(".height-option").forEach((item) => {
+          item.classList.toggle("active", item === button);
+        });
+        tile.querySelector(".control-head strong").textContent = translatedOptions[index] || option;
+        await this._hass.callService("select", "select_option", {
+          entity_id: entityId,
+          option,
+        });
+        this.scheduleRefresh();
       });
-      this.scheduleRefresh();
+      options.appendChild(button);
     });
-    tile.append(title, select);
     return tile;
   }
 
