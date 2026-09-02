@@ -331,7 +331,16 @@ class AnthbotMapCard extends HTMLElement {
             .anthbot-glass-panel { left:8px; right:8px; bottom:60px; width:auto; max-height:76%; }
             .anthbot-menu-toggle { right:9px; bottom:9px; min-height:40px; padding:7px 11px; font-size:14px; }
           }
-        </style>
+        
+        .mowing-mode-info { border:0; background:transparent; color:var(--primary-color); cursor:pointer; font-size:16px; padding:0 2px; vertical-align:middle; }
+        .mowing-mode-info-overlay { position:fixed; inset:0; z-index:10000; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(0,0,0,.45); }
+        .mowing-mode-info-dialog { width:min(480px,100%); max-height:80vh; overflow:auto; box-sizing:border-box; padding:20px; border-radius:16px; background:var(--card-background-color,#fff); color:var(--primary-text-color); box-shadow:0 12px 36px rgba(0,0,0,.3); }
+        .mowing-mode-info-dialog h3 { margin:0 0 18px; font-size:20px; }
+        .mowing-mode-info-dialog > strong { display:block; margin-top:14px; }
+        .mowing-mode-info-dialog p { margin:6px 0 0; line-height:1.5; color:var(--secondary-text-color); }
+        .mowing-mode-edge-highlight { color:var(--primary-text-color); font-weight:700; }
+        .mowing-mode-info-close { width:100%; margin-top:20px; padding:10px 14px; border:0; border-radius:10px; background:var(--primary-color); color:var(--text-primary-color,#fff); font-weight:600; cursor:pointer; }
+</style>
         <section class="app-shell">
           <div class="top-menu">
             <div>
@@ -1553,11 +1562,16 @@ class AnthbotMapCard extends HTMLElement {
     tile.className = "panel-tile control-tile";
     tile.innerHTML = `
       <div class="control-head">
-        <span>${label}</span>
+        <span>${label} <button type="button" class="mowing-mode-info" aria-label="${this.t("mowingModeInfoTitle")}">ⓘ</button></span>
         <strong>${translatedOptions[rawOptions.indexOf(current)] || current || "-"}</strong>
       </div>
       <div class="height-options" role="group" aria-label="${label}"></div>
     `;
+    tile.querySelector(".mowing-mode-info")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.showMowingModeInfo();
+    });
     const options = tile.querySelector(".height-options");
     rawOptions.forEach((option, index) => {
       const button = document.createElement("button");
@@ -1581,6 +1595,54 @@ class AnthbotMapCard extends HTMLElement {
       options.appendChild(button);
     });
     return tile;
+  }
+
+  showMowingModeInfo() {
+    this.shadowRoot.querySelector(".mowing-mode-info-overlay")?.remove();
+    const overlay = document.createElement("div");
+    overlay.className = "mowing-mode-info-overlay";
+    const dialog = document.createElement("div");
+    dialog.className = "mowing-mode-info-dialog";
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.setAttribute("aria-label", this.t("mowingModeInfoTitle"));
+
+    const title = document.createElement("h3");
+    title.textContent = this.t("mowingModeInfoTitle");
+
+    const normalTitle = document.createElement("strong");
+    normalTitle.textContent = this.t("mowingModeNormal");
+    const normalText = document.createElement("p");
+    normalText.textContent = this.t("mowingModeNormalDescription");
+
+    const efficientTitle = document.createElement("strong");
+    efficientTitle.textContent = this.t("mowingModeEfficient");
+    const efficientText = document.createElement("p");
+    const efficientDescription = this.t("mowingModeEfficientDescription");
+    const edgeText = this.t("mowingModeEfficientEdgeHighlight");
+    const edgeIndex = efficientDescription.indexOf(edgeText);
+    if (edgeText && edgeIndex >= 0) {
+      efficientText.append(document.createTextNode(efficientDescription.slice(0, edgeIndex)));
+      const highlight = document.createElement("strong");
+      highlight.className = "mowing-mode-edge-highlight";
+      highlight.textContent = edgeText;
+      efficientText.append(highlight, document.createTextNode(efficientDescription.slice(edgeIndex + edgeText.length)));
+    } else {
+      efficientText.textContent = efficientDescription;
+    }
+
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "mowing-mode-info-close";
+    close.textContent = this.t("close");
+    const dismiss = () => overlay.remove();
+    close.addEventListener("click", dismiss);
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) dismiss();
+    });
+    dialog.append(title, normalTitle, normalText, efficientTitle, efficientText, close);
+    overlay.appendChild(dialog);
+    this.shadowRoot.appendChild(overlay);
   }
 
   createDirectSwitchControl(label, entityId) {
