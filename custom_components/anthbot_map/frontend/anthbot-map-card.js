@@ -1,7 +1,7 @@
 import { AnthbotMapRenderer } from "./renderer.js?v=2411";
 import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=2411";
 import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=2411";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=2411-fix3-ha-custom-buttons";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=243b2-mowing-mode-help3";
 import {
   adjustCalibration,
   cardToYaml,
@@ -331,7 +331,28 @@ class AnthbotMapCard extends HTMLElement {
             .anthbot-glass-panel { left:8px; right:8px; bottom:60px; width:auto; max-height:76%; }
             .anthbot-menu-toggle { right:9px; bottom:9px; min-height:40px; padding:7px 11px; font-size:14px; }
           }
-        </style>
+        
+        .mowing-mode-info { border:0; background:transparent; color:var(--primary-color); cursor:pointer; font-size:16px; padding:0 2px; vertical-align:middle; }
+        .mowing-mode-info-overlay { position:fixed; inset:0; z-index:10000; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(0,0,0,.45); }
+        .mowing-mode-info-dialog { width:min(480px,100%); max-height:80vh; overflow:auto; box-sizing:border-box; padding:20px; border:1px solid rgba(255,255,255,.10); border-radius:18px; background:#1f1f1f; color:#f5f5f5; box-shadow:0 16px 44px rgba(0,0,0,.45); }
+        .mowing-mode-info-dialog h3 { margin:0 0 18px; font-size:20px; }
+        .mowing-mode-info-dialog > strong { display:block; margin-top:14px; }
+        .mowing-mode-info-dialog p { margin:6px 0 0; line-height:1.5; color:#b8b8b8; }
+        .mowing-mode-edge-highlight { color:#ffffff; font-weight:800; }
+        .mowing-mode-info-close { width:100%; margin-top:20px; padding:11px 14px; border:0; border-radius:12px; background:#03a9d9; color:#ffffff; font-weight:700; cursor:pointer; }
+
+          .mowing-mode-tile .control-head { gap:8px; }
+          .mowing-mode-tile .control-head > span { display:flex; align-items:center; gap:5px; min-width:0; }
+          .mowing-mode-tile .control-head > strong { flex:0 1 auto; min-width:0; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+          .mowing-mode-options { display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:8px !important; width:100%; }
+          .mowing-mode-options .height-option { min-width:0 !important; width:100% !important; box-sizing:border-box; padding:9px 6px !important; white-space:nowrap !important; overflow:hidden; text-overflow:ellipsis; font-size:13px; }
+          @media (max-width: 600px) {
+            .mowing-mode-tile .control-head { align-items:flex-start; }
+            .mowing-mode-tile .control-head > strong { font-size:14px; }
+            .mowing-mode-options { gap:6px !important; }
+            .mowing-mode-options .height-option { padding:8px 4px !important; font-size:12px !important; }
+          }
+</style>
         <section class="app-shell">
           <div class="top-menu">
             <div>
@@ -1494,7 +1515,7 @@ class AnthbotMapCard extends HTMLElement {
           this.createDirectNumberControl(this.t("mowCount"), this.findZoneSettingEntity("number", kind, zone, "Mowing passes"), 1, 3, 1, "×"),
           this.createDirectNumberControl(this.t("cutHeight"), this.findZoneSettingEntity("number", kind, zone, "Cutting height"), 30, 70, 5, "mm"),
           this.createDirectObstacleControl(obstacleSwitch, obstacleLevel),
-          this.createDirectSwitchControl(this.t("edgeCutting"), this.findZoneSettingEntity("switch", kind, zone, "Edge cutting")),
+          this.createDirectSelectControl(this.t("mowingMode"), this.findZoneSettingEntity("select", kind, zone, "Mowing mode"), [this.t("mowingModeNormal"), this.t("mowingModeEfficient")]),
           this.createDirectSwitchControl(this.t("customCutDirection"), this.findZoneSettingEntity("switch", kind, zone, "Custom mowing direction")),
           this.createDirectNumberControl(this.t("customDirection"), this.findZoneSettingEntity("number", kind, zone, "Mowing direction"), 0, 180, 1, "deg"),
         );
@@ -1541,6 +1562,99 @@ class AnthbotMapCard extends HTMLElement {
       this.scheduleRefresh();
     });
     return tile;
+  }
+
+  createDirectSelectControl(label, entityId, translatedOptions = []) {
+    const entity = entityId ? this._hass.states[entityId] : null;
+    const current = String(entity?.state || "");
+    const rawOptions = Array.isArray(entity?.attributes?.options)
+      ? entity.attributes.options
+      : ["Normal", "Efficient"];
+    const tile = document.createElement("div");
+    tile.className = "panel-tile control-tile mowing-mode-tile";
+    tile.innerHTML = `
+      <div class="control-head">
+        <span>${label} <button type="button" class="mowing-mode-info" aria-label="${this.t("mowingModeInfoTitle")}">ⓘ</button></span>
+        <strong>${translatedOptions[rawOptions.indexOf(current)] || current || "-"}</strong>
+      </div>
+      <div class="height-options mowing-mode-options" role="group" aria-label="${label}"></div>
+    `;
+    tile.querySelector(".mowing-mode-info")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.showMowingModeInfo();
+    });
+    const options = tile.querySelector(".height-options");
+    rawOptions.forEach((option, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "height-option";
+      button.textContent = translatedOptions[index] || option;
+      button.classList.toggle("active", option === current);
+      button.disabled = !entityId;
+      button.addEventListener("click", async () => {
+        if (!entityId) return;
+        options.querySelectorAll(".height-option").forEach((item) => {
+          item.classList.toggle("active", item === button);
+        });
+        tile.querySelector(".control-head strong").textContent = translatedOptions[index] || option;
+        await this._hass.callService("select", "select_option", {
+          entity_id: entityId,
+          option,
+        });
+        this.scheduleRefresh();
+      });
+      options.appendChild(button);
+    });
+    return tile;
+  }
+
+  showMowingModeInfo() {
+    this.shadowRoot.querySelector(".mowing-mode-info-overlay")?.remove();
+    const overlay = document.createElement("div");
+    overlay.className = "mowing-mode-info-overlay";
+    const dialog = document.createElement("div");
+    dialog.className = "mowing-mode-info-dialog";
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.setAttribute("aria-label", this.t("mowingModeInfoTitle"));
+
+    const title = document.createElement("h3");
+    title.textContent = this.t("mowingModeInfoTitle");
+
+    const normalTitle = document.createElement("strong");
+    normalTitle.textContent = this.t("mowingModeNormal");
+    const normalText = document.createElement("p");
+    normalText.textContent = this.t("mowingModeNormalDescription");
+
+    const efficientTitle = document.createElement("strong");
+    efficientTitle.textContent = this.t("mowingModeEfficient");
+    const efficientText = document.createElement("p");
+    const efficientDescription = this.t("mowingModeEfficientDescription");
+    const edgeText = this.t("mowingModeEfficientEdgeHighlight");
+    const edgeIndex = efficientDescription.indexOf(edgeText);
+    if (edgeText && edgeIndex >= 0) {
+      efficientText.append(document.createTextNode(efficientDescription.slice(0, edgeIndex)));
+      const highlight = document.createElement("strong");
+      highlight.className = "mowing-mode-edge-highlight";
+      highlight.textContent = `${this.t("mowingModeImportant")} ${edgeText}`;
+      efficientText.append(highlight, document.createTextNode(efficientDescription.slice(edgeIndex + edgeText.length)));
+    } else {
+      efficientText.textContent = efficientDescription;
+    }
+
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "mowing-mode-info-close";
+    close.textContent = this.t("close");
+    const dismiss = () => overlay.remove();
+    close.addEventListener("click", dismiss);
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) dismiss();
+    });
+    dialog.append(title, normalTitle, normalText, efficientTitle, efficientText, close);
+    overlay.appendChild(dialog);
+    this.shadowRoot.appendChild(overlay);
   }
 
   createDirectSwitchControl(label, entityId) {
