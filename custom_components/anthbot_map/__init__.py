@@ -89,6 +89,7 @@ PLATFORMS = [
     "binary_sensor",
     "button",
     "number",
+    "select",
     "switch",
     "device_tracker",
     "lawn_mower",
