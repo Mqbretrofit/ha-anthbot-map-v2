@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.4.3-beta.3 — 2026-09-02
+
+- Based directly on v2.4.3-beta.2, preserving all unrelated existing functionality.
+- Adds per-zone Normal/Efficient mowing-mode control using the app-compatible `mow_mode` field.
+- Removes the incorrect zone Edge cutting → `mow_mode` mapping.
+- Adds responsive app-style mode buttons and a translated help popup in all 23 supported languages.
+- Highlights that Efficient mode also mows the zone edge.
+- Fixes mobile mode-button overlap, desktop popup theming, duplicate Important text, and frontend translation cache refresh.
+- Excludes temporary mowing-speed/shadow diagnostic sensors used only during investigation.
+
+See `RELEASE_NOTES_v2.4.3-beta.3.md` and `CHANGELOG_v2.4.3-beta.3_HU.md` for details.
+
 ## 2.4.2 — 2026-08-30
 
 - Adds per-mower custom card-button actions that are configured in the card and persisted in Home Assistant config-entry options.
