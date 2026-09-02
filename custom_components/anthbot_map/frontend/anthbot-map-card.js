@@ -340,6 +340,18 @@ class AnthbotMapCard extends HTMLElement {
         .mowing-mode-info-dialog p { margin:6px 0 0; line-height:1.5; color:var(--secondary-text-color); }
         .mowing-mode-edge-highlight { color:var(--primary-text-color); font-weight:700; }
         .mowing-mode-info-close { width:100%; margin-top:20px; padding:10px 14px; border:0; border-radius:10px; background:var(--primary-color); color:var(--text-primary-color,#fff); font-weight:600; cursor:pointer; }
+
+          .mowing-mode-tile .control-head { gap:8px; }
+          .mowing-mode-tile .control-head > span { display:flex; align-items:center; gap:5px; min-width:0; }
+          .mowing-mode-tile .control-head > strong { flex:0 1 auto; min-width:0; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+          .mowing-mode-options { display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:8px !important; width:100%; }
+          .mowing-mode-options .height-option { min-width:0 !important; width:100% !important; box-sizing:border-box; padding:9px 6px !important; white-space:nowrap !important; overflow:hidden; text-overflow:ellipsis; font-size:13px; }
+          @media (max-width: 600px) {
+            .mowing-mode-tile .control-head { align-items:flex-start; }
+            .mowing-mode-tile .control-head > strong { font-size:14px; }
+            .mowing-mode-options { gap:6px !important; }
+            .mowing-mode-options .height-option { padding:8px 4px !important; font-size:12px !important; }
+          }
 </style>
         <section class="app-shell">
           <div class="top-menu">
@@ -1559,13 +1571,13 @@ class AnthbotMapCard extends HTMLElement {
       ? entity.attributes.options
       : ["Normal", "Efficient"];
     const tile = document.createElement("div");
-    tile.className = "panel-tile control-tile";
+    tile.className = "panel-tile control-tile mowing-mode-tile";
     tile.innerHTML = `
       <div class="control-head">
         <span>${label} <button type="button" class="mowing-mode-info" aria-label="${this.t("mowingModeInfoTitle")}">ⓘ</button></span>
         <strong>${translatedOptions[rawOptions.indexOf(current)] || current || "-"}</strong>
       </div>
-      <div class="height-options" role="group" aria-label="${label}"></div>
+      <div class="height-options mowing-mode-options" role="group" aria-label="${label}"></div>
     `;
     tile.querySelector(".mowing-mode-info")?.addEventListener("click", (event) => {
       event.preventDefault();
