@@ -1,7 +1,7 @@
 import { AnthbotMapRenderer } from "./renderer.js?v=2411";
 import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=2411";
 import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=2411";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=2411-fix3-ha-custom-buttons";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=243b2-mowing-mode-test";
 import {
   adjustCalibration,
   cardToYaml,
@@ -1494,7 +1494,7 @@ class AnthbotMapCard extends HTMLElement {
           this.createDirectNumberControl(this.t("mowCount"), this.findZoneSettingEntity("number", kind, zone, "Mowing passes"), 1, 3, 1, "×"),
           this.createDirectNumberControl(this.t("cutHeight"), this.findZoneSettingEntity("number", kind, zone, "Cutting height"), 30, 70, 5, "mm"),
           this.createDirectObstacleControl(obstacleSwitch, obstacleLevel),
-          this.createDirectSwitchControl(this.t("edgeCutting"), this.findZoneSettingEntity("switch", kind, zone, "Edge cutting")),
+          this.createDirectSelectControl(this.t("mowingMode"), this.findZoneSettingEntity("select", kind, zone, "Mowing mode"), [this.t("mowingModeNormal"), this.t("mowingModeEfficient")]),
           this.createDirectSwitchControl(this.t("customCutDirection"), this.findZoneSettingEntity("switch", kind, zone, "Custom mowing direction")),
           this.createDirectNumberControl(this.t("customDirection"), this.findZoneSettingEntity("number", kind, zone, "Mowing direction"), 0, 180, 1, "deg"),
         );
@@ -1540,6 +1540,38 @@ class AnthbotMapCard extends HTMLElement {
       await this._hass.callService("number", "set_value", {entity_id: entityId, value: Number(input.value)});
       this.scheduleRefresh();
     });
+    return tile;
+  }
+
+  createDirectSelectControl(label, entityId, translatedOptions = []) {
+    const entity = entityId ? this._hass.states[entityId] : null;
+    const current = String(entity?.state || "");
+    const rawOptions = Array.isArray(entity?.attributes?.options)
+      ? entity.attributes.options
+      : ["Normal", "Efficient"];
+    const tile = document.createElement("label");
+    tile.className = "panel-tile control-tile";
+    const title = document.createElement("span");
+    title.textContent = label;
+    const select = document.createElement("select");
+    select.disabled = !entityId;
+    select.setAttribute("aria-label", label);
+    rawOptions.forEach((option, index) => {
+      const item = document.createElement("option");
+      item.value = option;
+      item.textContent = translatedOptions[index] || option;
+      item.selected = option === current;
+      select.appendChild(item);
+    });
+    select.addEventListener("change", async () => {
+      if (!entityId) return;
+      await this._hass.callService("select", "select_option", {
+        entity_id: entityId,
+        option: select.value,
+      });
+      this.scheduleRefresh();
+    });
+    tile.append(title, select);
     return tile;
   }
 
