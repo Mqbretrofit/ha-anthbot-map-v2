@@ -73,14 +73,40 @@ def ridable_areas(data: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def active_manual_zone_ids(data: dict[str, Any]) -> list[int]:
-    """Return active manual zone ids from shadow state."""
+    """Return active manual zone ids, falling back to the remembered task."""
     active_area = data.get("active_area")
-    if not isinstance(active_area, dict):
+    if isinstance(active_area, dict):
+        ids = active_area.get("id")
+        if isinstance(ids, list):
+            active_ids: list[int] = []
+            for item in ids:
+                zone_id = _coerce_zone_id(item)
+                if zone_id is not None and zone_id not in active_ids:
+                    active_ids.append(zone_id)
+            if active_ids:
+                return active_ids
+
+    # The property shadow can drop/clear active_area as soon as a zone task
+    # finishes or while the mower is returning/charging. The coordinator has
+    # already persisted the actual mowing target for Pause/Resume, so use that
+    # exact task as the fallback instead of treating a stale "globalmowing"
+    # status as a full-area job in the dashboard.
+    task = data.get("_last_mowing_task")
+    if not isinstance(task, dict) or task.get("type") != "manual_zone":
         return []
-    ids = active_area.get("id")
+    task_data = task.get("data")
+    if not isinstance(task_data, dict):
+        return []
+    ids = task_data.get("id")
     if not isinstance(ids, list):
-        return []
-    return [item for item in ids if isinstance(item, int)]
+        ids = [ids] if ids is not None else []
+
+    result: list[int] = []
+    for item in ids:
+        zone_id = _coerce_zone_id(item)
+        if zone_id is not None and zone_id not in result:
+            result.append(zone_id)
+    return result
 
 
 def zone_attribute_payload(zones: list[dict[str, Any]]) -> list[dict[str, Any]]:
