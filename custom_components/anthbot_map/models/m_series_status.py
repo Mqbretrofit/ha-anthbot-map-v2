@@ -54,12 +54,12 @@ def _record_items(records: object) -> list[dict[str, Any]]:
 
 
 def _infer_task_from_record(record: dict[str, Any]) -> tuple[str, Any] | None:
-    """Infer a completed M-series task from a cloud history record.
+    """Interpret a completed M-series cloud-history record.
 
-    Captured M9 Pro records (2026-09-04) use mow_mode=0 for full-area mowing.
-    Zone modes are deliberately not guessed until a real zone record is
-    captured. If a future response includes explicit zone identifiers, use
-    those directly.
+    This helper is kept for diagnostics/history-mode work only.  Completed
+    records must never recreate ``last_mowing_task`` because Stop explicitly
+    deletes the resumable task.  Captured M9 Pro records use mow_mode=0 for
+    full-area mowing; other mode values are not guessed until captured.
     """
     for key in ("zone_ids", "zones", "area_ids"):
         value = record.get(key)
@@ -87,12 +87,11 @@ def _remember_if_changed(
     if not isinstance(current_state, dict):
         return
 
+    # Only a currently active/live mower state may create or update the
+    # resumable task.  Never fall back to the newest completed cloud-history
+    # record here: after Stop that record still exists and would immediately
+    # resurrect a task that async_clear_last_mowing_task() just deleted.
     inferred = _infer_task(current_state)
-    if inferred is None:
-        records = current_state.get("_mowing_records")
-        items = _record_items(records)
-        if items:
-            inferred = _infer_task_from_record(items[0])
     if inferred is None:
         return
 
