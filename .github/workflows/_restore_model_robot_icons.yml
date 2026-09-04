@@ -46,14 +46,14 @@ jobs:
           sensor_path = Path('custom_components/anthbot_map/sensor.py')
           sensor = sensor_path.read_text(encoding='utf-8')
           old_sensor = '''        return {
-              "serial_number": self.coordinator.client.serial_number,
-              "pose": state.get("pose"),
-          '''
+            "serial_number": self.coordinator.client.serial_number,
+            "pose": state.get("pose"),
+'''
           new_sensor = '''        return {
-              "serial_number": self.coordinator.client.serial_number,
-              "model": self.coordinator.device.model,
-              "pose": state.get("pose"),
-          '''
+            "serial_number": self.coordinator.client.serial_number,
+            "model": self.coordinator.device.model,
+            "pose": state.get("pose"),
+'''
           if sensor.count(old_sensor) != 1:
               raise SystemExit(f'Expected exactly one map attribute block, found {sensor.count(old_sensor)}')
           sensor_path.write_text(sensor.replace(old_sensor, new_sensor, 1), encoding='utf-8')
