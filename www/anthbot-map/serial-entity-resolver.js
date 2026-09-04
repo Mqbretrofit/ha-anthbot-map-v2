@@ -16,13 +16,15 @@ const anthbotCommandFromEvent = (event) => {
   return "";
 };
 
-if (typeof window !== "undefined" && window.__anthbotScopedPauseCaptureInstalled !== true) {
-  window.__anthbotScopedPauseCaptureInstalled = true;
+if (typeof window !== "undefined" && window.__anthbotScopedCommandCaptureInstalled !== true) {
+  window.__anthbotScopedCommandCaptureInstalled = true;
   window.addEventListener("click", async (event) => {
     const command = anthbotCommandFromEvent(event);
-    if (command !== "pause" && command !== "resume") return;
+    if (!new Set(["start", "pause", "resume"]).has(command)) return;
     const card = anthbotCardFromEvent(event);
     if (!card?._hass?.callService) return;
+    if (card.effectiveCustomButtonAction?.(command)) return;
+
     const serial = String(
       card?.entity?.attributes?.serial_number
         ?? card?.entity?.attributes?.serial
@@ -30,9 +32,15 @@ if (typeof window !== "undefined" && window.__anthbotScopedPauseCaptureInstalled
     ).trim();
     if (!serial) return;
 
+    const service = {
+      start: "start_full_mow",
+      pause: "pause_mow",
+      resume: "resume_mow",
+    }[command];
+    if (!service) return;
+
     event.preventDefault();
     event.stopImmediatePropagation();
-    const service = command === "pause" ? "pause_mow" : "resume_mow";
     try {
       card.notify?.(card.feedback?.("commandSentWaiting", card.commandLabel?.(service) || service));
       await card._hass.callService("anthbot_map", service, { serial_number: serial });
