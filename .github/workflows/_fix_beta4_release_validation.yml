@@ -1,0 +1,97 @@
+name: Fix beta4 release validation
+
+on:
+  push:
+    branches:
+      - release/v2.4.3-beta.4
+    paths:
+      - .github/workflows/_fix_beta4_release_validation.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/v2.4.3-beta.4
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Apply minimal beta4 validation fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          sensor = Path("custom_components/anthbot_map/sensor.py")
+          source = sensor.read_text(encoding="utf-8")
+          old = '            "pose",\n            "serial_number",\n            "mower_status",'
+          new = '            "pose",\n            "serial_number",\n            "model",\n            "mower_status",'
+          assert source.count(old) == 1, source.count(old)
+          sensor.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+          init = Path("custom_components/anthbot_map/__init__.py")
+          source = init.read_text(encoding="utf-8")
+          old = 'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.3-beta.3"'
+          new = 'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.3-beta.4"'
+          assert source.count(old) == 1, source.count(old)
+          init.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+          calibration_test = Path("tests/test_calibration_alignment.py")
+          source = calibration_test.read_text(encoding="utf-8")
+          old = '        source = base64.b64encode((FRONTEND / "calibration.js").read_bytes()).decode("ascii")\n'
+          new = (
+              '        calibration_source = (FRONTEND / "calibration.js").read_text(encoding="utf-8")\n'
+              '        calibration_source, replacements = re.subn(\n'
+              '            r\'^import "\\./serial-entity-resolver\\.js(?:\\?v=[^\"]+)?";\\n\',\n'
+              '            "",\n'
+              '            calibration_source,\n'
+              '            count=1,\n'
+              '            flags=re.MULTILINE,\n'
+              '        )\n'
+              '        self.assertEqual(replacements, 1)\n'
+              '        source = base64.b64encode(calibration_source.encode("utf-8")).decode("ascii")\n'
+          )
+          assert source.count(old) == 1, source.count(old)
+          calibration_test.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+          history_test = Path("tests/test_mowing_history_v230.py")
+          source = history_test.read_text(encoding="utf-8")
+          old = '            for path in (INTEGRATION / "m_series_compat.py", INTEGRATION / "api.py")\n'
+          new = (
+              '            for path in (\n'
+              '                *sorted((INTEGRATION / "models").glob("m_series_*.py")),\n'
+              '                INTEGRATION / "api.py",\n'
+              '            )\n'
+          )
+          assert source.count(old) == 1, source.count(old)
+          source = source.replace(old, new, 1)
+          old = '        self.assertEqual(manifest["version"], "2.4.3-beta.3")\n'
+          new = '        self.assertEqual(manifest["version"], "2.4.3-beta.4")\n'
+          assert source.count(old) == 1, source.count(old)
+          source = source.replace(old, new, 1)
+          old = "        self.assertIn('?v=2.4.3-beta.3', init_source)\n"
+          new = "        self.assertIn('?v=2.4.3-beta.4', init_source)\n"
+          assert source.count(old) == 1, source.count(old)
+          history_test.write_text(source.replace(old, new, 1), encoding="utf-8")
+          PY
+
+          python -m py_compile custom_components/anthbot_map/sensor.py custom_components/anthbot_map/__init__.py
+          python -m unittest discover -s tests -v
+          find custom_components www -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          cmp custom_components/anthbot_map/frontend/anthbot-map-card.js www/anthbot-map/anthbot-map-card.js
+          cmp custom_components/anthbot_map/frontend/i18n.js www/anthbot-map/i18n.js
+          cmp custom_components/anthbot_map/frontend/renderer.js www/anthbot-map/renderer.js
+          cmp custom_components/anthbot_map/frontend/styles.css www/anthbot-map/styles.css
+
+          rm .github/workflows/_fix_beta4_release_validation.yml
+          git config user.name "Mqbretrofit"
+          git config user.email "matrai.attila975@gmail.com"
+          git add -A
+          git commit -m "Fix v2.4.3-beta.4 release validation"
+          git push origin HEAD:release/v2.4.3-beta.4
