@@ -7,7 +7,7 @@ import unittest
 
 
 ROOT = Path(__file__).parents[1]
-COORDINATOR = ROOT / "custom_components/anthbot_map/coordinator.py"
+COORDINATOR = ROOT / "custom_components/anthbot_map/models/genie.py"
 SENSOR = ROOT / "custom_components/anthbot_map/sensor.py"
 
 
