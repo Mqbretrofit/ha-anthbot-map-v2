@@ -28,7 +28,7 @@ def test_control_resolver_is_serial_scoped_and_fail_closed() -> None:
     """One mower may never fall through to another mower's HA entities."""
     source = _read(RUNTIME_FRONTEND / "serial-entity-resolver.js")
 
-    assert 'ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-04-control-v5"' in source
+    assert 'ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-04-control-v6"' in source
     assert "serialOf(state) === identity.serial" in source
     assert 'return String(this.config?.entity || "")' in source
     assert 'return this.findEntity("switch", ["battery_saver_mode", "battery saver mode"])' in source
@@ -38,25 +38,21 @@ def test_control_resolver_is_serial_scoped_and_fail_closed() -> None:
     assert "document.removeEventListener(\"click\", handler, true)" in source
 
 
-def test_dashboard_primary_controls_use_direct_anthbot_services() -> None:
-    """Dashboard controls must bypass the unreliable button.press layer."""
+def test_primary_mowing_tile_uses_direct_anthbot_services() -> None:
+    """Start/Pause/Resume must not depend on command-button discovery."""
     source = _read(RUNTIME_FRONTEND / "serial-entity-resolver.js")
-    for mapping in (
-        'start: "start_full_mow"',
-        'stop: "stop_mow"',
-        'dock: "return_to_dock"',
-        'pause: "pause_mow"',
-        'resume: "resume_mow"',
-        '"outer-edge": "start_outer_edge_mow"',
-        '"dock-edge": "start_dock_edge_mow"',
-    ):
-        assert mapping in source
-    assert "await this.callAnthbotService(service)" in source
-    assert 'this.callAnthbotService("start_zone_mow"' in source
+    assert "proto.handlePrimaryMowingAction = async function (action)" in source
+    assert 'await this.callAnthbotService("pause_mow")' in source
+    assert 'await this.callAnthbotService("resume_mow")' in source
+    assert 'await this.callAnthbotService("start_full_mow")' in source
+    assert 'await this.callAnthbotService("start_zone_mow"' in source
+    assert 'await this.callAnthbotService("start_auto_zone_mow"' in source
+    assert 'await this.callAnthbotService("start_outer_edge_mow")' in source
+    assert 'await this.callAnthbotService("start_dock_edge_mow")' in source
 
 
 def test_native_buttons_expose_serial_number() -> None:
-    """Native entities remain uniquely attributable even though the card bypasses them."""
+    """Native entities remain uniquely attributable to a mower."""
     source = _read(INTEGRATION / "button.py")
     assert "def extra_state_attributes" in source
     assert 'return {"serial_number": self.coordinator.client.serial_number}' in source
