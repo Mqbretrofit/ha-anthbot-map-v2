@@ -24,9 +24,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          base64 --decode _m9_icon_96_valid.b64 > /tmp/m9.png
-          base64 --decode _m9_pro_icon_96_valid.b64 > /tmp/m9-pro.png
-          python -c 'from pathlib import Path; assert Path("/tmp/m9.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n"); assert Path("/tmp/m9-pro.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")'
+          tr -cd 'A-Za-z0-9+/=' < _m9_icon_96_valid.b64 | base64 --decode > /tmp/m9.png
+          tr -cd 'A-Za-z0-9+/=' < _m9_pro_icon_96_valid.b64 | base64 --decode > /tmp/m9-pro.png
+          echo 'ec497cf1eb67aa7d6bdd2981265992cec55b04d70f6c4dbed101955376667bb6  /tmp/m9.png' | sha256sum -c -
+          echo '0b4ecf2a844ddd58f62da8cc246b40fd3c322f138bcaa7c575a975bb5d083e39  /tmp/m9-pro.png' | sha256sum -c -
           cp /tmp/m9.png custom_components/anthbot_map/frontend/m9.png
           cp /tmp/m9.png www/anthbot-map/m9.png
           cp /tmp/m9-pro.png custom_components/anthbot_map/frontend/m9-pro.png
