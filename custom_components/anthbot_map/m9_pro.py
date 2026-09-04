@@ -10,7 +10,7 @@ from .base import is_m9_pro_model
 from . import m_series_common as _common
 
 TYPE_KEY = "m9_pro"
-_PATH_MAX_POINTS = 5000
+_PATH_MAX_POINTS = 50000
 _MAP_CANDIDATES = ("multi_maps.tar.gz", "map_manager.tar.gz")
 
 
@@ -18,26 +18,125 @@ def matches(model: object) -> bool:
     return is_m9_pro_model(model)
 
 
+def _path_points_with_metadata(decoded: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return finite M9 Pro path points without dropping path metadata."""
+    raw_points = decoded.get("_path_points")
+    if not isinstance(raw_points, list):
+        return []
+
+    points: list[dict[str, Any]] = []
+    for raw in raw_points:
+        if not isinstance(raw, dict):
+            continue
+        try:
+            x = float(raw.get("x"))
+            y = float(raw.get("y"))
+        except (TypeError, ValueError):
+            continue
+        point = dict(raw)
+        point["x"] = x
+        point["y"] = y
+        points.append(point)
+    return points
+
+
+def _bootstrap_existing_path(coordinator: Any) -> list[dict[str, Any]]:
+    """Reuse the full path already loaded before a live M9 Pro delta arrives."""
+    accumulator = getattr(coordinator, "_m_series_path_accumulator", None)
+    if isinstance(accumulator, list) and accumulator:
+        return list(accumulator)
+
+    state = getattr(coordinator, "reported_state", {})
+    if not isinstance(state, dict):
+        return []
+
+    for key in ("_path_definition", "path_definition"):
+        definition = state.get(key)
+        if isinstance(definition, dict):
+            points = _path_points_with_metadata(definition)
+            if points:
+                return points
+
+    for key in ("path", "mowed_path", "cloud_path"):
+        value = state.get(key)
+        if isinstance(value, list) and value:
+            points: list[dict[str, Any]] = []
+            for raw in value:
+                if not isinstance(raw, dict):
+                    continue
+                try:
+                    x = float(raw.get("x"))
+                    y = float(raw.get("y"))
+                except (TypeError, ValueError):
+                    continue
+                point = dict(raw)
+                point["x"] = x
+                point["y"] = y
+                points.append(point)
+            if points:
+                return points
+    return []
+
+
 def _accumulate_path(
     coordinator: Any,
     decoded: dict[str, Any],
     packet_points: list[dict[str, float]],
-) -> list[dict[str, float]]:
-    """M9 Pro live-curpath accumulation policy from the working beta3 behavior."""
+) -> list[dict[str, Any]]:
+    """Merge an M9 Pro curpath delta at its absolute ``start`` index.
+
+    Real M9 Pro data can publish only the tail of a much longer path. For
+    example a 12-point packet with start=19652 belongs at positions
+    19652..19663 of an already-known 19664-point path; treating that packet as
+    a complete path makes the visible mowing trail disappear.
+    """
+    del packet_points  # use decoded points so type/clean_time are retained
+
+    packet = _path_points_with_metadata(decoded)
     path_id = decoded.get("path_id")
-    accumulator = getattr(coordinator, "_m_series_path_accumulator", [])
     previous_path_id = getattr(coordinator, "_m_series_path_id", None)
 
-    if not isinstance(accumulator, list) or previous_path_id != path_id:
-        accumulator = list(packet_points)
-        setattr(coordinator, "_m_series_path_id", path_id)
-    elif packet_points:
-        if not accumulator:
-            accumulator = list(packet_points)
-        elif _common.point_distance(accumulator[-1], packet_points[-1]) > 0:
-            accumulator.append(packet_points[-1])
+    try:
+        start = int(decoded.get("start", 0) or 0)
+    except (TypeError, ValueError):
+        start = 0
+    start = max(0, start)
 
-    return accumulator[-_PATH_MAX_POINTS:]
+    accumulator = _bootstrap_existing_path(coordinator)
+
+    # A genuinely new path that begins at zero is a new mowing/mapping task.
+    if previous_path_id is not None and previous_path_id != path_id and start == 0:
+        accumulator = []
+
+    if packet:
+        if start == 0:
+            # Full snapshot / start of a new task.
+            accumulator = list(packet)
+        elif accumulator:
+            if start <= len(accumulator):
+                end = start + len(packet)
+                if end <= len(accumulator):
+                    accumulator[start:end] = packet
+                else:
+                    accumulator[start:] = packet
+            else:
+                # We have a gap because HA started after the mower session.
+                # Do not fabricate coordinates for the missing range; retain
+                # the known prefix and append the newest usable tail.
+                accumulator.extend(packet)
+        else:
+            # No historical/full path is available yet. Keep the live packet
+            # rather than showing nothing; a later full path can replace it.
+            accumulator = list(packet)
+
+    setattr(coordinator, "_m_series_path_id", path_id)
+
+    # Keep enough points for a complete M9 Pro mowing session; the previous
+    # 5000-point limit could truncate a 19k+ point path even when decoding was
+    # otherwise correct.
+    if len(accumulator) > _PATH_MAX_POINTS:
+        accumulator = accumulator[-_PATH_MAX_POINTS:]
+    return accumulator
 
 
 def _map_candidates(property_state: dict[str, Any]) -> tuple[str, ...]:
