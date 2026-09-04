@@ -1,6 +1,7 @@
-"""M-series compatibility entry point for the clean rebuild."""
+"""Model compatibility entry point for the clean rebuild."""
 
 from .entity_identity import install_setting_entity_identity
+from .genie_status import install_genie_live_status_support
 from .m_series_legacy import install_m_series_compat as _install_legacy
 from .m_series_control import install_m_series_control_support
 from .m_series_map import install_m_series_map_support
@@ -25,3 +26,7 @@ def install_m_series_compat() -> None:
     install_m_series_path_support()
     install_m_series_map_support()
     install_m_series_status_support()
+    # Genie may report live robot state on the service named shadow. Promote
+    # only those telemetry fields into the same HA update path used by the
+    # M-series property shadow, without changing any M-series behavior.
+    install_genie_live_status_support()
