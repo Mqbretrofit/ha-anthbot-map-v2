@@ -22,7 +22,16 @@ valamint egy saját légi vagy drónfelvétel a kertről.
 
 ## Aktuális verzió
 
-Stabil verzió: **2.4.2**
+Stabil verzió: **2.4.3**
+
+### A 2.4.3 legfontosabb változásai
+
+- **Az M-szérián már működik a térképkezelés**, beleértve a gyep határvonalát, a nyírási útvonalat és a zónakezelést. Az M-szériás térképkezelés **ANTHBOT M9 Pro modellen közvetlenül tesztelve és ellenőrizve lett**.
+- Különvált a Genie és az M-széria (**M5/M9/M9 Pro**) modellfüggő térkép-, vezérlés-, állapot- és előzménykezelése, így az egyik modell javítása nem írja felül a másik működését.
+- Javult az M-szériás zónanyírás és a nyírási előzmények zónaazonosítása; a kártya továbbra is a saját számított nyírási százalékát használja.
+- Az M9 Pro leállítási parancsa az alkalmazásban megfigyelt protokollhoz igazodik.
+- Visszakerültek a modellfüggő robotképek: az M9 Pro saját képet, az M9/M5 M9 képet kap, a Genie képe változatlan marad.
+- A 2.4.2 és a korábbi Genie funkciók megmaradtak.
 
 ### A 2.4.2 legfontosabb változásai
 
@@ -96,17 +105,20 @@ Stabil verzió: **2.4.2**
 - Megjelent az M5/M9 modellek kísérleti shadow- és élőútvonal-kezelése.
 
 > [!IMPORTANT]
-> **Az ANTHBOT M5 és M9 modelleknél a térképes megjelenítés jelenleg még nem
-> működik.** Az M5/M9 támogatás kísérleti, ezért az elérhető állapotok és
-> funkciók modellenként és firmware-verziónként eltérhetnek.
+> **Az ANTHBOT M-szérián (M5/M9/M9 Pro) már működik a térképkezelés.** A
+> határvonal-, nyírásiútvonal- és zónakezelés **M9 Pro modellen közvetlenül
+> tesztelve és ellenőrizve lett**. Az M5 és M9 ugyanazt az M-szériás
+> modellréteget használja, de ezeket a modelleket még nem tudtuk közvetlenül
+> hardveren tesztelni.
 
 ## Támogatott modellek
 
-Az integráció elsősorban az ANTHBOT Genie sorozattal lett tesztelve.
+Az integráció az ANTHBOT Genie és az M-széria modellcsaládját is támogatja.
 
-- ANTHBOT Genie: elsődlegesen támogatott
-- ANTHBOT M5/M9: kísérleti támogatás
-- M5/M9 térképes megjelenítés: jelenleg nem működik
+- **ANTHBOT Genie:** támogatott; a meglévő Genie funkciók változatlanul megmaradtak.
+- **ANTHBOT M9 Pro:** az M-szériás térkép-, vezérlés-, állapot- és előzménykezelés támogatott és közvetlenül hardveren tesztelt.
+- **ANTHBOT M9:** a közös M-szériás megvalósítással támogatott; közvetlen hardverteszt még nem történt.
+- **ANTHBOT M5:** a közös M-szériás megvalósítással támogatott; közvetlen hardverteszt még nem történt.
 
 ## Más ANTHBOT-integráció használata
 
@@ -216,7 +228,7 @@ kézzel hozzáadni.
 2. Adj hozzá egy új erőforrást:
 
    ```text
-   /anthbot-map-v2/anthbot-map-card.js?v=2.4.2
+   /anthbot-map-v2/anthbot-map-card.js?v=2.4.3
    ```
 
 3. Típusnak válaszd a **JavaScript module** lehetőséget.
@@ -478,7 +490,7 @@ HACS használata esetén:
 Storage módú Lovelace esetén az integráció automatikusan frissíti az erőforrás
 verzióparaméterét. YAML erőforrásmódban frissítés után módosítsd a
 gyorsítótárat megkerülő verzióparamétert, például:
-`/anthbot-map-v2/anthbot-map-card.js?v=2.4.2`.
+`/anthbot-map-v2/anthbot-map-card.js?v=2.4.3`.
 
 # Hibaelhárítás
 

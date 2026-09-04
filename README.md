@@ -22,7 +22,16 @@ aerial or drone photograph of the garden.
 
 ## Current version
 
-Stable version: **2.4.2**
+Stable version: **2.4.3**
+
+### Highlights in 2.4.3
+
+- **M-series map handling now works**, including lawn boundary, mowing path and zone handling. The M-series map implementation has been **directly tested and verified on ANTHBOT M9 Pro**.
+- Genie and M-series (**M5/M9/M9 Pro**) model-specific map, control, status and history paths are separated to prevent cross-model regressions.
+- M-series zone mowing and mowing-history zone association have been improved while keeping the card's own calculated mowing percentage.
+- M9 Pro STOP handling follows the observed official-app protocol.
+- Model-specific mower images are restored: M9 Pro uses its own image, M9/M5 use the M9 image, and the Genie image remains unchanged.
+- Existing Genie functionality and the features from the 2.4.2 release are preserved.
 
 ### Highlights in 2.4.2
 
@@ -91,17 +100,19 @@ Stable version: **2.4.2**
 - Experimental M5/M9 shadow and live-path handling has been added.
 
 > [!IMPORTANT]
-> **Map display is not yet working on ANTHBOT M5 and M9 mowers.** M5/M9
-> support is experimental, and available states and features can vary by model
-> and firmware version.
+> **Map handling is now supported on the ANTHBOT M-series (M5/M9/M9 Pro).**
+> Boundary, mowing-path and zone handling have been directly tested and verified
+> on an **M9 Pro**. M5 and M9 use the same model-specific M-series architecture,
+> but those two models have not been directly hardware-tested by this project yet.
 
 ## Supported models
 
-The integration is tested primarily with ANTHBOT Genie-series mowers.
+The integration supports ANTHBOT Genie and the M-series model family.
 
-- ANTHBOT Genie: primary support
-- ANTHBOT M5/M9: experimental support
-- M5/M9 map display: not currently working
+- **ANTHBOT Genie:** supported; existing Genie functionality is preserved.
+- **ANTHBOT M9 Pro:** M-series map/control/status/history path supported and directly hardware-tested.
+- **ANTHBOT M9:** supported through the shared M-series implementation; not directly hardware-tested by this project yet.
+- **ANTHBOT M5:** supported through the shared M-series implementation; not directly hardware-tested by this project yet.
 
 ## Using another ANTHBOT integration
 
@@ -204,7 +215,7 @@ Resource type: **JavaScript module**. No manual setup is normally required.
 2. Add:
 
    ```text
-   /anthbot-map-v2/anthbot-map-card.js?v=2.4.2
+   /anthbot-map-v2/anthbot-map-card.js?v=2.4.3
    ```
 
 3. Select type **JavaScript module**.
@@ -453,7 +464,7 @@ When using HACS:
 
 In Lovelace storage mode, the integration updates the resource version
 automatically. In YAML resource mode, update the cache-busting query after an
-upgrade, for example `/anthbot-map-v2/anthbot-map-card.js?v=2.4.2`.
+upgrade, for example `/anthbot-map-v2/anthbot-map-card.js?v=2.4.3`.
 
 # Troubleshooting
 
@@ -474,7 +485,7 @@ Check that the correct map entity is configured, its state is `ready`, and its
 attributes contain `pose` and map data. Also check the Home Assistant log for
 `anthbot_map` errors.
 
-Map display on M5/M9 is a known limitation and is not currently working.
+M-series map handling is supported in 2.4.3 and has been directly tested on M9 Pro.
 
 ## Mower heading is incorrect
 
