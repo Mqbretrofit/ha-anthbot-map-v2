@@ -138,8 +138,6 @@ async def _async_get_m_series_mowing_records(
 
     data = payload.get("data")
     if isinstance(data, dict):
-        # v3 currently returns {data: [...], total, total_area, ...}. Preserve
-        # the whole object so the existing History UI also gets the totals.
         normalized = dict(data)
     elif isinstance(data, list):
         normalized = {"data": data}
@@ -160,8 +158,6 @@ async def _refresh_m_series_records_if_needed(
     now = time.monotonic()
     last = float(getattr(self, "_m_series_record_last_download_monotonic", 0.0) or 0.0)
     if last and now - last < _M_SERIES_RECORD_REFRESH_SECONDS:
-        # The coordinator may have rebuilt the merged state since the last
-        # poll. Always reattach our M-series records to that returned state.
         records = getattr(self, "_m_series_mowing_records", None)
         if isinstance(records, dict):
             self._mowing_records = records
@@ -204,7 +200,7 @@ async def _refresh_m_series_records_if_needed(
 
 
 def install_m_series_status_support() -> None:
-    """Add M-series live target persistence and v3 cloud mowing history."""
+    """Add M-series live target persistence, cloud history and battery compatibility."""
     global _INSTALLED
     if _INSTALLED:
         return
@@ -212,6 +208,7 @@ def install_m_series_status_support() -> None:
 
     previous_live = AnthbotGenieDataUpdateCoordinator._async_handle_live_shadow
     previous_update = AnthbotGenieDataUpdateCoordinator._async_update_data
+    previous_robot_status = AnthbotGenieDataUpdateCoordinator._robot_status
 
     async def live_shadow(self, shadow_name: str, reported: dict[str, Any]) -> None:
         await previous_live(self, shadow_name, reported)
@@ -224,9 +221,23 @@ def install_m_series_status_support() -> None:
         if _is_m_series(getattr(self.device, "model", None)):
             await _refresh_m_series_records_if_needed(self, state)
             _remember_if_changed(self, state)
-        # Important: return the newly built state. Returning self.reported_state
-        # here would hand DataUpdateCoordinator the previous snapshot.
         return state
+
+    def robot_status(self, data: dict[str, Any]) -> str:
+        """Treat M-series shutdown-on-dock as standby for battery-saver logic only.
+
+        M5/M9/M9 Pro can report ``shutdown`` while physically docked after the
+        smart-plug charger has been switched off. The beta3 shutdown guard
+        otherwise interprets that as leaving the dock and cancels its 55+1
+        minute keep-awake cycle. The coordinator's private _robot_status helper
+        is only used by the battery-saver state machine, so normalize that one
+        M-series state here without changing the public mower status sensor.
+        """
+        status = previous_robot_status(data)
+        if _is_m_series(getattr(self.device, "model", None)) and status == "shutdown":
+            return "standby"
+        return status
 
     AnthbotGenieDataUpdateCoordinator._async_handle_live_shadow = live_shadow
     AnthbotGenieDataUpdateCoordinator._async_update_data = update_data
+    AnthbotGenieDataUpdateCoordinator._robot_status = robot_status
