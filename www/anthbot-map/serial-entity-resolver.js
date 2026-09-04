@@ -63,6 +63,24 @@ if (typeof customElements !== "undefined") {
     const originalHandleCommand = proto.handleCommand;
     if (typeof originalHandleCommand === "function") {
       proto.handleCommand = async function (command) {
+        const normalizedCommand = String(command || "");
+        const customAction = this.effectiveCustomButtonAction?.(normalizedCommand);
+        if ((normalizedCommand === "pause" || normalizedCommand === "resume") && !customAction) {
+          const identity = mapIdentity(this);
+          const service = normalizedCommand === "pause" ? "pause_mow" : "resume_mow";
+          if (!identity.serial) return await originalHandleCommand.call(this, command);
+          try {
+            this.notify?.(this.feedback?.("commandSentWaiting", this.commandLabel?.(service) || service));
+            await this._hass.callService("anthbot_map", service, { serial_number: identity.serial });
+            this.scheduleRefresh?.(200);
+            return;
+          } catch (error) {
+            console.error(`Anthbot ${service} failed`, error);
+            this.notify?.(String(error?.message || error));
+            return;
+          }
+        }
+
         const oldConfigEntity = this.config?.entity;
         if (this.config && this._activeEntityId) this.config.entity = this._activeEntityId;
         try { return await originalHandleCommand.call(this, command); }
