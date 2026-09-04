@@ -41,6 +41,7 @@ from urllib.parse import quote
 
 from . import mqtt_live
 from .api import AnthbotGenieApiError, AnthbotShadowApiClient, decode_device_definition
+from .base import model_family_key
 from .coordinator import AnthbotGenieDataUpdateCoordinator
 from .definition_refresh import map_archive_diagnostics, select_map_archive
 
@@ -52,9 +53,25 @@ _M_SERIES_MAP_PROBE_RETRY_SECONDS = 60.0
 _M_SERIES_PATH_MAX_POINTS = 5000
 _M_SERIES_MAP_CANDIDATES = ("multi_maps.tar.gz", "map_manager.tar.gz")
 
-def _is_m_series(model: object) -> bool:
-    value = str(model or "").upper()
-    return "M5" in value or "M9" in value
+
+def _model_family(model: object) -> str:
+    """Return the explicit model family used by the M-series compatibility layer."""
+    return model_family_key(model)
+
+
+def _is_m9_pro(model: object) -> bool:
+    """Return whether the model is routed to the dedicated M9 Pro family."""
+    return _model_family(model) == "m9_pro"
+
+
+def _is_m5(model: object) -> bool:
+    """Return whether the model is routed to the dedicated M5 family."""
+    return _model_family(model) == "m5"
+
+
+def _uses_m_series_transport(model: object) -> bool:
+    """Return whether this model uses the M-series shadow/command transport."""
+    return _is_m9_pro(model) or _is_m5(model)
 
 
 def _serial_from_topic(topic: str) -> str | None:
@@ -281,40 +298,25 @@ def install_m_series_compat() -> None:
         original_coordinator_init(self, *args, **kwargs)
         model = getattr(self.device, "model", None)
         setattr(self.client, "_device_model", model)
-        is_m_series = _is_m_series(model)
-        if is_m_series:
+        family = _model_family(model)
+        setattr(self, "_anthbot_model_family", family)
+        if family in {"m9_pro", "m5"}:
             _M_SERIES_SERIALS.add(self.client.serial_number)
             setattr(self, "_m_series_path_accumulator", [])
             setattr(self, "_m_series_path_id", None)
             setattr(self, "_m_series_last_pose", None)
 
     async def live_shadow(self, shadow_name: str, reported: dict[str, Any]) -> None:
-        # An anonymized real-M9 capture from 2026-08-19
-        # reports live position/path fields (curpath, anti_loss_pose, mode,
-        # ...) exclusively on the *property* named shadow -- exactly like
-        # Genie/base devices, and unlike the speculative "M5/M9 uses
-        # service" premise this module used to assume unconditionally. The
-        # base coordinator routes shadow_name == "service" updates into the
-        # nested ``reported_state["_service_reported"]`` bucket instead of
-        # the top-level state that Map/status readers (sensor.py, mower_
-        # status.py) actually read, so *if* a service-shadow message ever
-        # does carry live fields on some other M-series unit/firmware, it
-        # still needs rerouting to be visible -- but forcing that
-        # unconditionally, as before, meant every ordinary service-shadow
-        # message (command acks, etc.) also got merged into the property
-        # bucket, which could overwrite fresher property data with stale or
-        # unrelated content. This now only reroutes when the service message
-        # actually contains live fields.
+        # M9 Pro and M5 use this transport layer, but they are now routed as
+        # explicit model families instead of a loose substring-based M-series
+        # check. This keeps future model-specific behavior isolated.
         origin_shadow_name = shadow_name
-        if _is_m_series(getattr(self.device, "model", None)) and isinstance(reported, dict):
+        family = _model_family(getattr(self.device, "model", None))
+        if family in {"m9_pro", "m5"} and isinstance(reported, dict):
             fallback_pose = getattr(self, "_m_series_last_pose", None)
             if _m_series_valid_pose(fallback_pose) is None:
                 fallback_pose = self.reported_state.get("pose")
             normalized = _normalize_m_series_reported(reported, fallback_pose=fallback_pose)
-            # Check the RAW payload for a live pose, not normalized["pose"]:
-            # the latter can be filled in from the cached fallback pose even
-            # when this particular message carries no pose data at all,
-            # which would make every message look like it has live fields.
             raw_anti_loss = reported.get("anti_loss_pose")
             raw_pose2d = raw_anti_loss.get("pose2d") if isinstance(raw_anti_loss, dict) else None
             has_live_fields = (
@@ -324,10 +326,9 @@ def install_m_series_compat() -> None:
 
             if origin_shadow_name == "service" and has_live_fields:
                 _LOGGER.warning(
-                    "ANTHBOT M-SERIES: live position/path fields found on the SERVICE shadow "
-                    "for serial=%s -- this contradicts every M-series unit verified so far "
-                    "(property-only). Merging them in anyway; please report this so the "
-                    "compat layer can be corrected for this unit/firmware.",
+                    "ANTHBOT %s: live position/path fields found on the SERVICE shadow "
+                    "for serial=%s; merging them into the property state",
+                    family,
                     self.client.serial_number,
                 )
 
@@ -344,16 +345,6 @@ def install_m_series_compat() -> None:
                     accumulator = getattr(self, "_m_series_path_accumulator", [])
                     previous_path_id = getattr(self, "_m_series_path_id", None)
                     if not isinstance(accumulator, list) or previous_path_id != path_id:
-                        # A new path_id means the mower started a new mowing/
-                        # mapping task -- the trail restarts from scratch.
-                        # There is deliberately no distance-based "jump"
-                        # heuristic here anymore: that existed only to paper
-                        # over jumps caused by anchoring the trail to a
-                        # separately-moving (and sometimes frozen) live pose.
-                        # Now that curpath stays in its own stable, native
-                        # map-local coordinate frame the whole time, path_id
-                        # is the only signal that actually means "this is a
-                        # different trail."
                         accumulator = list(packet_points)
                         setattr(self, "_m_series_path_id", path_id)
                     elif packet_points:
@@ -373,20 +364,19 @@ def install_m_series_compat() -> None:
                     reported["mowed_path"] = accumulator
                     reported["cloud_path"] = accumulator
 
-            # else: origin_shadow_name == "service" with no live fields --
-            # leave `reported`/`shadow_name` untouched so it flows into the
-            # normal service bucket, exactly like a non-M-series device.
         await original_live_shadow(self, shadow_name, reported)
 
     async def service_state(self) -> dict[str, Any]:
-        if _is_m_series(getattr(self, "_device_model", None)):
+        family = _model_family(getattr(self, "_device_model", None))
+        if family in {"m9_pro", "m5"}:
             return _normalize_m_series_reported(
                 await self._async_get_named_shadow_reported_state("property")
             )
         return await original_service_state(self)
 
     async def publish_service_command(self, *, cmd: str, data: Any = None) -> None:
-        if not _is_m_series(getattr(self, "_device_model", None)):
+        family = _model_family(getattr(self, "_device_model", None))
+        if family not in {"m9_pro", "m5"}:
             await original_publish(self, cmd=cmd, data=data)
             return
         if cmd == "param_set":
@@ -446,7 +436,7 @@ def install_m_series_compat() -> None:
             await publisher(topic, payload)
             return
         raise AnthbotGenieApiError(
-            f"M-series command '{cmd}' failed ({last_status}); "
+            f"{family} command '{cmd}' failed ({last_status}); "
             f"errortype={last_headers.get('x-amzn-errortype', '')}; body={last_body[:240]}"
         )
 
@@ -459,8 +449,8 @@ def install_m_series_compat() -> None:
     async def refresh_map_definition(
         self, property_state: dict[str, Any], now: float, *, allow_periodic: bool
     ) -> tuple[dict[str, Any], bool]:
-        model = getattr(self.device, "model", None)
-        if not _is_m_series(model):
+        family = _model_family(getattr(self.device, "model", None))
+        if family not in {"m9_pro", "m5"}:
             return await original_refresh_map(self, property_state, now, allow_periodic=allow_periodic)
         last_probe = float(getattr(self, "_m_series_map_probe_last", 0.0) or 0.0)
         already = str(getattr(self, "_map_definition_source", "")).startswith("m_series_probe:")
@@ -485,6 +475,7 @@ def install_m_series_compat() -> None:
                 self._last_map_download_monotonic = now
                 diagnostics = map_archive_diagnostics(property_state, select_map_archive(property_state))
                 diagnostics.update({
+                    "model_family": family,
                     "preferred_source": "m_series_archive_probe",
                     "active_source": self._map_definition_source,
                     "probe_file": filename,
@@ -492,7 +483,7 @@ def install_m_series_compat() -> None:
                 })
                 return diagnostics, True
             if errors:
-                self._map_definition_error = "M-series archive probe failed: " + " | ".join(errors)
+                self._map_definition_error = f"{family} archive probe failed: " + " | ".join(errors)
         return await original_refresh_map(self, property_state, now, allow_periodic=allow_periodic)
 
     AnthbotGenieDataUpdateCoordinator.__init__ = coordinator_init
