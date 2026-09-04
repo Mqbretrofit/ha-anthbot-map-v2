@@ -1,8 +1,7 @@
-"""Shared model-family primitives for ANTHBOT mowers.
+"""Shared model/type primitives for ANTHBOT mowers.
 
-The v2.4.3-beta.3 Genie implementation remains isolated in ``genie.py``.
-Model dispatch belongs here so model-specific modules do not have to guess
-families with ad-hoc string checks.
+Every mower type is routed explicitly. Model-specific behavior lives in its
+own module (genie.py, m5.py, m9.py, m9_pro.py, ...).
 """
 
 from __future__ import annotations
@@ -19,27 +18,28 @@ class AnthbotModelFamily:
     display_name: str
 
 
-BASE_FAMILY: Final[AnthbotModelFamily] = AnthbotModelFamily("base", "ANTHBOT base")
-GENIE_FAMILY: Final[AnthbotModelFamily] = AnthbotModelFamily("genie", "ANTHBOT Genie")
-M9_PRO_FAMILY: Final[AnthbotModelFamily] = AnthbotModelFamily("m9_pro", "ANTHBOT M9 Pro")
-M5_FAMILY: Final[AnthbotModelFamily] = AnthbotModelFamily("m5", "ANTHBOT M5")
-UNKNOWN_FAMILY: Final[AnthbotModelFamily] = AnthbotModelFamily("unknown", "ANTHBOT unknown")
+BASE_FAMILY: Final = AnthbotModelFamily("base", "ANTHBOT base")
+GENIE_FAMILY: Final = AnthbotModelFamily("genie", "ANTHBOT Genie")
+M5_FAMILY: Final = AnthbotModelFamily("m5", "ANTHBOT M5")
+M9_FAMILY: Final = AnthbotModelFamily("m9", "ANTHBOT M9")
+M9_PRO_FAMILY: Final = AnthbotModelFamily("m9_pro", "ANTHBOT M9 Pro")
+UNKNOWN_FAMILY: Final = AnthbotModelFamily("unknown", "ANTHBOT unknown")
 
 
 def normalize_model_name(model: object) -> str:
-    """Return a stable uppercase model identifier for family dispatch."""
-
-    return str(model or "").strip().upper()
+    return str(model or "").strip().upper().replace("-", " ").replace("_", " ")
 
 
 def model_family(model: object) -> AnthbotModelFamily:
-    """Return the explicit model family for one mower model string."""
+    """Return the explicit mower type; specific variants win before base names."""
 
-    value = normalize_model_name(model)
+    value = " ".join(normalize_model_name(model).split())
     if "GENIE" in value:
         return GENIE_FAMILY
-    if "M9" in value:
+    if "M9" in value and "PRO" in value:
         return M9_PRO_FAMILY
+    if "M9" in value:
+        return M9_FAMILY
     if "M5" in value:
         return M5_FAMILY
     if not value:
@@ -47,19 +47,23 @@ def model_family(model: object) -> AnthbotModelFamily:
     return BASE_FAMILY
 
 
+def model_family_key(model: object) -> str:
+    """Return the stable type key used for dispatch."""
+
+    return model_family(model).key
+
+
 def is_genie_model(model: object) -> bool:
-    """Return whether the model belongs to the Genie family."""
-
-    return model_family(model) is GENIE_FAMILY
-
-
-def is_m9_pro_model(model: object) -> bool:
-    """Return whether the model belongs to the M9 Pro family."""
-
-    return model_family(model) is M9_PRO_FAMILY
+    return model_family_key(model) == "genie"
 
 
 def is_m5_model(model: object) -> bool:
-    """Return whether the model belongs to the M5 family."""
+    return model_family_key(model) == "m5"
 
-    return model_family(model) is M5_FAMILY
+
+def is_m9_model(model: object) -> bool:
+    return model_family_key(model) == "m9"
+
+
+def is_m9_pro_model(model: object) -> bool:
+    return model_family_key(model) == "m9_pro"

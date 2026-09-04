@@ -8,21 +8,24 @@ import logging
 from .api import AnthbotGenieApiError
 from .base import model_family
 from .coordinator import AnthbotGenieDataUpdateCoordinator, is_robot_online
-from .m9 import install_m_series_compat
+from . import m5 as m5_type
+from . import m9 as m9_type
+from . import m9_pro as m9_pro_type
 from .mower_status import raw_robot_status
 
 _LOGGER = logging.getLogger(__name__)
 
-# __init__.py imports this module before any mower coordinator is created, so
-# install the model-aware shadow behavior here without touching Genie paths.
-install_m_series_compat()
+# Register model-specific transport hooks without mixing type files together.
+m5_type.install_type_support()
+m9_pro_type.install_type_support()
+m9_type.install_type_support()
 
 
 def _uses_m_series_transport(coordinator: AnthbotGenieDataUpdateCoordinator) -> bool:
     """Return whether this mower uses the M-series transport behavior."""
 
     family = model_family(getattr(coordinator.device, "model", None))
-    return family.key in {"m9_pro", "m5"}
+    return family.key in {"m5", "m9", "m9_pro"}
 
 
 async def async_prepare_cloud_connection(
@@ -32,14 +35,7 @@ async def async_prepare_cloud_connection(
     wait_seconds: int = 4,
     mowing_start: bool = False,
 ) -> bool:
-    """Request app-style MQTT properties and wait for live shadow state.
-
-    M5/M9 do not reliably acknowledge the app-style wake request with the
-    property-shadow timestamp/online fields used by Genie. A connected MQTT
-    session plus already-received M-series status/telemetry is sufficient proof
-    that the cloud path is usable, so do not block commands on the Genie-only
-    wake acknowledgement.
-    """
+    """Request app-style MQTT properties and wait for live shadow state."""
     if mowing_start:
         await coordinator.async_prepare_mowing_power()
     m_series = _uses_m_series_transport(coordinator)

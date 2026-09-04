@@ -1,3 +1,3 @@
-"""Backward-compatible import shim for the M9/M-series model module."""
+"""Backward-compatible import shim for the shared M-series transport layer."""
 
-from .m9 import *  # noqa: F401,F403
+from .m_series_common import *  # noqa: F401,F403
