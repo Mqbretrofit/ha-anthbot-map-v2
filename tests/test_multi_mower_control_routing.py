@@ -24,13 +24,16 @@ def test_runtime_and_www_control_resolvers_are_identical() -> None:
     )
 
 
-def test_control_resolver_is_serial_scoped_and_fail_closed() -> None:
-    """One mower may never fall through to another mower's HA entities."""
+def test_control_resolver_is_serial_scoped_with_safe_legacy_fallback() -> None:
+    """Legacy settings may fall back only to this mower's exact HA ordinal."""
     source = _read(RUNTIME_FRONTEND / "serial-entity-resolver.js")
 
-    assert 'ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-04-control-v6"' in source
+    assert 'ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-04-control-v7"' in source
     assert "serialOf(state) === identity.serial" in source
     assert 'return String(this.config?.entity || "")' in source
+    assert "const exactOrdinalEntity = (card, domain, suffix) =>" in source
+    assert "const exact = exactOrdinalEntity(this, domain, suffix)" in source
+    assert "candidateSerial && identity.serial && candidateSerial !== identity.serial" in source
     assert 'return this.findEntity("switch", ["battery_saver_mode", "battery saver mode"])' in source
     assert "serial_number: identity.serial" in source
     assert "window.__anthbotFeedbackClickHandler" in source
@@ -49,6 +52,14 @@ def test_primary_mowing_tile_uses_direct_anthbot_services() -> None:
     assert 'await this.callAnthbotService("start_auto_zone_mow"' in source
     assert 'await this.callAnthbotService("start_outer_edge_mow")' in source
     assert 'await this.callAnthbotService("start_dock_edge_mow")' in source
+
+
+def test_post_command_ui_refresh_catches_late_genie_status() -> None:
+    """A command ACK must be followed by short UI refresh opportunities."""
+    source = _read(RUNTIME_FRONTEND / "serial-entity-resolver.js")
+    assert "for (const delay of [250, 700, 1400, 2500, 4500])" in source
+    assert "this.syncEntityAndRenderer?.()" in source
+    assert "this.scheduleRefresh?.(0)" in source
 
 
 def test_native_buttons_expose_serial_number() -> None:
