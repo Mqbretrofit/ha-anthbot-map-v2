@@ -1,34 +1,4 @@
-"""Compatibility helpers for ANTHBOT M5/M9 cloud/shadow behavior.
-
-Commands are written through the service named shadow. Live status --
-including position (anti_loss_pose) and the live mowing trail (curpath) --
-was assumed for a while to sometimes arrive on the *service* named shadow
-instead of *property*, based on speculation without real M-series hardware
-to check against. Anonymized real-M9 hardware data (captured 2026-08-19 from
-341 service-shadow messages recorded live during an active
-mow) disproved that: every live field showed up exclusively on the
-*property* shadow, exactly like the base (non-M-series) devices this
-integration already supports. The routing override this module used to
-apply unconditionally has been narrowed to a defensive fallback -- see
-``live_shadow`` below -- kept only in case some other M-series unit or
-firmware really does behave differently; it does nothing on hardware that
-matches what has actually been observed so far.
-
-The same real M9 capture also disproved a second assumption: that curpath's
-raw coordinates needed to be anchored to the live anti_loss_pose (assumed to
-be a millimetre-to-metre conversion) to display correctly. In fact curpath
-decodes through the exact same mgs-v1/v2/v3 path format -- and the exact
-same ``decode_device_definition``/coordinate_scale handling -- that the base
-integration already uses for downloaded historical path files, so it is
-already in the map's native local coordinate system. The live curpath
-range captured during that mow (x: -3180..-100, y: -40..21570) sits
-squarely inside that same M9's own downloaded historical path range
-(x: -3850..-20, y: -210..30330) -- same format, same scale, no anchoring
-needed. Anchoring to anti_loss_pose was actively harmful whenever that field
-was stale (the same capture showed it can freeze for an entire mowing
-session while curpath keeps updating correctly), since it spliced a frozen,
-unrelated coordinate into an otherwise-correct map-local trail.
-"""
+"""Compatibility helpers for ANTHBOT M5/M9 cloud/shadow behavior."""
 
 from __future__ import annotations
 
@@ -49,8 +19,11 @@ _LOGGER = logging.getLogger(__name__)
 _M_SERIES_SERIALS: set[str] = set()
 _INSTALLED = False
 _M_SERIES_MAP_PROBE_RETRY_SECONDS = 60.0
-_M_SERIES_PATH_MAX_POINTS = 5000
+# M9 paths observed in the field can exceed 19k points.  Keep enough history
+# that path_start remains an absolute index into the retained trail.
+_M_SERIES_PATH_MAX_POINTS = 50000
 _M_SERIES_MAP_CANDIDATES = ("multi_maps.tar.gz", "map_manager.tar.gz")
+
 
 def _is_m_series(model: object) -> bool:
     value = str(model or "").upper()
@@ -90,19 +63,26 @@ def _m_series_display_path_points(points: Any) -> list[dict[str, float]]:
     for point in points:
         if isinstance(point, dict):
             x, y = point.get("x"), point.get("y")
+            extra = {
+                key: point.get(key)
+                for key in ("angle", "type", "clean_time", "cleanedCode", "break_before")
+                if key in point
+            }
         elif isinstance(point, (list, tuple)) and len(point) >= 2:
             x, y = point[0], point[1]
+            extra = {}
         else:
             continue
         try:
-            display_points.append({"x": float(x), "y": float(y)})
+            normalized = {"x": float(x), "y": float(y)}
         except (TypeError, ValueError):
             continue
+        normalized.update(extra)
+        display_points.append(normalized)
     return display_points
 
 
 def _m_series_valid_pose(value: Any) -> dict[str, Any] | None:
-    """Return a finite M-series pose or None when the delta omitted it."""
     if not isinstance(value, dict):
         return None
     try:
@@ -118,17 +98,11 @@ def _m_series_valid_pose(value: Any) -> dict[str, Any] | None:
     return pose
 
 
-def _m_series_pose_for_update(
-    reported_pose: Any, fallback_pose: Any
-) -> dict[str, Any] | None:
-    """Select the live pose, retaining the previous one for curpath deltas."""
+def _m_series_pose_for_update(reported_pose: Any, fallback_pose: Any) -> dict[str, Any] | None:
     pose = _m_series_valid_pose(reported_pose)
     if pose is not None:
         return pose
-    pose = _m_series_valid_pose(fallback_pose)
-    if pose is not None:
-        return pose
-    return None
+    return _m_series_valid_pose(fallback_pose)
 
 
 def _point_distance(a: dict[str, Any], b: dict[str, Any]) -> float:
@@ -136,6 +110,88 @@ def _point_distance(a: dict[str, Any], b: dict[str, Any]) -> float:
         return math.hypot(float(a["x"]) - float(b["x"]), float(a["y"]) - float(b["y"]))
     except (KeyError, TypeError, ValueError):
         return float("inf")
+
+
+def _path_start(decoded: dict[str, Any]) -> int:
+    value = decoded.get("path_start", decoded.get("start", 0))
+    try:
+        start = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, start)
+
+
+def _existing_path_points(state: dict[str, Any]) -> list[dict[str, Any]]:
+    definition = state.get("_path_definition")
+    if isinstance(definition, dict):
+        points = _m_series_display_path_points(definition.get("_path_points"))
+        if points:
+            return points
+    for key in ("path", "mowed_path", "cloud_path"):
+        points = _m_series_display_path_points(state.get(key))
+        if points:
+            return points
+    return []
+
+
+def _merge_m_series_curpath(
+    *,
+    previous_state: dict[str, Any],
+    accumulator: Any,
+    previous_path_id: Any,
+    path_id: Any,
+    path_start: int,
+    packet_points: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Merge an M-series curpath delta using its absolute path_start index.
+
+    Real M9 data shows packets such as path_start=19652 with only 12 points;
+    those 12 points are a tail update, not a complete replacement trail.
+    """
+    current = list(accumulator) if isinstance(accumulator, list) else []
+    existing = _existing_path_points(previous_state)
+
+    # Prefer the longer retained trail as the splice base. This is especially
+    # important after HA startup, where the downloaded path can already have
+    # tens of thousands of points before the first tiny curpath delta arrives.
+    if len(existing) > len(current):
+        current = existing
+
+    if path_start > 0:
+        if len(current) >= path_start:
+            # path_start is an absolute index. Replace from that point onward
+            # with the new packet; do not throw away the prefix.
+            merged = current[:path_start] + packet_points
+            return merged[-_M_SERIES_PATH_MAX_POINTS:] if len(merged) > _M_SERIES_PATH_MAX_POINTS else merged
+
+        # We received only a tail fragment but do not yet have its prefix.
+        # Never replace a longer usable trail with this tiny fragment.
+        if current:
+            _LOGGER.debug(
+                "ANTHBOT M-SERIES curpath tail deferred: path_start=%s current=%s packet=%s path_id=%s",
+                path_start,
+                len(current),
+                len(packet_points),
+                path_id,
+            )
+            return current
+        return list(packet_points)
+
+    # path_start == 0 is a genuine trail start/full replacement.
+    if previous_path_id != path_id:
+        return list(packet_points)
+
+    if not current:
+        return list(packet_points)
+
+    # Some firmwares repeat the whole prefix from zero; use the longer copy.
+    if len(packet_points) >= len(current):
+        return list(packet_points)
+
+    # Other firmwares send a single advancing point with no start metadata.
+    if packet_points and _point_distance(current[-1], packet_points[-1]) > 0:
+        current.append(packet_points[-1])
+    return current[-_M_SERIES_PATH_MAX_POINTS:]
 
 
 def _normalize_m_series_reported(
@@ -223,13 +279,6 @@ def _normalize_m_series_reported(
     curpath = reported.get("curpath")
     decoded_curpath = _decode_live_curpath(curpath)
     if decoded_curpath is not None:
-        # decode_device_definition() already applies the mgs format's own
-        # coordinate_scale to every point (see api.py's _decode_path_
-        # definition), so these x/y values are already in the map's native
-        # local coordinate system -- the same frame the base integration's
-        # downloaded area/ridable_area/path files use. No anchoring to the
-        # live pose is needed or wanted; see the module docstring for the
-        # real M9 evidence behind this.
         path_points = _m_series_display_path_points(decoded_curpath.get("_path_points"))
         if path_points:
             normalized["path"] = path_points
@@ -243,9 +292,7 @@ def _normalize_m_series_reported(
             if isinstance(curpath, dict) and curpath.get("time") is not None:
                 normalized.setdefault("path_time", curpath.get("time"))
         else:
-            normalized["_path_definition_error"] = (
-                "M-series curpath decoded but contained no usable points"
-            )
+            normalized["_path_definition_error"] = "M-series curpath decoded but contained no usable points"
 
     mode = reported.get("mode")
     if "robot_sta" not in normalized and isinstance(mode, dict) and mode.get("value") is not None:
@@ -281,40 +328,19 @@ def install_m_series_compat() -> None:
         original_coordinator_init(self, *args, **kwargs)
         model = getattr(self.device, "model", None)
         setattr(self.client, "_device_model", model)
-        is_m_series = _is_m_series(model)
-        if is_m_series:
+        if _is_m_series(model):
             _M_SERIES_SERIALS.add(self.client.serial_number)
             setattr(self, "_m_series_path_accumulator", [])
             setattr(self, "_m_series_path_id", None)
             setattr(self, "_m_series_last_pose", None)
 
     async def live_shadow(self, shadow_name: str, reported: dict[str, Any]) -> None:
-        # An anonymized real-M9 capture from 2026-08-19
-        # reports live position/path fields (curpath, anti_loss_pose, mode,
-        # ...) exclusively on the *property* named shadow -- exactly like
-        # Genie/base devices, and unlike the speculative "M5/M9 uses
-        # service" premise this module used to assume unconditionally. The
-        # base coordinator routes shadow_name == "service" updates into the
-        # nested ``reported_state["_service_reported"]`` bucket instead of
-        # the top-level state that Map/status readers (sensor.py, mower_
-        # status.py) actually read, so *if* a service-shadow message ever
-        # does carry live fields on some other M-series unit/firmware, it
-        # still needs rerouting to be visible -- but forcing that
-        # unconditionally, as before, meant every ordinary service-shadow
-        # message (command acks, etc.) also got merged into the property
-        # bucket, which could overwrite fresher property data with stale or
-        # unrelated content. This now only reroutes when the service message
-        # actually contains live fields.
         origin_shadow_name = shadow_name
         if _is_m_series(getattr(self.device, "model", None)) and isinstance(reported, dict):
             fallback_pose = getattr(self, "_m_series_last_pose", None)
             if _m_series_valid_pose(fallback_pose) is None:
                 fallback_pose = self.reported_state.get("pose")
             normalized = _normalize_m_series_reported(reported, fallback_pose=fallback_pose)
-            # Check the RAW payload for a live pose, not normalized["pose"]:
-            # the latter can be filled in from the cached fallback pose even
-            # when this particular message carries no pose data at all,
-            # which would make every message look like it has live fields.
             raw_anti_loss = reported.get("anti_loss_pose")
             raw_pose2d = raw_anti_loss.get("pose2d") if isinstance(raw_anti_loss, dict) else None
             has_live_fields = (
@@ -324,10 +350,7 @@ def install_m_series_compat() -> None:
 
             if origin_shadow_name == "service" and has_live_fields:
                 _LOGGER.warning(
-                    "ANTHBOT M-SERIES: live position/path fields found on the SERVICE shadow "
-                    "for serial=%s -- this contradicts every M-series unit verified so far "
-                    "(property-only). Merging them in anyway; please report this so the "
-                    "compat layer can be corrected for this unit/firmware.",
+                    "ANTHBOT M-SERIES: live position/path fields found on SERVICE shadow for serial=%s",
                     self.client.serial_number,
                 )
 
@@ -337,45 +360,36 @@ def install_m_series_compat() -> None:
                 current_pose = _m_series_valid_pose(reported.get("pose"))
                 if current_pose is not None:
                     setattr(self, "_m_series_last_pose", current_pose)
+
                 decoded = reported.get("_m_series_curpath_definition")
                 if isinstance(decoded, dict):
                     packet_points = _m_series_display_path_points(decoded.get("_path_points"))
                     path_id = decoded.get("path_id")
-                    accumulator = getattr(self, "_m_series_path_accumulator", [])
-                    previous_path_id = getattr(self, "_m_series_path_id", None)
-                    if not isinstance(accumulator, list) or previous_path_id != path_id:
-                        # A new path_id means the mower started a new mowing/
-                        # mapping task -- the trail restarts from scratch.
-                        # There is deliberately no distance-based "jump"
-                        # heuristic here anymore: that existed only to paper
-                        # over jumps caused by anchoring the trail to a
-                        # separately-moving (and sometimes frozen) live pose.
-                        # Now that curpath stays in its own stable, native
-                        # map-local coordinate frame the whole time, path_id
-                        # is the only signal that actually means "this is a
-                        # different trail."
-                        accumulator = list(packet_points)
-                        setattr(self, "_m_series_path_id", path_id)
-                    elif packet_points:
-                        if not accumulator:
-                            accumulator = list(packet_points)
-                        elif _point_distance(accumulator[-1], packet_points[-1]) > 0:
-                            accumulator.append(packet_points[-1])
-                    accumulator = accumulator[-_M_SERIES_PATH_MAX_POINTS:]
+                    start = _path_start(decoded)
+                    accumulator = _merge_m_series_curpath(
+                        previous_state=self.reported_state,
+                        accumulator=getattr(self, "_m_series_path_accumulator", []),
+                        previous_path_id=getattr(self, "_m_series_path_id", None),
+                        path_id=path_id,
+                        path_start=start,
+                        packet_points=packet_points,
+                    )
                     setattr(self, "_m_series_path_accumulator", accumulator)
+                    setattr(self, "_m_series_path_id", path_id)
 
                     decoded = dict(decoded)
                     decoded["_path_points"] = accumulator
                     decoded["point_count"] = len(accumulator)
+                    decoded["displayed_path_points"] = len(accumulator)
+                    decoded["path_start"] = start
                     reported["_m_series_curpath_definition"] = decoded
                     reported["_path_definition"] = decoded
+                    reported["_path_definition_error"] = None
+                    reported["_history_path_source"] = "m_series_curpath_merged"
                     reported["path"] = accumulator
                     reported["mowed_path"] = accumulator
                     reported["cloud_path"] = accumulator
 
-            # else: origin_shadow_name == "service" with no live fields --
-            # leave `reported`/`shadow_name` untouched so it flows into the
-            # normal service bucket, exactly like a non-M-series device.
         await original_live_shadow(self, shadow_name, reported)
 
     async def service_state(self) -> dict[str, Any]:
@@ -422,9 +436,11 @@ def install_m_series_compat() -> None:
         last_body = ""
         last_headers: dict[str, str] = {}
         for refresh_attempt in range(2):
-            for attempt_index, (request_uri, include_sdk_headers, canonical_uri_override, sign_content_length) in enumerate(attempts):
+            for request_uri, include_sdk_headers, canonical_uri_override, sign_content_length in attempts:
                 status, body_text, response_payload, response_headers = await self._async_signed_post(
-                    request_uri=request_uri, canonical_query="", payload_bytes=payload,
+                    request_uri=request_uri,
+                    canonical_query="",
+                    payload_bytes=payload,
                     include_sdk_headers=include_sdk_headers,
                     canonical_uri_override=canonical_uri_override,
                     sign_content_length=sign_content_length,
