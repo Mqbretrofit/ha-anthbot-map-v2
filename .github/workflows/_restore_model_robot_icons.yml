@@ -24,57 +24,17 @@ jobs:
         run: |
           set -euo pipefail
 
-          python - <<'PY'
-          import base64
-          from pathlib import Path
+          base64 --decode _m9_icon_96_valid.b64 > /tmp/m9.png
+          base64 --decode _m9_pro_icon_96_valid.b64 > /tmp/m9-pro.png
+          python -c 'from pathlib import Path; assert Path("/tmp/m9.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n"); assert Path("/tmp/m9-pro.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")'
+          cp /tmp/m9.png custom_components/anthbot_map/frontend/m9.png
+          cp /tmp/m9.png www/anthbot-map/m9.png
+          cp /tmp/m9-pro.png custom_components/anthbot_map/frontend/m9-pro.png
+          cp /tmp/m9-pro.png www/anthbot-map/m9-pro.png
 
-          assets = (
-              ('_m9_icon_96_valid.b64', 'm9.png'),
-              ('_m9_pro_icon_96_valid.b64', 'm9-pro.png'),
-          )
-          for source_name, asset_name in assets:
-              encoded = Path(source_name).read_text(encoding='ascii').strip()
-              raw = base64.b64decode(encoded, validate=True)
-              if not raw.startswith(b'\x89PNG\r\n\x1a\n'):
-                  raise SystemExit(f'{source_name}: decoded data is not PNG')
-              for root in (
-                  Path('custom_components/anthbot_map/frontend'),
-                  Path('www/anthbot-map'),
-              ):
-                  (root / asset_name).write_bytes(raw)
+          python -c 'from pathlib import Path; p=Path("custom_components/anthbot_map/sensor.py"); s=p.read_text(encoding="utf-8"); old="        return {\n            \"serial_number\": self.coordinator.client.serial_number,\n            \"pose\": state.get(\"pose\"),"; new="        return {\n            \"serial_number\": self.coordinator.client.serial_number,\n            \"model\": self.coordinator.device.model,\n            \"pose\": state.get(\"pose\"),"; assert s.count(old)==1, s.count(old); p.write_text(s.replace(old,new,1),encoding="utf-8")'
 
-          sensor_path = Path('custom_components/anthbot_map/sensor.py')
-          sensor = sensor_path.read_text(encoding='utf-8')
-          old_sensor = '''        return {
-            "serial_number": self.coordinator.client.serial_number,
-            "pose": state.get("pose"),
-'''
-          new_sensor = '''        return {
-            "serial_number": self.coordinator.client.serial_number,
-            "model": self.coordinator.device.model,
-            "pose": state.get("pose"),
-'''
-          if sensor.count(old_sensor) != 1:
-              raise SystemExit(f'Expected exactly one map attribute block, found {sensor.count(old_sensor)}')
-          sensor_path.write_text(sensor.replace(old_sensor, new_sensor, 1), encoding='utf-8')
-
-          old_card = '      robotImage: this.config.robot_image || this.config.robotImage || this.resolveAsset("robot.png?v=2411"),'
-          new_card = '''      robotImage: this.config.robot_image || this.config.robotImage || this.resolveAsset(
-            String(this.entity?.attributes?.model || "").toLowerCase().includes("m9 pro")
-              ? "m9-pro.png?v=244"
-              : ["m5", "m9"].some((modelName) => String(this.entity?.attributes?.model || "").toLowerCase().includes(modelName))
-                ? "m9.png?v=244"
-                : "robot.png?v=2411"
-          ),'''
-          for card_path in (
-              Path('custom_components/anthbot_map/frontend/anthbot-map-card.js'),
-              Path('www/anthbot-map/anthbot-map-card.js'),
-          ):
-              card = card_path.read_text(encoding='utf-8')
-              if card.count(old_card) != 1:
-                  raise SystemExit(f'{card_path}: expected exactly one robotImage fallback, found {card.count(old_card)}')
-              card_path.write_text(card.replace(old_card, new_card, 1), encoding='utf-8')
-          PY
+          python -c 'from pathlib import Path; old="      robotImage: this.config.robot_image || this.config.robotImage || this.resolveAsset(\"robot.png?v=2411\"),"; new="      robotImage: this.config.robot_image || this.config.robotImage || this.resolveAsset(\n        String(this.entity?.attributes?.model || \"\").toLowerCase().includes(\"m9 pro\")\n          ? \"m9-pro.png?v=244\"\n          : [\"m5\", \"m9\"].some((modelName) => String(this.entity?.attributes?.model || \"\").toLowerCase().includes(modelName))\n            ? \"m9.png?v=244\"\n            : \"robot.png?v=2411\"\n      ),"; paths=[Path("custom_components/anthbot_map/frontend/anthbot-map-card.js"),Path("www/anthbot-map/anthbot-map-card.js")]; [(lambda p,s: (s.count(old)==1) or (_ for _ in ()).throw(AssertionError((p,s.count(old)))))(p,p.read_text(encoding="utf-8")) for p in paths]; [p.write_text(p.read_text(encoding="utf-8").replace(old,new,1),encoding="utf-8") for p in paths]'
 
           python -m py_compile custom_components/anthbot_map/sensor.py
           node --check custom_components/anthbot_map/frontend/anthbot-map-card.js
@@ -85,11 +45,7 @@ jobs:
           test "$(git hash-object www/anthbot-map/robot.png)" = "a8a59914eb8c2af6e7e922da057559d1b8c62892"
 
           rm -rf _iconparts
-          rm -f \
-            _m9_icon_tmp.b64 \
-            _m9_pro_icon_tmp.b64 \
-            _m9_icon_96_valid.b64 \
-            _m9_pro_icon_96_valid.b64
+          rm -f _m9_icon_tmp.b64 _m9_pro_icon_tmp.b64 _m9_icon_96_valid.b64 _m9_pro_icon_96_valid.b64
           git rm .github/workflows/_restore_model_robot_icons.yml
 
           git config user.name 'Mqbretrofit'
