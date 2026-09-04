@@ -52,7 +52,10 @@ class MowingHistoryV230Tests(unittest.TestCase):
     def test_captured_identifiers_and_temporary_debug_payloads_are_absent(self) -> None:
         sources = "\n".join(
             path.read_text(encoding="utf-8")
-            for path in (INTEGRATION / "m_series_compat.py", INTEGRATION / "api.py")
+            for path in (
+                INTEGRATION / "models" / "m_series_common.py",
+                INTEGRATION / "api.py",
+            )
         )
         self.assertNotIn("26130LGR", sources)
         self.assertNotIn("ANTHBOT MODEL TEST", sources)
