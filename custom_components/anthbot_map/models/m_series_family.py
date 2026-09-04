@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from .. import m_series_common as _common
+from . import m_series_common as _common
 
 PATH_MAX_POINTS = 50000
 MAP_CANDIDATES = ("multi_maps.tar.gz", "map_manager.tar.gz")
