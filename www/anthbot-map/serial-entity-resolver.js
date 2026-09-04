@@ -1,6 +1,49 @@
 // Scope every automatically resolved entity/control to the mower represented by
 // this card. Home Assistant adds _2, _3... to duplicate entity_ids; the old
 // resolver stripped that ordinal and could mix Genie and M-series entities.
+
+const anthbotCardFromEvent = (event) => {
+  const path = typeof event?.composedPath === "function" ? event.composedPath() : [];
+  return path.find((node) => String(node?.tagName || "").toLowerCase() === "anthbot-map-card") || null;
+};
+
+const anthbotCommandFromEvent = (event) => {
+  const path = typeof event?.composedPath === "function" ? event.composedPath() : [];
+  for (const node of path) {
+    const command = node?.dataset?.command ?? node?.getAttribute?.("data-command");
+    if (command) return String(command);
+  }
+  return "";
+};
+
+if (typeof window !== "undefined" && window.__anthbotScopedPauseCaptureInstalled !== true) {
+  window.__anthbotScopedPauseCaptureInstalled = true;
+  window.addEventListener("click", async (event) => {
+    const command = anthbotCommandFromEvent(event);
+    if (command !== "pause" && command !== "resume") return;
+    const card = anthbotCardFromEvent(event);
+    if (!card?._hass?.callService) return;
+    const serial = String(
+      card?.entity?.attributes?.serial_number
+        ?? card?.entity?.attributes?.serial
+        ?? "",
+    ).trim();
+    if (!serial) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const service = command === "pause" ? "pause_mow" : "resume_mow";
+    try {
+      card.notify?.(card.feedback?.("commandSentWaiting", card.commandLabel?.(service) || service));
+      await card._hass.callService("anthbot_map", service, { serial_number: serial });
+      card.scheduleRefresh?.(100);
+    } catch (error) {
+      console.error(`Anthbot ${service} failed`, error);
+      card.notify?.(String(error?.message || error));
+    }
+  }, true);
+}
+
 if (typeof customElements !== "undefined") {
   customElements.whenDefined("anthbot-map-card").then(() => {
     const Card = customElements.get("anthbot-map-card");
@@ -8,8 +51,12 @@ if (typeof customElements !== "undefined") {
     if (!proto || proto.__anthbotSerialEntityResolverPatch === true) return;
 
     const normalize = (value) => String(value ?? "")
-      .toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+
     const mapIdentity = (card) => {
       const entityId = String(card?._activeEntityId || card?.config?.entity || "");
       const local = entityId.replace(/^sensor\./, "");
@@ -17,10 +64,19 @@ if (typeof customElements !== "undefined") {
       return {
         base: match?.[1] || card?.entityBase?.() || "",
         ordinal: match?.[2] || "",
-        serial: String(card?.entity?.attributes?.serial_number ?? card?.entity?.attributes?.serial ?? "").trim(),
+        serial: String(
+          card?.entity?.attributes?.serial_number
+            ?? card?.entity?.attributes?.serial
+            ?? "",
+        ).trim(),
       };
     };
-    const serialOf = (state) => String(state?.attributes?.serial_number ?? state?.attributes?.serial ?? "").trim();
+
+    const serialOf = (state) => String(
+      state?.attributes?.serial_number
+        ?? state?.attributes?.serial
+        ?? "",
+    ).trim();
 
     const originalFindEntity = proto.findEntity;
     if (typeof originalFindEntity === "function") {
@@ -28,11 +84,16 @@ if (typeof customElements !== "undefined") {
         const states = this._hass?.states || {};
         const identity = mapIdentity(this);
         const wantedSuffixes = Array.isArray(suffixes) ? suffixes : [];
+
         if (identity.serial) {
           for (const suffix of wantedSuffixes) {
             const suffixSlug = normalize(suffix);
             const serialMatches = Object.entries(states)
-              .filter(([entityId, state]) => entityId.startsWith(`${domain}.`) && state?.state !== "unavailable" && serialOf(state) === identity.serial)
+              .filter(([entityId, state]) =>
+                entityId.startsWith(`${domain}.`)
+                && state?.state !== "unavailable"
+                && serialOf(state) === identity.serial,
+              )
               .map(([entityId, state]) => {
                 const idSlug = normalize(entityId.slice(domain.length + 1));
                 const friendlySlug = normalize(state?.attributes?.friendly_name);
@@ -47,6 +108,7 @@ if (typeof customElements !== "undefined") {
             if (serialMatches.length) return serialMatches[0].entityId;
           }
         }
+
         if (identity.base) {
           for (const suffix of wantedSuffixes) {
             const suffixSlug = normalize(suffix);
@@ -56,6 +118,7 @@ if (typeof customElements !== "undefined") {
             if (exactState && exactState.state !== "unavailable") return exactId;
           }
         }
+
         return originalFindEntity.call(this, domain, suffixes);
       };
     }
@@ -63,30 +126,16 @@ if (typeof customElements !== "undefined") {
     const originalHandleCommand = proto.handleCommand;
     if (typeof originalHandleCommand === "function") {
       proto.handleCommand = async function (command) {
-        const normalizedCommand = String(command || "");
-        const customAction = this.effectiveCustomButtonAction?.(normalizedCommand);
-        if ((normalizedCommand === "pause" || normalizedCommand === "resume") && !customAction) {
-          const identity = mapIdentity(this);
-          const service = normalizedCommand === "pause" ? "pause_mow" : "resume_mow";
-          if (!identity.serial) return await originalHandleCommand.call(this, command);
-          try {
-            this.notify?.(this.feedback?.("commandSentWaiting", this.commandLabel?.(service) || service));
-            await this._hass.callService("anthbot_map", service, { serial_number: identity.serial });
-            this.scheduleRefresh?.(200);
-            return;
-          } catch (error) {
-            console.error(`Anthbot ${service} failed`, error);
-            this.notify?.(String(error?.message || error));
-            return;
-          }
-        }
-
         const oldConfigEntity = this.config?.entity;
         if (this.config && this._activeEntityId) this.config.entity = this._activeEntityId;
-        try { return await originalHandleCommand.call(this, command); }
-        finally { if (this.config) this.config.entity = oldConfigEntity; }
+        try {
+          return await originalHandleCommand.call(this, command);
+        } finally {
+          if (this.config) this.config.entity = oldConfigEntity;
+        }
       };
     }
+
     proto.__anthbotSerialEntityResolverPatch = true;
   });
 }
