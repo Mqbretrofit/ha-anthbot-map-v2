@@ -143,6 +143,12 @@ def install_m_series_control_support() -> None:
             await previous_publish(self, cmd=cmd, data=data)
             return
 
+        # M9 Pro STOP capture from the official app confirms the exact payload
+        # uses scalar data=1 for stop_all_tasks.  Force that value only for the
+        # M-series transport so Genie and every other command remain untouched.
+        if cmd == "stop_all_tasks":
+            data = 1
+
         await _publish_native_simple_command(self, cmd=cmd, data=data)
 
     AnthbotShadowApiClient.async_publish_service_command = publish_service_command
