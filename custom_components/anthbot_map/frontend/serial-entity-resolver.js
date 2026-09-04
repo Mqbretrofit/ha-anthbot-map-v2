@@ -42,7 +42,6 @@ if (typeof customElements !== "undefined") {
         const identity = mapIdentity(this);
         const wantedSuffixes = Array.isArray(suffixes) ? suffixes : [];
 
-        // 1) Strongest key: exact mower serial when the entity exposes it.
         if (identity.serial) {
           for (const suffix of wantedSuffixes) {
             const suffixSlug = normalize(suffix);
@@ -67,8 +66,6 @@ if (typeof customElements !== "undefined") {
           }
         }
 
-        // 2) Preserve the HA duplicate ordinal of the map entity. map -> no
-        // suffix; map_2 -> related entity _2; map_3 -> related entity _3, etc.
         if (identity.base) {
           for (const suffix of wantedSuffixes) {
             const suffixSlug = normalize(suffix);
@@ -79,9 +76,7 @@ if (typeof customElements !== "undefined") {
 
             const escapedBase = identity.base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
             const escapedSuffix = suffixSlug.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-            const ordinal = identity.ordinal
-              ? `_${identity.ordinal}`
-              : "";
+            const ordinal = identity.ordinal ? `_${identity.ordinal}` : "";
             const pattern = new RegExp(`^${domain}\\.${escapedBase}_${escapedSuffix}${ordinal}$`);
             const exact = Object.entries(states)
               .find(([entityId, state]) => pattern.test(entityId) && state?.state !== "unavailable");
@@ -89,18 +84,33 @@ if (typeof customElements !== "undefined") {
           }
         }
 
-        // Compatibility fallback for old/single-mower installations.
         return originalFindEntity.call(this, domain, suffixes);
       };
     }
 
-    // Service handlers already target the resolved button entity where one
-    // exists. With findEntity fixed, pause/resume/start/stop/dock now stay on
-    // the same mower. For direct domain services, keep the active map entity
-    // as the target instead of a stale configured fallback.
     const originalHandleCommand = proto.handleCommand;
     if (typeof originalHandleCommand === "function") {
       proto.handleCommand = async function (command) {
+        const normalizedCommand = String(command || "");
+        const customAction = this.effectiveCustomButtonAction?.(normalizedCommand);
+        if ((normalizedCommand === "pause" || normalizedCommand === "resume") && !customAction) {
+          const identity = mapIdentity(this);
+          const service = normalizedCommand === "pause" ? "pause_mow" : "resume_mow";
+          if (!identity.serial) {
+            return await originalHandleCommand.call(this, command);
+          }
+          try {
+            this.notify?.(this.feedback?.("commandSentWaiting", this.commandLabel?.(service) || service));
+            await this._hass.callService("anthbot_map", service, { serial_number: identity.serial });
+            this.scheduleRefresh?.(200);
+            return;
+          } catch (error) {
+            console.error(`Anthbot ${service} failed`, error);
+            this.notify?.(String(error?.message || error));
+            return;
+          }
+        }
+
         const oldConfigEntity = this.config?.entity;
         if (this.config && this._activeEntityId) this.config.entity = this._activeEntityId;
         try {
