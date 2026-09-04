@@ -10,6 +10,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPONENT = ROOT / "custom_components" / "anthbot_map"
+COORDINATOR_SOURCE = COMPONENT / "models" / "genie.py"
 
 
 def _load_task_events_module():
@@ -89,7 +90,7 @@ class TaskEventTests(unittest.TestCase):
 
 class BatterySaverSourceTests(unittest.TestCase):
     def test_mode_is_local_persistent_and_event_driven(self) -> None:
-        coordinator = (COMPONENT / "coordinator.py").read_text(encoding="utf-8")
+        coordinator = COORDINATOR_SOURCE.read_text(encoding="utf-8")
         config_flow = (COMPONENT / "config_flow.py").read_text(encoding="utf-8")
         switch = (COMPONENT / "switch.py").read_text(encoding="utf-8")
         api = (COMPONENT / "api.py").read_text(encoding="utf-8")
@@ -118,7 +119,7 @@ class BatterySaverSourceTests(unittest.TestCase):
         self.assertIn("AnthbotBatterySaverSwitchEntity", switch)
 
     def test_idle_charge_has_hysteresis_and_temporary_mute(self) -> None:
-        coordinator = (COMPONENT / "coordinator.py").read_text(encoding="utf-8")
+        coordinator = COORDINATOR_SOURCE.read_text(encoding="utf-8")
         self.assertIn("_async_maintain_idle_charge", coordinator)
         self.assertIn("CONF_MAINTENANCE_LEVEL", coordinator)
         self.assertIn("_async_mute_charging_announcement", coordinator)
@@ -126,7 +127,7 @@ class BatterySaverSourceTests(unittest.TestCase):
         self.assertIn('cmd="volume_ctl", data={"volume": 0}', coordinator)
 
     def test_shared_station_rtk_supply_stays_on_for_mowing(self) -> None:
-        coordinator = (COMPONENT / "coordinator.py").read_text(encoding="utf-8")
+        coordinator = COORDINATOR_SOURCE.read_text(encoding="utf-8")
         commands = (COMPONENT / "commands.py").read_text(encoding="utf-8")
         mowing_block = coordinator.split("if is_mowing:", 1)[1].split(
             "if self._battery_saver_phase == \"initial_charge\"", 1
@@ -143,7 +144,7 @@ class BatterySaverSourceTests(unittest.TestCase):
     def test_card_battery_saver_settings_have_a_persistent_backend(self) -> None:
         init_source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
         const_source = (COMPONENT / "const.py").read_text(encoding="utf-8")
-        coordinator = (COMPONENT / "coordinator.py").read_text(encoding="utf-8")
+        coordinator = COORDINATOR_SOURCE.read_text(encoding="utf-8")
         card = (COMPONENT / "frontend" / "anthbot-map-card.js").read_text(
             encoding="utf-8"
         )
@@ -172,7 +173,7 @@ class BatterySaverSourceTests(unittest.TestCase):
     def test_custom_button_actions_are_saved_per_mower_in_home_assistant(self) -> None:
         init_source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
         const_source = (COMPONENT / "const.py").read_text(encoding="utf-8")
-        coordinator = (COMPONENT / "coordinator.py").read_text(encoding="utf-8")
+        coordinator = COORDINATOR_SOURCE.read_text(encoding="utf-8")
         card = (COMPONENT / "frontend" / "anthbot-map-card.js").read_text(
             encoding="utf-8"
         )
@@ -187,7 +188,7 @@ class BatterySaverSourceTests(unittest.TestCase):
         self.assertIn("effectiveCustomButtonAction(command)", card)
 
     def test_charger_change_restarts_only_the_guard_for_the_new_plug(self) -> None:
-        coordinator = (COMPONENT / "coordinator.py").read_text(encoding="utf-8")
+        coordinator = COORDINATOR_SOURCE.read_text(encoding="utf-8")
         update_block = coordinator.split(
             "async def async_update_battery_saver_config", 1
         )[1].split("def custom_button_actions_configured", 1)[0]
