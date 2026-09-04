@@ -97,7 +97,7 @@ PLATFORMS = [
 _LOGGER = logging.getLogger(__name__)
 VALID_MOW_HEIGHTS = list(range(30, 75, 5))
 FRONTEND_RESOURCE_PATH = "/anthbot-map-v2/anthbot-map-card.js"
-FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.3-beta.3"
+FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.3-beta.3-r4"
 LEGACY_ENTITY_SUFFIXES: tuple[str, ...] = (
     "enable_custom_mowing_direction",
     "custom_mowing_direction_enable",
@@ -154,10 +154,6 @@ def _resolve_target_coordinators(
                 requested_serials.add(serial_number)
 
     if not requested_serials:
-        # A service call without a target intentionally applies to every mower.
-        # If a target was supplied but could not be resolved, never fall back to
-        # every mower: doing so could run the action against the wrong device in
-        # a multi-mower account.
         return [] if target_requested else coordinators
 
     return [
@@ -269,7 +265,6 @@ _CUSTOM_BUTTON_COMMANDS = {
 
 
 def _normalize_custom_button_actions(value: object) -> dict[str, dict]:
-    """Validate and normalize custom card-button service definitions."""
     if not isinstance(value, dict):
         raise AnthbotGenieApiError("Custom button actions must be an object")
 
@@ -462,6 +457,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         },
         extra=vol.ALLOW_EXTRA,
     )
+
     async def _handle_start_full_mow(service_call) -> None:
         targets = _resolve_target_coordinators(hass, service_call.data)
         if not targets:
@@ -947,10 +943,10 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             schema=auto_zone_schema,
         )
 
+
 def _async_cleanup_legacy_entities(
     hass: HomeAssistant, entry: ConfigEntry, serial_number: str
 ) -> None:
-    """Remove legacy entities superseded or removed by integration updates."""
     entity_registry = er.async_get(hass)
     for entry_reg in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
         if entry_reg.domain not in {"button", "binary_sensor", "sensor"}:
@@ -965,13 +961,11 @@ def _async_cleanup_legacy_entities(
 
 
 def _sync_standalone_frontend(source: Path, destination: Path) -> None:
-    """Mirror the card into /config/www so it survives a disabled config entry."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source, destination, dirs_exist_ok=True)
 
 
 async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
-    """Register the bundled card once in Lovelace storage mode."""
     lovelace = hass.data.get(LOVELACE_DATA)
     if lovelace is None or getattr(lovelace, "resource_mode", None) != MODE_STORAGE:
         _LOGGER.info(
@@ -985,8 +979,6 @@ async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
         _LOGGER.warning("Lovelace resource storage is unavailable")
         return
 
-    # async_get_info() ensures the storage collection is loaded before items
-    # are inspected or created. This preserves every existing dashboard resource.
     await resources.async_get_info()
     matching = [
         item
@@ -1020,7 +1012,6 @@ async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Set up the Anthbot Genie integration."""
     frontend_path = Path(__file__).parent / "frontend"
     standalone_path = Path(hass.config.path("www", "anthbot-map-v2"))
     await hass.async_add_executor_job(
@@ -1031,13 +1022,12 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     )
     try:
         await _async_register_lovelace_resource(hass)
-    except Exception:  # noqa: BLE001 - frontend failure must not block the mower
+    except Exception:
         _LOGGER.exception("Unable to register the Anthbot Map Lovelace resource")
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Anthbot Genie from a config entry."""
     session = async_get_clientsession(hass)
     account_client = AnthbotCloudApiClient(
         session=session,
@@ -1146,9 +1136,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             account_client=account_client,
         )
         _async_cleanup_legacy_entities(hass, entry, device.serial_number)
-        # A previous clamp accidentally forced every configured value back to
-        # at most ten seconds.  That is much more aggressive than the mobile
-        # app and can make AWS IoT throttle the property shadow with HTTP 429.
         scan_interval = max(
             30,
             min(
@@ -1168,8 +1155,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await coordinator.async_load_last_mowing_task()
         await coordinator.async_load_battery_saver_state()
         await coordinator.async_load_mowing_area_learning()
-        # The mobile app establishes the named-shadow MQTT session first.
-        # Ancillary REST data can refresh independently afterwards.
         await coordinator.async_start_live_shadow()
         await coordinator.async_refresh()
         if not coordinator.last_update_success:
@@ -1192,7 +1177,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def _async_update_entry_options(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> None:
-    """Apply per-mower options without unloading the live integration."""
     battery_configs = entry.options.get(CONF_BATTERY_SAVER_CONFIGS, {})
     if not isinstance(battery_configs, dict):
         battery_configs = {}
@@ -1212,7 +1196,6 @@ async def _async_update_entry_options(
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload Anthbot Genie config entry without tearing down a failed unload."""
     coordinators = hass.data.get(DOMAIN, {}).get(entry.entry_id, [])
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if not unloaded:
