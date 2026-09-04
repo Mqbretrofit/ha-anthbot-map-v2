@@ -48,9 +48,6 @@ async def async_prepare_cloud_connection(
             if not coordinator.live_shadow_connected:
                 continue
 
-        # For M5/M9, reaching this point already proves that the authenticated
-        # AWS IoT transport is up. If we also have a decoded mower status (for
-        # example Docked), the device is demonstrably reporting live state.
         if m_series and raw_robot_status(coordinator.reported_state) is not None:
             return True
 
@@ -64,9 +61,6 @@ async def async_prepare_cloud_connection(
                 attempts,
                 err,
             )
-            # M-series commands use their own signed command transport. A
-            # failed get_all_props wake must not suppress an otherwise usable
-            # command path when MQTT itself is connected.
             if m_series and coordinator.live_shadow_connected:
                 return True
             continue
@@ -108,11 +102,17 @@ async def async_start_mowing(
             "The mower did not confirm its cloud connection; start command was not sent"
         )
 
+    m_series = _is_m_series(coordinator)
     for attempt in range(2):
-        await coordinator.client.async_publish_service_command(
-            cmd="app_state", data=app_state
-        )
-        await asyncio.sleep(1.5)
+        # Genie uses the historical app_state preamble. M5/M9/M9 Pro use the
+        # native app command wrapper directly; sending app_state to their
+        # service shadow can prevent the real mow_start from being accepted.
+        if not m_series:
+            await coordinator.client.async_publish_service_command(
+                cmd="app_state", data=app_state
+            )
+            await asyncio.sleep(1.5)
+
         await coordinator.client.async_publish_service_command(cmd="mow_start", data=1)
 
         for _ in range(4):
