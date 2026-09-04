@@ -5,7 +5,7 @@
 // the exact Home Assistant duplicate ordinal of this card's map entity. This
 // keeps Genie / M-series isolated without making valid legacy settings vanish.
 
-const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-04-control-v7";
+const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-04-control-v8";
 
 const disableLegacyCommandRouter = () => {
   if (typeof window === "undefined" || typeof document === "undefined") return;
@@ -191,9 +191,9 @@ if (typeof customElements !== "undefined") {
           identity.serial ? { ...data, serial_number: identity.serial } : { ...data },
         );
 
-        // Genie can publish its new run state shortly after command ACK. Give
-        // the card several cheap opportunities to consume the freshly updated
-        // HA entities instead of waiting for a page reload.
+        // Keep a few best-effort command confirmations for older Genie
+        // firmware. Live Genie status itself is now pushed by the backend via
+        // the same coordinator update path as M-series telemetry.
         for (const delay of [250, 700, 1400, 2500, 4500]) {
           window.setTimeout(() => {
             try {
@@ -282,6 +282,196 @@ if (typeof customElements !== "undefined") {
         };
         proto.__anthbotStrictBatterySaverResolver = true;
       }, 0);
+    }
+
+    // M-series dashboards should describe only capabilities that Home
+    // Assistant can currently expose. Never leave disabled/unavailable tiles
+    // behind, and hide a whole tab when it would be empty.
+    const modelOf = (card) => {
+      const states = card?._hass?.states || {};
+      const identity = mapIdentity(card);
+      const direct = states[identity.entityId]?.attributes?.model
+        ?? states[identity.configuredId]?.attributes?.model
+        ?? card?.entity?.attributes?.model;
+      if (direct) return String(direct);
+      if (identity.serial) {
+        const related = Object.values(states).find((state) =>
+          serialOf(state) === identity.serial && state?.attributes?.model,
+        );
+        if (related?.attributes?.model) return String(related.attributes.model);
+      }
+      return "";
+    };
+
+    const isMSeriesCard = (card) => /\bM(?:5|9)\b|M9\s*PRO/i.test(modelOf(card));
+    const emptyFragment = () => document.createDocumentFragment();
+    const entityIdAvailable = (card, entityId) => isAvailable(card?._hass?.states?.[entityId]);
+
+    const wrapEntityControl = (methodName, resolveEntityId) => {
+      const original = proto[methodName];
+      if (typeof original !== "function") return;
+      proto[methodName] = function (...args) {
+        if (isMSeriesCard(this)) {
+          const entityId = resolveEntityId.call(this, ...args);
+          if (!entityIdAvailable(this, entityId)) return emptyFragment();
+        }
+        return original.apply(this, args);
+      };
+    };
+
+    wrapEntityControl("createMowHeightControl", function () {
+      return this.getNumberEntity?.("mowHeight");
+    });
+    wrapEntityControl("createObstacleLevelControl", function () {
+      return this.getNumberEntity?.("visualObstacleLevel");
+    });
+    wrapEntityControl("createNumberControl", function (_label, key) {
+      return this.getNumberEntity?.(key);
+    });
+    wrapEntityControl("createSwitchControl", function (_label, key) {
+      return this.getSwitchEntity?.(key);
+    });
+    wrapEntityControl("createInfoTile", function (_label, key) {
+      const entity = this.getRelatedEntity?.(key);
+      return entity?.entity_id;
+    });
+    wrapEntityControl("createDirectNumberControl", function (_label, entityId) {
+      return entityId;
+    });
+    wrapEntityControl("createDirectSelectControl", function (_label, entityId) {
+      return entityId;
+    });
+    wrapEntityControl("createDirectSwitchControl", function (_label, entityId) {
+      return entityId;
+    });
+
+    const originalDirectObstacle = proto.createDirectObstacleControl;
+    if (typeof originalDirectObstacle === "function") {
+      proto.createDirectObstacleControl = function (switchEntityId, levelEntityId) {
+        if (
+          isMSeriesCard(this)
+          && (!entityIdAvailable(this, switchEntityId) || !entityIdAvailable(this, levelEntityId))
+        ) {
+          return emptyFragment();
+        }
+        return originalDirectObstacle.call(this, switchEntityId, levelEntityId);
+      };
+    }
+
+    const maintenanceDefinitions = (card) => [
+      [card.t("bladeMaintenance"), "blade", card.t("resetBlade"), "reset-blade", "cuttingComponentsLife"],
+      [card.t("cameraMaintenance"), "camera", card.t("resetCamera"), "reset-camera", "cuttingLineLife"],
+      [card.t("dockContactMaintenance"), "contact", card.t("resetDockContact"), "reset-contact", "rechargeContactLife"],
+    ];
+
+    const hasMaintenanceContent = (card) => maintenanceDefinitions(card)
+      .some((item) => Boolean(card.getRelatedEntity?.(item[4])));
+
+    const hasStatusContent = (card) => [
+      "battery", "status", "charging", "connection", "cuttingHeight",
+      "mowingArea", "mowingTime", "rtkFix", "totalArea", "errorDescription",
+    ].some((key) => Boolean(card.getRelatedEntity?.(key)))
+      || Boolean(card.getSwitchEntity?.("batterySaver"));
+
+    const hasDiagnosticsContent = (card) => {
+      const entityContent = [
+        "cuttingComponentsLife", "cuttingLineLife", "rechargeContactLife",
+        "wifi", "bluetooth", "firmware", "gpsLatitude", "gpsLongitude", "shadowUpdated",
+      ].some((key) => Boolean(card.getRelatedEntity?.(key)));
+      const attrs = card.entity?.attributes || {};
+      const records = Array.isArray(attrs.mowing_records?.data)
+        ? attrs.mowing_records.data
+        : Array.isArray(attrs.mowing_records) ? attrs.mowing_records : [];
+      const errors = Array.isArray(attrs.error_history) ? attrs.error_history : [];
+      return entityContent || records.length > 0 || errors.length > 0;
+    };
+
+    const panelAvailable = (card, panel) => {
+      if (!isMSeriesCard(card)) return true;
+      if (panel === "maintenance") return hasMaintenanceContent(card);
+      if (panel === "status") return hasStatusContent(card);
+      if (panel === "diagnostics") return hasDiagnosticsContent(card);
+      return true;
+    };
+
+    const syncPanelTabs = (card) => {
+      if (!isMSeriesCard(card)) return;
+      card.shadowRoot?.querySelectorAll?.("button[data-panel]").forEach((button) => {
+        const available = panelAvailable(card, button.dataset.panel);
+        button.hidden = !available;
+        button.style.display = available ? "" : "none";
+      });
+    };
+
+    const removeEmptySettingSections = (card) => {
+      if (!isMSeriesCard(card) || card.activePanel !== "settings") return;
+      card.shadowRoot?.querySelectorAll?.("details.zone-settings").forEach((details) => {
+        const body = details.querySelector(".zone-settings-body");
+        if (body && !body.querySelector(".panel-tile, button, input, select")) details.remove();
+      });
+      card.shadowRoot?.querySelectorAll?.("details.settings-section").forEach((details) => {
+        if (details.dataset.settingsKey === "custom-button-actions") return;
+        const body = details.querySelector(".settings-section-body");
+        if (body && !body.querySelector(".panel-tile, button, input, select, details")) details.remove();
+      });
+    };
+
+    const originalMaintenancePanel = proto.renderMaintenancePanel;
+    if (typeof originalMaintenancePanel === "function") {
+      proto.renderMaintenancePanel = function (body) {
+        if (!isMSeriesCard(this)) return originalMaintenancePanel.call(this, body);
+        body.innerHTML = "";
+        const grid = this.createPanelGrid();
+        for (const [title, kind, resetLabel, command, entityKey] of maintenanceDefinitions(this)) {
+          if (!this.getRelatedEntity?.(entityKey)) continue;
+          grid.appendChild(this.createMaintenanceTile(title, kind, resetLabel, command));
+        }
+        if (grid.childElementCount) body.appendChild(grid);
+      };
+    }
+
+    const originalRenderAppPanel = proto.renderAppPanel;
+    if (typeof originalRenderAppPanel === "function") {
+      proto.renderAppPanel = function (...args) {
+        if (isMSeriesCard(this) && !panelAvailable(this, this.activePanel)) {
+          this.activePanel = "control";
+        }
+        const result = originalRenderAppPanel.apply(this, args);
+        removeEmptySettingSections(this);
+        syncPanelTabs(this);
+        return result;
+      };
+    }
+
+    const availabilitySignature = (card) => {
+      if (!isMSeriesCard(card)) return "";
+      const identity = mapIdentity(card);
+      if (!identity.serial) return "";
+      return Object.entries(card?._hass?.states || {})
+        .filter(([, state]) => serialOf(state) === identity.serial)
+        .map(([entityId, state]) => `${entityId}:${state?.state === "unavailable" ? "0" : "1"}`)
+        .sort()
+        .join("|");
+    };
+
+    const originalUpdateRenderer = proto.updateRenderer;
+    if (typeof originalUpdateRenderer === "function") {
+      proto.updateRenderer = function (...args) {
+        const result = originalUpdateRenderer.apply(this, args);
+        if (isMSeriesCard(this)) {
+          const signature = availabilitySignature(this);
+          if (signature !== this.__anthbotAvailabilitySignature) {
+            const hadSignature = this.__anthbotAvailabilitySignature !== undefined;
+            this.__anthbotAvailabilitySignature = signature;
+            if (hadSignature && this.shadowRoot?.querySelector?.('[data-role="panel-body"]')) {
+              this.renderAppPanel?.();
+            } else {
+              syncPanelTabs(this);
+            }
+          }
+        }
+        return result;
+      };
     }
 
     proto.__anthbotUnifiedControlRouterVersion = ANTHBOT_CONTROL_ROUTER_VERSION;
