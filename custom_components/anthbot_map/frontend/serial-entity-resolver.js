@@ -1,56 +1,6 @@
-// Scope every automatically resolved entity/control to the mower represented by
-// this card. Home Assistant adds _2, _3... to duplicate entity_ids; the old
-// resolver stripped that ordinal and could mix Genie and M-series entities.
-
-const anthbotCardFromEvent = (event) => {
-  const path = typeof event?.composedPath === "function" ? event.composedPath() : [];
-  return path.find((node) => String(node?.tagName || "").toLowerCase() === "anthbot-map-card") || null;
-};
-
-const anthbotCommandFromEvent = (event) => {
-  const path = typeof event?.composedPath === "function" ? event.composedPath() : [];
-  for (const node of path) {
-    const command = node?.dataset?.command ?? node?.getAttribute?.("data-command");
-    if (command) return String(command);
-  }
-  return "";
-};
-
-if (typeof window !== "undefined" && window.__anthbotScopedCommandCaptureInstalled !== true) {
-  window.__anthbotScopedCommandCaptureInstalled = true;
-  window.addEventListener("click", async (event) => {
-    const command = anthbotCommandFromEvent(event);
-    if (!new Set(["start", "pause", "resume"]).has(command)) return;
-    const card = anthbotCardFromEvent(event);
-    if (!card?._hass?.callService) return;
-    if (card.effectiveCustomButtonAction?.(command)) return;
-
-    const serial = String(
-      card?.entity?.attributes?.serial_number
-        ?? card?.entity?.attributes?.serial
-        ?? "",
-    ).trim();
-    if (!serial) return;
-
-    const service = {
-      start: "start_full_mow",
-      pause: "pause_mow",
-      resume: "resume_mow",
-    }[command];
-    if (!service) return;
-
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    try {
-      card.notify?.(card.feedback?.("commandSentWaiting", card.commandLabel?.(service) || service));
-      await card._hass.callService("anthbot_map", service, { serial_number: serial });
-      card.scheduleRefresh?.(100);
-    } catch (error) {
-      console.error(`Anthbot ${service} failed`, error);
-      card.notify?.(String(error?.message || error));
-    }
-  }, true);
-}
+// Keep automatically resolved entities/controls scoped to the mower represented
+// by this card. Command execution itself stays on the card's original beta3
+// handleCommand()/button.press path; do not add a second global command router.
 
 if (typeof customElements !== "undefined") {
   customElements.whenDefined("anthbot-map-card").then(() => {
@@ -58,12 +8,24 @@ if (typeof customElements !== "undefined") {
     const proto = Card?.prototype;
     if (!proto || proto.__anthbotSerialEntityResolverPatch === true) return;
 
+    // The beta3 feedback capture handler stops propagation and runs a second,
+    // global target resolver. That resolver is unsafe with two mowers because
+    // HA's _2 suffix can cross devices. Remove only that global interception;
+    // every command button already has the card-native click handler attached.
+    const disableGlobalCommandCapture = () => {
+      if (typeof document === "undefined" || typeof window === "undefined") return;
+      const handler = window.__anthbotFeedbackClickHandler;
+      if (handler) {
+        document.removeEventListener("click", handler, true);
+        window.__anthbotFeedbackClickHandler = null;
+      }
+    };
+    queueMicrotask(disableGlobalCommandCapture);
+    window.setTimeout(disableGlobalCommandCapture, 0);
+
     const normalize = (value) => String(value ?? "")
-      .toLowerCase()
-      .normalize("NFKD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "");
+      .toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 
     const mapIdentity = (card) => {
       const entityId = String(card?._activeEntityId || card?.config?.entity || "");
@@ -81,9 +43,7 @@ if (typeof customElements !== "undefined") {
     };
 
     const serialOf = (state) => String(
-      state?.attributes?.serial_number
-        ?? state?.attributes?.serial
-        ?? "",
+      state?.attributes?.serial_number ?? state?.attributes?.serial ?? "",
     ).trim();
 
     const originalFindEntity = proto.findEntity;
@@ -93,10 +53,12 @@ if (typeof customElements !== "undefined") {
         const identity = mapIdentity(this);
         const wantedSuffixes = Array.isArray(suffixes) ? suffixes : [];
 
+        // Prefer an exact serial match. All Anthbot entities expose the mower
+        // serial, so Genie and M9/M9 Pro cannot select one another's controls.
         if (identity.serial) {
           for (const suffix of wantedSuffixes) {
             const suffixSlug = normalize(suffix);
-            const serialMatches = Object.entries(states)
+            const matches = Object.entries(states)
               .filter(([entityId, state]) =>
                 entityId.startsWith(`${domain}.`)
                 && state?.state !== "unavailable"
@@ -106,24 +68,26 @@ if (typeof customElements !== "undefined") {
                 const idSlug = normalize(entityId.slice(domain.length + 1));
                 const friendlySlug = normalize(state?.attributes?.friendly_name);
                 let score = 0;
-                if (idSlug.endsWith(`_${suffixSlug}`)) score = 1000;
+                if (idSlug.endsWith(`_${suffixSlug}`) || idSlug === suffixSlug) score = 1000;
                 else if (idSlug.includes(suffixSlug)) score = 500;
                 if (friendlySlug.includes(suffixSlug)) score += 100;
                 return { entityId, score };
               })
               .filter((item) => item.score > 0)
               .sort((a, b) => b.score - a.score || a.entityId.localeCompare(b.entityId));
-            if (serialMatches.length) return serialMatches[0].entityId;
+            if (matches.length) return matches[0].entityId;
           }
         }
 
+        // Compatibility fallback: preserve the map entity's HA duplicate
+        // ordinal (map -> unsuffixed controls, map_2 -> controls ending _2).
         if (identity.base) {
           for (const suffix of wantedSuffixes) {
             const suffixSlug = normalize(suffix);
             if (!suffixSlug) continue;
             const exactId = `${domain}.${identity.base}_${suffixSlug}${identity.ordinal ? `_${identity.ordinal}` : ""}`;
-            const exactState = states[exactId];
-            if (exactState && exactState.state !== "unavailable") return exactId;
+            const state = states[exactId];
+            if (state && state.state !== "unavailable") return exactId;
           }
         }
 
@@ -131,6 +95,8 @@ if (typeof customElements !== "undefined") {
       };
     }
 
+    // Keep direct anthbot_map service fallbacks on this card's current map
+    // entity. The normal path remains button.press when a native button exists.
     const originalHandleCommand = proto.handleCommand;
     if (typeof originalHandleCommand === "function") {
       proto.handleCommand = async function (command) {
