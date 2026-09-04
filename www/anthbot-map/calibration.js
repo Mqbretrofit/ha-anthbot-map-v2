@@ -224,7 +224,32 @@ if (typeof customElements !== "undefined") {
   customElements.whenDefined("anthbot-map-card").then(() => {
     const Card = customElements.get("anthbot-map-card");
     const proto = Card?.prototype;
-    if (!proto || proto.__anthbotMowingTargetPatch === true) return;
+    if (!proto) return;
+
+    const originalGetSwitchEntity = proto.getSwitchEntity;
+    if (typeof originalGetSwitchEntity === "function" && proto.__anthbotBatterySaverSerialResolverPatch !== true) {
+      proto.getSwitchEntity = function (kind) {
+        if (kind === "batterySaver") {
+          const configured = this.config?.switches?.[kind];
+          if (this.isEntityAvailable?.(configured)) return configured;
+          const serial = String(
+            this.entity?.attributes?.serial_number
+              ?? this.entity?.attributes?.serial
+              ?? "",
+          ).trim();
+          if (serial && this._hass?.states) {
+            const exact = Object.entries(this._hass.states)
+              .filter(([entityId, state]) => entityId.startsWith("switch.") && state?.state !== "unavailable")
+              .find(([, state]) => String(state?.attributes?.serial_number ?? "").trim() === serial);
+            if (exact) return exact[0];
+          }
+        }
+        return originalGetSwitchEntity.call(this, kind);
+      };
+      proto.__anthbotBatterySaverSerialResolverPatch = true;
+    }
+
+    if (proto.__anthbotMowingTargetPatch === true) return;
 
     const original = proto.updateMowingProgressStatus;
     if (typeof original !== "function") return;
