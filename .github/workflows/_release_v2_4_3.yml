@@ -1,0 +1,94 @@
+name: Publish v2.4.3
+
+on:
+  push:
+    branches:
+      - rebuild/v2.4.3-beta.3-clean-model-split
+    paths:
+      - .github/workflows/_release_v2_4_3.yml
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: rebuild/v2.4.3-beta.3-clean-model-split
+          fetch-depth: 0
+
+      - name: Verify release baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e .github/workflows/_restore_model_robot_icons.yml
+          test ! -e _m9_icon_96_valid.b64
+          test ! -e _m9_pro_icon_96_valid.b64
+          test ! -e _m9_icon_tmp.b64
+          test ! -e _m9_pro_icon_tmp.b64
+          test ! -e _iconparts
+
+          echo 'ec497cf1eb67aa7d6bdd2981265992cec55b04d70f6c4dbed101955376667bb6  custom_components/anthbot_map/frontend/m9.png' | sha256sum -c -
+          echo 'ec497cf1eb67aa7d6bdd2981265992cec55b04d70f6c4dbed101955376667bb6  www/anthbot-map/m9.png' | sha256sum -c -
+          echo '0b4ecf2a844ddd58f62da8cc246b40fd3c322f138bcaa7c575a975bb5d083e39  custom_components/anthbot_map/frontend/m9-pro.png' | sha256sum -c -
+          echo '0b4ecf2a844ddd58f62da8cc246b40fd3c322f138bcaa7c575a975bb5d083e39  www/anthbot-map/m9-pro.png' | sha256sum -c -
+
+          test "$(git hash-object custom_components/anthbot_map/frontend/robot.png)" = "a8a59914eb8c2af6e7e922da057559d1b8c62892"
+          test "$(git hash-object www/anthbot-map/robot.png)" = "a8a59914eb8c2af6e7e922da057559d1b8c62892"
+
+          grep -Fq '"model": self.coordinator.device.model' custom_components/anthbot_map/sensor.py
+          grep -Fq '"m9-pro.png?v=244"' custom_components/anthbot_map/frontend/anthbot-map-card.js
+          grep -Fq '"m9.png?v=244"' custom_components/anthbot_map/frontend/anthbot-map-card.js
+          cmp custom_components/anthbot_map/frontend/anthbot-map-card.js www/anthbot-map/anthbot-map-card.js
+          node --check custom_components/anthbot_map/frontend/anthbot-map-card.js
+          python -m py_compile custom_components/anthbot_map/sensor.py
+
+      - name: Set stable version
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -c 'from pathlib import Path; p=Path("custom_components/anthbot_map/manifest.json"); s=p.read_text(encoding="utf-8"); beta="\"version\": \"2.4.3-beta.3\""; stable="\"version\": \"2.4.3\""; assert beta in s or stable in s, "Unexpected manifest version"; p.write_text(s.replace(beta,stable,1),encoding="utf-8")'
+          python -m json.tool custom_components/anthbot_map/manifest.json >/dev/null
+          grep -Fq '"version": "2.4.3"' custom_components/anthbot_map/manifest.json
+
+      - name: Commit and tag stable release
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags origin
+          if git rev-parse -q --verify refs/tags/v2.4.3 >/dev/null; then
+            echo 'Tag v2.4.3 already exists; refusing to overwrite it.' >&2
+            exit 1
+          fi
+
+          git rm .github/workflows/_release_v2_4_3.yml
+          git config user.name 'Mqbretrofit'
+          git config user.email 'matrai.attila975@gmail.com'
+          git add custom_components/anthbot_map/manifest.json
+          git commit -m 'Release v2.4.3'
+          git tag -a v2.4.3 -m 'v2.4.3'
+          git push origin HEAD:rebuild/v2.4.3-beta.3-clean-model-split
+          git push origin v2.4.3
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            '## ANTHBOT Map v2.4.3' \
+            '' \
+            '- Stabilized model-specific handling for Genie, M5, M9 and M9 Pro.' \
+            '- M-series control, zone and mowing-history fixes are included.' \
+            '- M9/M9 Pro map/path and zone handling improvements are included.' \
+            '- Model-specific mower images: Genie keeps its original image, M5/M9 use the M9 image, and M9 Pro uses its own image.' \
+            '- Existing Genie behaviour is preserved while M-series logic remains separated.' \
+            > /tmp/release-notes.md
+          gh release create v2.4.3 \
+            --repo Mqbretrofit/ha-anthbot-map-v2 \
+            --title 'v2.4.3' \
+            --notes-file /tmp/release-notes.md \
+            --latest
