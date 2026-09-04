@@ -67,10 +67,14 @@ if (typeof customElements !== "undefined") {
 
     const isAvailable = (state) => Boolean(state && state.state !== "unavailable");
 
+    // Never jump from one mower's map to a sibling map merely because an entity
+    // is temporarily unavailable. The configured map remains authoritative.
     proto.resolveMapEntityId = function () {
       return String(this.config?.entity || "");
     };
 
+    // Serial first. Without serial metadata, use only this card's exact HA
+    // duplicate ordinal. Never fall through to a different mower.
     proto.findEntity = function (domain, suffixes) {
       const states = this._hass?.states || {};
       const identity = mapIdentity(this);
@@ -165,6 +169,8 @@ if (typeof customElements !== "undefined") {
       };
     }
 
+    // Every direct service call carries this card's mower serial. entity_id is
+    // still supplied by the original callAnthbotService for compatibility.
     const originalCallAnthbotService = proto.callAnthbotService;
     if (typeof originalCallAnthbotService === "function") {
       proto.callAnthbotService = function (service, data = {}) {
@@ -177,6 +183,9 @@ if (typeof customElements !== "undefined") {
       };
     }
 
+    // IMPORTANT: standard mower controls now bypass button.press entirely.
+    // Home Assistant Developer Tools proves these anthbot_map services work;
+    // sending them directly removes the unreliable frontend button indirection.
     const directServiceByCommand = {
       connect: "connect_cloud",
       start: "start_full_mow",
@@ -218,12 +227,16 @@ if (typeof customElements !== "undefined") {
       };
     }
 
+    // Single-zone start follows the same direct service path. Multi-zone and
+    // auto-zone methods in the card already call anthbot_map services directly.
     proto.startZone = async function (zone) {
       await this.callAnthbotService("start_zone_mow", {
         zones: String(zone?.id ?? zone?.name ?? ""),
       });
     };
 
+    // calibration.js historically selected the first same-serial switch for
+    // battery saver. Restrict it to the actual battery_saver_mode switch.
     const baseGetSwitchEntity = proto.getSwitchEntity;
     if (typeof baseGetSwitchEntity === "function") {
       window.setTimeout(() => {
