@@ -1,11 +1,12 @@
 // Multi-mower control/entity scoping for the clean model-split rebuild.
 //
-// Keep the proven beta3 card handlers as the single command path. The old
-// document-level feedback router duplicates command dispatch and can select a
-// sibling mower when Home Assistant appends _2/_3 to duplicate entity IDs.
-// Remove that router and scope every automatic lookup to this card's mower.
+// The card keeps model/serial-scoped entity discovery for display/settings, but
+// mower commands are sent directly through anthbot_map services. This mirrors
+// the working Home Assistant Developer Tools action path and removes the
+// button.press layer that could swallow or misroute commands in multi-mower
+// installations.
 
-const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-04-control-v4";
+const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-04-control-v5";
 
 const disableLegacyCommandRouter = () => {
   if (typeof window === "undefined" || typeof document === "undefined") return;
@@ -66,14 +67,14 @@ if (typeof customElements !== "undefined") {
 
     const isAvailable = (state) => Boolean(state && state.state !== "unavailable");
 
-    // Do not jump between sibling map entities when one mower is temporarily
-    // unavailable. The configured map always remains authoritative.
+    // Never jump from one mower's map to a sibling map merely because an entity
+    // is temporarily unavailable. The configured map remains authoritative.
     proto.resolveMapEntityId = function () {
       return String(this.config?.entity || "");
     };
 
-    // Serial first. Without serial metadata, use only the exact HA ordinal of
-    // this map card. Never select a different mower as a fallback.
+    // Serial first. Without serial metadata, use only this card's exact HA
+    // duplicate ordinal. Never fall through to a different mower.
     proto.findEntity = function (domain, suffixes) {
       const states = this._hass?.states || {};
       const identity = mapIdentity(this);
@@ -168,7 +169,8 @@ if (typeof customElements !== "undefined") {
       };
     }
 
-    // Direct service fallbacks carry serial_number in addition to entity_id.
+    // Every direct service call carries this card's mower serial. entity_id is
+    // still supplied by the original callAnthbotService for compatibility.
     const originalCallAnthbotService = proto.callAnthbotService;
     if (typeof originalCallAnthbotService === "function") {
       proto.callAnthbotService = function (service, data = {}) {
@@ -181,20 +183,60 @@ if (typeof customElements !== "undefined") {
       };
     }
 
-    // Keep beta3's own handleCommand()/button.press path, but make sure the
-    // duplicate document-level router cannot swallow the click first.
+    // IMPORTANT: standard mower controls now bypass button.press entirely.
+    // Home Assistant Developer Tools proves these anthbot_map services work;
+    // sending them directly removes the unreliable frontend button indirection.
+    const directServiceByCommand = {
+      connect: "connect_cloud",
+      start: "start_full_mow",
+      stop: "stop_mow",
+      dock: "return_to_dock",
+      pause: "pause_mow",
+      resume: "resume_mow",
+      "outer-edge": "start_outer_edge_mow",
+      "dock-edge": "start_dock_edge_mow",
+      "reset-blade": "reset_blade_maintenance",
+      "reset-camera": "reset_camera_maintenance",
+      "reset-contact": "reset_dock_contact_maintenance",
+    };
+
     const originalHandleCommand = proto.handleCommand;
     if (typeof originalHandleCommand === "function") {
       proto.handleCommand = async function (command) {
         disableLegacyCommandRouter();
+
+        if (String(command).startsWith("reset-") && !window.confirm(this.t("resetCounterWarning"))) {
+          return;
+        }
+
+        const customAction = typeof this.effectiveCustomButtonAction === "function"
+          ? this.effectiveCustomButtonAction(command)
+          : null;
+        if (customAction) {
+          await this.callCustomButtonAction(command, customAction);
+          return;
+        }
+
+        const service = directServiceByCommand[command];
+        if (service) {
+          await this.callAnthbotService(service);
+          return;
+        }
+
         return originalHandleCommand.call(this, command);
       };
     }
 
-    // calibration.js used to choose the first switch with the same serial for
-    // battery saver, which could be rain/obstacle/etc. Install this after the
-    // calibration callback (timer queue follows the whenDefined microtasks) so
-    // battery saver and shutdown countdown always use battery_saver_mode only.
+    // Single-zone start follows the same direct service path. Multi-zone and
+    // auto-zone methods in the card already call anthbot_map services directly.
+    proto.startZone = async function (zone) {
+      await this.callAnthbotService("start_zone_mow", {
+        zones: String(zone?.id ?? zone?.name ?? ""),
+      });
+    };
+
+    // calibration.js historically selected the first same-serial switch for
+    // battery saver. Restrict it to the actual battery_saver_mode switch.
     const baseGetSwitchEntity = proto.getSwitchEntity;
     if (typeof baseGetSwitchEntity === "function") {
       window.setTimeout(() => {
