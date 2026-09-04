@@ -14,6 +14,6 @@ This beta builds on **v2.4.3-beta.3** and separates Genie, M5, M9 and M9 Pro mod
 - Hide controls that are not supported by the active mower model.
 - Added model-specific mower images: **M9 Pro uses its own image**, **M9/M5 use the M9 image**, and the **existing Genie image is unchanged**.
 
-## Beta note
+## Known beta limitation
 
 The direct cloud source for the percentage shown by the official app in some M-series mowing-history rows is still under investigation. This beta does not claim that every old history percentage is already identical to the app.
