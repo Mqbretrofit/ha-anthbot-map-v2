@@ -24,8 +24,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          tr -cd 'A-Za-z0-9+/=' < _m9_icon_96_valid.b64 | base64 --decode > /tmp/m9.png
-          tr -cd 'A-Za-z0-9+/=' < _m9_pro_icon_96_valid.b64 | base64 --decode > /tmp/m9-pro.png
+          cat _iconparts/m9.hex.* | xxd -r -p > /tmp/m9.png
+          cat _iconparts/m9-pro.hex.* | xxd -r -p > /tmp/m9-pro.png
           echo 'ec497cf1eb67aa7d6bdd2981265992cec55b04d70f6c4dbed101955376667bb6  /tmp/m9.png' | sha256sum -c -
           echo '0b4ecf2a844ddd58f62da8cc246b40fd3c322f138bcaa7c575a975bb5d083e39  /tmp/m9-pro.png' | sha256sum -c -
           cp /tmp/m9.png custom_components/anthbot_map/frontend/m9.png
