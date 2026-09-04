@@ -138,6 +138,8 @@ class AnthbotBatterySaverSwitchEntity(
         pulse_until = self.coordinator.battery_saver_shutdown_guard_pulse_until
         return {
             **config,
+            "serial_number": self.coordinator.client.serial_number,
+            "model": self.coordinator.device.model,
             "configured": bool(config.get("charger_switch")),
             "phase": self.coordinator.battery_saver_phase,
             "shutdown_guard_state": self.coordinator.battery_saver_shutdown_guard_state,
@@ -317,7 +319,6 @@ class AnthbotSwitchEntity(
             await self._async_set_param_toggle("nest_switch", False)
             return
         await self._async_set_custom_direction_enabled(False)
-
 
 
 class AnthbotZoneSwitchEntity(
