@@ -16,7 +16,9 @@ from .. import mqtt_live as mqtt_live
 from .. import task_events as task_events
 from .. import zones as zones
 
-# Compatibility aliases for model modules moved from the package root.
+# Compatibility aliases for shared modules used by model code moved from the
+# package root. These are aliases only; there are no duplicate files under
+# models/.
 for _name, _module in {
     "api": api,
     "const": const,
@@ -28,5 +30,10 @@ for _name, _module in {
     sys.modules[f"{__name__}.{_name}"] = _module
 
 from .base import model_family, model_family_key
+
+# Import the single shared coordinator only after the aliases above are ready:
+# root coordinator -> models.genie can then resolve its legacy relative imports.
+from .. import coordinator as coordinator
+sys.modules[f"{__name__}.coordinator"] = coordinator
 
 __all__ = ["model_family", "model_family_key"]
