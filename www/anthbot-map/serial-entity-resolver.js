@@ -5,7 +5,7 @@
 // sibling mower when Home Assistant appends _2/_3 to duplicate entity IDs.
 // Remove that router and scope every automatic lookup to this card's mower.
 
-const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-04-control-v3";
+const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-04-control-v4";
 
 const disableLegacyCommandRouter = () => {
   if (typeof window === "undefined" || typeof document === "undefined") return;
@@ -15,9 +15,6 @@ const disableLegacyCommandRouter = () => {
   }
 };
 
-// This module is imported while anthbot-map-card.js is still evaluating, while
-// the legacy handler is registered near the end of that file. Keep removing it
-// for a short grace period so load-order timing cannot resurrect it.
 if (typeof window !== "undefined" && typeof document !== "undefined") {
   disableLegacyCommandRouter();
   const removalTimer = window.setInterval(disableLegacyCommandRouter, 25);
@@ -69,12 +66,14 @@ if (typeof customElements !== "undefined") {
 
     const isAvailable = (state) => Boolean(state && state.state !== "unavailable");
 
+    // Do not jump between sibling map entities when one mower is temporarily
+    // unavailable. The configured map always remains authoritative.
     proto.resolveMapEntityId = function () {
-      const configured = String(this.config?.entity || "");
-      if (!configured) return configured;
-      return configured;
+      return String(this.config?.entity || "");
     };
 
+    // Serial first. Without serial metadata, use only the exact HA ordinal of
+    // this map card. Never select a different mower as a fallback.
     proto.findEntity = function (domain, suffixes) {
       const states = this._hass?.states || {};
       const identity = mapIdentity(this);
@@ -152,42 +151,69 @@ if (typeof customElements !== "undefined") {
           const serial = serialOf(states[explicit]);
           if (!identity.serial || !serial || serial === identity.serial) return explicit;
         }
+        if (!identity.serial) return null;
 
-        if (identity.serial) {
-          const zoneId = zone?.id === undefined || zone?.id === null ? "" : String(zone.id);
-          const zoneName = normalize(zone?.name);
-          const match = Object.entries(states).find(([entityId, state]) => {
-            if (!entityId.startsWith("button.") || !isAvailable(state)) return false;
-            if (serialOf(state) !== identity.serial) return false;
-            const attrs = state.attributes || {};
-            const candidateId = attrs.id ?? attrs.zone_id;
-            const candidateName = normalize(attrs.name || state.attributes?.friendly_name);
-            return (zoneId && String(candidateId) === zoneId)
-              || (zoneName && candidateName.includes(zoneName));
-          });
-          return match?.[0] || null;
-        }
-        return null;
+        const zoneId = zone?.id === undefined || zone?.id === null ? "" : String(zone.id);
+        const zoneName = normalize(zone?.name);
+        const match = Object.entries(states).find(([entityId, state]) => {
+          if (!entityId.startsWith("button.") || !isAvailable(state)) return false;
+          if (serialOf(state) !== identity.serial) return false;
+          const attrs = state.attributes || {};
+          const candidateId = attrs.id ?? attrs.zone_id;
+          const candidateName = normalize(attrs.name || state.attributes?.friendly_name);
+          return (zoneId && String(candidateId) === zoneId)
+            || (zoneName && candidateName.includes(zoneName));
+        });
+        return match?.[0] || null;
       };
     }
 
+    // Direct service fallbacks carry serial_number in addition to entity_id.
     const originalCallAnthbotService = proto.callAnthbotService;
     if (typeof originalCallAnthbotService === "function") {
       proto.callAnthbotService = function (service, data = {}) {
         const identity = mapIdentity(this);
-        const scopedData = identity.serial
-          ? { ...data, serial_number: identity.serial }
-          : { ...data };
-        return originalCallAnthbotService.call(this, service, scopedData);
+        return originalCallAnthbotService.call(
+          this,
+          service,
+          identity.serial ? { ...data, serial_number: identity.serial } : { ...data },
+        );
       };
     }
 
+    // Keep beta3's own handleCommand()/button.press path, but make sure the
+    // duplicate document-level router cannot swallow the click first.
     const originalHandleCommand = proto.handleCommand;
     if (typeof originalHandleCommand === "function") {
       proto.handleCommand = async function (command) {
         disableLegacyCommandRouter();
         return originalHandleCommand.call(this, command);
       };
+    }
+
+    // calibration.js used to choose the first switch with the same serial for
+    // battery saver, which could be rain/obstacle/etc. Install this after the
+    // calibration callback (timer queue follows the whenDefined microtasks) so
+    // battery saver and shutdown countdown always use battery_saver_mode only.
+    const baseGetSwitchEntity = proto.getSwitchEntity;
+    if (typeof baseGetSwitchEntity === "function") {
+      window.setTimeout(() => {
+        proto.getSwitchEntity = function (kind) {
+          if (kind === "batterySaver") {
+            const configured = this.config?.switches?.[kind];
+            if (configured && isAvailable(this._hass?.states?.[configured])) {
+              const identity = mapIdentity(this);
+              const configuredSerial = serialOf(this._hass.states[configured]);
+              if (!identity.serial || !configuredSerial || configuredSerial === identity.serial) {
+                return configured;
+              }
+            }
+            return this.findEntity("switch", ["battery_saver_mode", "battery saver mode"]);
+          }
+          return baseGetSwitchEntity.call(this, kind);
+        };
+        proto.__anthbotStrictBatterySaverResolver = true;
+      }, 0);
     }
 
     proto.__anthbotUnifiedControlRouterVersion = ANTHBOT_CONTROL_ROUTER_VERSION;
