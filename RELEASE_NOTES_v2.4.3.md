@@ -16,4 +16,6 @@ Stable release based on the field-tested v2.4.3 beta series, preserving existing
 - Hides controls that are not supported by the active mower model.
 - Restores model-specific mower images: **M9 Pro uses its own image**, **M9/M5 use the M9 image**, while the **existing Genie image remains unchanged**.
 
+**Tested hardware for the M-series map implementation: M9 Pro.**
+
 This release is published as the normal stable **v2.4.3** release, not as a beta or test build.
