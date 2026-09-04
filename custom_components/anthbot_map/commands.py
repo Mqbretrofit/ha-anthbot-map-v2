@@ -6,6 +6,7 @@ import asyncio
 import logging
 
 from .api import AnthbotGenieApiError
+from .base import model_family
 from .coordinator import AnthbotGenieDataUpdateCoordinator, is_robot_online
 from .m9 import install_m_series_compat
 from .mower_status import raw_robot_status
@@ -17,10 +18,11 @@ _LOGGER = logging.getLogger(__name__)
 install_m_series_compat()
 
 
-def _is_m_series(coordinator: AnthbotGenieDataUpdateCoordinator) -> bool:
-    """Return whether this coordinator controls an M5/M9 mower."""
-    model = str(getattr(coordinator.device, "model", "") or "").upper()
-    return "M5" in model or "M9" in model
+def _uses_m_series_transport(coordinator: AnthbotGenieDataUpdateCoordinator) -> bool:
+    """Return whether this mower uses the M-series transport behavior."""
+
+    family = model_family(getattr(coordinator.device, "model", None))
+    return family.key in {"m9_pro", "m5"}
 
 
 async def async_prepare_cloud_connection(
@@ -40,7 +42,7 @@ async def async_prepare_cloud_connection(
     """
     if mowing_start:
         await coordinator.async_prepare_mowing_power()
-    m_series = _is_m_series(coordinator)
+    m_series = _uses_m_series_transport(coordinator)
 
     for attempt in range(attempts):
         if not coordinator.live_shadow_connected:
@@ -48,9 +50,6 @@ async def async_prepare_cloud_connection(
             if not coordinator.live_shadow_connected:
                 continue
 
-        # For M5/M9, reaching this point already proves that the authenticated
-        # AWS IoT transport is up. If we also have a decoded mower status (for
-        # example Docked), the device is demonstrably reporting live state.
         if m_series and raw_robot_status(coordinator.reported_state) is not None:
             return True
 
@@ -64,9 +63,6 @@ async def async_prepare_cloud_connection(
                 attempts,
                 err,
             )
-            # M-series commands use their own signed command transport. A
-            # failed get_all_props wake must not suppress an otherwise usable
-            # command path when MQTT itself is connected.
             if m_series and coordinator.live_shadow_connected:
                 return True
             continue
