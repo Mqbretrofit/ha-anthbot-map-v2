@@ -11,5 +11,6 @@ def matches(model: object) -> bool:
 
 
 def install_type_support() -> None:
-    """M5 currently uses the shared M-series transport implementation."""
+    """Register M5; it currently uses the shared default M-series policies."""
+    _common.register_family(TYPE_KEY)
     _common.install_m_series_compat()
