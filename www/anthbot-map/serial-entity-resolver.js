@@ -5,7 +5,7 @@
 // the exact Home Assistant duplicate ordinal of this card's map entity. This
 // keeps Genie / M-series isolated without making valid legacy settings vanish.
 
-const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-04-control-v8";
+const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-04-control-v9";
 
 const disableLegacyCommandRouter = () => {
   if (typeof window === "undefined" || typeof document === "undefined") return;
@@ -64,7 +64,13 @@ if (typeof customElements !== "undefined") {
       };
     };
 
-    const isAvailable = (state) => Boolean(state && state.state !== "unavailable");
+    // Treat Home Assistant's two no-data states as unavailable capabilities.
+    // Keep valid falsy values such as 0 and "off" visible and usable.
+    const isAvailable = (state) => {
+      if (!state) return false;
+      const value = String(state.state ?? "").trim().toLowerCase();
+      return Boolean(value) && value !== "unavailable" && value !== "unknown";
+    };
 
     const exactOrdinalEntity = (card, domain, suffix) => {
       const states = card?._hass?.states || {};
@@ -284,26 +290,9 @@ if (typeof customElements !== "undefined") {
       }, 0);
     }
 
-    // M-series dashboards should describe only capabilities that Home
-    // Assistant can currently expose. Never leave disabled/unavailable tiles
-    // behind, and hide a whole tab when it would be empty.
-    const modelOf = (card) => {
-      const states = card?._hass?.states || {};
-      const identity = mapIdentity(card);
-      const direct = states[identity.entityId]?.attributes?.model
-        ?? states[identity.configuredId]?.attributes?.model
-        ?? card?.entity?.attributes?.model;
-      if (direct) return String(direct);
-      if (identity.serial) {
-        const related = Object.values(states).find((state) =>
-          serialOf(state) === identity.serial && state?.attributes?.model,
-        );
-        if (related?.attributes?.model) return String(related.attributes.model);
-      }
-      return "";
-    };
-
-    const isMSeriesCard = (card) => /\bM(?:5|9)\b|M9\s*PRO/i.test(modelOf(card));
+    // Every mower dashboard should expose only capabilities that currently
+    // have real Home Assistant data. This is model-independent: Genie, M5,
+    // M9 and M9 Pro all follow the same visibility rules.
     const emptyFragment = () => document.createDocumentFragment();
     const entityIdAvailable = (card, entityId) => isAvailable(card?._hass?.states?.[entityId]);
 
@@ -311,10 +300,8 @@ if (typeof customElements !== "undefined") {
       const original = proto[methodName];
       if (typeof original !== "function") return;
       proto[methodName] = function (...args) {
-        if (isMSeriesCard(this)) {
-          const entityId = resolveEntityId.call(this, ...args);
-          if (!entityIdAvailable(this, entityId)) return emptyFragment();
-        }
+        const entityId = resolveEntityId.call(this, ...args);
+        if (!entityIdAvailable(this, entityId)) return emptyFragment();
         return original.apply(this, args);
       };
     };
@@ -348,10 +335,7 @@ if (typeof customElements !== "undefined") {
     const originalDirectObstacle = proto.createDirectObstacleControl;
     if (typeof originalDirectObstacle === "function") {
       proto.createDirectObstacleControl = function (switchEntityId, levelEntityId) {
-        if (
-          isMSeriesCard(this)
-          && (!entityIdAvailable(this, switchEntityId) || !entityIdAvailable(this, levelEntityId))
-        ) {
+        if (!entityIdAvailable(this, switchEntityId) || !entityIdAvailable(this, levelEntityId)) {
           return emptyFragment();
         }
         return originalDirectObstacle.call(this, switchEntityId, levelEntityId);
@@ -387,7 +371,6 @@ if (typeof customElements !== "undefined") {
     };
 
     const panelAvailable = (card, panel) => {
-      if (!isMSeriesCard(card)) return true;
       if (panel === "maintenance") return hasMaintenanceContent(card);
       if (panel === "status") return hasStatusContent(card);
       if (panel === "diagnostics") return hasDiagnosticsContent(card);
@@ -395,7 +378,6 @@ if (typeof customElements !== "undefined") {
     };
 
     const syncPanelTabs = (card) => {
-      if (!isMSeriesCard(card)) return;
       card.shadowRoot?.querySelectorAll?.("button[data-panel]").forEach((button) => {
         const available = panelAvailable(card, button.dataset.panel);
         button.hidden = !available;
@@ -404,7 +386,7 @@ if (typeof customElements !== "undefined") {
     };
 
     const removeEmptySettingSections = (card) => {
-      if (!isMSeriesCard(card) || card.activePanel !== "settings") return;
+      if (card.activePanel !== "settings") return;
       card.shadowRoot?.querySelectorAll?.("details.zone-settings").forEach((details) => {
         const body = details.querySelector(".zone-settings-body");
         if (body && !body.querySelector(".panel-tile, button, input, select")) details.remove();
@@ -419,7 +401,6 @@ if (typeof customElements !== "undefined") {
     const originalMaintenancePanel = proto.renderMaintenancePanel;
     if (typeof originalMaintenancePanel === "function") {
       proto.renderMaintenancePanel = function (body) {
-        if (!isMSeriesCard(this)) return originalMaintenancePanel.call(this, body);
         body.innerHTML = "";
         const grid = this.createPanelGrid();
         for (const [title, kind, resetLabel, command, entityKey] of maintenanceDefinitions(this)) {
@@ -433,7 +414,7 @@ if (typeof customElements !== "undefined") {
     const originalRenderAppPanel = proto.renderAppPanel;
     if (typeof originalRenderAppPanel === "function") {
       proto.renderAppPanel = function (...args) {
-        if (isMSeriesCard(this) && !panelAvailable(this, this.activePanel)) {
+        if (!panelAvailable(this, this.activePanel)) {
           this.activePanel = "control";
         }
         const result = originalRenderAppPanel.apply(this, args);
@@ -444,12 +425,18 @@ if (typeof customElements !== "undefined") {
     }
 
     const availabilitySignature = (card) => {
-      if (!isMSeriesCard(card)) return "";
       const identity = mapIdentity(card);
-      if (!identity.serial) return "";
-      return Object.entries(card?._hass?.states || {})
-        .filter(([, state]) => serialOf(state) === identity.serial)
-        .map(([entityId, state]) => `${entityId}:${state?.state === "unavailable" ? "0" : "1"}`)
+      const states = card?._hass?.states || {};
+      if (identity.serial) {
+        return Object.entries(states)
+          .filter(([, state]) => serialOf(state) === identity.serial)
+          .map(([entityId, state]) => `${entityId}:${isAvailable(state) ? "1" : "0"}`)
+          .sort()
+          .join("|");
+      }
+      return Object.entries(states)
+        .filter(([entityId]) => entityId === identity.entityId || entityId === identity.configuredId)
+        .map(([entityId, state]) => `${entityId}:${isAvailable(state) ? "1" : "0"}`)
         .sort()
         .join("|");
     };
@@ -458,16 +445,14 @@ if (typeof customElements !== "undefined") {
     if (typeof originalUpdateRenderer === "function") {
       proto.updateRenderer = function (...args) {
         const result = originalUpdateRenderer.apply(this, args);
-        if (isMSeriesCard(this)) {
-          const signature = availabilitySignature(this);
-          if (signature !== this.__anthbotAvailabilitySignature) {
-            const hadSignature = this.__anthbotAvailabilitySignature !== undefined;
-            this.__anthbotAvailabilitySignature = signature;
-            if (hadSignature && this.shadowRoot?.querySelector?.('[data-role="panel-body"]')) {
-              this.renderAppPanel?.();
-            } else {
-              syncPanelTabs(this);
-            }
+        const signature = availabilitySignature(this);
+        if (signature !== this.__anthbotAvailabilitySignature) {
+          const hadSignature = this.__anthbotAvailabilitySignature !== undefined;
+          this.__anthbotAvailabilitySignature = signature;
+          if (hadSignature && this.shadowRoot?.querySelector?.('[data-role="panel-body"]')) {
+            this.renderAppPanel?.();
+          } else {
+            syncPanelTabs(this);
           }
         }
         return result;
