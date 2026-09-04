@@ -138,8 +138,8 @@ jobs:
           git add custom_components/anthbot_map/__init__.py
           if ! git diff --cached --quiet; then
             git commit -m "Set frontend cache key for $tag"
-            git push origin HEAD:main
           fi
+          git push origin HEAD:main
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Verify release source
