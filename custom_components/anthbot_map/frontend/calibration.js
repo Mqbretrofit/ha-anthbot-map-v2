@@ -267,31 +267,5 @@ if (typeof customElements !== "undefined") {
       });
     };
     proto.__anthbotMowingTargetPatch = true;
-
-    const originalHistoryCard = proto.createMowingHistoryCard;
-    if (typeof originalHistoryCard === "function" && proto.__anthbotMSeriesHistoryProgressPatch !== true) {
-      proto.createMowingHistoryCard = function (record) {
-        const card = originalHistoryCard.call(this, record);
-        const isMSeriesV3Record = record && typeof record === "object"
-          && typeof record.record_name === "string"
-          && record.record_name.startsWith("record_")
-          && Object.prototype.hasOwnProperty.call(record, "mow_cnt")
-          && Object.prototype.hasOwnProperty.call(record, "mow_mode")
-          && Object.prototype.hasOwnProperty.call(record, "mowing_progress");
-        if (!isMSeriesV3Record) return card;
-        const progress = Number(record.mowing_progress);
-        if (!Number.isFinite(progress)) return card;
-        const bounded = Math.max(0, Math.min(100, progress));
-        const progressStat = card?.querySelector?.('[data-progress-source]');
-        const valueNode = progressStat?.querySelector?.("strong");
-        if (valueNode) {
-          valueNode.textContent = `${bounded.toFixed(1)}%`;
-          progressStat.dataset.progressSource = "m-series-cloud";
-          progressStat.title = "M9/M9 Pro: a gyári v3 cloud rekord mowing_progress értéke.";
-        }
-        return card;
-      };
-      proto.__anthbotMSeriesHistoryProgressPatch = true;
-    }
   });
 }
