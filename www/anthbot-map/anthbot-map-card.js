@@ -3103,7 +3103,13 @@ class AnthbotMapCard extends HTMLElement {
       robotCalibration: this.robotCalibration,
       mowingPathCalibration: this.mowingPathCalibration,
       decodedBoundaryCalibration: this.decodedBoundaryCalibration,
-      robotImage: this.config.robot_image || this.config.robotImage || this.resolveAsset("robot.png?v=2411"),
+      robotImage: this.config.robot_image || this.config.robotImage || this.resolveAsset(
+        String(this.entity?.attributes?.model || "").toLowerCase().includes("m9 pro")
+          ? "m9-pro.png?v=244"
+          : ["m5", "m9"].some((modelName) => String(this.entity?.attributes?.model || "").toLowerCase().includes(modelName))
+            ? "m9.png?v=244"
+            : "robot.png?v=2411"
+      ),
       noGoLabel: this.t("forbidden"),
       showNoGoZones: this.showNoGoZones,
       showNoGoLabels: this.showNoGoLabels,

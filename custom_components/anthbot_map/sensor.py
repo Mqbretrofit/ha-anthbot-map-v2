@@ -1627,6 +1627,7 @@ class AnthbotMapSensorEntity(
 
         return {
             "serial_number": self.coordinator.client.serial_number,
+            "model": self.coordinator.device.model,
             "pose": state.get("pose"),
             "mower_status": _general_mower_status(state),
             "robot_status_raw": _raw_robot_status(state),
