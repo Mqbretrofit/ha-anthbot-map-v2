@@ -1,12 +1,11 @@
 // Multi-mower control/entity scoping for the clean model-split rebuild.
 //
-// The card keeps model/serial-scoped entity discovery for display/settings, but
-// mower commands are sent directly through anthbot_map services. This mirrors
-// the working Home Assistant Developer Tools action path and removes the
-// button.press layer that could swallow or misroute commands in multi-mower
-// installations.
+// Display/settings entities stay strictly scoped to the mower represented by
+// this card.  The special primary mowing tile (Start/Pause/Resume) is routed
+// directly to anthbot_map services because Stop/Dock use a different tile path
+// and are already proven working in the dashboard.
 
-const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-04-control-v5";
+const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-04-control-v6";
 
 const disableLegacyCommandRouter = () => {
   if (typeof window === "undefined" || typeof document === "undefined") return;
@@ -67,14 +66,13 @@ if (typeof customElements !== "undefined") {
 
     const isAvailable = (state) => Boolean(state && state.state !== "unavailable");
 
-    // Never jump from one mower's map to a sibling map merely because an entity
-    // is temporarily unavailable. The configured map remains authoritative.
+    // Never jump from one mower's map to a sibling map.
     proto.resolveMapEntityId = function () {
       return String(this.config?.entity || "");
     };
 
-    // Serial first. Without serial metadata, use only this card's exact HA
-    // duplicate ordinal. Never fall through to a different mower.
+    // Resolve related entities by mower serial first.  If serial metadata has
+    // not arrived yet, use only the exact HA duplicate ordinal of this map.
     proto.findEntity = function (domain, suffixes) {
       const states = this._hass?.states || {};
       const identity = mapIdentity(this);
@@ -169,8 +167,8 @@ if (typeof customElements !== "undefined") {
       };
     }
 
-    // Every direct service call carries this card's mower serial. entity_id is
-    // still supplied by the original callAnthbotService for compatibility.
+    // All anthbot_map service calls carry the card's mower serial.  The card's
+    // original entity_id is kept as an additional compatible target.
     const originalCallAnthbotService = proto.callAnthbotService;
     if (typeof originalCallAnthbotService === "function") {
       proto.callAnthbotService = function (service, data = {}) {
@@ -183,60 +181,62 @@ if (typeof customElements !== "undefined") {
       };
     }
 
-    // IMPORTANT: standard mower controls now bypass button.press entirely.
-    // Home Assistant Developer Tools proves these anthbot_map services work;
-    // sending them directly removes the unreliable frontend button indirection.
-    const directServiceByCommand = {
-      connect: "connect_cloud",
-      start: "start_full_mow",
-      stop: "stop_mow",
-      dock: "return_to_dock",
-      pause: "pause_mow",
-      resume: "resume_mow",
-      "outer-edge": "start_outer_edge_mow",
-      "dock-edge": "start_dock_edge_mow",
-      "reset-blade": "reset_blade_maintenance",
-      "reset-camera": "reset_camera_maintenance",
-      "reset-contact": "reset_dock_contact_maintenance",
-    };
-
-    const originalHandleCommand = proto.handleCommand;
-    if (typeof originalHandleCommand === "function") {
-      proto.handleCommand = async function (command) {
+    // Stop and Dock are ordinary command tiles and already work. Leave their
+    // beta3 command path alone. The primary mowing tile is different: it owns
+    // Start/Pause/Resume and selected-target dispatch, so route that path
+    // directly to the service proven in HA Developer Tools.
+    const originalPrimaryAction = proto.handlePrimaryMowingAction;
+    if (typeof originalPrimaryAction === "function") {
+      proto.handlePrimaryMowingAction = async function (action) {
         disableLegacyCommandRouter();
 
-        if (String(command).startsWith("reset-") && !window.confirm(this.t("resetCounterWarning"))) {
-          return;
-        }
-
+        // Preserve explicitly enabled custom primary actions.
         const customAction = typeof this.effectiveCustomButtonAction === "function"
-          ? this.effectiveCustomButtonAction(command)
+          ? this.effectiveCustomButtonAction(action)
           : null;
         if (customAction) {
-          await this.callCustomButtonAction(command, customAction);
+          await this.callCustomButtonAction(action, customAction);
           return;
         }
 
-        const service = directServiceByCommand[command];
-        if (service) {
-          await this.callAnthbotService(service);
+        if (action === "pause") {
+          await this.callAnthbotService("pause_mow");
           return;
         }
+        if (action === "resume") {
+          await this.callAnthbotService("resume_mow");
+          return;
+        }
+        if (action !== "start") {
+          return originalPrimaryAction.call(this, action);
+        }
 
-        return originalHandleCommand.call(this, command);
+        const selected = this.selectedMowingTarget || { type: "full" };
+        if (selected.type === "zone-set" && selected.zones?.length) {
+          await this.callAnthbotService("start_zone_mow", {
+            zones: selected.zones.map((zone) => zone.id ?? zone.name),
+          });
+          return;
+        }
+        if (selected.type === "auto-zone-set" && selected.zones?.length) {
+          await this.callAnthbotService("start_auto_zone_mow", {
+            auto_zones: selected.zones.map((zone) => zone.id ?? zone.name),
+          });
+          return;
+        }
+        if (selected.type === "edge") {
+          await this.callAnthbotService("start_outer_edge_mow");
+          return;
+        }
+        if (selected.type === "dock-edge") {
+          await this.callAnthbotService("start_dock_edge_mow");
+          return;
+        }
+        await this.callAnthbotService("start_full_mow");
       };
     }
 
-    // Single-zone start follows the same direct service path. Multi-zone and
-    // auto-zone methods in the card already call anthbot_map services directly.
-    proto.startZone = async function (zone) {
-      await this.callAnthbotService("start_zone_mow", {
-        zones: String(zone?.id ?? zone?.name ?? ""),
-      });
-    };
-
-    // calibration.js historically selected the first same-serial switch for
-    // battery saver. Restrict it to the actual battery_saver_mode switch.
+    // Restrict battery saver to the actual same-mower battery_saver_mode switch.
     const baseGetSwitchEntity = proto.getSwitchEntity;
     if (typeof baseGetSwitchEntity === "function") {
       window.setTimeout(() => {
