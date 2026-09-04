@@ -9,7 +9,7 @@ BUTTON_SOURCE = ROOT / "custom_components" / "anthbot_map" / "button.py"
 CARD_SOURCE = ROOT / "custom_components" / "anthbot_map" / "frontend" / "anthbot-map-card.js"
 I18N_SOURCE = ROOT / "custom_components" / "anthbot_map" / "frontend" / "i18n.js"
 STYLES_SOURCE = ROOT / "custom_components" / "anthbot_map" / "frontend" / "styles.css"
-COORDINATOR_SOURCE = ROOT / "custom_components" / "anthbot_map" / "coordinator.py"
+COORDINATOR_SOURCE = ROOT / "custom_components" / "anthbot_map" / "models" / "genie.py"
 INIT_SOURCE = ROOT / "custom_components" / "anthbot_map" / "__init__.py"
 
 
@@ -62,7 +62,6 @@ class ResumeCommandTests(unittest.TestCase):
         self.assertIn('[this.t("bladeLife"), "rechargeContactLife"]', source)
         self.assertIn('[this.t("cameraLife"), "cuttingLineLife"]', source)
         self.assertIn('[this.t("dockContact"), "cuttingComponentsLife"]', source)
-
 
     def test_beta35_command_route_is_kept_for_panel_commands(self) -> None:
         source = CARD_SOURCE.read_text(encoding="utf-8")
