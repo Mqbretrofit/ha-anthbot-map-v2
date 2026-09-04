@@ -194,7 +194,16 @@ process.stdout.write(JSON.stringify({{
         self.assertAlmostEqual(values["tallerHeight"] / values["baseHeight"], 1.2, places=7)
 
     def test_legacy_robot_rotation_does_not_rotate_mowing_path(self) -> None:
-        source = base64.b64encode((FRONTEND / "calibration.js").read_bytes()).decode("ascii")
+        calibration_source = (FRONTEND / "calibration.js").read_text(encoding="utf-8")
+        calibration_source, replacements = re.subn(
+            r'^import "\./serial-entity-resolver\.js(?:\?v=[^"]+)?";\n',
+            "",
+            calibration_source,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        self.assertEqual(replacements, 1)
+        source = base64.b64encode(calibration_source.encode("utf-8")).decode("ascii")
         script = f"""
 const calibration = await import("data:text/javascript;base64,{source}");
 const legacy = calibration.readMowingPathCalibration({{

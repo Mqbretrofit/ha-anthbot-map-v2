@@ -52,7 +52,10 @@ class MowingHistoryV230Tests(unittest.TestCase):
     def test_captured_identifiers_and_temporary_debug_payloads_are_absent(self) -> None:
         sources = "\n".join(
             path.read_text(encoding="utf-8")
-            for path in (INTEGRATION / "m_series_compat.py", INTEGRATION / "api.py")
+            for path in (
+                *sorted((INTEGRATION / "models").glob("m_series_*.py")),
+                INTEGRATION / "api.py",
+            )
         )
         self.assertNotIn("26130LGR", sources)
         self.assertNotIn("ANTHBOT MODEL TEST", sources)
@@ -102,8 +105,8 @@ process.stdout.write(JSON.stringify({longSeconds, explicitMilliseconds, filtered
         init_source = (INTEGRATION / "__init__.py").read_text(encoding="utf-8")
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 
-        self.assertEqual(manifest["version"], "2.4.3-beta.3")
-        self.assertIn('?v=2.4.3-beta.3', init_source)
+        self.assertEqual(manifest["version"], "2.4.3-beta.4")
+        self.assertIn('?v=2.4.3-beta.4', init_source)
         self.assertIn("Release tag $tag does not match manifest version", workflow)
         for filename in ("anthbot-map-card.js", "i18n.js", "styles.css"):
             self.assertEqual(

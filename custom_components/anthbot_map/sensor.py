@@ -1539,6 +1539,7 @@ class AnthbotMapSensorEntity(
         {
             "pose",
             "serial_number",
+            "model",
             "mower_status",
             "robot_status_raw",
             "cur_pose",
