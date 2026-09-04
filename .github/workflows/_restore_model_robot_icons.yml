@@ -25,7 +25,7 @@ jobs:
           set -euo pipefail
 
           cat _iconparts/m9.hex.* | xxd -r -p > /tmp/m9.png
-          cat _iconparts/m9-pro.hex.* | xxd -r -p > /tmp/m9-pro.png
+          cat _iconparts/m9-pro.hex.0 _iconparts/m9-pro.fix.0 _iconparts/m9-pro.fix.1 _iconparts/m9-pro.fix.2 _iconparts/m9-pro.fix.3 _iconparts/m9-pro.fix.4 _iconparts/m9-pro.fix.5 _iconparts/m9-pro.fix.6 _iconparts/m9-pro.fix.7 _iconparts/m9-pro.hex.2 _iconparts/m9-pro.hex.3 | xxd -r -p > /tmp/m9-pro.png
           echo 'ec497cf1eb67aa7d6bdd2981265992cec55b04d70f6c4dbed101955376667bb6  /tmp/m9.png' | sha256sum -c -
           echo '0b4ecf2a844ddd58f62da8cc246b40fd3c322f138bcaa7c575a975bb5d083e39  /tmp/m9-pro.png' | sha256sum -c -
           cp /tmp/m9.png custom_components/anthbot_map/frontend/m9.png
