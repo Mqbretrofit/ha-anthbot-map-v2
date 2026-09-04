@@ -5,6 +5,7 @@ Stable release based on the field-tested v2.4.3 beta series, preserving existing
 ## Highlights
 
 - Separates **Genie** and **M-series (M5/M9/M9 Pro)** model-specific behavior so fixes for one mower family do not overwrite another family’s control path.
+- **Map handling now works on the M-series as well**, including boundary, mowing path and zone handling. This has been **directly tested and verified on an M9 Pro**.
 - Restores and improves **M9/M9 Pro boundary, mowing-path and zone handling**, including zones loaded from the map-manager `area_setting.json`.
 - Aligns M-series start/pause/resume/stop routing with the observed official-app protocol; M9 Pro STOP uses `stop_all_tasks` with scalar `data = 1`.
 - M-series zone mowing uses the selected zone ids and tracks the live selected zone via `active_area.id`.
