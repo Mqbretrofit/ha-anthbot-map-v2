@@ -1,0 +1,105 @@
+from pathlib import Path
+
+
+def replace_once(text: str, old: str, new: str, label: str) -> str:
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f"{label}: expected 1 match, got {count}")
+    return text.replace(old, new, 1)
+
+
+# English README
+path = Path("README.md")
+s = path.read_text(encoding="utf-8")
+s = replace_once(s, "Stable version: **2.4.2**", "Stable version: **2.4.3**", "README version")
+marker = "### Highlights in 2.4.2\n"
+highlights = """### Highlights in 2.4.3
+
+- **M-series map handling now works**, including lawn boundary, mowing path and zone handling. The M-series map implementation has been **directly tested and verified on ANTHBOT M9 Pro**.
+- Genie and M-series (**M5/M9/M9 Pro**) model-specific map, control, status and history paths are separated to prevent cross-model regressions.
+- M-series zone mowing and mowing-history zone association have been improved while keeping the card's own calculated mowing percentage.
+- M9 Pro STOP handling follows the observed official-app protocol.
+- Model-specific mower images are restored: M9 Pro uses its own image, M9/M5 use the M9 image, and the Genie image remains unchanged.
+- Existing Genie functionality and the features from the 2.4.2 release are preserved.
+
+"""
+if "### Highlights in 2.4.3\n" not in s:
+    s = replace_once(s, marker, highlights + marker, "README highlights insertion")
+old = """> [!IMPORTANT]
+> **Map display is not yet working on ANTHBOT M5 and M9 mowers.** M5/M9
+> support is experimental, and available states and features can vary by model
+> and firmware version.
+"""
+new = """> [!IMPORTANT]
+> **Map handling is now supported on the ANTHBOT M-series (M5/M9/M9 Pro).**
+> Boundary, mowing-path and zone handling have been directly tested and verified
+> on an **M9 Pro**. M5 and M9 use the same model-specific M-series architecture,
+> but those two models have not been directly hardware-tested by this project yet.
+"""
+s = replace_once(s, old, new, "README M-series notice")
+old = """The integration is tested primarily with ANTHBOT Genie-series mowers.
+
+- ANTHBOT Genie: primary support
+- ANTHBOT M5/M9: experimental support
+- M5/M9 map display: not currently working
+"""
+new = """The integration supports ANTHBOT Genie and the M-series model family.
+
+- **ANTHBOT Genie:** supported; existing Genie functionality is preserved.
+- **ANTHBOT M9 Pro:** M-series map/control/status/history path supported and directly hardware-tested.
+- **ANTHBOT M9:** supported through the shared M-series implementation; not directly hardware-tested by this project yet.
+- **ANTHBOT M5:** supported through the shared M-series implementation; not directly hardware-tested by this project yet.
+"""
+s = replace_once(s, old, new, "README supported models")
+s = s.replace("/anthbot-map-v2/anthbot-map-card.js?v=2.4.2", "/anthbot-map-v2/anthbot-map-card.js?v=2.4.3")
+s = s.replace("Map display on M5/M9 is a known limitation and is not currently working.", "M-series map handling is supported in 2.4.3 and has been directly tested on M9 Pro.")
+path.write_text(s, encoding="utf-8")
+
+
+# Hungarian README
+path = Path("README_HU.md")
+s = path.read_text(encoding="utf-8")
+s = replace_once(s, "Stabil verzió: **2.4.2**", "Stabil verzió: **2.4.3**", "README_HU version")
+marker = "### A 2.4.2 legfontosabb változásai\n"
+highlights = """### A 2.4.3 legfontosabb változásai
+
+- **Az M-szérián már működik a térképkezelés**, beleértve a gyep határvonalát, a nyírási útvonalat és a zónakezelést. Az M-szériás térképkezelés **ANTHBOT M9 Pro modellen közvetlenül tesztelve és ellenőrizve lett**.
+- Különvált a Genie és az M-széria (**M5/M9/M9 Pro**) modellfüggő térkép-, vezérlés-, állapot- és előzménykezelése, így az egyik modell javítása nem írja felül a másik működését.
+- Javult az M-szériás zónanyírás és a nyírási előzmények zónaazonosítása; a kártya továbbra is a saját számított nyírási százalékát használja.
+- Az M9 Pro leállítási parancsa az alkalmazásban megfigyelt protokollhoz igazodik.
+- Visszakerültek a modellfüggő robotképek: az M9 Pro saját képet, az M9/M5 M9 képet kap, a Genie képe változatlan marad.
+- A 2.4.2 és a korábbi Genie funkciók megmaradtak.
+
+"""
+if "### A 2.4.3 legfontosabb változásai\n" not in s:
+    s = replace_once(s, marker, highlights + marker, "README_HU highlights insertion")
+old = """> [!IMPORTANT]
+> **Az ANTHBOT M5 és M9 modelleknél a térképes megjelenítés jelenleg még nem
+> működik.** Az M5/M9 támogatás kísérleti, ezért az elérhető állapotok és
+> funkciók modellenként és firmware-verziónként eltérhetnek.
+"""
+new = """> [!IMPORTANT]
+> **Az ANTHBOT M-szérián (M5/M9/M9 Pro) már működik a térképkezelés.** A
+> határvonal-, nyírásiútvonal- és zónakezelés **M9 Pro modellen közvetlenül
+> tesztelve és ellenőrizve lett**. Az M5 és M9 ugyanazt az M-szériás
+> modellréteget használja, de ezeket a modelleket még nem tudtuk közvetlenül
+> hardveren tesztelni.
+"""
+s = replace_once(s, old, new, "README_HU M-series notice")
+old = """Az integráció elsősorban az ANTHBOT Genie sorozattal lett tesztelve.
+
+- ANTHBOT Genie: elsődlegesen támogatott
+- ANTHBOT M5/M9: kísérleti támogatás
+- M5/M9 térképes megjelenítés: jelenleg nem működik
+"""
+new = """Az integráció az ANTHBOT Genie és az M-széria modellcsaládját is támogatja.
+
+- **ANTHBOT Genie:** támogatott; a meglévő Genie funkciók változatlanul megmaradtak.
+- **ANTHBOT M9 Pro:** az M-szériás térkép-, vezérlés-, állapot- és előzménykezelés támogatott és közvetlenül hardveren tesztelt.
+- **ANTHBOT M9:** a közös M-szériás megvalósítással támogatott; közvetlen hardverteszt még nem történt.
+- **ANTHBOT M5:** a közös M-szériás megvalósítással támogatott; közvetlen hardverteszt még nem történt.
+"""
+s = replace_once(s, old, new, "README_HU supported models")
+s = s.replace("/anthbot-map-v2/anthbot-map-card.js?v=2.4.2", "/anthbot-map-v2/anthbot-map-card.js?v=2.4.3")
+s = s.replace("Az M5/M9 modellek térképes megjelenítése ismert korlátozás, jelenleg nem működik.", "Az M-széria térképkezelése a 2.4.3-ban támogatott, és M9 Pro modellen közvetlenül tesztelve lett.")
+path.write_text(s, encoding="utf-8")
