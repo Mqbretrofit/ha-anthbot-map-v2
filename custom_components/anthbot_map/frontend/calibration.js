@@ -1,3 +1,5 @@
+import "./serial-entity-resolver.js?v=243b3-entity-scope";
+
 export const DEFAULT_CALIBRATION = Object.freeze({
   offsetX: 0,
   offsetY: 0,
@@ -7,28 +9,18 @@ export const DEFAULT_CALIBRATION = Object.freeze({
 });
 
 export function readCalibration(config = {}) {
-  return {
-    ...DEFAULT_CALIBRATION,
-    ...(config.calibration || {}),
-  };
+  return { ...DEFAULT_CALIBRATION, ...(config.calibration || {}) };
 }
 
 export function readRobotCalibration(config = {}) {
-  return {
-    ...DEFAULT_CALIBRATION,
-    ...(config.robotCalibration || {}),
-  };
+  return { ...DEFAULT_CALIBRATION, ...(config.robotCalibration || {}) };
 }
 
 export function readMowingPathCalibration(config = {}) {
   const configured = config.mowingPathCalibration || config.mowing_path_calibration;
   if (configured && typeof configured === "object") {
-    return {
-      ...DEFAULT_CALIBRATION,
-      ...configured,
-    };
+    return { ...DEFAULT_CALIBRATION, ...configured };
   }
-
   const legacy = config.robotCalibration || {};
   return {
     ...DEFAULT_CALIBRATION,
@@ -54,7 +46,6 @@ export function adjustCalibration(calibration, action, amount = 1) {
   const scale = 0.02 * amount;
   const rotate = (Math.PI / 180) * amount;
   const rotateLarge = (Math.PI / 12) * amount;
-
   switch (action) {
     case "left": next.offsetX -= move; break;
     case "right": next.offsetX += move; break;
@@ -71,7 +62,6 @@ export function adjustCalibration(calibration, action, amount = 1) {
     case "rotate-around": next.rotation += Math.PI; break;
     default: break;
   }
-
   return next;
 }
 
@@ -124,17 +114,9 @@ export function decodedBoundaryCalibrationToYaml(decodedBoundaryCalibration) {
 }
 
 export function cardToYaml(
-  config = {},
-  calibration,
-  robotCalibration,
-  decodedBoundaryCalibration,
-  mowingPathCalibration,
+  config = {}, calibration, robotCalibration, decodedBoundaryCalibration, mowingPathCalibration,
 ) {
-  const lines = [
-    "type: custom:anthbot-map-card",
-    `entity: ${config.entity || ""}`,
-  ];
-
+  const lines = ["type: custom:anthbot-map-card", `entity: ${config.entity || ""}`];
   if (config.name) lines.push(`name: ${quoteYaml(config.name)}`);
   if (config.language) lines.push(`language: ${quoteYaml(config.language)}`);
   if (config.image) lines.push(`image: ${quoteYaml(config.image)}`);
@@ -159,23 +141,17 @@ export function cardToYaml(
   if (Number.isFinite(Number(config.rotation)) && Number(config.rotation) !== 0) lines.push(`rotation: ${formatNumber(config.rotation)}`);
   if (Number.isFinite(Number(config.height))) lines.push(`height: ${formatNumber(config.height)}`);
   if (Number.isFinite(Number(config.refresh_interval ?? config.refreshInterval))) lines.push(`refresh_interval: ${formatNumber(config.refresh_interval ?? config.refreshInterval)}`);
-
   if (config.charger && Number.isFinite(Number(config.charger.x)) && Number.isFinite(Number(config.charger.y))) {
-    lines.push("charger:");
-    lines.push(`  x: ${formatNumber(config.charger.x)}`);
-    lines.push(`  y: ${formatNumber(config.charger.y)}`);
+    lines.push("charger:", `  x: ${formatNumber(config.charger.x)}`, `  y: ${formatNumber(config.charger.y)}`);
   }
-
   if (config.entities && typeof config.entities === "object") {
     lines.push("entities:");
     for (const key of ["battery", "status", "charging"]) if (config.entities[key]) lines.push(`  ${key}: ${config.entities[key]}`);
   }
-
   if (config.controls && typeof config.controls === "object") {
     lines.push("controls:");
     for (const key of ["start", "stop", "dock"]) if (config.controls[key]) lines.push(`  ${key}: ${config.controls[key]}`);
   }
-
   if (config.button_actions && typeof config.button_actions === "object") {
     lines.push("button_actions:");
     for (const [command, action] of Object.entries(config.button_actions)) {
@@ -184,13 +160,11 @@ export function cardToYaml(
         continue;
       }
       if (!action || typeof action !== "object" || !action.service) continue;
-      lines.push(`  ${command}:`);
-      lines.push(`    service: ${quoteYaml(action.service)}`);
+      lines.push(`  ${command}:`, `    service: ${quoteYaml(action.service)}`);
       appendYamlObject(lines, "    target", action.target, 6);
       appendYamlObject(lines, "    data", action.data || action.service_data, 6);
     }
   }
-
   lines.push(calibrationToYaml(calibration));
   lines.push(robotCalibrationToYaml(robotCalibration));
   lines.push(mowingPathCalibrationToYaml(mowingPathCalibration));
@@ -232,11 +206,7 @@ if (typeof customElements !== "undefined") {
         if (kind === "batterySaver") {
           const configured = this.config?.switches?.[kind];
           if (this.isEntityAvailable?.(configured)) return configured;
-          const serial = String(
-            this.entity?.attributes?.serial_number
-              ?? this.entity?.attributes?.serial
-              ?? "",
-          ).trim();
+          const serial = String(this.entity?.attributes?.serial_number ?? this.entity?.attributes?.serial ?? "").trim();
           if (serial && this._hass?.states) {
             const exact = Object.entries(this._hass.states)
               .filter(([entityId, state]) => entityId.startsWith("switch.") && state?.state !== "unavailable")
@@ -250,7 +220,6 @@ if (typeof customElements !== "undefined") {
     }
 
     if (proto.__anthbotMowingTargetPatch === true) return;
-
     const original = proto.updateMowingProgressStatus;
     if (typeof original !== "function") return;
 
@@ -297,7 +266,6 @@ if (typeof customElements !== "undefined") {
         line.hidden = false;
       });
     };
-
     proto.__anthbotMowingTargetPatch = true;
 
     const originalHistoryCard = proto.createMowingHistoryCard;
@@ -311,7 +279,6 @@ if (typeof customElements !== "undefined") {
           && Object.prototype.hasOwnProperty.call(record, "mow_mode")
           && Object.prototype.hasOwnProperty.call(record, "mowing_progress");
         if (!isMSeriesV3Record) return card;
-
         const progress = Number(record.mowing_progress);
         if (!Number.isFinite(progress)) return card;
         const bounded = Math.max(0, Math.min(100, progress));
