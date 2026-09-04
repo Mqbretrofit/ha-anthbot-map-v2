@@ -6,24 +6,22 @@ import asyncio
 import logging
 
 from .api import AnthbotGenieApiError
-from .base import model_family
+from .models.base import model_family
 from .coordinator import AnthbotGenieDataUpdateCoordinator, is_robot_online
-from . import m5 as m5_type
-from . import m9 as m9_type
-from . import m9_pro as m9_pro_type
+from .models import m5 as m5_type
+from .models import m9 as m9_type
+from .models import m9_pro as m9_pro_type
 from .mower_status import raw_robot_status
 
 _LOGGER = logging.getLogger(__name__)
 
-# Register model-specific transport hooks without mixing type files together.
+# Register model-specific transport hooks from the dedicated models package.
 m5_type.install_type_support()
 m9_pro_type.install_type_support()
 m9_type.install_type_support()
 
 
 def _uses_m_series_transport(coordinator: AnthbotGenieDataUpdateCoordinator) -> bool:
-    """Return whether this mower uses the M-series transport behavior."""
-
     family = model_family(getattr(coordinator.device, "model", None))
     return family.key in {"m5", "m9", "m9_pro"}
 
@@ -70,10 +68,7 @@ async def async_prepare_cloud_connection(
             await asyncio.sleep(1)
             state = coordinator.reported_state
             if is_robot_online(state, max_age_seconds=45):
-                _LOGGER.debug(
-                    "Anthbot cloud wake confirmed for %s",
-                    coordinator.client.serial_number,
-                )
+                _LOGGER.debug("Anthbot cloud wake confirmed for %s", coordinator.client.serial_number)
                 return True
 
         _LOGGER.warning(
@@ -101,9 +96,7 @@ async def async_start_mowing(
         )
 
     for attempt in range(2):
-        await coordinator.client.async_publish_service_command(
-            cmd="app_state", data=app_state
-        )
+        await coordinator.client.async_publish_service_command(cmd="app_state", data=app_state)
         await asyncio.sleep(1.5)
         await coordinator.client.async_publish_service_command(cmd="mow_start", data=1)
 
@@ -136,9 +129,7 @@ async def async_start_outer_edge_mowing(
 
     expected = {"bordermowing", "edgemowing", "gototarget"}
     for attempt in range(2):
-        await coordinator.client.async_publish_service_command(
-            cmd="ridable_mow_start", data=1
-        )
+        await coordinator.client.async_publish_service_command(cmd="ridable_mow_start", data=1)
 
         for _ in range(4):
             await asyncio.sleep(2)
