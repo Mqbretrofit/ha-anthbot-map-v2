@@ -3,6 +3,7 @@
 from typing import Any
 
 from . import m_series_common as _common
+from . import m_series_runtime as _runtime
 
 PATH_MAX_POINTS = 50000
 MAP_CANDIDATES = ("multi_maps.tar.gz", "map_manager.tar.gz")
@@ -105,5 +106,6 @@ def map_candidates(property_state: dict[str, Any]) -> tuple[str, ...]:
 
 
 def install_family(type_key: str) -> None:
+    _runtime.install_root_factory()
     _common.register_family(type_key, path_accumulator=accumulate_path, map_candidates=map_candidates)
     _common.install_m_series_compat()
