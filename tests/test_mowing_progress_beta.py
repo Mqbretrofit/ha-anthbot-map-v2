@@ -6,7 +6,7 @@ ROOT = Path(__file__).parents[1]
 SENSOR = ROOT / "custom_components/anthbot_map/sensor.py"
 CARD = ROOT / "www/anthbot-map/anthbot-map-card.js"
 INIT = ROOT / "custom_components/anthbot_map/__init__.py"
-COORDINATOR = ROOT / "custom_components/anthbot_map/coordinator.py"
+COORDINATOR = ROOT / "custom_components/anthbot_map/models/genie.py"
 
 class TestMowingProgressBeta(unittest.TestCase):
     @classmethod
