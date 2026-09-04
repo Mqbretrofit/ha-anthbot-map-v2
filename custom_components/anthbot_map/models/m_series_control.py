@@ -26,7 +26,7 @@ _NATIVE_SIMPLE_COMMANDS = {
     "mow_start",
     "mow_pause",
     "mow_continue",
-    "mow_stop",
+    "stop_all_tasks",
     "ridable_mow_start",
     "nest_mow_start",
     "nest_mow_stop",
@@ -35,11 +35,6 @@ _NATIVE_SIMPLE_COMMANDS = {
     "charge_start",
     "charge_pause",
     "charge_continue",
-}
-
-# Genie uses stop_all_tasks.  The M-series app protocol exposes mow_stop instead.
-_COMMAND_ALIASES = {
-    "stop_all_tasks": "mow_stop",
 }
 
 
@@ -144,11 +139,10 @@ def install_m_series_control_support() -> None:
             await previous_publish(self, cmd=cmd, data=data)
             return
 
-        native_cmd = _COMMAND_ALIASES.get(cmd, cmd)
-        if native_cmd not in _NATIVE_SIMPLE_COMMANDS:
+        if cmd not in _NATIVE_SIMPLE_COMMANDS:
             await previous_publish(self, cmd=cmd, data=data)
             return
 
-        await _publish_native_simple_command(self, cmd=native_cmd, data=data)
+        await _publish_native_simple_command(self, cmd=cmd, data=data)
 
     AnthbotShadowApiClient.async_publish_service_command = publish_service_command
