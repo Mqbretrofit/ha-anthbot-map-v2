@@ -7,7 +7,7 @@ import logging
 
 from .api import AnthbotGenieApiError
 from .coordinator import AnthbotGenieDataUpdateCoordinator, is_robot_online
-from .m_series_compat import install_m_series_compat
+from .models.m_series_common import install_m_series_compat
 from .mower_status import raw_robot_status
 
 _LOGGER = logging.getLogger(__name__)
