@@ -5,6 +5,7 @@ Stabil kiadás a v2.4.3 béta sorozat terepen tesztelt állapotára építve. A 
 ## Fő változások
 
 - Elkülönült a **Genie** és az **M-széria (M5/M9/M9 Pro)** modellfüggő működése, hogy az egyik robot javítása ne írja felül a másik vezérlését.
+- **Az M-szérián most már működik a térképkezelés is**, beleértve a térképhatárt, a nyírási útvonalat és a zónakezelést. Ez **M9 Pro modellen közvetlenül tesztelve és ellenőrizve lett**.
 - Helyreállt és pontosabb lett az **M9/M9 Pro térképhatár, nyírási útvonal és zónakezelés**, beleértve a map-manager `area_setting.json` zónáit.
 - Az M-széria indítás/szünet/folytatás/leállítás parancskezelése az alkalmazásban megfigyelt protokollhoz igazodik; az M9 Pro leállítás a `stop_all_tasks` parancsot a szükséges `data = 1` értékkel küldi.
 - A zónanyírás az M-szérián a kiválasztott zónaazonosítókat használja, az aktív zóna pedig az `active_area.id` alapján követhető.
