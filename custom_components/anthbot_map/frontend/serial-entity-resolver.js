@@ -1,11 +1,11 @@
 // Multi-mower control/entity scoping for the clean model-split rebuild.
 //
-// Display/settings entities stay strictly scoped to the mower represented by
-// this card.  The special primary mowing tile (Start/Pause/Resume) is routed
-// directly to anthbot_map services because Stop/Dock use a different tile path
-// and are already proven working in the dashboard.
+// Prefer explicit serial metadata whenever it exists. Older setting entities
+// (notably number/switch) predate that metadata, so they may fall back only to
+// the exact Home Assistant duplicate ordinal of this card's map entity. This
+// keeps Genie / M-series isolated without making valid legacy settings vanish.
 
-const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-04-control-v6";
+const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-04-control-v7";
 
 const disableLegacyCommandRouter = () => {
   if (typeof window === "undefined" || typeof document === "undefined") return;
@@ -66,18 +66,31 @@ if (typeof customElements !== "undefined") {
 
     const isAvailable = (state) => Boolean(state && state.state !== "unavailable");
 
-    // Never jump from one mower's map to a sibling map.
+    const exactOrdinalEntity = (card, domain, suffix) => {
+      const states = card?._hass?.states || {};
+      const identity = mapIdentity(card);
+      if (!identity.base) return null;
+      const slug = normalize(suffix);
+      if (!slug) return null;
+      const entityId = `${domain}.${identity.base}_${slug}${identity.ordinal ? `_${identity.ordinal}` : ""}`;
+      const state = states[entityId];
+      if (!isAvailable(state)) return null;
+      const candidateSerial = serialOf(state);
+      if (candidateSerial && identity.serial && candidateSerial !== identity.serial) return null;
+      return entityId;
+    };
+
+    // Never jump from one mower's configured map to another map entity.
     proto.resolveMapEntityId = function () {
       return String(this.config?.entity || "");
     };
 
-    // Resolve related entities by mower serial first.  If serial metadata has
-    // not arrived yet, use only the exact HA duplicate ordinal of this map.
     proto.findEntity = function (domain, suffixes) {
       const states = this._hass?.states || {};
       const identity = mapIdentity(this);
       const wanted = Array.isArray(suffixes) ? suffixes.filter(Boolean) : [];
 
+      // First choice: explicit per-mower serial metadata.
       if (identity.serial) {
         for (const suffix of wanted) {
           const suffixSlug = normalize(suffix);
@@ -101,15 +114,13 @@ if (typeof customElements !== "undefined") {
             .sort((a, b) => b.score - a.score || a.entityId.localeCompare(b.entityId));
           if (matches.length) return matches[0].entityId;
         }
-        return null;
       }
 
-      if (!identity.base) return null;
+      // Legacy number/switch/select entities may have no serial attribute.
+      // Fall back ONLY to the exact duplicate ordinal belonging to this map.
       for (const suffix of wanted) {
-        const suffixSlug = normalize(suffix);
-        if (!suffixSlug) continue;
-        const exact = `${domain}.${identity.base}_${suffixSlug}${identity.ordinal ? `_${identity.ordinal}` : ""}`;
-        if (isAvailable(states[exact])) return exact;
+        const exact = exactOrdinalEntity(this, domain, suffix);
+        if (exact) return exact;
       }
       return null;
     };
@@ -121,7 +132,7 @@ if (typeof customElements !== "undefined") {
         .filter(([entityId, state]) =>
           entityId.startsWith("button.")
           && isAvailable(state)
-          && (!identity.serial || serialOf(state) === identity.serial),
+          && (!identity.serial || !serialOf(state) || serialOf(state) === identity.serial),
         )
         .map(([entityId, state]) => {
           const attrs = state.attributes || {};
@@ -147,8 +158,8 @@ if (typeof customElements !== "undefined") {
           || this.config?.zoneButtons?.[zone?.id]
           || this.config?.zoneButtons?.[zone?.name];
         if (explicit && isAvailable(states[explicit])) {
-          const serial = serialOf(states[explicit]);
-          if (!identity.serial || !serial || serial === identity.serial) return explicit;
+          const candidateSerial = serialOf(states[explicit]);
+          if (!identity.serial || !candidateSerial || candidateSerial === identity.serial) return explicit;
         }
         if (!identity.serial) return null;
 
@@ -156,7 +167,8 @@ if (typeof customElements !== "undefined") {
         const zoneName = normalize(zone?.name);
         const match = Object.entries(states).find(([entityId, state]) => {
           if (!entityId.startsWith("button.") || !isAvailable(state)) return false;
-          if (serialOf(state) !== identity.serial) return false;
+          const candidateSerial = serialOf(state);
+          if (candidateSerial && candidateSerial !== identity.serial) return false;
           const attrs = state.attributes || {};
           const candidateId = attrs.id ?? attrs.zone_id;
           const candidateName = normalize(attrs.name || state.attributes?.friendly_name);
@@ -167,30 +179,43 @@ if (typeof customElements !== "undefined") {
       };
     }
 
-    // All anthbot_map service calls carry the card's mower serial.  The card's
-    // original entity_id is kept as an additional compatible target.
+    // Add the mower serial to every anthbot_map service call. Keep entity_id
+    // too for backwards compatibility with the beta3 service handlers.
     const originalCallAnthbotService = proto.callAnthbotService;
     if (typeof originalCallAnthbotService === "function") {
-      proto.callAnthbotService = function (service, data = {}) {
+      proto.callAnthbotService = async function (service, data = {}) {
         const identity = mapIdentity(this);
-        return originalCallAnthbotService.call(
+        const result = await originalCallAnthbotService.call(
           this,
           service,
           identity.serial ? { ...data, serial_number: identity.serial } : { ...data },
         );
+
+        // Genie can publish its new run state shortly after command ACK. Give
+        // the card several cheap opportunities to consume the freshly updated
+        // HA entities instead of waiting for a page reload.
+        for (const delay of [250, 700, 1400, 2500, 4500]) {
+          window.setTimeout(() => {
+            try {
+              this.syncEntityAndRenderer?.();
+              this.scheduleRefresh?.(0);
+            } catch (_error) {
+              // Refresh is best-effort; never turn a successful mower command
+              // into a UI error.
+            }
+          }, delay);
+        }
+        return result;
       };
     }
 
-    // Stop and Dock are ordinary command tiles and already work. Leave their
-    // beta3 command path alone. The primary mowing tile is different: it owns
-    // Start/Pause/Resume and selected-target dispatch, so route that path
-    // directly to the service proven in HA Developer Tools.
+    // Stop/Dock keep the proven beta3 command path. The dynamic primary tile
+    // (Start/Pause/Resume) calls the native services directly.
     const originalPrimaryAction = proto.handlePrimaryMowingAction;
     if (typeof originalPrimaryAction === "function") {
       proto.handlePrimaryMowingAction = async function (action) {
         disableLegacyCommandRouter();
 
-        // Preserve explicitly enabled custom primary actions.
         const customAction = typeof this.effectiveCustomButtonAction === "function"
           ? this.effectiveCustomButtonAction(action)
           : null;
@@ -236,7 +261,8 @@ if (typeof customElements !== "undefined") {
       };
     }
 
-    // Restrict battery saver to the actual same-mower battery_saver_mode switch.
+    // Battery saver must never resolve to another same-serial switch such as
+    // rain/obstacle control. Use its exact semantic suffix.
     const baseGetSwitchEntity = proto.getSwitchEntity;
     if (typeof baseGetSwitchEntity === "function") {
       window.setTimeout(() => {
