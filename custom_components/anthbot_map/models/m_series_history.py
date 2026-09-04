@@ -18,6 +18,14 @@ from typing import Any
 from ..coordinator import AnthbotGenieDataUpdateCoordinator
 
 _INSTALLED = False
+_MODE_KEYS = (
+    "mode",
+    "mow_mode",
+    "mowMode",
+    "task_type",
+    "taskType",
+    "type",
+)
 _ZONE_LIST_KEYS = (
     "zone_list",
     "zoneList",
@@ -53,7 +61,12 @@ def _is_m_series(model: object) -> bool:
 
 
 def _is_zone_record(record: dict[str, Any]) -> bool:
-    value = record.get("mow_mode", record.get("mowMode", record.get("mode")))
+    value: Any = None
+    for key in _MODE_KEYS:
+        candidate = record.get(key)
+        if candidate not in (None, ""):
+            value = candidate
+            break
     if isinstance(value, (int, float)):
         return int(value) == 1
     normalized = str(value or "").strip().lower()
