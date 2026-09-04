@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.4.3 — 2026-09-05
+
+- Stable release of the field-tested v2.4.3 beta series.
+- M-series (M5/M9/M9 Pro) map handling is now supported, including boundary, mowing path and zones; directly tested and verified on M9 Pro.
+- Separates Genie and M-series model-specific control/status/map/history paths to avoid cross-model regressions.
+- Improves M-series zone mowing, history zone association and multi-mower serial-number targeting while preserving the card own calculated mowing percentage.
+- Restores model-specific mower images: M9 Pro uses its own image, M9/M5 use the M9 image, and the Genie image remains unchanged.
+
+See `RELEASE_NOTES_v2.4.3.md` and `CHANGELOG_v2.4.3_HU.md` for details.
+
 ## 2.4.3-beta.3 — 2026-09-02
 
 - Based directly on v2.4.3-beta.2, preserving all unrelated existing functionality.
