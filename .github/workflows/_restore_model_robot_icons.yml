@@ -84,6 +84,7 @@ jobs:
           test "$(git hash-object custom_components/anthbot_map/frontend/robot.png)" = "a8a59914eb8c2af6e7e922da057559d1b8c62892"
           test "$(git hash-object www/anthbot-map/robot.png)" = "a8a59914eb8c2af6e7e922da057559d1b8c62892"
 
+          rm -rf _iconparts
           rm -f \
             _m9_icon_tmp.b64 \
             _m9_pro_icon_tmp.b64 \
