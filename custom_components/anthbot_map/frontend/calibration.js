@@ -340,3 +340,79 @@ function appendYamlObject(lines, label, value, indent) {
 function quoteYaml(value) {
   return JSON.stringify(String(value));
 }
+
+// Preserve the real mowing target next to progress even after the mower has
+// already returned to charging/standby. The main card keeps its original beta3
+// status logic; this is a narrow post-processing layer driven by the persisted
+// last_mowing_task attribute.
+if (typeof customElements !== "undefined") {
+  customElements.whenDefined("anthbot-map-card").then(() => {
+    const Card = customElements.get("anthbot-map-card");
+    const proto = Card?.prototype;
+    if (!proto || proto.__anthbotMowingTargetPatch === true) return;
+
+    const original = proto.updateMowingProgressStatus;
+    if (typeof original !== "function") return;
+
+    const resolveTaskTarget = (card, task) => {
+      if (!task || typeof task !== "object") return "";
+      const type = String(task.type || "").trim().toLowerCase();
+      const data = task.data && typeof task.data === "object" ? task.data : {};
+
+      if (type === "full") return card.t("fullArea");
+      if (type === "edge") return card.t("commandOuterEdge");
+      if (type === "dock_edge") return card.t("dockEdgeLabel");
+      if (type === "auto_zone") return card.t("autoZone");
+
+      if (type === "manual_zone") {
+        const rawIds = Array.isArray(data.id) ? data.id : [];
+        const ids = rawIds.map(String);
+        const names = new Map(
+          (typeof card.currentZones === "function" ? card.currentZones() : [])
+            .filter((zone) => zone && zone.id !== undefined && zone.id !== null)
+            .map((zone) => [String(zone.id), String(zone.name || `${card.t("zone")} ${zone.id}`).trim()])
+        );
+        const labels = ids.map((id) => names.get(id) || `${card.t("zone")} ${id}`);
+        return labels.join(" + ");
+      }
+      return "";
+    };
+
+    proto.updateMowingProgressStatus = function (...args) {
+      original.apply(this, args);
+
+      const lines = Array.from(this.shadowRoot?.querySelectorAll?.('[data-role="mowing-live-line"]') || []);
+      if (!lines.length) return;
+
+      const progressEntity = this.getRelatedEntity?.("mowingProgress");
+      const progress = Number(progressEntity?.state);
+      if (!Number.isFinite(progress)) return;
+
+      const task = this.entity?.attributes?.last_mowing_task
+        ?? progressEntity?.attributes?.last_mowing_task
+        ?? null;
+      const target = resolveTaskTarget(this, task);
+      if (!target) return;
+
+      const statusEntity = this.getRelatedEntity?.("status");
+      const status = String(statusEntity?.state || "").trim().toLowerCase().replace(/[_\s-]+/g, "");
+      const finished = [
+        "returningtodock", "backtodock", "returntodock", "docking",
+        "charging", "charge", "docked", "standby", "idle",
+      ].some((value) => status.includes(value));
+      const bounded = Math.max(0, Math.min(100, progress));
+      const shownProgress = finished && bounded >= 95 ? 100 : bounded;
+
+      lines.forEach((line) => {
+        const targetNode = line.querySelector('[data-role="mowing-live-target"]');
+        const progressNode = line.querySelector('[data-role="mowing-live-progress"]');
+        if (!targetNode || !progressNode) return;
+        targetNode.textContent = target;
+        progressNode.textContent = `${shownProgress.toFixed(1)}%`;
+        line.hidden = false;
+      });
+    };
+
+    proto.__anthbotMowingTargetPatch = true;
+  });
+}
