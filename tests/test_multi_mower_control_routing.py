@@ -1,7 +1,7 @@
 """Regression coverage for Genie + M-series control routing.
 
 These tests intentionally inspect the small model/router layers instead of the
-large card bundle.  They protect the multi-mower fixes without changing the
+large card bundle. They protect the multi-mower fixes without changing the
 proven beta3 map/path/history implementation.
 """
 
@@ -28,22 +28,35 @@ def test_control_resolver_is_serial_scoped_and_fail_closed() -> None:
     """One mower may never fall through to another mower's HA entities."""
     source = _read(RUNTIME_FRONTEND / "serial-entity-resolver.js")
 
-    assert 'ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-04-control-v4"' in source
+    assert 'ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-04-control-v5"' in source
     assert "serialOf(state) === identity.serial" in source
     assert 'return String(this.config?.entity || "")' in source
     assert 'return this.findEntity("switch", ["battery_saver_mode", "battery saver mode"])' in source
     assert "serial_number: identity.serial" in source
-
-    # The beta3 document-level feedback router stops propagation and has its own
-    # global target search.  The model-split resolver must repeatedly remove it
-    # after module evaluation so native card handlers remain the single path.
     assert "window.__anthbotFeedbackClickHandler" in source
     assert 'window.setInterval(disableLegacyCommandRouter, 25)' in source
     assert "document.removeEventListener(\"click\", handler, true)" in source
 
 
+def test_dashboard_primary_controls_use_direct_anthbot_services() -> None:
+    """Dashboard controls must bypass the unreliable button.press layer."""
+    source = _read(RUNTIME_FRONTEND / "serial-entity-resolver.js")
+    for mapping in (
+        'start: "start_full_mow"',
+        'stop: "stop_mow"',
+        'dock: "return_to_dock"',
+        'pause: "pause_mow"',
+        'resume: "resume_mow"',
+        '"outer-edge": "start_outer_edge_mow"',
+        '"dock-edge": "start_dock_edge_mow"',
+    ):
+        assert mapping in source
+    assert "await this.callAnthbotService(service)" in source
+    assert 'this.callAnthbotService("start_zone_mow"' in source
+
+
 def test_native_buttons_expose_serial_number() -> None:
-    """Start/pause/resume/etc. buttons must be uniquely attributable to a mower."""
+    """Native entities remain uniquely attributable even though the card bypasses them."""
     source = _read(INTEGRATION / "button.py")
     assert "def extra_state_attributes" in source
     assert 'return {"serial_number": self.coordinator.client.serial_number}' in source
@@ -82,20 +95,3 @@ def test_genie_command_sequence_remains_beta3_style() -> None:
     assert "if not m_series:" in source
     assert 'cmd="app_state", data=app_state' in source
     assert 'cmd="mow_start", data=1' in source
-
-
-def test_control_matrix_is_present_in_card() -> None:
-    """The native card path must still expose all primary mower commands."""
-    source = _read(RUNTIME_FRONTEND / "anthbot-map-card.js")
-    for mapping in (
-        'start: "start_full_mow"',
-        'stop: "stop_mow"',
-        'dock: "return_to_dock"',
-        'pause: "pause_mow"',
-        'resume: "resume_mow"',
-        '"outer-edge": "start_outer_edge_mow"',
-        '"dock-edge": "start_dock_edge_mow"',
-    ):
-        assert mapping in source
-    assert 'this.getControlEntity(command)' in source
-    assert 'this._hass.callService("button", "press", { entity_id: entityId })' in source
