@@ -264,9 +264,15 @@ class AnthbotZoneButtonEntity(
         super().__init__(coordinator)
         self._zone = zone
         self._zone_kind = zone_kind
-        zone_id = zone.get("id", "unknown")
-        zone_name = zone.get("name") or f"Zone {zone_id}"
-        self._attr_name = zone_name
+        zone_id = zone["id"]
+        zone_name = zone.get("name")
+        if not isinstance(zone_name, str) or not zone_name.strip():
+            zone_name = str(zone_id)
+        # Manual zones already have a user-facing name (for example "Back" or
+        # "Zóna 1"), so do not prepend another "Zone" label. Keep automatically
+        # detected areas distinguishable without mixing the UI language into the
+        # user's zone name.
+        self._attr_name = zone_name if zone_kind == "manual" else f"Auto: {zone_name}"
         self._attr_unique_id = (
             f"{coordinator.client.serial_number}_{zone_kind}_zone_{zone_id}"
         )
@@ -278,44 +284,66 @@ class AnthbotZoneButtonEntity(
         )
 
     @property
+    def available(self) -> bool:
+        """Return whether the zone still exists in current state."""
+        zone_id = self._zone.get("id")
+        zones = (
+            manual_zones(self.coordinator.reported_state)
+            if self._zone_kind == "manual"
+            else auto_zones(self.coordinator.reported_state)
+        )
+        return any(zone.get("id") == zone_id for zone in zones)
+
+    @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Expose zone metadata for the frontend."""
-        return {
+        """Return zone metadata."""
+        attrs: dict[str, Any] = {
             "serial_number": self.coordinator.client.serial_number,
-            "zone_kind": self._zone_kind,
-            "zone_id": self._zone.get("id"),
+            "zone_type": self._zone_kind,
         }
+        for key in (
+            "id",
+            "name",
+            "mow_count",
+            "mow_mode",
+            "mow_order",
+            "cutter_height",
+            "enable_adaptive_head",
+            "mow_head",
+            "visual_ignore_obstacle_switch",
+            "obstacle_avoid_level",
+            "x",
+            "y",
+            "vertexs",
+            "points",
+        ):
+            value = self._zone.get(key)
+            if value is not None:
+                attrs[key] = value
+        return attrs
 
     async def async_press(self) -> None:
-        """Start mowing the configured zone."""
+        """Start mowing the selected zone."""
         if not await async_prepare_cloud_connection(
             self.coordinator, mowing_start=True
         ):
             raise AnthbotGenieApiError(
-                "The mower did not confirm its cloud connection"
+                "The mower did not confirm its cloud connection; zone mowing was not started"
             )
-
         if self._zone_kind == "manual":
-            zone_id = self._zone.get("id")
-            if not isinstance(zone_id, int):
-                raise AnthbotGenieApiError("The selected zone has no valid id")
+            task_data = {"id": [self._zone["id"]]}
             await self.coordinator.client.async_publish_service_command(
-                cmd="custom_area_mow_start", data={"id": [zone_id]}
+                cmd="custom_area_mow_start",
+                data=task_data,
             )
-            self.coordinator.remember_mowing_task(
-                "manual_zone", {"id": [zone_id]}
-            )
+            self.coordinator.remember_mowing_task("manual_zone", task_data)
         else:
-            x = self._zone.get("x")
-            y = self._zone.get("y")
-            if not isinstance(x, int) or not isinstance(y, int):
-                raise AnthbotGenieApiError("The selected auto zone has no valid point")
+            task_data = {"points": [[self._zone["x"], self._zone["y"]]]}
             await self.coordinator.client.async_publish_service_command(
-                cmd="region_mow_start", data={"point": [[x, y]]}
+                cmd="region_mow_start",
+                data=task_data,
             )
-            self.coordinator.remember_mowing_task(
-                "auto_zone", {"point": [[x, y]]}
-            )
+            self.coordinator.remember_mowing_task("auto_zone", task_data)
         await self.coordinator.client.async_request_all_properties()
         await asyncio.sleep(1)
         await self.coordinator.async_request_refresh()
