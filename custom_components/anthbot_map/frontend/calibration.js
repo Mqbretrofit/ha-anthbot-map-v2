@@ -1,4 +1,4 @@
-import "./live-status-target.js?v=243b3-target1";
+import "./live-status-target.js?v=243b3-target2";
 
 export const DEFAULT_CALIBRATION = Object.freeze({
   offsetX: 0,
