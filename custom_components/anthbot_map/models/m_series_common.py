@@ -31,11 +31,14 @@ def install_m_series_compat() -> None:
     # verified iot_map.bin boundary. Install this after map support so both
     # layers share one archive download and map.area_id can invalidate zones.
     install_m_series_zone_support()
-    # Completed M-series zone-mowing history rows can omit their zone id even
-    # though they retain the task start x/y. Recover the unique containing
-    # area from the just-loaded area_setting.json before status wrapping.
-    install_m_series_history_support()
+    # Status owns the confirmed /device/v3/record/list refresh. Install it
+    # before history so the history wrapper always enriches the freshly loaded
+    # M-series records instead of having status overwrite the enriched payload.
     install_m_series_status_support()
+    # Completed M-series zone-mowing rows can omit their zone id. Enrich the
+    # v3 records after status refresh, using exact/live task data when present
+    # and the conservative start-position fallback otherwise.
+    install_m_series_history_support()
     # Genie may report live robot state on the service named shadow. Promote
     # only those telemetry fields into the same HA update path used by the
     # M-series property shadow, without changing any M-series behavior.
