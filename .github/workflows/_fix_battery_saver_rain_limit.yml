@@ -2,7 +2,8 @@ name: Fix Battery Saver rain charge limit
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
     paths:
       - .github/workflows/_fix_battery_saver_rain_limit.yml
 
@@ -19,53 +20,26 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
-      - name: Patch and verify Battery Saver rain limit
+          python-version: '3.13'
+      - name: Patch coordinator
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-
-          path = Path('custom_components/anthbot_map/coordinator.py')
-          source = path.read_text(encoding='utf-8')
-          old = '''            if self._battery_saver_phase == "rain_hold":
-                # During a rain return, keep dock power available and never
-                # force a resume at the battery percentage threshold. The mower
-                # decides when rain-delay conditions are cleared.
-                await self._async_set_charger(True)
-                await self._async_refresh_task_events()
-                signal = self._battery_saver_task_signal(self._task_events)
-'''
-          new = '''            if self._battery_saver_phase == "rain_hold":
-                # Keep dock power available while the mower is still returning,
-                # but once docked use the normal Battery Saver hysteresis so a
-                # rain hold cannot charge past the configured upper limit.
-                if is_docked:
-                    await self._async_maintain_idle_charge(battery)
-                else:
-                    await self._async_set_charger(True)
-                # Never force a resume at the battery percentage threshold. The
-                # mower decides when its own rain-delay conditions are cleared.
-                await self._async_refresh_task_events()
-                signal = self._battery_saver_task_signal(self._task_events)
-'''
-          count = source.count(old)
-          if count != 1:
-              raise SystemExit(f'expected exactly one rain_hold block, got {count}')
-          path.write_text(source.replace(old, new, 1), encoding='utf-8')
-          PY
-
+          python -c 'from pathlib import Path; p=Path("custom_components/anthbot_map/coordinator.py"); s=p.read_text(encoding="utf-8"); old="            if self._battery_saver_phase == \"rain_hold\":\n                # During a rain return, keep dock power available and never\n                # force a resume at the battery percentage threshold. The mower\n                # decides when rain-delay conditions are cleared.\n                await self._async_set_charger(True)\n                await self._async_refresh_task_events()\n                signal = self._battery_saver_task_signal(self._task_events)\n"; new="            if self._battery_saver_phase == \"rain_hold\":\n                # Keep dock power available while the mower is still returning,\n                # but once docked use the normal Battery Saver hysteresis so a\n                # rain hold cannot charge past the configured upper limit.\n                if is_docked:\n                    await self._async_maintain_idle_charge(battery)\n                else:\n                    await self._async_set_charger(True)\n                # Never force a resume at the battery percentage threshold. The\n                # mower decides when its own rain-delay conditions are cleared.\n                await self._async_refresh_task_events()\n                signal = self._battery_saver_task_signal(self._task_events)\n"; c=s.count(old); assert c == 1, f"expected exactly one rain_hold block, got {c}"; p.write_text(s.replace(old,new,1),encoding="utf-8")'
+      - name: Verify
+        shell: bash
+        run: |
+          set -euo pipefail
           python -m py_compile custom_components/anthbot_map/coordinator.py
           python -m unittest discover -s tests -v
-          grep -q 'if is_docked:' custom_components/anthbot_map/coordinator.py
-          grep -q 'await self._async_maintain_idle_charge(battery)' custom_components/anthbot_map/coordinator.py
-
+          grep -q 'rain hold cannot charge past the configured upper limit' custom_components/anthbot_map/coordinator.py
+      - name: Commit fix
+        shell: bash
+        run: |
+          set -euo pipefail
           rm .github/workflows/_fix_battery_saver_rain_limit.yml
-          git config user.name "Mqbretrofit"
-          git config user.email "matrai.attila975@gmail.com"
+          git config user.name 'Mqbretrofit'
+          git config user.email 'matrai.attila975@gmail.com'
           git add -A
-          git commit -m "Respect Battery Saver charge limit during rain hold"
+          git commit -m 'Respect Battery Saver charge limit during rain hold'
           git push origin HEAD:main
-
-# trigger
