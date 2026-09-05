@@ -105,21 +105,26 @@ class RainStatusSourceTests(unittest.TestCase):
             common.index("install_genie_live_status_support()"),
         )
 
-    def test_card_keeps_primary_status_and_renders_rain_hold_below(self) -> None:
+    def test_card_keeps_primary_status_and_renders_plain_rain_hold_below(self) -> None:
         card = (COMPONENT / "frontend" / "anthbot-map-card.js").read_text(
             encoding="utf-8"
         )
+        sensor = (COMPONENT / "binary_sensor.py").read_text(encoding="utf-8")
         self.assertIn('rainHold: ["binary_sensor", ["rain_hold"]]', card)
-        self.assertIn('const displayedStatus = statusEntity ? this.translateStatus(statusEntity.state) : "-";', card)
+        self.assertIn(
+            'const displayedStatus = statusEntity ? this.translateStatus(statusEntity.state) : "-";',
+            card,
+        )
         self.assertNotIn('const displayedStatus = rainHoldEntity?.state === "on"', card)
         self.assertIn('data-role="rain-hold-line"', card)
         self.assertIn('rainHoldEntity?.state === "on"', card)
-        self.assertIn('rain_continue_time', card)
-        self.assertIn('detected_at', card)
-        self.assertIn('return remaining > 0 ? remaining : null;', card)
-        self.assertIn('this.updateRainHoldDisplay();', card)
-        self.assertIn('setInterval(() => this.updateRainHoldDisplay(), 1000)', card)
         self.assertIn('this.translateStatus("rain_hold")', card)
+        self.assertIn('this.updateRainHoldDisplay();', card)
+        # The backend deliberately exposes only rain_detected_at. The card's old
+        # compatibility countdown helper requires detected_at, so the rendered
+        # rain line remains plain text and can never show a guessed timer.
+        self.assertIn('"rain_detected_at": event.get("create_time")', sensor)
+        self.assertNotIn('"detected_at": event.get("create_time")', sensor)
 
     def test_hungarian_and_english_status_labels_exist(self) -> None:
         source = (COMPONENT / "frontend" / "i18n.js").read_text(encoding="utf-8")

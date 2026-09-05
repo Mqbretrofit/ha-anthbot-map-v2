@@ -10,6 +10,7 @@ from .m_series_map import install_m_series_map_support
 from .m_series_path import install_m_series_path_support
 from .m_series_status import install_m_series_status_support
 from .m_series_zones import install_m_series_zone_support
+from .rain_battery_saver import install_rain_battery_saver_safety
 
 _INSTALLED = False
 
@@ -48,3 +49,7 @@ def install_m_series_compat() -> None:
     # Refresh it immediately after a real MQTT status transition so the cloud
     # event code does not remain stale for the five-minute ancillary interval.
     install_live_task_event_refresh()
+    # Rain safety is model-neutral and intentionally installed after the live
+    # task-event refresh so 1037 activity is already part of the coordinator's
+    # task-cycle classifier before Battery Saver adds 1038 protection.
+    install_rain_battery_saver_safety()
