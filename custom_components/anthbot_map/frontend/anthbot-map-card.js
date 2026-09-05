@@ -69,6 +69,7 @@ class AnthbotMapCard extends HTMLElement {
     this.renderer = null;
     this.activePanel = "control";
     this.refreshTimer = null;
+    this.rainCountdownTimer = null;
     this.refreshInFlight = false;
     this.mapExpanded = false;
     this.showDecodedBoundary = true;
@@ -187,6 +188,7 @@ class AnthbotMapCard extends HTMLElement {
     this.entity = hass.states[this._activeEntityId];
     const customButtonsChanged = this.syncCustomButtonActionsFromServer();
     this.startRefreshTimer();
+    this.startRainCountdownTimer();
     if (previousLanguage !== this.language || customButtonsChanged) {
       this.render();
     } else {
@@ -204,6 +206,7 @@ class AnthbotMapCard extends HTMLElement {
 
   disconnectedCallback() {
     this.stopRefreshTimer();
+    this.stopRainCountdownTimer();
     window.clearTimeout(this.pendingRefreshTimer);
     window.clearTimeout(this.commandFeedbackTimer);
     document.getElementById(this.feedbackToastId)?.remove();
@@ -258,6 +261,8 @@ class AnthbotMapCard extends HTMLElement {
           .map-live-status .status-copy { min-width:0; }
           .map-live-status .status-label { font-size:10px; opacity:.72; }
           .map-live-status [data-role="mower-status"] { display:block; max-width:230px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; line-height:1.15; }
+          .map-live-status .rain-hold-line { display:block; margin-top:3px; font-size:11px; font-weight:600; line-height:1.2; }
+          .map-live-status .rain-hold-line[hidden] { display:none; }
           .map-live-status .mowing-live-line { margin-top:3px; font-size:11px; }
           .map-live-status .mowing-live-line .mowing-live-target { max-width:185px; }
           @media (max-width:720px) {
@@ -393,6 +398,7 @@ class AnthbotMapCard extends HTMLElement {
             <div class="status-copy">
               <span class="status-label">${this.t("status")}</span>
               <strong data-role="mower-status">-</strong>
+              <span class="rain-hold-line" data-role="rain-hold-line" hidden></span>
               <span class="mowing-live-line" data-role="mowing-live-line" hidden>
                 <span class="mowing-live-target" data-role="mowing-live-target">-</span>
                 <strong class="mowing-live-progress" data-role="mowing-live-progress">--%</strong>
@@ -637,6 +643,71 @@ class AnthbotMapCard extends HTMLElement {
     return coordinatePose
       ? { ...rawPose, ...coordinatePose, yaw: fallbackYaw }
       : { ...rawPose, yaw: fallbackYaw };
+  }
+
+
+  parseRainHoldDetectedAt(value) {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    const raw = String(value).trim();
+    if (!raw) {
+      return null;
+    }
+    const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw) ? raw : `${raw}Z`;
+    const timestamp = Date.parse(normalized);
+    return Number.isFinite(timestamp) ? timestamp : null;
+  }
+
+  rainHoldRemainingSeconds(rainHoldEntity) {
+    if (rainHoldEntity?.state !== "on") {
+      return null;
+    }
+    const duration = Number(rainHoldEntity.attributes?.rain_continue_time);
+    const detectedAt = this.parseRainHoldDetectedAt(rainHoldEntity.attributes?.detected_at);
+    if (!Number.isFinite(duration) || duration < 0 || detectedAt === null) {
+      return null;
+    }
+    const endAt = detectedAt + duration * 1000;
+    return Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
+  }
+
+  formatRainHoldCountdown(totalSeconds) {
+    const total = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const seconds = total % 60;
+    if (hours > 0) {
+      return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    }
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  updateRainHoldDisplay() {
+    const rainHoldEntity = this.getRelatedEntity("rainHold");
+    const active = rainHoldEntity?.state === "on";
+    const remaining = this.rainHoldRemainingSeconds(rainHoldEntity);
+    const rainHoldText = remaining === null
+      ? this.translateStatus("rain_hold")
+      : `${this.translateStatus("rain_hold")} · ${this.formatRainHoldCountdown(remaining)}`;
+    this.shadowRoot?.querySelectorAll('[data-role="rain-hold-line"]').forEach((line) => {
+      line.hidden = !active;
+      line.textContent = active ? rainHoldText : "";
+    });
+  }
+
+  startRainCountdownTimer() {
+    if (this.rainCountdownTimer) {
+      return;
+    }
+    this.rainCountdownTimer = window.setInterval(() => this.updateRainHoldDisplay(), 1000);
+  }
+
+  stopRainCountdownTimer() {
+    if (this.rainCountdownTimer) {
+      window.clearInterval(this.rainCountdownTimer);
+      this.rainCountdownTimer = null;
+    }
   }
 
   updateRenderer() {
@@ -923,13 +994,11 @@ class AnthbotMapCard extends HTMLElement {
     });
 
     const statusEntity = this.getRelatedEntity("status");
-    const rainHoldEntity = this.getRelatedEntity("rainHold");
-    const displayedStatus = rainHoldEntity?.state === "on"
-      ? this.translateStatus("rain_hold")
-      : statusEntity ? this.translateStatus(statusEntity.state) : "-";
+    const displayedStatus = statusEntity ? this.translateStatus(statusEntity.state) : "-";
     this.shadowRoot.querySelectorAll('[data-role="mower-status"]').forEach((mowerStatus) => {
       mowerStatus.textContent = displayedStatus;
     });
+    this.updateRainHoldDisplay();
 
     this.updateMowingProgressStatus();
   }

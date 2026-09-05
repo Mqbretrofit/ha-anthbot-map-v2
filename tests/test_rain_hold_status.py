@@ -67,12 +67,19 @@ class RainStatusSourceTests(unittest.TestCase):
         self.assertIn('"source": "task_event"', source)
         self.assertIn('"event_code": 1036', source)
 
-    def test_card_overrides_visible_status_while_rain_hold_is_on(self) -> None:
+    def test_card_keeps_primary_status_and_renders_rain_hold_below(self) -> None:
         card = (COMPONENT / "frontend" / "anthbot-map-card.js").read_text(
             encoding="utf-8"
         )
         self.assertIn('rainHold: ["binary_sensor", ["rain_hold"]]', card)
+        self.assertIn('const displayedStatus = statusEntity ? this.translateStatus(statusEntity.state) : "-";', card)
+        self.assertNotIn('const displayedStatus = rainHoldEntity?.state === "on"', card)
+        self.assertIn('data-role="rain-hold-line"', card)
         self.assertIn('rainHoldEntity?.state === "on"', card)
+        self.assertIn('rain_continue_time', card)
+        self.assertIn('detected_at', card)
+        self.assertIn('this.updateRainHoldDisplay();', card)
+        self.assertIn('setInterval(() => this.updateRainHoldDisplay(), 1000)', card)
         self.assertIn('this.translateStatus("rain_hold")', card)
 
     def test_hungarian_and_english_status_labels_exist(self) -> None:
