@@ -47,18 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           cd /tmp/anthbot-v243
-          zip -r "/tmp/anthbot-map-${TAG}.zip" \
-            custom_components \
-            www \
-            examples \
-            README.md \
-            README_HU.md \
-            CHANGELOG.md \
-            CHANGELOG*.md \
-            RELEASE_NOTES*.md \
-            LICENSE \
-            NOTICE.md \
-            hacs.json
+          zip -r "/tmp/anthbot-map-${TAG}.zip" custom_components www examples README.md README_HU.md CHANGELOG.md CHANGELOG*.md RELEASE_NOTES*.md LICENSE NOTICE.md hacs.json
           sha256sum "/tmp/anthbot-map-${TAG}.zip"
 
       - name: Move stable tag and replace release asset
@@ -67,38 +56,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh api --method PATCH \
-            "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" \
-            -f sha="$TARGET_SHA" \
-            -F force=true
-
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" -f sha="$TARGET_SHA" -F force=true
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > /tmp/release-notes.md
-          cat >> /tmp/release-notes.md <<'EOF'
-
-## Verified post-release fixes
-
-- Fixed robot heading conversion so horizontal and vertical orientation now both match the real mower. **Verified on M9 Pro hardware.**
-- Fixed calibration YAML export so the current `robot_heading_offset` is copied after calibration instead of the old value.
-
-## Ellenőrzött kiadás utáni javítások
-
-- Javítva a robot irányának átszámítása: a vízszintes és függőleges irány is helyesen követi a valódi robotot. **M9 Pro hardveren ellenőrizve.**
-- Javítva a kalibrációs YAML másolása: kalibrálás után már az aktuális `robot_heading_offset` kerül a másolt YAML-ba, nem a régi érték.
-EOF
-
+          printf '\n## Verified post-release fixes\n\n- Fixed robot heading conversion so horizontal and vertical orientation now both match the real mower. **Verified on M9 Pro hardware.**\n- Fixed calibration YAML export so the current `robot_heading_offset` is copied after calibration instead of the old value.\n\n## Ellenőrzött kiadás utáni javítások\n\n- Javítva a robot irányának átszámítása: a vízszintes és függőleges irány is helyesen követi a valódi robotot. **M9 Pro hardveren ellenőrizve.**\n- Javítva a kalibrációs YAML másolása: kalibrálás után már az aktuális `robot_heading_offset` kerül a másolt YAML-ba, nem a régi érték.\n' >> /tmp/release-notes.md
           release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq .id)"
-          gh api --method PATCH \
-            "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
-            -f target_commitish="$TARGET_SHA" \
-            -F prerelease=false \
-            -F draft=false \
-            -f name="Anthbot Map ${TAG}" \
-            -f body="$(cat /tmp/release-notes.md)"
-
-          gh release upload "$TAG" "/tmp/anthbot-map-${TAG}.zip" \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
-
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${release_id}" -f target_commitish="$TARGET_SHA" -F prerelease=false -F draft=false -f name="Anthbot Map ${TAG}" -f body="$(cat /tmp/release-notes.md)"
+          gh release upload "$TAG" "/tmp/anthbot-map-${TAG}.zip" --repo "$GITHUB_REPOSITORY" --clobber
           actual="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" --jq .object.sha)"
           test "$actual" = "$TARGET_SHA"
 
