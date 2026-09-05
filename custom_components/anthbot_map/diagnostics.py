@@ -64,6 +64,20 @@ def _map_definition_summary(value: Any) -> Any:
     }
 
 
+def _reported_state_snapshot(state: Any) -> Any:
+    """Return the current coordinator state while avoiding the large map raster."""
+    if not isinstance(state, dict):
+        return _safe_diagnostic_value(state)
+    snapshot: dict[str, Any] = {}
+    for raw_key, value in state.items():
+        key = str(raw_key)
+        if key == "_map_definition":
+            snapshot[key] = _map_definition_summary(value)
+        else:
+            snapshot[key] = _safe_diagnostic_value(value)
+    return snapshot
+
+
 def _redact_serial(value: Any, serial_number: str) -> Any:
     """Remove the mower serial number from nested diagnostic values."""
     if isinstance(value, dict):
@@ -78,7 +92,7 @@ def _redact_serial(value: Any, serial_number: str) -> Any:
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> dict[str, Any]:
-    """Return safe map and boundary diagnostics for a config entry."""
+    """Return safe map, boundary, and current mower-state diagnostics."""
     coordinators = hass.data.get(DOMAIN, {}).get(entry.entry_id, [])
     mowers: list[dict[str, Any]] = []
 
@@ -90,6 +104,7 @@ async def async_get_config_entry_diagnostics(
             "area_time": state.get("area_time"),
             "map_time": state.get("map_time"),
             "map_tar_time": state.get("map_tar_time"),
+            "reported_state": _reported_state_snapshot(state),
             "area_definition": _safe_diagnostic_value(
                 state.get("_area_definition")
             ),
