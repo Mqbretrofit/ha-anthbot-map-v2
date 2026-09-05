@@ -2,6 +2,7 @@
 
 from .entity_identity import install_setting_entity_identity
 from .genie_status import install_genie_live_status_support
+from .live_task_events import install_live_task_event_refresh
 from .m_series_legacy import install_m_series_compat as _install_legacy
 from .m_series_control import install_m_series_control_support
 from .m_series_history import install_m_series_history_support
@@ -43,3 +44,7 @@ def install_m_series_compat() -> None:
     # only those telemetry fields into the same HA update path used by the
     # M-series property shadow, without changing any M-series behavior.
     install_genie_live_status_support()
+    # Both Genie and M-series task-event sensors use the same REST event list.
+    # Refresh it immediately after a real MQTT status transition so the cloud
+    # event code does not remain stale for the five-minute ancillary interval.
+    install_live_task_event_refresh()

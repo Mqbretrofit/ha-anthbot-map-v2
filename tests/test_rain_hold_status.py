@@ -46,6 +46,24 @@ class RainTaskEventTests(unittest.TestCase):
         }
         self.assertEqual(events.latest_task_cycle_signal(payload), "active")
 
+    def test_rain_stopped_event_clears_old_rain_return(self) -> None:
+        payload = {
+            "data": [
+                {
+                    "code": 1037,
+                    "event_message": (
+                        "Detected that the rain has stopped, "
+                        "the robot continues to execute the mowing task."
+                    ),
+                },
+                {"code": 1022},
+                {"code": 1036},
+            ]
+        }
+        self.assertEqual(events.latest_task_cycle_signal(payload), "active")
+        self.assertIn(1037, events.TASK_START_CODES)
+        self.assertEqual(events.RAIN_RESUME_CODE, 1037)
+
     def test_finished_task_clears_old_rain_return(self) -> None:
         payload = {
             "data": [
@@ -66,6 +84,24 @@ class RainStatusSourceTests(unittest.TestCase):
         self.assertNotIn('_is_m_series_model(coordinator.device.model)', source)
         self.assertIn('"source": "task_event"', source)
         self.assertIn('"event_code": 1036', source)
+
+    def test_live_status_change_refreshes_cloud_task_events(self) -> None:
+        source = (
+            COMPONENT / "models" / "live_task_events.py"
+        ).read_text(encoding="utf-8")
+        common = (
+            COMPONENT / "models" / "m_series_common.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("_last_task_event_download_monotonic = 0.0", source)
+        self.assertIn("await self._async_refresh_task_events()", source)
+        self.assertIn("await asyncio.sleep(_EVENT_RETRY_SECONDS)", source)
+        self.assertIn("previous_status != current_status", source)
+        self.assertIn("_TASK_ACTIVITY_EVENT_CODES.add(1037)", source)
+        self.assertIn("install_live_task_event_refresh()", common)
+        self.assertGreater(
+            common.index("install_live_task_event_refresh()"),
+            common.index("install_genie_live_status_support()"),
+        )
 
     def test_card_keeps_primary_status_and_renders_rain_hold_below(self) -> None:
         card = (COMPONENT / "frontend" / "anthbot-map-card.js").read_text(

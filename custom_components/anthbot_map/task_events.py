@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-TASK_START_CODES = {1015, 1017, 1018}
+TASK_START_CODES = {1015, 1017, 1018, 1037}
 TASK_FINISHED_CODE = 1014
 LOW_BATTERY_RETURN_CODE = 1021
 RAIN_RETURN_CODE = 1036
+RAIN_RESUME_CODE = 1037
 
 
 def task_event_items(payload: Any) -> list[dict[str, Any]]:
