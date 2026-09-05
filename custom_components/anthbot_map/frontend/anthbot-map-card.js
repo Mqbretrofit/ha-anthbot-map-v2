@@ -669,7 +669,8 @@ class AnthbotMapCard extends HTMLElement {
       return null;
     }
     const endAt = detectedAt + duration * 1000;
-    return Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
+    const remaining = Math.ceil((endAt - Date.now()) / 1000);
+    return remaining > 0 ? remaining : null;
   }
 
   formatRainHoldCountdown(totalSeconds) {

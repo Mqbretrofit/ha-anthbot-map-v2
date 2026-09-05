@@ -78,6 +78,7 @@ class RainStatusSourceTests(unittest.TestCase):
         self.assertIn('rainHoldEntity?.state === "on"', card)
         self.assertIn('rain_continue_time', card)
         self.assertIn('detected_at', card)
+        self.assertIn('return remaining > 0 ? remaining : null;', card)
         self.assertIn('this.updateRainHoldDisplay();', card)
         self.assertIn('setInterval(() => this.updateRainHoldDisplay(), 1000)', card)
         self.assertIn('this.translateStatus("rain_hold")', card)
