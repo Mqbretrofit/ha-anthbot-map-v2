@@ -5,7 +5,7 @@
 // the exact Home Assistant duplicate ordinal of this card's map entity. This
 // keeps Genie / M-series isolated without making valid legacy settings vanish.
 
-const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-05-control-v11";
+const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-05-control-v12";
 
 const disableLegacyCommandRouter = () => {
   if (typeof window === "undefined" || typeof document === "undefined") return;
@@ -158,7 +158,20 @@ if (typeof customElements !== "undefined") {
         const a = state.attributes || {};
         if (String(a.zone_kind || "").toLowerCase() !== wantedKind) continue;
         if (String(a.zone_id ?? "") !== wantedZoneId) continue;
-        if (String(a.setting || "").toLowerCase() !== key) continue;
+        const setting = String(a.setting || "").toLowerCase();
+        if (setting) {
+          if (setting !== key) continue;
+        } else {
+          // Some HA state payloads do not expose the helper `setting` attribute.
+          // Serial + zone kind + zone id stay mandatory; only accept the exact
+          // mowing-mode select by entity/friendly name as the final discriminator.
+          const idSlug = normalize(entityId);
+          const friendlySlug = normalize(a.friendly_name);
+          const isMowingModeSelect = domain === "select"
+            && key === "mowing_mode"
+            && (idSlug.includes("mowing_mode") || friendlySlug.includes("mowing_mode"));
+          if (!isMowingModeSelect) continue;
+        }
         return entityId;
       }
       return null;
