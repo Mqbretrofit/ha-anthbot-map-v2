@@ -1,4 +1,4 @@
-import { AnthbotMapRenderer } from "./renderer.js?v=2411";
+import { AnthbotMapRenderer } from "./renderer.js?v=243-heading-fix1";
 import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=2411";
 import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=2411";
 import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=243b2-mowing-mode-help3";
@@ -3780,6 +3780,7 @@ class AnthbotMapCard extends HTMLElement {
   configForYaml() {
     return {
       ...this.config,
+      robot_heading_offset: this.robotHeadingOffset,
       button_actions: this.customButtonActionsEnabled ? this.customButtonActions : {},
       map_only: this.mapOnly,
       theme_background: this.themeBackground,

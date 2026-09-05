@@ -1310,10 +1310,11 @@ function degreesToRadians(degrees) {
   return (degrees * Math.PI) / 180;
 }
 
-// Anthbot's cloud heading uses the opposite horizontal axis from the canvas:
-// up/down already match, while left/right must be mirrored.
+// The cloud heading already uses the same cardinal orientation as the canvas.
+// Keep all four cardinal directions unchanged; applying 180-heading would
+// preserve left/right but swap up/down by 180 degrees.
 export function cloudHeadingToCanvasRadians(value) {
-  return normalizeAngle(degreesToRadians(180 - normalizeHeadingDegrees(value)));
+  return normalizeAngle(degreesToRadians(normalizeHeadingDegrees(value)));
 }
 
 function milliRadiansToDegrees(value) {

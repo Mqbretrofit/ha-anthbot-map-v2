@@ -121,6 +121,7 @@ process.stdout.write(JSON.stringify({{ transformed, screen: geometry.mapToScreen
         self.assertIn('data-mowing-path-calibration="shorter"', card)
         self.assertIn('data-mowing-path-calibration="taller"', card)
         self.assertIn('data-robot-heading="left"', card)
+        self.assertIn("robot_heading_offset: this.robotHeadingOffset", card)
         self.assertNotIn('data-robot-calibration="rotate-left-large"', card)
         self.assertIn("geometry.mapToScreenWithLayerCalibration(mapPoint, mowingPathCalibration)", renderer)
         self.assertIn("geometry.mapToScreenWithLayerCalibration(mapPoint, {", renderer)
@@ -230,7 +231,7 @@ process.stdout.write(JSON.stringify({{ legacy, explicit }}));
         self.assertEqual(values["explicit"]["offsetX"], 0.02)
         self.assertEqual(values["explicit"]["rotation"], -0.05236)
 
-    def test_cloud_heading_mirrors_only_the_horizontal_axis(self) -> None:
+    def test_cloud_heading_preserves_all_cardinal_directions(self) -> None:
         geometry_source = base64.b64encode((FRONTEND / "geometry.js").read_bytes()).decode("ascii")
         renderer_source = (FRONTEND / "renderer.js").read_text(encoding="utf-8")
         renderer_source, replacements = re.subn(
@@ -257,9 +258,9 @@ process.stdout.write(JSON.stringify(cardinal));
         )
         cardinal = json.loads(result.stdout)
 
-        self.assertAlmostEqual(cardinal[0], 180, places=7)
+        self.assertAlmostEqual(cardinal[0], 0, places=7)
         self.assertAlmostEqual(cardinal[1], 90, places=7)
-        self.assertAlmostEqual(cardinal[2], 0, places=7)
+        self.assertAlmostEqual(cardinal[2], 180, places=7)
         self.assertAlmostEqual(cardinal[3], -90, places=7)
 
 
