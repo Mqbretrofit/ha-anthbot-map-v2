@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -c 'import base64; exec(base64.b64decode("CmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAoKcGF0aHMgPSBbCiAgICBQYXRoKCJjdXN0b21fY29tcG9uZW50cy9hbnRoYm90X21hcC9mcm9udGVuZC9hbnRoYm90LW1hcC1jYXJkLmpzIiksCiAgICBQYXRoKCJ3d3cvYW50aGJvdC1tYXAvYW50aGJvdC1tYXAtY2FyZC5qcyIpLApdCgpkZWYgcmVwbGFjZV9vbmNlKHRleHQ6IHN0ciwgb2xkOiBzdHIsIG5ldzogc3RyLCBsYWJlbDogc3RyKSAtPiBzdHI6CiAgICBjb3VudCA9IHRleHQuY291bnQob2xkKQogICAgaWYgY291bnQgIT0gMToKICAgICAgICByYWlzZSBTeXN0ZW1FeGl0KGYie2xhYmVsfTogZXhwZWN0ZWQgZXhhY3RseSBvbmUgbWF0Y2gsIGZvdW5kIHtjb3VudH0iKQogICAgcmV0dXJuIHRleHQucmVwbGFjZShvbGQsIG5ldywgMSkKCmhlbHBlcl9tZXRob2RzID0gcid...snipped_for_tool_payload...').decode())'
+          python .github/scripts/patch_rain_hold_countdown.py
       - name: Verify
         shell: bash
         run: |
@@ -43,6 +43,7 @@ jobs:
         run: |
           set -euo pipefail
           rm .github/workflows/_test_rain_hold_countdown.yml
+          rm .github/scripts/patch_rain_hold_countdown.py
           git config user.name "Mqbretrofit"
           git config user.email "matrai.attila975@gmail.com"
           git add -A
