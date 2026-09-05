@@ -210,7 +210,7 @@ BINARY_SENSORS: tuple[AnthbotBinarySensorDescription, ...] = (
         translation_key="accelerometer_active",
         name="Accelerometer active",
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: _nonzero(_safe_get(data, "acc_sta", "value")),
+        value_fn=lambda data: _truthy(_safe_get(data, "acc_sta", "value")),
     ),
     AnthbotBinarySensorDescription(
         key="mowing_border",
