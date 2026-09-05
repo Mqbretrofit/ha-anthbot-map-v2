@@ -114,9 +114,12 @@ class AnthbotZoneMowingModeSelect(
         value = zone.get("mow_mode") if isinstance(zone, dict) else None
         name = zone.get("name") if isinstance(zone, dict) else None
         return {
+            "serial_number": self.coordinator.client.serial_number,
+            "model": self.coordinator.device.model,
             "zone_kind": self._zone_kind,
             "zone_id": self._zone_id,
             "zone_name": name,
+            "setting": "mowing_mode",
             "raw_mow_mode": value,
         }
 

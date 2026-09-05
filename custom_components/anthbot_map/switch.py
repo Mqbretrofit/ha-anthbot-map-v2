@@ -368,6 +368,17 @@ class AnthbotZoneSwitchEntity(
         return next((zone for zone in zones if zone.get("id") == self._zone_id), None)
 
     @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        """Expose exact mower and zone identity."""
+        return {
+            "serial_number": self.coordinator.client.serial_number,
+            "model": self.coordinator.device.model,
+            "zone_kind": self._zone_kind,
+            "zone_id": self._zone_id,
+            "setting": self._setting,
+        }
+
+    @property
     def is_on(self) -> bool:
         zone = self._find_zone()
         if not isinstance(zone, dict):

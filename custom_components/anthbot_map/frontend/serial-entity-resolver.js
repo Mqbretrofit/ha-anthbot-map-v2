@@ -5,7 +5,7 @@
 // the exact Home Assistant duplicate ordinal of this card's map entity. This
 // keeps Genie / M-series isolated without making valid legacy settings vanish.
 
-const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-04-control-v9";
+const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-05-control-v10";
 
 const disableLegacyCommandRouter = () => {
   if (typeof window === "undefined" || typeof document === "undefined") return;
@@ -127,6 +127,36 @@ if (typeof customElements !== "undefined") {
       for (const suffix of wanted) {
         const exact = exactOrdinalEntity(this, domain, suffix);
         if (exact) return exact;
+      }
+      return null;
+    };
+
+    // Resolve zone settings only for this exact mower and zone.
+    proto.findZoneSettingEntity = function (domain, kind, zone, settingLabel) {
+      const states = this._hass?.states || {};
+      const identity = mapIdentity(this);
+      if (!identity.serial) return null;
+      const wantedKind = kind === "auto" ? "auto" : "manual";
+      const wantedZoneId = zone?.id == null ? "" : String(zone.id);
+      if (!wantedZoneId) return null;
+      const key = {
+        "mowing passes": "mow_count",
+        "cutting height": "cutter_height",
+        "obstacle sensitivity": "obstacle_avoid_level",
+        "mowing direction": "mow_head",
+        "visual obstacle detection": "visual_obstacle",
+        "custom mowing direction": "custom_direction",
+        "mowing mode": "mowing_mode",
+      }[String(settingLabel || "").trim().toLowerCase()] || "";
+      if (!key) return null;
+      for (const [entityId, state] of Object.entries(states)) {
+        if (!entityId.startsWith(`${domain}.`) || !isAvailable(state)) continue;
+        if (serialOf(state) !== identity.serial) continue;
+        const a = state.attributes || {};
+        if (String(a.zone_kind || "").toLowerCase() !== wantedKind) continue;
+        if (String(a.zone_id ?? "") !== wantedZoneId) continue;
+        if (String(a.setting || "").toLowerCase() !== key) continue;
+        return entityId;
       }
       return null;
     };
