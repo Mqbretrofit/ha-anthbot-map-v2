@@ -1500,10 +1500,15 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     return
 
             if self._battery_saver_phase == "rain_hold":
-                # During a rain return, keep dock power available and never
-                # force a resume at the battery percentage threshold. The mower
-                # decides when rain-delay conditions are cleared.
-                await self._async_set_charger(True)
+                # Keep dock power available while the mower is still returning,
+                # but once docked use the normal Battery Saver hysteresis so a
+                # rain hold cannot charge past the configured upper limit.
+                if is_docked:
+                    await self._async_maintain_idle_charge(battery)
+                else:
+                    await self._async_set_charger(True)
+                # Never force a resume at the battery percentage threshold. The
+                # mower decides when its own rain-delay conditions are cleared.
                 await self._async_refresh_task_events()
                 signal = self._battery_saver_task_signal(self._task_events)
                 if signal == "completed":
