@@ -84,6 +84,8 @@ class RainStatusSourceTests(unittest.TestCase):
         self.assertNotIn('_is_m_series_model(coordinator.device.model)', source)
         self.assertIn('"source": "task_event"', source)
         self.assertIn('"event_code": 1036', source)
+        self.assertIn('"rain_detected_at": event.get("create_time")', source)
+        self.assertNotIn('"detected_at": event.get("create_time")', source)
 
     def test_live_status_change_refreshes_cloud_task_events(self) -> None:
         source = (
