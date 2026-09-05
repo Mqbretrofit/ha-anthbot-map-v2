@@ -5,7 +5,7 @@
 // the exact Home Assistant duplicate ordinal of this card's map entity. This
 // keeps Genie / M-series isolated without making valid legacy settings vanish.
 
-const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-05-control-v10";
+const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-05-control-v11";
 
 const disableLegacyCommandRouter = () => {
   if (typeof window === "undefined" || typeof document === "undefined") return;
@@ -150,7 +150,10 @@ if (typeof customElements !== "undefined") {
       }[String(settingLabel || "").trim().toLowerCase()] || "";
       if (!key) return null;
       for (const [entityId, state] of Object.entries(states)) {
-        if (!entityId.startsWith(`${domain}.`) || !isAvailable(state)) continue;
+        if (!entityId.startsWith(`${domain}.`) || !state) continue;
+        const stateValue = String(state.state ?? "").trim().toLowerCase();
+        if (stateValue === "unavailable") continue;
+        if (domain !== "select" && !isAvailable(state)) continue;
         if (serialOf(state) !== identity.serial) continue;
         const a = state.attributes || {};
         if (String(a.zone_kind || "").toLowerCase() !== wantedKind) continue;
@@ -355,9 +358,18 @@ if (typeof customElements !== "undefined") {
     wrapEntityControl("createDirectNumberControl", function (_label, entityId) {
       return entityId;
     });
-    wrapEntityControl("createDirectSelectControl", function (_label, entityId) {
-      return entityId;
-    });
+    // A zone mowing-mode select may be `unknown` until mow_mode is reported.
+    // Keep Normal/Efficient usable, but still hide a truly unavailable entity.
+    const originalDirectSelect = proto.createDirectSelectControl;
+    if (typeof originalDirectSelect === "function") {
+      proto.createDirectSelectControl = function (...args) {
+        const entityId = args[1];
+        const state = this?._hass?.states?.[entityId];
+        const stateValue = String(state?.state ?? "").trim().toLowerCase();
+        if (!state || stateValue === "unavailable") return emptyFragment();
+        return originalDirectSelect.apply(this, args);
+      };
+    }
     wrapEntityControl("createDirectSwitchControl", function (_label, entityId) {
       return entityId;
     });

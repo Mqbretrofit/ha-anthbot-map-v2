@@ -1,4 +1,4 @@
-import "./serial-entity-resolver.js?v=243-zone-scope-fix1";
+import "./serial-entity-resolver.js?v=243-zone-scope-fix2";
 
 export const DEFAULT_CALIBRATION = Object.freeze({
   offsetX: 0,

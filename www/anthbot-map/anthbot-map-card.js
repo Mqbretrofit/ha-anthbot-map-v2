@@ -10,7 +10,7 @@ import {
   readMowingPathCalibration,
   readRobotCalibration,
   resetCalibration,
-} from "./calibration.js?v=243-zone-scope-fix1";
+} from "./calibration.js?v=243-zone-scope-fix2";
 
 const ENTITY_MAP = {
   battery: ["sensor", ["battery_level"]],
