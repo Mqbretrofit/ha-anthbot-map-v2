@@ -11,6 +11,7 @@ from .m_series_path import install_m_series_path_support
 from .m_series_status import install_m_series_status_support
 from .m_series_zones import install_m_series_zone_support
 from .rain_battery_saver import install_rain_battery_saver_safety
+from .shutdown_guard_stability import install_shutdown_guard_state_settle
 
 _INSTALLED = False
 
@@ -53,3 +54,7 @@ def install_m_series_compat() -> None:
     # task-event refresh so 1037 activity is already part of the coordinator's
     # task-cycle classifier before Battery Saver adds 1038 protection.
     install_rain_battery_saver_safety()
+    # A guard pulse must wait until HA actually reports the smart plug OFF.
+    # Otherwise the loop can see a stale ON immediately after turn_off, clear
+    # the next 55-minute deadline and stop after the first keep-awake pulse.
+    install_shutdown_guard_state_settle()
