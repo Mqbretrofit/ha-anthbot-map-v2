@@ -90,13 +90,8 @@ def _is_custom_mowing_direction_enabled(data: dict[str, Any]) -> bool:
     return not adaptive_enabled
 
 
-def _is_m_series_model(model: object) -> bool:
-    value = str(model or "").upper()
-    return "M5" in value or "M9" in value
-
-
 def _rain_hold_event(data: dict[str, Any]) -> dict[str, Any] | None:
-    """Return the Genie rain-return event while that task cycle is still held."""
+    """Return the rain-return event while that task cycle is still held."""
     payload = data.get("_task_events")
     if latest_task_cycle_signal(payload) != "rain_return":
         return None
@@ -325,8 +320,6 @@ async def async_setup_entry(
         AnthbotBinarySensorEntity(coordinator, description)
         for coordinator in coordinators
         for description in BINARY_SENSORS
-        if description.key != "rain_hold"
-        or not _is_m_series_model(coordinator.device.model)
     )
 
 

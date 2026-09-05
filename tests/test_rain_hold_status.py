@@ -1,4 +1,4 @@
-"""Regression coverage for Genie rain hold state and card status."""
+"""Regression coverage for rain hold state and card status."""
 
 from __future__ import annotations
 
@@ -58,12 +58,12 @@ class RainTaskEventTests(unittest.TestCase):
 
 
 class RainStatusSourceTests(unittest.TestCase):
-    def test_binary_sensor_is_genie_only_and_event_backed(self) -> None:
+    def test_binary_sensor_is_model_independent_and_event_backed(self) -> None:
         source = (COMPONENT / "binary_sensor.py").read_text(encoding="utf-8")
         self.assertIn('key="rain_hold"', source)
         self.assertIn('latest_task_cycle_signal(payload) != "rain_return"', source)
-        self.assertIn('if description.key != "rain_hold"', source)
-        self.assertIn('_is_m_series_model(coordinator.device.model)', source)
+        self.assertNotIn('if description.key != "rain_hold"', source)
+        self.assertNotIn('_is_m_series_model(coordinator.device.model)', source)
         self.assertIn('"source": "task_event"', source)
         self.assertIn('"event_code": 1036', source)
 
