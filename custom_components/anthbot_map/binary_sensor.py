@@ -210,7 +210,7 @@ BINARY_SENSORS: tuple[AnthbotBinarySensorDescription, ...] = (
         translation_key="accelerometer_active",
         name="Accelerometer active",
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: _truthy(_safe_get(data, "acc_sta", "value")),
+        value_fn=lambda data: _nonzero(_safe_get(data, "acc_sta", "value")),
     ),
     AnthbotBinarySensorDescription(
         key="mowing_border",
@@ -367,7 +367,11 @@ class AnthbotBinarySensorEntity(
                 "model": self.coordinator.device.model,
                 "source": "task_event",
                 "event_code": 1036 if event is not None else None,
-                "detected_at": event.get("create_time") if event else None,
+                # 1036 marks rain detection/return, not the dry transition that
+                # starts the configured post-rain delay. Keep the raw timestamp
+                # for diagnostics, but do not expose it as `detected_at` because
+                # the card intentionally treats that field as countdown start.
+                "rain_detected_at": event.get("create_time") if event else None,
                 "event_message": event.get("event_message") if event else None,
                 "rain_continue_time": rain_continue_time,
             }
