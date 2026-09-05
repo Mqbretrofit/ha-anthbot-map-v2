@@ -1,0 +1,248 @@
+name: Add Genie rain hold status
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/_add_genie_rain_hold_status.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Patch rain event helpers and Genie binary sensor
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              source = file.read_text(encoding="utf-8")
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, got {count}")
+              file.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+          # Shared task-event classifier: 1036 starts rain hold; a newer real
+          # task start/resume/finish or low-battery return supersedes it.
+          replace_once(
+              "custom_components/anthbot_map/task_events.py",
+              "TASK_FINISHED_CODE = 1014\nLOW_BATTERY_RETURN_CODE = 1021\n",
+              "TASK_FINISHED_CODE = 1014\nLOW_BATTERY_RETURN_CODE = 1021\nRAIN_RETURN_CODE = 1036\n",
+          )
+          replace_once(
+              "custom_components/anthbot_map/task_events.py",
+              "        if code == LOW_BATTERY_RETURN_CODE:\n            return \"low_battery_return\"\n        if code in TASK_START_CODES:\n",
+              "        if code == LOW_BATTERY_RETURN_CODE:\n            return \"low_battery_return\"\n        if code == RAIN_RETURN_CODE:\n            return \"rain_return\"\n        if code in TASK_START_CODES:\n",
+          )
+
+          binary_path = "custom_components/anthbot_map/binary_sensor.py"
+          replace_once(
+              binary_path,
+              "from .coordinator import AnthbotGenieDataUpdateCoordinator\n",
+              "from .coordinator import AnthbotGenieDataUpdateCoordinator\nfrom .task_events import latest_task_cycle_signal, task_event_items\n",
+          )
+          replace_once(
+              binary_path,
+              "\n\n@dataclass(frozen=True, kw_only=True)\nclass AnthbotBinarySensorDescription",
+              '''\n\ndef _is_m_series_model(model: object) -> bool:\n    value = str(model or \"\").upper()\n    return \"M5\" in value or \"M9\" in value\n\n\ndef _rain_hold_event(data: dict[str, Any]) -> dict[str, Any] | None:\n    \"\"\"Return the Genie rain-return event while that task cycle is still held.\"\"\"\n    payload = data.get(\"_task_events\")\n    if latest_task_cycle_signal(payload) != \"rain_return\":\n        return None\n    for event in task_event_items(payload):\n        try:\n            code = int(event.get(\"code\"))\n        except (TypeError, ValueError):\n            continue\n        if code == 1036:\n            return event\n    return None\n\n\ndef _is_rain_hold(data: dict[str, Any]) -> bool:\n    return _rain_hold_event(data) is not None\n\n\n@dataclass(frozen=True, kw_only=True)\nclass AnthbotBinarySensorDescription''',
+          )
+          replace_once(
+              binary_path,
+              "    # --- Map / mowing lifecycle -----------------------------------------\n",
+              '''    AnthbotBinarySensorDescription(\n        key=\"rain_hold\",\n        name=\"Rain hold\",\n        icon=\"mdi:weather-rainy\",\n        value_fn=_is_rain_hold,\n    ),\n    # --- Map / mowing lifecycle -----------------------------------------\n''',
+          )
+          replace_once(
+              binary_path,
+              "        for coordinator in coordinators\n        for description in BINARY_SENSORS\n    )\n",
+              '''        for coordinator in coordinators\n        for description in BINARY_SENSORS\n        if description.key != \"rain_hold\"\n        or not _is_m_series_model(coordinator.device.model)\n    )\n''',
+          )
+          replace_once(
+              binary_path,
+              '''        state = self.coordinator.reported_state\n        cutting_height = (\n''',
+              '''        state = self.coordinator.reported_state\n        if self.entity_description.key == \"rain_hold\":\n            event = _rain_hold_event(state)\n            rain_continue_time = state.get(\"rain_continue_time\")\n            if isinstance(rain_continue_time, dict):\n                rain_continue_time = rain_continue_time.get(\"value\")\n            return {\n                \"serial_number\": self.coordinator.client.serial_number,\n                \"model\": self.coordinator.device.model,\n                \"source\": \"task_event\",\n                \"event_code\": 1036 if event is not None else None,\n                \"detected_at\": event.get(\"create_time\") if event else None,\n                \"event_message\": event.get(\"event_message\") if event else None,\n                \"rain_continue_time\": rain_continue_time,\n            }\n        cutting_height = (\n''',
+          )
+          PY
+
+      - name: Patch dashboard status and translations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              source = file.read_text(encoding="utf-8")
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, got {count}")
+              file.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+          for path in (
+              "custom_components/anthbot_map/frontend/anthbot-map-card.js",
+              "www/anthbot-map/anthbot-map-card.js",
+          ):
+              replace_once(
+                  path,
+                  '  status: ["sensor", ["mower_status"]],\n',
+                  '  status: ["sensor", ["mower_status"]],\n  rainHold: ["binary_sensor", ["rain_hold"]],\n',
+              )
+              replace_once(
+                  path,
+                  '''    const statusEntity = this.getRelatedEntity("status");\n    this.shadowRoot.querySelectorAll('[data-role="mower-status"]').forEach((mowerStatus) => {\n      mowerStatus.textContent = statusEntity ? this.translateStatus(statusEntity.state) : "-";\n    });\n''',
+                  '''    const statusEntity = this.getRelatedEntity("status");\n    const rainHoldEntity = this.getRelatedEntity("rainHold");\n    const displayedStatus = rainHoldEntity?.state === "on"\n      ? this.translateStatus("rain_hold")\n      : statusEntity ? this.translateStatus(statusEntity.state) : "-";\n    this.shadowRoot.querySelectorAll('[data-role="mower-status"]').forEach((mowerStatus) => {\n      mowerStatus.textContent = displayedStatus;\n    });\n''',
+              )
+
+          for path in (
+              "custom_components/anthbot_map/frontend/i18n.js",
+              "www/anthbot-map/i18n.js",
+          ):
+              replace_once(
+                  path,
+                  '  status_positioning: "positioning", status_sleeping: "sleeping", status_unknown: "unknown",\n',
+                  '  status_positioning: "positioning", status_sleeping: "sleeping", status_unknown: "unknown", status_rain_hold: "waiting after rain",\n',
+              )
+              replace_once(
+                  path,
+                  '    status_positioning: "pozicionálás", status_sleeping: "alvás", status_unknown: "ismeretlen",\n',
+                  '    status_positioning: "pozicionálás", status_sleeping: "alvás", status_unknown: "ismeretlen", status_rain_hold: "eső miatti várakozás",\n',
+              )
+
+          replace_once(
+              "custom_components/anthbot_map/__init__.py",
+              'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.3-zone-scope-fix3"\n',
+              'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.3-rain-hold1"\n',
+          )
+          PY
+
+      - name: Add regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > tests/test_rain_hold_status.py <<'PY'
+          """Regression coverage for Genie rain hold state and card status."""
+
+          from __future__ import annotations
+
+          import importlib.util
+          from pathlib import Path
+          import unittest
+
+          ROOT = Path(__file__).resolve().parents[1]
+          COMPONENT = ROOT / "custom_components" / "anthbot_map"
+
+
+          def _load_task_events_module():
+              spec = importlib.util.spec_from_file_location(
+                  "anthbot_task_events_rain", COMPONENT / "task_events.py"
+              )
+              assert spec is not None and spec.loader is not None
+              module = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(module)
+              return module
+
+
+          events = _load_task_events_module()
+
+
+          class RainTaskEventTests(unittest.TestCase):
+              def test_rain_return_survives_docking_events(self) -> None:
+                  payload = {
+                      "data": [
+                          {"code": 1022, "event_message": "Charging begins"},
+                          {"code": 1019, "event_message": "Starting to recharge"},
+                          {"code": 1036, "event_message": "It's raining, please recharge"},
+                          {"code": 1018, "event_message": "Zone mowing starts"},
+                      ]
+                  }
+                  self.assertEqual(events.latest_task_cycle_signal(payload), "rain_return")
+
+              def test_resume_clears_old_rain_return(self) -> None:
+                  payload = {
+                      "data": [
+                          {"code": 1017, "event_message": "Task resumes"},
+                          {"code": 1022},
+                          {"code": 1019},
+                          {"code": 1036},
+                      ]
+                  }
+                  self.assertEqual(events.latest_task_cycle_signal(payload), "active")
+
+              def test_finished_task_clears_old_rain_return(self) -> None:
+                  payload = {
+                      "data": [
+                          {"code": 1022},
+                          {"code": 1014, "event_message": "Task finished"},
+                          {"code": 1036},
+                      ]
+                  }
+                  self.assertEqual(events.latest_task_cycle_signal(payload), "completed")
+
+
+          class RainStatusSourceTests(unittest.TestCase):
+              def test_binary_sensor_is_genie_only_and_event_backed(self) -> None:
+                  source = (COMPONENT / "binary_sensor.py").read_text(encoding="utf-8")
+                  self.assertIn('key="rain_hold"', source)
+                  self.assertIn('latest_task_cycle_signal(payload) != "rain_return"', source)
+                  self.assertIn('if description.key != "rain_hold"', source)
+                  self.assertIn('_is_m_series_model(coordinator.device.model)', source)
+                  self.assertIn('"source": "task_event"', source)
+                  self.assertIn('"event_code": 1036', source)
+
+              def test_card_overrides_visible_status_while_rain_hold_is_on(self) -> None:
+                  card = (COMPONENT / "frontend" / "anthbot-map-card.js").read_text(
+                      encoding="utf-8"
+                  )
+                  self.assertIn('rainHold: ["binary_sensor", ["rain_hold"]]', card)
+                  self.assertIn('rainHoldEntity?.state === "on"', card)
+                  self.assertIn('this.translateStatus("rain_hold")', card)
+
+              def test_hungarian_and_english_status_labels_exist(self) -> None:
+                  source = (COMPONENT / "frontend" / "i18n.js").read_text(encoding="utf-8")
+                  self.assertIn('status_rain_hold: "waiting after rain"', source)
+                  self.assertIn('status_rain_hold: "eső miatti várakozás"', source)
+
+
+          if __name__ == "__main__":
+              unittest.main()
+          PY
+
+      - name: Verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile custom_components/anthbot_map/task_events.py custom_components/anthbot_map/binary_sensor.py custom_components/anthbot_map/__init__.py
+          python -m unittest discover -s tests -v
+          node --check custom_components/anthbot_map/frontend/anthbot-map-card.js
+          node --check custom_components/anthbot_map/frontend/i18n.js
+          node --check www/anthbot-map/anthbot-map-card.js
+          node --check www/anthbot-map/i18n.js
+          cmp custom_components/anthbot_map/frontend/anthbot-map-card.js www/anthbot-map/anthbot-map-card.js
+          cmp custom_components/anthbot_map/frontend/i18n.js www/anthbot-map/i18n.js
+          grep -q 'key="rain_hold"' custom_components/anthbot_map/binary_sensor.py
+          grep -q 'status_rain_hold: "eső miatti várakozás"' custom_components/anthbot_map/frontend/i18n.js
+          grep -q 'v=2.4.3-rain-hold1' custom_components/anthbot_map/__init__.py
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/_add_genie_rain_hold_status.yml
+          git config user.name "Mqbretrofit"
+          git config user.email "matrai.attila975@gmail.com"
+          git add -A
+          git commit -m "Add Genie rain hold sensor and dashboard status"
+          git push origin HEAD:main
