@@ -8,6 +8,7 @@ from typing import Any
 TASK_START_CODES = {1015, 1017, 1018}
 TASK_FINISHED_CODE = 1014
 LOW_BATTERY_RETURN_CODE = 1021
+RAIN_RETURN_CODE = 1036
 
 
 def task_event_items(payload: Any) -> list[dict[str, Any]]:
@@ -81,6 +82,8 @@ def latest_task_cycle_signal(payload: Any) -> str | None:
             return "completed"
         if code == LOW_BATTERY_RETURN_CODE:
             return "low_battery_return"
+        if code == RAIN_RETURN_CODE:
+            return "rain_return"
         if code in TASK_START_CODES:
             return "active"
     return None

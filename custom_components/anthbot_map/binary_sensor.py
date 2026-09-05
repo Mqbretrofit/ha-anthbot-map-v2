@@ -20,6 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import AnthbotGenieDataUpdateCoordinator
+from .task_events import latest_task_cycle_signal, task_event_items
 
 
 def _safe_get(data: dict[str, Any], *path: str) -> Any:
@@ -87,6 +88,30 @@ def _is_custom_mowing_direction_enabled(data: dict[str, Any]) -> bool:
     elif isinstance(value, str):
         adaptive_enabled = value == "1"
     return not adaptive_enabled
+
+
+def _is_m_series_model(model: object) -> bool:
+    value = str(model or "").upper()
+    return "M5" in value or "M9" in value
+
+
+def _rain_hold_event(data: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the Genie rain-return event while that task cycle is still held."""
+    payload = data.get("_task_events")
+    if latest_task_cycle_signal(payload) != "rain_return":
+        return None
+    for event in task_event_items(payload):
+        try:
+            code = int(event.get("code"))
+        except (TypeError, ValueError):
+            continue
+        if code == 1036:
+            return event
+    return None
+
+
+def _is_rain_hold(data: dict[str, Any]) -> bool:
+    return _rain_hold_event(data) is not None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -164,6 +189,12 @@ BINARY_SENSORS: tuple[AnthbotBinarySensorDescription, ...] = (
         name="SIM inserted",
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda data: _truthy(_safe_get(data, "sim_status", "status")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="rain_hold",
+        name="Rain hold",
+        icon="mdi:weather-rainy",
+        value_fn=_is_rain_hold,
     ),
     # --- Map / mowing lifecycle -----------------------------------------
     AnthbotBinarySensorDescription(
@@ -294,6 +325,8 @@ async def async_setup_entry(
         AnthbotBinarySensorEntity(coordinator, description)
         for coordinator in coordinators
         for description in BINARY_SENSORS
+        if description.key != "rain_hold"
+        or not _is_m_series_model(coordinator.device.model)
     )
 
 
@@ -331,6 +364,20 @@ class AnthbotBinarySensorEntity(
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return extra state attributes."""
         state = self.coordinator.reported_state
+        if self.entity_description.key == "rain_hold":
+            event = _rain_hold_event(state)
+            rain_continue_time = state.get("rain_continue_time")
+            if isinstance(rain_continue_time, dict):
+                rain_continue_time = rain_continue_time.get("value")
+            return {
+                "serial_number": self.coordinator.client.serial_number,
+                "model": self.coordinator.device.model,
+                "source": "task_event",
+                "event_code": 1036 if event is not None else None,
+                "detected_at": event.get("create_time") if event else None,
+                "event_message": event.get("event_message") if event else None,
+                "rain_continue_time": rain_continue_time,
+            }
         cutting_height = (
             state.get("param_set", {}).get("cutter_height")
             if isinstance(state.get("param_set"), dict)

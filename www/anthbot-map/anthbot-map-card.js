@@ -15,6 +15,7 @@ import {
 const ENTITY_MAP = {
   battery: ["sensor", ["battery_level"]],
   status: ["sensor", ["mower_status"]],
+  rainHold: ["binary_sensor", ["rain_hold"]],
   charging: ["binary_sensor", ["charging"]],
   connection: ["binary_sensor", ["connection"]],
   cuttingHeight: ["sensor", ["cutting_height"]],
@@ -922,8 +923,12 @@ class AnthbotMapCard extends HTMLElement {
     });
 
     const statusEntity = this.getRelatedEntity("status");
+    const rainHoldEntity = this.getRelatedEntity("rainHold");
+    const displayedStatus = rainHoldEntity?.state === "on"
+      ? this.translateStatus("rain_hold")
+      : statusEntity ? this.translateStatus(statusEntity.state) : "-";
     this.shadowRoot.querySelectorAll('[data-role="mower-status"]').forEach((mowerStatus) => {
-      mowerStatus.textContent = statusEntity ? this.translateStatus(statusEntity.state) : "-";
+      mowerStatus.textContent = displayedStatus;
     });
 
     this.updateMowingProgressStatus();
