@@ -30,30 +30,29 @@ jobs:
           def replace_once(path, old, new):
               p = Path(path)
               s = p.read_text(encoding='utf-8')
-              if s.count(old) != 1:
-                  raise SystemExit(f'{path}: expected exactly one match, got {s.count(old)}')
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one match, got {count}')
               p.write_text(s.replace(old, new, 1), encoding='utf-8')
 
-          old = '''        if (String(a.setting || "").toLowerCase() !== key) continue;
-        return entityId;
-'''
-          new = '''        const setting = String(a.setting || "").toLowerCase();
-        if (setting) {
-          if (setting !== key) continue;
-        } else {
-          // Older/current HA entity states may not expose the helper `setting`
-          // attribute. For the mowing-mode select, serial + zone kind + zone id
-          // are already exact; additionally require the entity itself to be a
-          // mowing-mode selector so another zone control can never be selected.
-          const idSlug = normalize(entityId);
-          const friendlySlug = normalize(a.friendly_name);
-          const isMowingModeSelect = domain === "select"
-            && key === "mowing_mode"
-            && (idSlug.includes("mowing_mode") || friendlySlug.includes("mowing_mode"));
-          if (!isMowingModeSelect) continue;
-        }
-        return entityId;
-'''
+          old = "        if (String(a.setting || \"\").toLowerCase() !== key) continue;\n        return entityId;\n"
+          new = (
+              "        const setting = String(a.setting || \"\").toLowerCase();\n"
+              "        if (setting) {\n"
+              "          if (setting !== key) continue;\n"
+              "        } else {\n"
+              "          // Some HA state payloads do not expose the helper `setting` attribute.\n"
+              "          // Serial + zone kind + zone id stay mandatory; only accept the exact\n"
+              "          // mowing-mode select by entity/friendly name as the final discriminator.\n"
+              "          const idSlug = normalize(entityId);\n"
+              "          const friendlySlug = normalize(a.friendly_name);\n"
+              "          const isMowingModeSelect = domain === \"select\"\n"
+              "            && key === \"mowing_mode\"\n"
+              "            && (idSlug.includes(\"mowing_mode\") || friendlySlug.includes(\"mowing_mode\"));\n"
+              "          if (!isMowingModeSelect) continue;\n"
+              "        }\n"
+              "        return entityId;\n"
+          )
 
           for path in (
               'custom_components/anthbot_map/frontend/serial-entity-resolver.js',
