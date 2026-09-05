@@ -36,76 +36,22 @@ jobs:
                   raise SystemExit(f"{path}: expected 1 match, got {count}")
               p.write_text(s.replace(old, new, 1), encoding="utf-8")
 
-          for path in (
-              "custom_components/anthbot_map/frontend/serial-entity-resolver.js",
-              "www/anthbot-map/serial-entity-resolver.js",
-          ):
-              replace_once(
-                  path,
-                  'const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-05-control-v10";',
-                  'const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-05-control-v11";',
-              )
-              replace_once(
-                  path,
-                  '''      for (const [entityId, state] of Object.entries(states)) {
-        if (!entityId.startsWith(`${domain}.`) || !isAvailable(state)) continue;
-        if (serialOf(state) !== identity.serial) continue;
-''',
-                  '''      for (const [entityId, state] of Object.entries(states)) {
-        if (!entityId.startsWith(`${domain}.`) || !state) continue;
-        const stateValue = String(state.state ?? "").trim().toLowerCase();
-        if (stateValue === "unavailable") continue;
-        if (domain !== "select" && !isAvailable(state)) continue;
-        if (serialOf(state) !== identity.serial) continue;
-''',
-              )
-              replace_once(
-                  path,
-                  '''    wrapEntityControl("createDirectSelectControl", function (_label, entityId) {
-      return entityId;
-    });
-''',
-                  '''    // A zone mowing-mode select may legitimately be `unknown` until the mower
-    // reports mow_mode. Keep the control visible so Normal/Efficient can still
-    // be selected, while still hiding a truly unavailable entity.
-    const originalDirectSelect = proto.createDirectSelectControl;
-    if (typeof originalDirectSelect === "function") {
-      proto.createDirectSelectControl = function (...args) {
-        const entityId = args[1];
-        const state = this?._hass?.states?.[entityId];
-        const stateValue = String(state?.state ?? "").trim().toLowerCase();
-        if (!state || stateValue === "unavailable") return emptyFragment();
-        return originalDirectSelect.apply(this, args);
-      };
-    }
-''',
-              )
+          for path in ("custom_components/anthbot_map/frontend/serial-entity-resolver.js", "www/anthbot-map/serial-entity-resolver.js"):
+              replace_once(path, 'const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-05-control-v10";', 'const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-05-control-v11";')
+              old_loop = "      for (const [entityId, state] of Object.entries(states)) {\n        if (!entityId.startsWith(`${domain}.`) || !isAvailable(state)) continue;\n        if (serialOf(state) !== identity.serial) continue;\n"
+              new_loop = "      for (const [entityId, state] of Object.entries(states)) {\n        if (!entityId.startsWith(`${domain}.`) || !state) continue;\n        const stateValue = String(state.state ?? \"\").trim().toLowerCase();\n        if (stateValue === \"unavailable\") continue;\n        if (domain !== \"select\" && !isAvailable(state)) continue;\n        if (serialOf(state) !== identity.serial) continue;\n"
+              replace_once(path, old_loop, new_loop)
+              old_wrap = "    wrapEntityControl(\"createDirectSelectControl\", function (_label, entityId) {\n      return entityId;\n    });\n"
+              new_wrap = "    // A zone mowing-mode select may be `unknown` until mow_mode is reported.\n    // Keep Normal/Efficient usable, but still hide a truly unavailable entity.\n    const originalDirectSelect = proto.createDirectSelectControl;\n    if (typeof originalDirectSelect === \"function\") {\n      proto.createDirectSelectControl = function (...args) {\n        const entityId = args[1];\n        const state = this?._hass?.states?.[entityId];\n        const stateValue = String(state?.state ?? \"\").trim().toLowerCase();\n        if (!state || stateValue === \"unavailable\") return emptyFragment();\n        return originalDirectSelect.apply(this, args);\n      };\n    }\n"
+              replace_once(path, old_wrap, new_wrap)
 
-          for path in (
-              "custom_components/anthbot_map/frontend/calibration.js",
-              "www/anthbot-map/calibration.js",
-          ):
-              replace_once(
-                  path,
-                  'import "./serial-entity-resolver.js?v=243-zone-scope-fix1";',
-                  'import "./serial-entity-resolver.js?v=243-zone-scope-fix2";',
-              )
+          for path in ("custom_components/anthbot_map/frontend/calibration.js", "www/anthbot-map/calibration.js"):
+              replace_once(path, 'import "./serial-entity-resolver.js?v=243-zone-scope-fix1";', 'import "./serial-entity-resolver.js?v=243-zone-scope-fix2";')
 
-          for path in (
-              "custom_components/anthbot_map/frontend/anthbot-map-card.js",
-              "www/anthbot-map/anthbot-map-card.js",
-          ):
-              replace_once(
-                  path,
-                  '} from "./calibration.js?v=243-zone-scope-fix1";',
-                  '} from "./calibration.js?v=243-zone-scope-fix2";',
-              )
+          for path in ("custom_components/anthbot_map/frontend/anthbot-map-card.js", "www/anthbot-map/anthbot-map-card.js"):
+              replace_once(path, '} from "./calibration.js?v=243-zone-scope-fix1";', '} from "./calibration.js?v=243-zone-scope-fix2";')
 
-          replace_once(
-              "custom_components/anthbot_map/__init__.py",
-              'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.3-zone-scope-fix1"',
-              'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.3-zone-scope-fix2"',
-          )
+          replace_once("custom_components/anthbot_map/__init__.py", 'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.3-zone-scope-fix1"', 'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.3-zone-scope-fix2"')
           PY
 
           python -m py_compile custom_components/anthbot_map/__init__.py custom_components/anthbot_map/select.py
