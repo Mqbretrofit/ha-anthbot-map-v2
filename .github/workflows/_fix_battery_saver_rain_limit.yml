@@ -67,3 +67,5 @@ jobs:
           git add -A
           git commit -m "Respect Battery Saver charge limit during rain hold"
           git push origin HEAD:main
+
+# trigger
