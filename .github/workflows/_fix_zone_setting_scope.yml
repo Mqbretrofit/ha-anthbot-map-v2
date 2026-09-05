@@ -1,0 +1,241 @@
+name: Fix mower-scoped zone settings
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/_fix_zone_setting_scope.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Apply mower-scoped zone setting fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str, label: str) -> None:
+              target = Path(path)
+              source = target.read_text(encoding="utf-8")
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected 1 match in {path}, got {count}")
+              target.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+          def insert_in_class(path: str, class_marker: str, before: str, block: str, label: str) -> None:
+              target = Path(path)
+              source = target.read_text(encoding="utf-8")
+              class_pos = source.find(class_marker)
+              if class_pos < 0:
+                  raise SystemExit(f"{label}: class marker not found")
+              before_pos = source.find(before, class_pos)
+              if before_pos < 0:
+                  raise SystemExit(f"{label}: insertion marker not found")
+              if block.strip() in source[class_pos:before_pos]:
+                  raise SystemExit(f"{label}: block already present")
+              target.write_text(source[:before_pos] + block + source[before_pos:], encoding="utf-8")
+
+          zone_attrs = '''    @property
+          def extra_state_attributes(self) -> dict[str, object]:
+              """Expose mower and zone identity for strict multi-mower routing."""
+              return {
+                  "serial_number": self.coordinator.client.serial_number,
+                  "model": self.coordinator.device.model,
+                  "zone_kind": self._zone_kind,
+                  "zone_id": self._zone_id,
+                  "setting": self._setting,
+              }
+
+          '''
+          insert_in_class(
+              "custom_components/anthbot_map/number.py",
+              "class AnthbotZoneNumberEntity(",
+              "    @property\n    def native_value",
+              zone_attrs,
+              "zone number identity",
+          )
+          insert_in_class(
+              "custom_components/anthbot_map/switch.py",
+              "class AnthbotZoneSwitchEntity(",
+              "    @property\n    def is_on",
+              zone_attrs,
+              "zone switch identity",
+          )
+
+          replace_once(
+              "custom_components/anthbot_map/select.py",
+              '''        return {
+                      "zone_kind": self._zone_kind,
+                      "zone_id": self._zone_id,
+                      "zone_name": name,
+                      "raw_mow_mode": value,
+                  }
+          ''',
+              '''        return {
+                      "serial_number": self.coordinator.client.serial_number,
+                      "model": self.coordinator.device.model,
+                      "zone_kind": self._zone_kind,
+                      "zone_id": self._zone_id,
+                      "zone_name": name,
+                      "setting": "mowing_mode",
+                      "raw_mow_mode": value,
+                  }
+          ''',
+              "zone select identity",
+          )
+
+          resolver_insert = '''    // Zone setting controls must never resolve by friendly name across mowers.
+              // Match the current map's serial + exact zone identity + setting key.
+              proto.findZoneSettingEntity = function (domain, kind, zone, settingLabel) {
+                const states = this._hass?.states || {};
+                const identity = mapIdentity(this);
+                if (!identity.serial) return null;
+
+                const wantedKind = kind === "auto" ? "auto" : "manual";
+                const wantedZoneId = zone?.id === undefined || zone?.id === null ? "" : String(zone.id);
+                if (!wantedZoneId) return null;
+
+                const settingKey = {
+                  "mowing passes": "mow_count",
+                  "cutting height": "cutter_height",
+                  "obstacle sensitivity": "obstacle_avoid_level",
+                  "mowing direction": "mow_head",
+                  "visual obstacle detection": "visual_obstacle",
+                  "custom mowing direction": "custom_direction",
+                  "mowing mode": "mowing_mode",
+                }[String(settingLabel || "").trim().toLowerCase()] || "";
+                if (!settingKey) return null;
+
+                for (const [entityId, state] of Object.entries(states)) {
+                  if (!entityId.startsWith(`${domain}.`) || !isAvailable(state)) continue;
+                  if (serialOf(state) !== identity.serial) continue;
+                  const attrs = state.attributes || {};
+                  if (String(attrs.zone_kind || "").trim().toLowerCase() !== wantedKind) continue;
+                  if (String(attrs.zone_id ?? "") !== wantedZoneId) continue;
+                  if (String(attrs.setting || "").trim().toLowerCase() !== settingKey) continue;
+                  return entityId;
+                }
+                return null;
+              };
+
+          '''
+          for path in (
+              "custom_components/anthbot_map/frontend/serial-entity-resolver.js",
+              "www/anthbot-map/serial-entity-resolver.js",
+          ):
+              replace_once(
+                  path,
+                  'const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-04-control-v9";',
+                  'const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-05-control-v10";',
+                  "resolver version",
+              )
+              target = Path(path)
+              source = target.read_text(encoding="utf-8")
+              marker = "    proto.discoverZoneButtons = function () {"
+              if source.count(marker) != 1:
+                  raise SystemExit(f"zone resolver marker: expected 1 match in {path}")
+              target.write_text(source.replace(marker, resolver_insert + marker, 1), encoding="utf-8")
+
+          for path in (
+              "custom_components/anthbot_map/frontend/calibration.js",
+              "www/anthbot-map/calibration.js",
+          ):
+              replace_once(
+                  path,
+                  'import "./serial-entity-resolver.js?v=243b3-entity-scope";',
+                  'import "./serial-entity-resolver.js?v=243-zone-scope-fix1";',
+                  "resolver cache key",
+              )
+
+          for path in (
+              "custom_components/anthbot_map/frontend/anthbot-map-card.js",
+              "www/anthbot-map/anthbot-map-card.js",
+          ):
+              replace_once(
+                  path,
+                  '} from "./calibration.js?v=2411";',
+                  '} from "./calibration.js?v=243-zone-scope-fix1";',
+                  "calibration cache key",
+              )
+
+          replace_once(
+              "custom_components/anthbot_map/__init__.py",
+              'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.3-heading-fix1"',
+              'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.3-zone-scope-fix1"',
+              "frontend cache key",
+          )
+
+          Path("tests/test_zone_setting_scope.py").write_text('''"""Regression coverage for per-mower zone setting routing."""
+          from pathlib import Path
+          import unittest
+
+          ROOT = Path(__file__).resolve().parents[1]
+          INTEGRATION = ROOT / "custom_components" / "anthbot_map"
+          FRONTEND = INTEGRATION / "frontend"
+          WWW = ROOT / "www" / "anthbot-map"
+
+
+          class ZoneSettingScopeTests(unittest.TestCase):
+              def test_zone_setting_entities_expose_exact_mower_and_zone_identity(self) -> None:
+                  number = (INTEGRATION / "number.py").read_text(encoding="utf-8")
+                  switch = (INTEGRATION / "switch.py").read_text(encoding="utf-8")
+                  select = (INTEGRATION / "select.py").read_text(encoding="utf-8")
+                  for source in (number, switch, select):
+                      self.assertIn('"serial_number": self.coordinator.client.serial_number', source)
+                      self.assertIn('"zone_kind": self._zone_kind', source)
+                      self.assertIn('"zone_id": self._zone_id', source)
+                  self.assertIn('"setting": self._setting', number)
+                  self.assertIn('"setting": self._setting', switch)
+                  self.assertIn('"setting": "mowing_mode"', select)
+
+              def test_zone_setting_resolver_requires_exact_serial_zone_and_setting(self) -> None:
+                  source = (FRONTEND / "serial-entity-resolver.js").read_text(encoding="utf-8")
+                  self.assertIn('ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-05-control-v10"', source)
+                  self.assertIn("proto.findZoneSettingEntity = function", source)
+                  self.assertIn("if (!identity.serial) return null", source)
+                  self.assertIn("serialOf(state) !== identity.serial", source)
+                  self.assertIn("attrs.zone_kind", source)
+                  self.assertIn("attrs.zone_id", source)
+                  self.assertIn("attrs.setting", source)
+
+              def test_runtime_and_www_frontend_files_stay_identical(self) -> None:
+                  for filename in ("anthbot-map-card.js", "calibration.js", "serial-entity-resolver.js"):
+                      self.assertEqual(
+                          (FRONTEND / filename).read_bytes(),
+                          (WWW / filename).read_bytes(),
+                          filename,
+                      )
+
+
+          if __name__ == "__main__":
+              unittest.main()
+          ''', encoding="utf-8")
+          PY
+
+          python -m py_compile custom_components/anthbot_map/__init__.py custom_components/anthbot_map/number.py custom_components/anthbot_map/select.py custom_components/anthbot_map/switch.py
+          python -m unittest discover -s tests -v
+          find custom_components www -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          cmp custom_components/anthbot_map/frontend/anthbot-map-card.js www/anthbot-map/anthbot-map-card.js
+          cmp custom_components/anthbot_map/frontend/calibration.js www/anthbot-map/calibration.js
+          cmp custom_components/anthbot_map/frontend/serial-entity-resolver.js www/anthbot-map/serial-entity-resolver.js
+
+          rm .github/workflows/_fix_zone_setting_scope.yml
+          git config user.name "Mqbretrofit"
+          git config user.email "matrai.attila975@gmail.com"
+          git add -A
+          git commit -m "Scope zone settings to mower serial"
+          git push origin HEAD:main
