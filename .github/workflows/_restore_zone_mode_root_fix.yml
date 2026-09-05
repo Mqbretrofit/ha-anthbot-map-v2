@@ -1,0 +1,111 @@
+name: Restore exact zone mowing mode resolver
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/_restore_zone_mode_root_fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Patch resolver and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              s = p.read_text(encoding='utf-8')
+              if s.count(old) != 1:
+                  raise SystemExit(f'{path}: expected exactly one match, got {s.count(old)}')
+              p.write_text(s.replace(old, new, 1), encoding='utf-8')
+
+          old = '''        if (String(a.setting || "").toLowerCase() !== key) continue;
+        return entityId;
+'''
+          new = '''        const setting = String(a.setting || "").toLowerCase();
+        if (setting) {
+          if (setting !== key) continue;
+        } else {
+          // Older/current HA entity states may not expose the helper `setting`
+          // attribute. For the mowing-mode select, serial + zone kind + zone id
+          // are already exact; additionally require the entity itself to be a
+          // mowing-mode selector so another zone control can never be selected.
+          const idSlug = normalize(entityId);
+          const friendlySlug = normalize(a.friendly_name);
+          const isMowingModeSelect = domain === "select"
+            && key === "mowing_mode"
+            && (idSlug.includes("mowing_mode") || friendlySlug.includes("mowing_mode"));
+          if (!isMowingModeSelect) continue;
+        }
+        return entityId;
+'''
+
+          for path in (
+              'custom_components/anthbot_map/frontend/serial-entity-resolver.js',
+              'www/anthbot-map/serial-entity-resolver.js',
+          ):
+              replace_once(path, old, new)
+              replace_once(
+                  path,
+                  'const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-05-control-v11";',
+                  'const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-05-control-v12";',
+              )
+
+          for path in (
+              'custom_components/anthbot_map/frontend/calibration.js',
+              'www/anthbot-map/calibration.js',
+          ):
+              replace_once(
+                  path,
+                  'import "./serial-entity-resolver.js?v=243-zone-scope-fix2";',
+                  'import "./serial-entity-resolver.js?v=243-zone-scope-fix3";',
+              )
+
+          for path in (
+              'custom_components/anthbot_map/frontend/anthbot-map-card.js',
+              'www/anthbot-map/anthbot-map-card.js',
+          ):
+              replace_once(
+                  path,
+                  '} from "./calibration.js?v=243-zone-scope-fix2";',
+                  '} from "./calibration.js?v=243-zone-scope-fix3";',
+              )
+
+          replace_once(
+              'custom_components/anthbot_map/__init__.py',
+              'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.3-zone-scope-fix2"',
+              'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.3-zone-scope-fix3"',
+          )
+          PY
+
+          python -m py_compile custom_components/anthbot_map/__init__.py custom_components/anthbot_map/select.py
+          python -m unittest discover -s tests -v
+          find custom_components www -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          cmp custom_components/anthbot_map/frontend/anthbot-map-card.js www/anthbot-map/anthbot-map-card.js
+          cmp custom_components/anthbot_map/frontend/calibration.js www/anthbot-map/calibration.js
+          cmp custom_components/anthbot_map/frontend/serial-entity-resolver.js www/anthbot-map/serial-entity-resolver.js
+          grep -q 'isMowingModeSelect' custom_components/anthbot_map/frontend/serial-entity-resolver.js
+          grep -q '"Normal": 0' custom_components/anthbot_map/select.py
+          grep -q '"Efficient": 1' custom_components/anthbot_map/select.py
+
+          rm .github/workflows/_restore_zone_mode_root_fix.yml
+          git config user.name "Mqbretrofit"
+          git config user.email "matrai.attila975@gmail.com"
+          git add -A
+          git commit -m "Restore exact Normal Efficient zone mode lookup"
+          git push origin HEAD:main
