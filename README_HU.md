@@ -22,7 +22,18 @@ valamint egy saját légi vagy drónfelvétel a kertről.
 
 ## Aktuális verzió
 
-Stabil verzió: **2.4.3**
+Stabil verzió: **2.4.4**
+
+### A 2.4.4 legfontosabb változásai
+
+- Bekerült a **Genie és az M-széria közös eső miatti várakozás-kezelése**; a fő robotállapot továbbra is elsődleges marad, az eső miatti várakozás csak másodlagos állapotsorként jelenik meg.
+- Kikerült a nem bizonyítható eső utáni visszaszámlálás, így a kártya nem mutat becsült vagy félrevezető hátralévő időt.
+- Élő robotállapot-változás után az integráció azonnal frissíti a cloud task eventeket, így kisebb az esélye a beragadt `1036` / `1037` esőeseménynek.
+- Az **akkumulátorkímélő mód esőbiztos lett**: `1036` és a `1038` esővédelmi elutasítás esetén nem próbálja erőből folytatni a nyírást.
+- Eső miatti várakozás alatt is megmarad a Shutdown Guard működése és a közös RTK-táp kezelése.
+- Javítva lett az ismétlődő **55+1 perces Shutdown Guard**: a következő ciklus csak akkor indul újra, amikor a Home Assistant ténylegesen OFF állapotúnak látja az okoskonnektort.
+- Javult a Genie élő nyírási százalékának célterület-felismerése akkor is, ha nincs eltárolt `last_mowing_task`, az M9/M9 Pro működésének megváltoztatása nélkül.
+- A 2.4.3 meglévő Genie és M-szériás vezérlés-, térkép-, útvonal-, zóna-, előzmény- és egyéni gomb funkciói megmaradtak.
 
 ### A 2.4.3 legfontosabb változásai
 
@@ -228,7 +239,7 @@ kézzel hozzáadni.
 2. Adj hozzá egy új erőforrást:
 
    ```text
-   /anthbot-map-v2/anthbot-map-card.js?v=2.4.3
+   /anthbot-map-v2/anthbot-map-card.js?v=2.4.4
    ```
 
 3. Típusnak válaszd a **JavaScript module** lehetőséget.
@@ -490,7 +501,7 @@ HACS használata esetén:
 Storage módú Lovelace esetén az integráció automatikusan frissíti az erőforrás
 verzióparaméterét. YAML erőforrásmódban frissítés után módosítsd a
 gyorsítótárat megkerülő verzióparamétert, például:
-`/anthbot-map-v2/anthbot-map-card.js?v=2.4.3`.
+`/anthbot-map-v2/anthbot-map-card.js?v=2.4.4`.
 
 # Hibaelhárítás
 
@@ -512,8 +523,7 @@ Ellenőrizd, hogy a helyes térképentitás van-e megadva, az állapota `ready`-
 és az attribútumai között megtalálható-e a `pose` és a térképadat. Ellenőrizd a
 Home Assistant naplójában az `anthbot_map` hibákat is.
 
-M5/M9 modellen a térképes megjelenítés ismert korlátozás miatt jelenleg nem
-működik.
+Az M-szériás térképkezelés támogatott; a határvonal-, útvonal- és zónakezelés M9 Pro hardveren közvetlenül tesztelve lett.
 
 ## A robot iránya hibás
 
