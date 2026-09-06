@@ -1,0 +1,94 @@
+name: Runtime diagnostics prerelease
+
+on:
+  push:
+    branches:
+      - "release/v2.4.5-beta.1"
+
+permissions:
+  contents: write
+
+jobs:
+  prerelease:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Verify source
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path('custom_components/anthbot_map/manifest.json').read_text(encoding='utf-8'))
+          assert manifest['version'] == '2.4.5-beta.1', manifest['version']
+          PY
+          python -m unittest discover -s tests -v
+          python -m json.tool custom_components/anthbot_map/manifest.json >/dev/null
+          find custom_components www -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          cmp custom_components/anthbot_map/frontend/anthbot-map-card.js www/anthbot-map/anthbot-map-card.js
+          cmp custom_components/anthbot_map/frontend/i18n.js www/anthbot-map/i18n.js
+          cmp custom_components/anthbot_map/frontend/renderer.js www/anthbot-map/renderer.js
+          cmp custom_components/anthbot_map/frontend/styles.css www/anthbot-map/styles.css
+
+      - name: Set prerelease frontend cache key
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('custom_components/anthbot_map/__init__.py')
+          source = path.read_text(encoding='utf-8')
+          marker = 'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v='
+          start = source.find(marker)
+          if start < 0:
+              raise SystemExit('Frontend resource version marker not found')
+          end = source.find('"', start + len(marker))
+          if end < 0:
+              raise SystemExit('Frontend resource version terminator not found')
+          source = source[: start + len(marker)] + '2.4.5-beta.1' + source[end:]
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Build installer
+        run: |
+          zip -r anthbot-map-v2.4.5-beta.1.zip \
+            custom_components \
+            www \
+            examples \
+            README.md \
+            README_HU.md \
+            CHANGELOG.md \
+            CHANGELOG*.md \
+            RELEASE_NOTES*.md \
+            LICENSE \
+            NOTICE.md \
+            hacs.json
+
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="v2.4.5-beta.1"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" \
+              --title "Anthbot Map $tag" \
+              --prerelease \
+              --notes-file RELEASE_NOTES_v2.4.5-beta.1.md
+            gh release upload "$tag" anthbot-map-v2.4.5-beta.1.zip --clobber
+          else
+            gh release create "$tag" anthbot-map-v2.4.5-beta.1.zip \
+              --target "$GITHUB_SHA" \
+              --title "Anthbot Map $tag" \
+              --prerelease \
+              --notes-file RELEASE_NOTES_v2.4.5-beta.1.md
+          fi
