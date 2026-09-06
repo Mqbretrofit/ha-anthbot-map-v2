@@ -47,7 +47,7 @@ class RainBatterySaverSafetyTests(unittest.TestCase):
         source = RAIN_SAFETY.read_text(encoding="utf-8")
         shared_block = source.split(
             "async def maintain_idle_charge", 1
-        )[1].split("async def evaluate", 1)[0]
+        )[1].split("async def refresh_task_events", 1)[0]
 
         self.assertIn('self._battery_saver_phase == "rain_hold"', shared_block)
         self.assertIn(
@@ -79,6 +79,21 @@ class RainBatterySaverSafetyTests(unittest.TestCase):
         self.assertIn('self._battery_saver_phase == "initial_charge"', enabled_block)
         self.assertIn("_current_rain_hold_signal(self)", enabled_block)
         self.assertIn('self._battery_saver_phase = "rain_hold"', enabled_block)
+
+    def test_stable_docked_rain_hold_does_not_poll_task_events(self) -> None:
+        source = RAIN_SAFETY.read_text(encoding="utf-8")
+        refresh_block = source.split("async def refresh_task_events", 1)[1].split(
+            "async def evaluate", 1
+        )[0]
+
+        self.assertIn('self._battery_saver_phase == "rain_hold"', refresh_block)
+        self.assertIn("coordinator_module._DOCKED_STATUS_VALUES", refresh_block)
+        self.assertIn("return", refresh_block)
+        self.assertIn("await previous_refresh_task_events(self)", refresh_block)
+        self.assertIn(
+            "AnthbotGenieDataUpdateCoordinator._async_refresh_task_events = refresh_task_events",
+            source,
+        )
 
 
 if __name__ == "__main__":
