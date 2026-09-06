@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 from .. import coordinator as coordinator_module
@@ -13,6 +14,7 @@ from ..task_events import task_event_items
 _INSTALLED = False
 _RAIN_PROTECTION_EVENT_CODE = 1038
 _RESUME_RAIN_VERIFY_SECONDS = 5.2
+_MANUAL_CHARGE_RECHECK_SECONDS = 5.2
 
 
 def _coerce_event_code(value: Any) -> int | None:
@@ -38,6 +40,26 @@ def _current_rain_hold_signal(self: AnthbotGenieDataUpdateCoordinator) -> bool:
     return _live_rain_protection(self) or self._battery_saver_task_signal(
         self._task_events
     ) == "rain_return"
+
+
+def _stable_charge_status(status: str) -> bool:
+    """Return whether a mower is stably at the dock/power-off state."""
+    return status in coordinator_module._DOCKED_STATUS_VALUES or status == "shutdown"
+
+
+def _schedule_manual_charge_recheck(
+    self: AnthbotGenieDataUpdateCoordinator,
+) -> None:
+    """Schedule exactly one delayed cloud-event recheck for a manual return."""
+    due = getattr(self, "_manual_charge_task_event_recheck_due", None)
+    if isinstance(due, (int, float)):
+        return
+    due = time.monotonic() + _MANUAL_CHARGE_RECHECK_SECONDS
+    self._manual_charge_task_event_recheck_due = due
+    self.hass.loop.call_later(
+        _MANUAL_CHARGE_RECHECK_SECONDS,
+        self.async_schedule_battery_saver_evaluation,
+    )
 
 
 def install_rain_battery_saver_safety() -> None:
@@ -109,18 +131,26 @@ def install_rain_battery_saver_safety() -> None:
         await previous_maintain_idle_charge(self, battery)
 
     async def refresh_task_events(self: AnthbotGenieDataUpdateCoordinator) -> None:
-        """Skip redundant REST event polling while rain hold is stably docked."""
+        """Skip redundant event polling in stable Battery Saver wait phases."""
+        status = self._robot_status(self.reported_state)
         if (
             self._battery_saver_enabled
             and self._battery_saver_phase == "rain_hold"
-            and self._robot_status(self.reported_state)
-            in coordinator_module._DOCKED_STATUS_VALUES
+            and _stable_charge_status(status)
         ):
-            # Stable docked rain-hold coordinator updates used to call the REST
-            # event list every ~5 seconds. Real rain-stop/resume transitions are
-            # still detected immediately by the live-status refresh path once the
-            # mower leaves the docked phase. Normal coordinator refreshes also
-            # continue to fetch the task-event list directly as a cloud fallback.
+            # Stable docked/shutdown rain-hold coordinator updates used to call
+            # the REST event list every ~5 seconds. Real rain-stop/resume
+            # transitions are still detected immediately by the live-status path.
+            return
+        if (
+            self._battery_saver_enabled
+            and self._battery_saver_phase == "manual_charge"
+            and not getattr(self, "_manual_charge_force_event_refresh", False)
+        ):
+            # manual_charge is only a short cloud-propagation grace phase. The
+            # old coordinator kept it forever and therefore polled task events on
+            # every update. Schedule one delayed recheck instead.
+            _schedule_manual_charge_recheck(self)
             return
         await previous_refresh_task_events(self)
 
@@ -128,6 +158,50 @@ def install_rain_battery_saver_safety() -> None:
         config = self.battery_saver_config
         status = self._robot_status(self.reported_state)
         battery = self._battery_percentage(self.reported_state)
+
+        if (
+            self._battery_saver_enabled
+            and self._battery_saver_phase == "manual_charge"
+            and _stable_charge_status(status)
+        ):
+            due = getattr(self, "_manual_charge_task_event_recheck_due", None)
+            if not isinstance(due, (int, float)):
+                _schedule_manual_charge_recheck(self)
+                return
+            if time.monotonic() < float(due):
+                return
+
+            # Perform exactly one fresh event-list download after cloud
+            # propagation, then leave manual_charge permanently. Setting the
+            # force flag lets the normal diagnostics wrapper see/count this real
+            # request while the manual-charge suppression remains active for all
+            # incidental coordinator updates.
+            self._manual_charge_force_event_refresh = True
+            self._last_task_event_download_monotonic = 0.0
+            try:
+                await self._async_refresh_task_events()
+            finally:
+                self._manual_charge_force_event_refresh = False
+                self._manual_charge_task_event_recheck_due = None
+
+            signal = self._battery_saver_task_signal(self._task_events)
+            if signal == "low_battery_return":
+                self._battery_saver_phase = "recovery_charge"
+            elif signal == "rain_return":
+                self._battery_saver_phase = "rain_hold"
+            elif signal == "completed":
+                self._battery_saver_phase = "completed"
+            else:
+                # No delayed low-battery/rain/completed event arrived: this was
+                # a normal/manual return. Resume ordinary idle charge hysteresis
+                # instead of polling the event API forever.
+                self._battery_saver_phase = "initial_charge"
+            await self._async_save_battery_saver_state()
+
+            if battery is not None and status in coordinator_module._DOCKED_STATUS_VALUES:
+                await self._async_maintain_idle_charge(battery)
+            return
+
         resume_candidate = bool(
             self._battery_saver_enabled
             and self._battery_saver_phase == "recovery_charge"
