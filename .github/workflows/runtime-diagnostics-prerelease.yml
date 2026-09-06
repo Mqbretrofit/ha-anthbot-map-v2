@@ -1,9 +1,9 @@
-name: Runtime diagnostics prerelease
+name: Runtime optimization prerelease
 
 on:
   push:
     branches:
-      - "release/v2.4.5-beta.1"
+      - "release/v2.4.5-beta.2"
 
 permissions:
   contents: write
@@ -23,7 +23,9 @@ jobs:
           python-version: "3.13"
 
       - name: Set prerelease frontend cache key
+        shell: bash
         run: |
+          set -euo pipefail
           python - <<'PY'
           from pathlib import Path
           path = Path('custom_components/anthbot_map/__init__.py')
@@ -35,9 +37,17 @@ jobs:
           end = source.find('"', start + len(marker))
           if end < 0:
               raise SystemExit('Frontend resource version terminator not found')
-          source = source[: start + len(marker)] + '2.4.5-beta.1' + source[end:]
+          source = source[: start + len(marker)] + '2.4.5-beta.2' + source[end:]
           path.write_text(source, encoding='utf-8')
           PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/anthbot_map/__init__.py
+          if ! git diff --cached --quiet; then
+            git commit -m "Set frontend cache key for v2.4.5-beta.2"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
 
       - name: Verify source
         env:
@@ -48,7 +58,9 @@ jobs:
           import json
           from pathlib import Path
           manifest = json.loads(Path('custom_components/anthbot_map/manifest.json').read_text(encoding='utf-8'))
-          assert manifest['version'] == '2.4.5-beta.1', manifest['version']
+          assert manifest['version'] == '2.4.5-beta.2', manifest['version']
+          init_source = Path('custom_components/anthbot_map/__init__.py').read_text(encoding='utf-8')
+          assert '?v=2.4.5-beta.2' in init_source
           PY
           python -m unittest discover -s tests -v
           python -m json.tool custom_components/anthbot_map/manifest.json >/dev/null
@@ -60,7 +72,7 @@ jobs:
 
       - name: Build installer
         run: |
-          zip -r anthbot-map-v2.4.5-beta.1.zip \
+          zip -r anthbot-map-v2.4.5-beta.2.zip \
             custom_components \
             www \
             examples \
@@ -76,19 +88,25 @@ jobs:
       - name: Publish prerelease
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
           set -euo pipefail
-          tag="v2.4.5-beta.1"
+          tag="v2.4.5-beta.2"
+          release_sha="$(git rev-parse HEAD)"
           if gh release view "$tag" >/dev/null 2>&1; then
+            gh api --method PATCH \
+              "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}" \
+              -f sha="${release_sha}" \
+              -F force=true
             gh release edit "$tag" \
               --title "Anthbot Map $tag" \
               --prerelease \
-              --notes-file RELEASE_NOTES_v2.4.5-beta.1.md
-            gh release upload "$tag" anthbot-map-v2.4.5-beta.1.zip --clobber
+              --notes-file RELEASE_NOTES_v2.4.5-beta.2.md
+            gh release upload "$tag" anthbot-map-v2.4.5-beta.2.zip --clobber
           else
-            gh release create "$tag" anthbot-map-v2.4.5-beta.1.zip \
-              --target "$GITHUB_SHA" \
+            gh release create "$tag" anthbot-map-v2.4.5-beta.2.zip \
+              --target "${release_sha}" \
               --title "Anthbot Map $tag" \
               --prerelease \
-              --notes-file RELEASE_NOTES_v2.4.5-beta.1.md
+              --notes-file RELEASE_NOTES_v2.4.5-beta.2.md
           fi
