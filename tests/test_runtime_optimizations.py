@@ -56,11 +56,11 @@ class RuntimeOptimizationSourceTests(unittest.TestCase):
             self.assertIn(marker, source)
         self.assertIn("view = points", source)
 
-    def test_beta3_manifest_version(self) -> None:
+    def test_beta4_manifest_version(self) -> None:
         manifest = json.loads(
             (ROOT / "custom_components/anthbot_map/manifest.json").read_text(encoding="utf-8")
         )
-        self.assertEqual("2.4.5-beta.3", manifest["version"])
+        self.assertEqual("2.4.5-beta.4", manifest["version"])
 
 
 if __name__ == "__main__":
