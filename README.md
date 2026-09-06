@@ -22,7 +22,18 @@ aerial or drone photograph of the garden.
 
 ## Current version
 
-Stable version: **2.4.3**
+Stable version: **2.4.4**
+
+### Highlights in 2.4.4
+
+- Adds shared rain-hold handling for **Genie and M-series** task events while keeping the normal mower state as the primary status and showing rain waiting only as a secondary line.
+- Removes the unverified rain countdown so the card no longer displays a guessed remaining time.
+- Refreshes cloud task events immediately after live mower-status transitions, reducing stale `1036` / `1037` rain-event states.
+- Makes **Battery Saver rain-safe**: rain return `1036` and rain-protection rejection `1038` prevent forced mowing resume while rain protection is active.
+- Preserves Shutdown Guard operation during rain hold and keeps shared RTK power available when configured.
+- Fixes the recurring **55+1 minute Shutdown Guard** cycle by waiting until Home Assistant actually reports the smart plug as OFF before re-arming the next cycle.
+- Improves Genie live mowing-progress target fallback when `last_mowing_task` is unavailable while preserving M9/M9 Pro progress behavior.
+- Preserves the existing Genie and M-series model-specific control, map, path, zone, history and custom-button functionality from 2.4.3.
 
 ### Highlights in 2.4.3
 
@@ -215,7 +226,7 @@ Resource type: **JavaScript module**. No manual setup is normally required.
 2. Add:
 
    ```text
-   /anthbot-map-v2/anthbot-map-card.js?v=2.4.3
+   /anthbot-map-v2/anthbot-map-card.js?v=2.4.4
    ```
 
 3. Select type **JavaScript module**.
@@ -464,7 +475,7 @@ When using HACS:
 
 In Lovelace storage mode, the integration updates the resource version
 automatically. In YAML resource mode, update the cache-busting query after an
-upgrade, for example `/anthbot-map-v2/anthbot-map-card.js?v=2.4.3`.
+upgrade, for example `/anthbot-map-v2/anthbot-map-card.js?v=2.4.4`.
 
 # Troubleshooting
 
@@ -485,7 +496,7 @@ Check that the correct map entity is configured, its state is `ready`, and its
 attributes contain `pose` and map data. Also check the Home Assistant log for
 `anthbot_map` errors.
 
-M-series map handling is supported in 2.4.3 and has been directly tested on M9 Pro.
+M-series map handling is supported and has been directly tested on M9 Pro hardware.
 
 ## Mower heading is incorrect
 
