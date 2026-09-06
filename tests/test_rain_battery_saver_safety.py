@@ -87,13 +87,30 @@ class RainBatterySaverSafetyTests(unittest.TestCase):
         )[0]
 
         self.assertIn('self._battery_saver_phase == "rain_hold"', refresh_block)
-        self.assertIn("coordinator_module._DOCKED_STATUS_VALUES", refresh_block)
-        self.assertIn("return", refresh_block)
+        self.assertIn("_stable_charge_status(status)", refresh_block)
+        self.assertIn('status == "shutdown"', source)
         self.assertIn("await previous_refresh_task_events(self)", refresh_block)
         self.assertIn(
             "AnthbotGenieDataUpdateCoordinator._async_refresh_task_events = refresh_task_events",
             source,
         )
+
+    def test_manual_charge_uses_one_delayed_event_recheck_then_settles(self) -> None:
+        source = RAIN_SAFETY.read_text(encoding="utf-8")
+        refresh_block = source.split("async def refresh_task_events", 1)[1].split(
+            "async def evaluate", 1
+        )[0]
+        evaluate_block = source.split("async def evaluate", 1)[1]
+
+        self.assertIn("_MANUAL_CHARGE_RECHECK_SECONDS = 5.2", source)
+        self.assertIn('self._battery_saver_phase == "manual_charge"', refresh_block)
+        self.assertIn("_schedule_manual_charge_recheck(self)", refresh_block)
+        self.assertIn("_manual_charge_force_event_refresh", source)
+        self.assertIn("time.monotonic() < float(due)", evaluate_block)
+        self.assertIn('self._battery_saver_phase = "initial_charge"', evaluate_block)
+        self.assertIn('self._battery_saver_phase = "recovery_charge"', evaluate_block)
+        self.assertIn('self._battery_saver_phase = "rain_hold"', evaluate_block)
+        self.assertIn('self._battery_saver_phase = "completed"', evaluate_block)
 
 
 if __name__ == "__main__":
