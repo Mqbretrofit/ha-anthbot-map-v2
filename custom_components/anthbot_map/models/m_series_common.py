@@ -12,6 +12,10 @@ from .m_series_status import install_m_series_status_support
 from .m_series_zones import install_m_series_zone_support
 from .performance_diagnostics import install_performance_diagnostics
 from .rain_battery_saver import install_rain_battery_saver_safety
+from .runtime_optimizations import (
+    install_runtime_optimization_diagnostics,
+    install_runtime_optimizations,
+)
 from .shutdown_guard_stability import install_shutdown_guard_state_settle
 
 _INSTALLED = False
@@ -59,7 +63,13 @@ def install_m_series_compat() -> None:
     # Otherwise the loop can see a stale ON immediately after turn_off, clear
     # the next 55-minute deadline and stop after the first keep-awake pulse.
     install_shutdown_guard_state_settle()
-    # Install support counters last so they observe the final wrapped methods
-    # without changing any model-specific behavior. The counters stay in RAM
-    # and are exposed only as an unrecorded Map-entity diagnostic attribute.
+    # Drop only repeated identical MQTT fields/messages, coalesce task-event
+    # refreshes by real task phase, and cache expensive path/progress work. No
+    # real telemetry update or mower command is delayed by these optimizations.
+    install_runtime_optimizations()
+    # Support counters observe the final model wrappers. They remain in RAM and
+    # are exposed only as an unrecorded Map-entity diagnostic attribute.
     install_performance_diagnostics()
+    # Append cache/suppression effectiveness to the same runtime_performance
+    # block after the base diagnostics have installed their snapshot wrapper.
+    install_runtime_optimization_diagnostics()
