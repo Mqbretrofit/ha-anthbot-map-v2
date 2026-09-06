@@ -22,7 +22,16 @@ valamint egy saját légi vagy drónfelvétel a kertről.
 
 ## Aktuális verzió
 
-Stabil verzió: **2.4.4**
+Stabil verzió: **2.4.5**
+
+### A 2.4.5 legfontosabb változásai
+
+- Jelentősen csökkenti a felesleges Home Assistant feldolgozást az ismétlődő MQTT shadow adatok kiszűrésével.
+- Cache-eli a változatlan M-szériás útvonal-összeállítást és a nyírási százalék geometriáját, így ezek nem számolódnak újra minden frissítésnél.
+- Javítja a Genie task-event REST lekérdezési ciklusát: stabil állapotban az integráció már nem tölti le néhány másodpercenként az eseménylistát.
+- Alacsony többletterhelésű futásidejű aktivitásdiagnosztika került a meglévő Map entitásba, Recorder-előzmény növelése nélkül.
+- Megmarad a 2.4.4 teljes esőkezelése, Battery Saver működése, ismétlődő Shutdown Guardja, Genie/M-széria modellkülönválasztása, térkép-, útvonal-, zóna-, előzmény- és egyéni vezérlése.
+- Közvetlenül tesztelve ANTHBOT Genie 1000, M9 Pro és Home Assistant Green környezetben; a 120 másodperces profiler teszteken nem látszott Anthbot runaway/busy loop.
 
 ### A 2.4.4 legfontosabb változásai
 
@@ -239,7 +248,7 @@ kézzel hozzáadni.
 2. Adj hozzá egy új erőforrást:
 
    ```text
-   /anthbot-map-v2/anthbot-map-card.js?v=2.4.4
+   /anthbot-map-v2/anthbot-map-card.js?v=2.4.5
    ```
 
 3. Típusnak válaszd a **JavaScript module** lehetőséget.
@@ -501,7 +510,7 @@ HACS használata esetén:
 Storage módú Lovelace esetén az integráció automatikusan frissíti az erőforrás
 verzióparaméterét. YAML erőforrásmódban frissítés után módosítsd a
 gyorsítótárat megkerülő verzióparamétert, például:
-`/anthbot-map-v2/anthbot-map-card.js?v=2.4.4`.
+`/anthbot-map-v2/anthbot-map-card.js?v=2.4.5`.
 
 # Hibaelhárítás
 

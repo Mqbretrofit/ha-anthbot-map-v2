@@ -22,7 +22,16 @@ aerial or drone photograph of the garden.
 
 ## Current version
 
-Stable version: **2.4.4**
+Stable version: **2.4.5**
+
+### Highlights in 2.4.5
+
+- Greatly reduces unnecessary Home Assistant work by filtering duplicate MQTT shadow data before coordinator fan-out.
+- Caches unchanged M-series path assembly and mowing-progress geometry instead of rebuilding them on every update.
+- Fixes the Genie task-event REST polling loop so stable operation no longer downloads task events every few seconds.
+- Adds low-overhead runtime activity diagnostics on the existing Map entity for support investigations without Recorder history growth.
+- Preserves the 2.4.4 rain handling, Battery Saver, recurring Shutdown Guard, model-specific Genie/M-series behavior, map/path/zone/history features and custom controls.
+- Directly validated on ANTHBOT Genie 1000, M9 Pro and Home Assistant Green; no Anthbot runaway/busy loop was observed in 120-second profiler tests.
 
 ### Highlights in 2.4.4
 
@@ -226,7 +235,7 @@ Resource type: **JavaScript module**. No manual setup is normally required.
 2. Add:
 
    ```text
-   /anthbot-map-v2/anthbot-map-card.js?v=2.4.4
+   /anthbot-map-v2/anthbot-map-card.js?v=2.4.5
    ```
 
 3. Select type **JavaScript module**.
@@ -475,7 +484,7 @@ When using HACS:
 
 In Lovelace storage mode, the integration updates the resource version
 automatically. In YAML resource mode, update the cache-busting query after an
-upgrade, for example `/anthbot-map-v2/anthbot-map-card.js?v=2.4.4`.
+upgrade, for example `/anthbot-map-v2/anthbot-map-card.js?v=2.4.5`.
 
 # Troubleshooting
 
