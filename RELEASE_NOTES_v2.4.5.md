@@ -18,6 +18,7 @@
 - Tested with ANTHBOT Genie 1000 and M9 Pro hardware.
 - Runtime diagnostics showed stable task-event downloads at zero per minute during normal idle operation after the fix.
 - 120-second Home Assistant profiler tests showed no Anthbot runaway/busy loop on either the main test system or Home Assistant Green.
+- Stable README and Lovelace cache-version examples are updated to 2.4.5 in the published package.
 
 ## Magyar
 
@@ -37,3 +38,4 @@
 - Közvetlenül tesztelve ANTHBOT Genie 1000 és M9 Pro hardveren.
 - A javítás után normál nyugalmi állapotban a futásidejű diagnosztika 0 task-event letöltést mutatott percenként.
 - 120 másodperces Home Assistant profiler teszteken sem a fő tesztrendszeren, sem Home Assistant Greenen nem látszott Anthbot runaway/busy loop.
+- A publikált csomag README-jei és Lovelace cache-verzió példái 2.4.5-re vannak frissítve.
