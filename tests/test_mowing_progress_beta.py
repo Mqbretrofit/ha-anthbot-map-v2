@@ -5,6 +5,8 @@ import unittest
 ROOT = Path(__file__).parents[1]
 SENSOR = ROOT / "custom_components/anthbot_map/sensor.py"
 CARD = ROOT / "www/anthbot-map/anthbot-map-card.js"
+CALIBRATION = ROOT / "www/anthbot-map/calibration.js"
+CALIBRATION_FRONTEND = ROOT / "custom_components/anthbot_map/frontend/calibration.js"
 INIT = ROOT / "custom_components/anthbot_map/__init__.py"
 COORDINATOR = ROOT / "custom_components/anthbot_map/coordinator.py"
 
@@ -13,6 +15,8 @@ class TestMowingProgressBeta(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.sensor = SENSOR.read_text(encoding="utf-8-sig")
         cls.card = CARD.read_text(encoding="utf-8-sig")
+        cls.calibration = CALIBRATION.read_text(encoding="utf-8-sig")
+        cls.calibration_frontend = CALIBRATION_FRONTEND.read_text(encoding="utf-8-sig")
         cls.init = INIT.read_text(encoding="utf-8-sig")
         cls.coordinator = COORDINATOR.read_text(encoding="utf-8-sig")
 
@@ -38,6 +42,14 @@ class TestMowingProgressBeta(unittest.TestCase):
         self.assertIn("boundedProgress >= 95", self.card)
         self.assertIn("mowingCompletionLatched", self.card)
         self.assertIn("anthbot-map-mowing-completion", self.card)
+
+    def test_genie_progress_target_survives_missing_remembered_task(self) -> None:
+        self.assertIn("resolveProgressTarget", self.calibration)
+        self.assertIn("attrs.active_zone_ids", self.calibration)
+        self.assertIn("learned_zone_mowing_key", self.calibration)
+        self.assertIn('source.startsWith("full_map_area")', self.calibration)
+        self.assertIn("path_task_type", self.calibration)
+        self.assertEqual(self.calibration, self.calibration_frontend)
 
     def test_history_uses_calculated_progress(self) -> None:
         self.assertIn("calculateMowingHistoryProgress", self.card)
