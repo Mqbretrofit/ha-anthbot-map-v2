@@ -104,7 +104,7 @@ jobs:
           git add custom_components/anthbot_map/coordinator.py
           if ! git diff --cached --quiet; then
             git commit -m "Restore charger before disabling battery saver"
-            git push origin HEAD:main
+            git push origin "HEAD:${GITHUB_REF_NAME}"
           fi
 
       - name: Finalize release metadata
@@ -139,7 +139,7 @@ jobs:
           if ! git diff --cached --quiet; then
             git commit -m "Set frontend cache key for $tag"
           fi
-          git push origin HEAD:main
+          git push origin "HEAD:${GITHUB_REF_NAME}"
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Verify release source
