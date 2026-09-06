@@ -53,6 +53,9 @@ def install_rain_battery_saver_safety() -> None:
     previous_maintain_idle_charge = (
         AnthbotGenieDataUpdateCoordinator._async_maintain_idle_charge
     )
+    previous_refresh_task_events = (
+        AnthbotGenieDataUpdateCoordinator._async_refresh_task_events
+    )
     previous_evaluate = AnthbotGenieDataUpdateCoordinator._async_evaluate_battery_saver
 
     def task_signal(payload: Any) -> str | None:
@@ -104,6 +107,22 @@ def install_rain_battery_saver_safety() -> None:
         # With separate RTK power, keep the normal charge hysteresis. When the
         # plug is OFF the existing 55+1 minute Shutdown Guard remains active.
         await previous_maintain_idle_charge(self, battery)
+
+    async def refresh_task_events(self: AnthbotGenieDataUpdateCoordinator) -> None:
+        """Skip redundant REST event polling while rain hold is stably docked."""
+        if (
+            self._battery_saver_enabled
+            and self._battery_saver_phase == "rain_hold"
+            and self._robot_status(self.reported_state)
+            in coordinator_module._DOCKED_STATUS_VALUES
+        ):
+            # Stable docked rain-hold coordinator updates used to call the REST
+            # event list every ~5 seconds. Real rain-stop/resume transitions are
+            # still detected immediately by the live-status refresh path once the
+            # mower leaves the docked phase. Normal coordinator refreshes also
+            # continue to fetch the task-event list directly as a cloud fallback.
+            return
+        await previous_refresh_task_events(self)
 
     async def evaluate(self: AnthbotGenieDataUpdateCoordinator) -> None:
         config = self.battery_saver_config
@@ -161,4 +180,5 @@ def install_rain_battery_saver_safety() -> None:
     AnthbotGenieDataUpdateCoordinator._async_maintain_idle_charge = (
         maintain_idle_charge
     )
+    AnthbotGenieDataUpdateCoordinator._async_refresh_task_events = refresh_task_events
     AnthbotGenieDataUpdateCoordinator._async_evaluate_battery_saver = evaluate
