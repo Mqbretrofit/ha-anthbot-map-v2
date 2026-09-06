@@ -6,6 +6,7 @@
 - Keeps immediate rain-stop/resume handling: when the mower leaves the docked phase, the existing live MQTT status transition still triggers an immediate task-event refresh.
 - Keeps the normal coordinator task-event refresh as a fallback, so cloud event history is still updated without rapid polling.
 - Preserves the v2.4.5-beta.2 MQTT duplicate filtering, path/progress caches, rain handling, Battery Saver and Shutdown Guard behavior.
+- Keeps prerelease metadata/cache-key commits on the `release/**` branch instead of trying to push them to `main`.
 
 ## Magyar
 
@@ -13,3 +14,4 @@
 - Az eső utáni folytatás továbbra is azonnal reagál: amikor a robot kilép a dokkolt állapotból, a meglévő MQTT státuszváltás azonnali task-event frissítést indít.
 - A normál coordinator frissítés tartalék megoldásként továbbra is frissíti az eseménylistát.
 - A beta.2 összes optimalizációja és működő funkciója változatlanul megmarad.
+- A prerelease csomagolás metaadatai mostantól a `release/**` ágon maradnak, nem próbálnak a `main` ágra kerülni.
