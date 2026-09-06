@@ -10,6 +10,7 @@ from .m_series_map import install_m_series_map_support
 from .m_series_path import install_m_series_path_support
 from .m_series_status import install_m_series_status_support
 from .m_series_zones import install_m_series_zone_support
+from .performance_diagnostics import install_performance_diagnostics
 from .rain_battery_saver import install_rain_battery_saver_safety
 from .shutdown_guard_stability import install_shutdown_guard_state_settle
 
@@ -58,3 +59,7 @@ def install_m_series_compat() -> None:
     # Otherwise the loop can see a stale ON immediately after turn_off, clear
     # the next 55-minute deadline and stop after the first keep-awake pulse.
     install_shutdown_guard_state_settle()
+    # Install support counters last so they observe the final wrapped methods
+    # without changing any model-specific behavior. The counters stay in RAM
+    # and are exposed only as an unrecorded Map-entity diagnostic attribute.
+    install_performance_diagnostics()
