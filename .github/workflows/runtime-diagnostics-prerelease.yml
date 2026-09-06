@@ -22,6 +22,23 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Set prerelease frontend cache key
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('custom_components/anthbot_map/__init__.py')
+          source = path.read_text(encoding='utf-8')
+          marker = 'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v='
+          start = source.find(marker)
+          if start < 0:
+              raise SystemExit('Frontend resource version marker not found')
+          end = source.find('"', start + len(marker))
+          if end < 0:
+              raise SystemExit('Frontend resource version terminator not found')
+          source = source[: start + len(marker)] + '2.4.5-beta.1' + source[end:]
+          path.write_text(source, encoding='utf-8')
+          PY
+
       - name: Verify source
         env:
           PYTHONDONTWRITEBYTECODE: "1"
@@ -40,23 +57,6 @@ jobs:
           cmp custom_components/anthbot_map/frontend/i18n.js www/anthbot-map/i18n.js
           cmp custom_components/anthbot_map/frontend/renderer.js www/anthbot-map/renderer.js
           cmp custom_components/anthbot_map/frontend/styles.css www/anthbot-map/styles.css
-
-      - name: Set prerelease frontend cache key
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('custom_components/anthbot_map/__init__.py')
-          source = path.read_text(encoding='utf-8')
-          marker = 'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v='
-          start = source.find(marker)
-          if start < 0:
-              raise SystemExit('Frontend resource version marker not found')
-          end = source.find('"', start + len(marker))
-          if end < 0:
-              raise SystemExit('Frontend resource version terminator not found')
-          source = source[: start + len(marker)] + '2.4.5-beta.1' + source[end:]
-          path.write_text(source, encoding='utf-8')
-          PY
 
       - name: Build installer
         run: |
