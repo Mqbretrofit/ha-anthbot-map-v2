@@ -223,6 +223,15 @@ if (typeof customElements !== "undefined") {
     const original = proto.updateMowingProgressStatus;
     if (typeof original !== "function") return;
 
+    const zoneTarget = (card, rawIds) => {
+      const ids = (Array.isArray(rawIds) ? rawIds : []).map(String).filter(Boolean);
+      if (!ids.length) return "";
+      const names = new Map((typeof card.currentZones === "function" ? card.currentZones() : [])
+        .filter((zone) => zone && zone.id !== undefined && zone.id !== null)
+        .map((zone) => [String(zone.id), String(zone.name || `${card.t("zone")} ${zone.id}`).trim()]));
+      return ids.map((id) => names.get(id) || `${card.t("zone")} ${id}`).join(" + ");
+    };
+
     const resolveTaskTarget = (card, task) => {
       if (!task || typeof task !== "object") return "";
       const type = String(task.type || "").trim().toLowerCase();
@@ -231,13 +240,34 @@ if (typeof customElements !== "undefined") {
       if (type === "edge") return card.t("commandOuterEdge");
       if (type === "dock_edge") return card.t("dockEdgeLabel");
       if (type === "auto_zone") return card.t("autoZone");
-      if (type === "manual_zone") {
-        const rawIds = Array.isArray(data.id) ? data.id : [];
-        const ids = rawIds.map(String);
-        const names = new Map((typeof card.currentZones === "function" ? card.currentZones() : [])
-          .filter((zone) => zone && zone.id !== undefined && zone.id !== null)
-          .map((zone) => [String(zone.id), String(zone.name || `${card.t("zone")} ${zone.id}`).trim()]));
-        return ids.map((id) => names.get(id) || `${card.t("zone")} ${id}`).join(" + ");
+      if (type === "manual_zone") return zoneTarget(card, data.id);
+      return "";
+    };
+
+    const resolveProgressTarget = (card, task, progressEntity) => {
+      const remembered = resolveTaskTarget(card, task);
+      if (remembered) return remembered;
+
+      const attrs = progressEntity?.attributes || {};
+      const activeZoneTarget = zoneTarget(card, attrs.active_zone_ids);
+      if (activeZoneTarget) return activeZoneTarget;
+
+      const learnedKey = String(attrs.learned_zone_mowing_key || "").trim().toLowerCase();
+      if (learnedKey.startsWith("manual:")) {
+        const learnedIds = learnedKey.slice("manual:".length).split(",").map((value) => value.trim()).filter(Boolean);
+        const learnedTarget = zoneTarget(card, learnedIds);
+        if (learnedTarget) return learnedTarget;
+      }
+
+      const source = String(attrs.progress_source || "").trim().toLowerCase();
+      const pathTaskType = String(card.entity?.attributes?.path_task_type || "").trim().toLowerCase();
+      if (
+        learnedKey === "full"
+        || source.startsWith("full_map_area")
+        || pathTaskType.includes("global")
+        || pathTaskType.includes("full")
+      ) {
+        return card.t("fullArea");
       }
       return "";
     };
@@ -250,7 +280,7 @@ if (typeof customElements !== "undefined") {
       const progress = Number(progressEntity?.state);
       if (!Number.isFinite(progress)) return;
       const task = this.entity?.attributes?.last_mowing_task ?? progressEntity?.attributes?.last_mowing_task ?? null;
-      const target = resolveTaskTarget(this, task);
+      const target = resolveProgressTarget(this, task, progressEntity);
       if (!target) return;
       const statusEntity = this.getRelatedEntity?.("status");
       const status = String(statusEntity?.state || "").trim().toLowerCase().replace(/[_\s-]+/g, "");
