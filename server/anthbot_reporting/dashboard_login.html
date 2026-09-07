@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="hu">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ANTHBOT Reporting Login</title>
+  <title>ANTHBOT Statisztika – Bejelentkezés</title>
   <style>
     :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     * { box-sizing: border-box; }
@@ -23,14 +23,14 @@
 </head>
 <body>
   <main class="card">
-    <div class="brand"><div class="logo">A</div><div><h1>ANTHBOT Reporting</h1><div style="color:#9fb0ca;font-size:.86rem">Admin dashboard</div></div></div>
-    <p>Enter the admin token configured in the ANTHBOT Reporting Server app. The token stays in an encrypted HTTPS request and is not stored in the browser.</p>
+    <div class="brand"><div class="logo">A</div><div><h1>ANTHBOT Statisztika</h1><div style="color:#9fb0ca;font-size:.86rem">Admin felület</div></div></div>
+    <p>Add meg az ANTHBOT Reporting Server alkalmazásban beállított admin tokent. A token titkosított HTTPS-kérésben kerül elküldésre, és nem kerül eltárolásra a böngészőben.</p>
     <form method="post" action="/dashboard/login">
       <input type="password" name="token" placeholder="Admin token" autocomplete="current-password" required autofocus>
-      <button type="submit">Sign in</button>
+      <button type="submit">Bejelentkezés</button>
     </form>
     __ERROR__
-    <div class="small">Session cookie: Secure · HttpOnly · SameSite=Strict</div>
+    <div class="small">Munkamenet-cookie: Secure · HttpOnly · SameSite=Strict</div>
   </main>
 </body>
 </html>
