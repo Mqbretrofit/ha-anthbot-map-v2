@@ -182,27 +182,27 @@ async def _probe_firmware_diagnostics(coordinator: Any) -> Any:
 
 async def _probe_area_definition(coordinator: Any) -> Any:
     serial = coordinator.client.serial_number
-    return await coordinator.client.async_get_device_area_definition(serial)
+    return await coordinator.account_client.async_get_device_area_definition(serial)
 
 
 async def _probe_ridable_area_definition(coordinator: Any) -> Any:
     serial = coordinator.client.serial_number
-    return await coordinator.client.async_get_device_ridable_area_definition(serial)
+    return await coordinator.account_client.async_get_device_ridable_area_definition(serial)
 
 
 async def _probe_map_definition(coordinator: Any) -> Any:
     serial = coordinator.client.serial_number
-    return await coordinator.client.async_get_device_map_definition(serial)
+    return await coordinator.account_client.async_get_device_map_definition(serial)
 
 
 async def _probe_map_archive(coordinator: Any) -> Any:
     serial = coordinator.client.serial_number
-    return await coordinator.client.async_get_device_map_archive(serial)
+    return await coordinator.account_client.async_get_device_map_archive(serial)
 
 
 async def _probe_path_definition(coordinator: Any) -> Any:
     serial = coordinator.client.serial_number
-    return await coordinator.client.async_get_device_path_definition(serial)
+    return await coordinator.account_client.async_get_device_path_definition(serial)
 
 
 async def _probe_task_events(coordinator: Any) -> Any:
