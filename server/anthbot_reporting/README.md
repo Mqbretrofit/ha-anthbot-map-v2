@@ -41,6 +41,10 @@ After DNS/TLS/reverse-proxy setup, the public check should be:
 curl https://reports.mqbretrofithungary.online/health
 ```
 
+## Developer-agent app package note
+
+Home Assistant app package `1.0.0-test.6` includes the developer-agent API and dashboard Python/HTML modules in the built container image. This fixes the `ModuleNotFoundError: No module named 'developer_agent_api'` startup failure present in the first `test.5` package build.
+
 ## Public request contracts
 
 ### Telemetry
