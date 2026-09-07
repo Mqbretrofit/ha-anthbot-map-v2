@@ -1,4 +1,14 @@
-FROM python:3.13-slim
+FROM ghcr.io/home-assistant/base-python:3.13-alpine3.24-2026.06.1
+
+ARG BUILD_VERSION=dev
+ARG BUILD_ARCH=local
+
+LABEL \
+    io.hass.name="ANTHBOT Reporting Server" \
+    io.hass.description="Opt-in telemetry and diagnostics backend for ANTHBOT Map" \
+    io.hass.version="${BUILD_VERSION}" \
+    io.hass.type="app" \
+    io.hass.arch="${BUILD_ARCH}"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -7,16 +17,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 COPY app.py ./app.py
+COPY run.sh /run.sh
+RUN chmod a+x /run.sh
 
-RUN useradd --create-home --uid 10001 anthbot \
-    && mkdir -p /data \
-    && chown -R anthbot:anthbot /app /data
-
-USER anthbot
-VOLUME ["/data"]
 EXPOSE 8080
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers", "--no-access-log"]
+CMD ["/run.sh"]
