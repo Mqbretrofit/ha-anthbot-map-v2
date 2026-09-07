@@ -9,10 +9,10 @@ from developer_agent_api import (
 )
 from developer_agent_dashboard import router as developer_agent_dashboard_router
 
-# Keep the developer-agent tables and routes isolated from the existing
-# reporting API. Import-time initialization is idempotent and uses CREATE TABLE
-# IF NOT EXISTS, so existing telemetry/diagnostics data is untouched.
-init_developer_agent_tables()
+# Keep the developer-agent routes isolated from the existing reporting API.
+# Its SQLite tables are initialized lazily on the first developer-agent request
+# instead of at module import time, so importing the ASGI app never requires
+# write access to /data (important for tests and tooling).
 fastapi_app.include_router(developer_agent_router)
 fastapi_app.include_router(developer_agent_dashboard_router)
 
@@ -25,6 +25,25 @@ _FRAME_ANCESTORS = (
     "http://homeassistant.local:8123 "
     "https://ha.mqbretrofithungary.online"
 )
+
+
+class DeveloperAgentStorageMiddleware:
+    """Create developer-agent tables only when one of its routes is used."""
+
+    def __init__(self, app):
+        self.app = app
+        self._initialized = False
+
+    async def __call__(self, scope, receive, send):
+        path = str(scope.get("path", ""))
+        if (
+            scope.get("type") == "http"
+            and "developer-agent" in path
+            and not self._initialized
+        ):
+            init_developer_agent_tables()
+            self._initialized = True
+        await self.app(scope, receive, send)
 
 
 class DashboardEmbeddingMiddleware:
@@ -72,4 +91,4 @@ class DashboardEmbeddingMiddleware:
         await self.app(scope, receive, send_wrapped)
 
 
-app = DashboardEmbeddingMiddleware(fastapi_app)
+app = DashboardEmbeddingMiddleware(DeveloperAgentStorageMiddleware(fastapi_app))
