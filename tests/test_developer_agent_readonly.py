@@ -36,7 +36,8 @@ class DeveloperAgentReadonlyTests(unittest.TestCase):
         self.assertIn('"session_token"', source)
         self.assertIn('"bearer"', source)
         self.assertIn('"url"', source)
-        self.assertIn("continue", source)
+        self.assertIn("_is_sensitive_key", source)
+        self.assertIn("safe_items", source)
         self.assertIn("serial_sha256", source)
         self.assertNotIn("serial_number\": serial", source)
 
@@ -52,10 +53,10 @@ class DeveloperAgentReadonlyTests(unittest.TestCase):
         optin = (PACKAGE / "developer_agent_optin.py").read_text(encoding="utf-8")
         tracker = (PACKAGE / "device_tracker.py").read_text(encoding="utf-8")
         config_flow = (PACKAGE / "config_flow.py").read_text(encoding="utf-8")
-        self.assertIn("developer_agent_enabled", optin)
+        self.assertIn("CONF_DEVELOPER_AGENT_ENABLED", optin)
         self.assertIn("async_register_developer_agent_optin", tracker)
         self.assertIn("async_register_developer_agent", tracker)
-        self.assertNotIn("developer_agent_enabled", config_flow)
+        self.assertNotIn("CONF_DEVELOPER_AGENT_ENABLED", config_flow)
 
     def test_agent_popup_follows_ha_language_and_is_mirrored(self) -> None:
         source = (FRONTEND / "developer-agent-optin.js").read_text(encoding="utf-8")
