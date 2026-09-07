@@ -28,37 +28,23 @@
   "options": {
     "step": {
       "init": {
-        "title": "Anthbot Map settings",
-        "description": "Choose which settings to edit.",
-        "menu_options": {
-          "developer_reporting": "Developer reporting and privacy",
-          "battery_saver": "Battery saver"
-        }
-      },
-      "developer_reporting": {
-        "title": "Developer reporting and privacy",
-        "description": "Both options are independent and optional. Turning them off stops future developer-report uploads. Anonymous usage statistics do not include account details, serial numbers, GPS coordinates or map data. Automatic diagnostics are privacy-filtered before upload. [Privacy information]({privacy_url})",
-        "data": {
-          "share_anonymous_usage": "Share anonymous usage statistics with the developer",
-          "send_automatic_diagnostics": "Send automatic diagnostics when a relevant error is detected"
-        }
-      },
-      "battery_saver": {
         "title": "Battery saver",
         "description": "Choose the mower to configure.",
         "data": {
           "mower": "Mower"
         }
       },
-      "battery_saver_settings": {
+      "battery_saver": {
         "title": "Battery saver",
-        "description": "Configure the charger and limits for {serial_number}. The mode remains inactive until its switch is turned on.",
+        "description": "Configure the charger and limits for {serial_number}. The mode remains inactive until its switch is turned on. Developer reporting is optional and global for this Anthbot Map installation. [Privacy information]({privacy_url})",
         "data": {
           "charger_switch": "Smart-plug switch",
           "charge_limit": "Upper charge limit (%)",
           "maintenance_level": "Idle recharge start level (%)",
           "resume_level": "Resume charge level (%)",
-          "shared_rtk_power": "Charging station and RTK share the same smart plug"
+          "shared_rtk_power": "Charging station and RTK share the same smart plug",
+          "share_anonymous_usage": "Share anonymous usage statistics with the developer",
+          "send_automatic_diagnostics": "Send automatic diagnostics when a relevant error is detected"
         }
       }
     },
