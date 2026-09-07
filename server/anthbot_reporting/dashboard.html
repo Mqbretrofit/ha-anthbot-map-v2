@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="hu">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ANTHBOT Reporting Dashboard</title>
+  <title>ANTHBOT Statisztikai irányítópult</title>
   <style>
     :root {
       color-scheme: dark;
@@ -99,12 +99,12 @@
     const state = { stats: null, installations: [], diagnostics: [], sort: 'last_seen', order: 'desc' };
     const el = (id) => document.getElementById(id);
     const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-    const fmt = (v) => v ? new Intl.DateTimeFormat(undefined, {dateStyle:'medium', timeStyle:'short'}).format(new Date(v)) : '—';
+    const fmt = (v) => v ? new Intl.DateTimeFormat('hu-HU', {dateStyle:'medium', timeStyle:'short'}).format(new Date(v)) : '—';
     const shortId = (v) => v ? String(v).slice(0, 8) + '…' : '—';
 
     async function api(path, options={}) {
       const res = await fetch(path, {credentials:'same-origin', ...options});
-      if (res.status === 401) { location.href = '/dashboard'; throw new Error('Unauthorized'); }
+      if (res.status === 401) { location.href = '/dashboard'; throw new Error('Nincs jogosultság'); }
       if (!res.ok) throw new Error((await res.json().catch(()=>({}))).detail || `HTTP ${res.status}`);
       return res.json();
     }
@@ -114,13 +114,13 @@
     }
 
     function bars(items) {
-      if (!items?.length) return '<div class="empty">No data yet.</div>';
+      if (!items?.length) return '<div class="empty">Még nincs adat.</div>';
       const max = Math.max(...items.map(x => x.count), 1);
       return `<div class="bars">${items.map(x => `<div class="bar-row"><div class="bar-label" title="${esc(x.name)}">${esc(x.name)}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.max(4,(x.count/max)*100)}%"></div></div><div class="bar-count">${x.count}</div></div>`).join('')}</div>`;
     }
 
     function optionList(items, selected='') {
-      return `<option value="">All</option>${items.map(x => `<option value="${esc(x.name)}" ${x.name===selected?'selected':''}>${esc(x.name)} (${x.count})</option>`).join('')}`;
+      return `<option value="">Összes</option>${items.map(x => `<option value="${esc(x.name)}" ${x.name===selected?'selected':''}>${esc(x.name)} (${x.count})</option>`).join('')}`;
     }
 
     function renderDashboard() {
@@ -129,41 +129,41 @@
       el('app').innerHTML = `
         <div class="shell">
           <div class="topbar">
-            <div class="brand"><div class="logo">A</div><div><h1>ANTHBOT Reporting</h1><div class="subtitle">Usage telemetry & diagnostics dashboard</div></div></div>
-            <div class="top-actions"><button class="btn" id="refresh">Refresh</button><button class="btn danger" id="logout">Log out</button></div>
+            <div class="brand"><div class="logo">A</div><div><h1>ANTHBOT Statisztika</h1><div class="subtitle">Használati statisztikák és diagnosztika</div></div></div>
+            <div class="top-actions"><button class="btn" id="refresh">Frissítés</button><button class="btn danger" id="logout">Kijelentkezés</button></div>
           </div>
           <div class="grid kpis">
-            ${kpi('Installations', s.installations.total ?? 0, 'Unique opted-in installations')}
-            ${kpi('Active 7 days', s.installations.active_7d ?? 0, 'Seen during the last week')}
-            ${kpi('Active 30 days', s.installations.active_30d ?? 0, 'Seen during the last month')}
-            ${kpi('Mowers', s.total_devices ?? 0, 'Reported mower count')}
-            ${kpi('Diagnostics 7 days', s.diagnostics.last_7d ?? 0, `${s.diagnostics.last_24h ?? 0} in the last 24h`)}
+            ${kpi('Telepítések', s.installations.total ?? 0, 'Egyedi, önként engedélyezett telepítések')}
+            ${kpi('Aktív 7 nap', s.installations.active_7d ?? 0, 'Aktív az elmúlt 7 napban')}
+            ${kpi('Aktív 30 nap', s.installations.active_30d ?? 0, 'Aktív az elmúlt 30 napban')}
+            ${kpi('Robotok', s.total_devices ?? 0, 'Jelentett robotfűnyírók száma')}
+            ${kpi('Diagnosztikák – 7 nap', s.diagnostics.last_7d ?? 0, `${s.diagnostics.last_24h ?? 0} az elmúlt 24 órában`)}
           </div>
           <div class="card filters">
             <div class="filter-grid">
-              <input class="control" id="search" placeholder="Search installation ID, country, model, version…">
+              <input class="control" id="search" placeholder="Keresés telepítési azonosító, ország, modell vagy verzió alapján…">
               <select class="control" id="country">${optionList(s.by_country || [])}</select>
               <select class="control" id="model">${optionList(s.by_model || [])}</select>
               <select class="control" id="version">${optionList(s.by_integration_version || [])}</select>
-              <select class="control" id="active"><option value="">Any activity</option><option value="1">Last 24 hours</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select>
-              <button class="btn primary" id="apply">Apply filters</button>
+              <select class="control" id="active"><option value="">Bármikor aktív</option><option value="1">Elmúlt 24 óra</option><option value="7">Elmúlt 7 nap</option><option value="30">Elmúlt 30 nap</option></select>
+              <button class="btn primary" id="apply">Szűrés</button>
             </div>
           </div>
           <div class="grid section-grid">
-            <div class="card section"><div class="section-head"><div class="section-title">By country</div><div class="small">installations</div></div><div id="country-bars">${bars(s.by_country)}</div></div>
-            <div class="card section"><div class="section-head"><div class="section-title">By mower model</div><div class="small">mowers</div></div><div id="model-bars">${bars(s.by_model)}</div></div>
+            <div class="card section"><div class="section-head"><div class="section-title">Ország szerint</div><div class="small">telepítések</div></div><div id="country-bars">${bars(s.by_country)}</div></div>
+            <div class="card section"><div class="section-head"><div class="section-title">Robotmodell szerint</div><div class="small">robotok</div></div><div id="model-bars">${bars(s.by_model)}</div></div>
           </div>
           <div class="card table-card">
-            <div class="section-head" style="padding:18px 18px 0"><div><div class="section-title">Installations</div><div class="small" id="result-count">${state.installations.length} results</div></div><div class="small">Click a column heading to sort</div></div>
+            <div class="section-head" style="padding:18px 18px 0"><div><div class="section-title">Telepítések</div><div class="small" id="result-count">${state.installations.length} találat</div></div><div class="small">Rendezéshez kattints egy oszlop nevére</div></div>
             <div class="table-wrap"><table><thead><tr>
-              <th data-sort="installation_id">Installation</th><th data-sort="country">Country</th><th>Models</th><th data-sort="device_count">Mowers</th><th data-sort="integration_version">Integration</th><th data-sort="home_assistant_version">Home Assistant</th><th data-sort="first_seen">First seen</th><th data-sort="last_seen">Last seen</th><th data-sort="last_event">Last event</th>
+              <th data-sort="installation_id">Telepítés</th><th data-sort="country">Ország</th><th>Modellek</th><th data-sort="device_count">Robotok</th><th data-sort="integration_version">Integráció</th><th data-sort="home_assistant_version">Home Assistant</th><th data-sort="first_seen">Első jelentkezés</th><th data-sort="last_seen">Utolsó jelentkezés</th><th data-sort="last_event">Utolsó esemény</th>
             </tr></thead><tbody id="installations-body"></tbody></table></div>
           </div>
           <div class="grid section-grid">
-            <div class="card section"><div class="section-head"><div class="section-title">Integration versions</div><div class="small">installations</div></div>${bars(s.by_integration_version)}</div>
-            <div class="card section"><div class="section-head"><div class="section-title">Recent diagnostics</div><div class="small">latest 20</div></div><div class="diag-list" id="diag-list"></div></div>
+            <div class="card section"><div class="section-head"><div class="section-title">Integrációverziók</div><div class="small">telepítések</div></div>${bars(s.by_integration_version)}</div>
+            <div class="card section"><div class="section-head"><div class="section-title">Legutóbbi diagnosztikák</div><div class="small">utolsó 20</div></div><div class="diag-list" id="diag-list"></div></div>
           </div>
-          <div class="footer"><span>ANTHBOT Reporting Server</span><span>Updated <span id="updated">${fmt(s.generated_at)}</span></span></div>
+          <div class="footer"><span>ANTHBOT Reporting Server</span><span>Frissítve: <span id="updated">${fmt(s.generated_at)}</span></span></div>
         </div>`;
       bind(); renderRows(); renderDiagnostics();
     }
@@ -171,21 +171,21 @@
     function renderRows() {
       const body = el('installations-body');
       if (!body) return;
-      if (!state.installations.length) { body.innerHTML = `<tr><td colspan="9" class="empty">No installations match the current filters.</td></tr>`; return; }
+      if (!state.installations.length) { body.innerHTML = `<tr><td colspan="9" class="empty">A jelenlegi szűrőkkel nincs találat.</td></tr>`; return; }
       body.innerHTML = state.installations.map(r => `<tr>
         <td class="mono" title="${esc(r.installation_id)}">${esc(shortId(r.installation_id))}</td>
-        <td>${esc(r.country || 'Unknown')}</td>
+        <td>${esc(r.country || 'Ismeretlen')}</td>
         <td>${Object.entries(r.model_counts || {}).map(([m,c]) => `<span class="pill good">${esc(m)} × ${c}</span>`).join('') || '—'}</td>
-        <td>${esc(r.device_count)}</td><td>${esc(r.integration_version || 'Unknown')}</td><td>${esc(r.home_assistant_version || 'Unknown')}</td>
+        <td>${esc(r.device_count)}</td><td>${esc(r.integration_version || 'Ismeretlen')}</td><td>${esc(r.home_assistant_version || 'Ismeretlen')}</td>
         <td>${esc(fmt(r.first_seen))}</td><td>${esc(fmt(r.last_seen))}</td><td><span class="pill">${esc(r.last_event)}</span></td>
       </tr>`).join('');
-      el('result-count').textContent = `${state.installations.length} results`;
+      el('result-count').textContent = `${state.installations.length} találat`;
     }
 
     function renderDiagnostics() {
       const box = el('diag-list'); if (!box) return;
-      if (!state.diagnostics.length) { box.innerHTML = '<div class="empty">No diagnostics received yet.</div>'; return; }
-      box.innerHTML = state.diagnostics.map(d => `<div class="diag-item"><div class="diag-main"><div class="diag-title">${esc(d.trigger)}</div><div class="diag-meta">${esc(d.report_id)} · ${esc(shortId(d.installation_id))} · ${esc(fmt(d.received_at))}</div></div><span class="pill warn">diagnostic</span></div>`).join('');
+      if (!state.diagnostics.length) { box.innerHTML = '<div class="empty">Még nem érkezett diagnosztikai jelentés.</div>'; return; }
+      box.innerHTML = state.diagnostics.map(d => `<div class="diag-item"><div class="diag-main"><div class="diag-title">${esc(d.trigger)}</div><div class="diag-meta">${esc(d.report_id)} · ${esc(shortId(d.installation_id))} · ${esc(fmt(d.received_at))}</div></div><span class="pill warn">diagnosztika</span></div>`).join('');
     }
 
     function params() {
@@ -226,7 +226,7 @@
 
     async function boot() {
       try { await loadAll(); }
-      catch (err) { el('app').innerHTML = `<div class="login-wrap"><div class="card login-card"><h1>Dashboard unavailable</h1><p>${esc(err.message)}</p><button class="btn" onclick="location.reload()">Retry</button></div></div>`; }
+      catch (err) { el('app').innerHTML = `<div class="login-wrap"><div class="card login-card"><h1>A dashboard nem érhető el</h1><p>${esc(err.message)}</p><button class="btn" onclick="location.reload()">Újra</button></div></div>`; }
     }
     boot();
   </script>
