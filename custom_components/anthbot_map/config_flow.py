@@ -206,6 +206,13 @@ class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
                 user_input.get(CONF_SEND_AUTOMATIC_DIAGNOSTICS, False)
             )
             installation_id = self._installation_id()
+            if self.config_entry.data.get(CONF_DEVELOPER_INSTALLATION_ID) != installation_id:
+                entry_data = dict(self.config_entry.data)
+                entry_data[CONF_DEVELOPER_INSTALLATION_ID] = installation_id
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry,
+                    data=entry_data,
+                )
             options = dict(self.config_entry.options)
             options[CONF_SHARE_ANONYMOUS_USAGE] = new_usage
             options[CONF_SEND_AUTOMATIC_DIAGNOSTICS] = new_diagnostics
