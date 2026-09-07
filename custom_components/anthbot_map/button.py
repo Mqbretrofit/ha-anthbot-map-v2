@@ -6,26 +6,33 @@ import asyncio
 from dataclasses import dataclass
 import logging
 from pathlib import Path
+import time
 from typing import Any
 
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .api import AnthbotGenieApiError
-from .const import DOMAIN
+from .const import (
+    CONF_DEVELOPER_INSTALLATION_ID,
+    CONF_SEND_AUTOMATIC_DIAGNOSTICS,
+    DEVELOPER_DIAGNOSTICS_ENDPOINT,
+    DOMAIN,
+)
 from .coordinator import AnthbotGenieDataUpdateCoordinator
 from .commands import (
     async_prepare_cloud_connection,
     async_start_mowing,
     async_start_outer_edge_mowing,
 )
+from .developer_reporting import async_send_diagnostics_report
 from .firmware_diagnostics import (
     build_firmware_diagnostics_report,
-    report_email_summary,
     report_filename,
     write_firmware_diagnostics_report,
 )
@@ -34,6 +41,8 @@ from .zones import active_manual_zone_ids, auto_zones, manual_zones
 _LOGGER = logging.getLogger(__name__)
 _FIRMWARE_DIAGNOSTICS_EVENT = "anthbot_firmware_diagnostics_ready"
 _FIRMWARE_DIAGNOSTICS_MEDIA_DIR = "anthbot-firmware-diagnostics"
+_AUTO_DIAGNOSTICS_REPEAT_SECONDS = 60 * 60
+_AUTO_DIAGNOSTICS_MIN_SECONDS = 60
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -68,13 +77,127 @@ BUTTONS: tuple[AnthbotButtonDescription, ...] = (
     AnthbotButtonDescription(key="pause_mow", name="Pause mowing task"),
     AnthbotButtonDescription(key="reset_blade_maintenance", name="Reset blade maintenance"),
     AnthbotButtonDescription(key="reset_camera_maintenance", name="Reset camera maintenance"),
-    AnthbotButtonDescription(key="reset_dock_contact_maintenance", name="Reset charging contact maintenance"),
+    AnthbotButtonDescription(
+        key="reset_dock_contact_maintenance",
+        name="Reset charging contact maintenance",
+    ),
     AnthbotButtonDescription(
         key="export_firmware_diagnostics",
         name="Export firmware diagnostics",
         icon="mdi:file-export-outline",
     ),
 )
+
+
+def _entry_option_enabled(entry: ConfigEntry, key: str) -> bool:
+    """Return the current option, with config-entry data as initial fallback."""
+    if key in entry.options:
+        return bool(entry.options.get(key))
+    return bool(entry.data.get(key, False))
+
+
+def _unwrap_simple_value(value: Any) -> Any:
+    """Unwrap the common ANTHBOT {value: ...} envelope."""
+    seen: set[int] = set()
+    while isinstance(value, dict) and "value" in value:
+        identity = id(value)
+        if identity in seen:
+            return None
+        seen.add(identity)
+        value = value.get("value")
+    return value
+
+
+def _automatic_diagnostics_trigger(
+    state: dict[str, Any],
+) -> tuple[str, str] | None:
+    """Return a stable trigger/signature for supported automatic reports."""
+    check = state.get("_no_go_path_check")
+    if isinstance(check, dict) and check.get("crossing_detected") is True:
+        signature = (
+            "no-go:"
+            f"{check.get('path_id')}:"
+            f"{check.get('boundary_crossings', 0)}:"
+            f"{check.get('points_inside', 0)}:"
+            f"{check.get('last_crossing')}"
+        )
+        return "no_go_path_crossing", signature
+
+    error_code = _unwrap_simple_value(state.get("err_code"))
+    try:
+        normalized_error = int(error_code)
+    except (TypeError, ValueError):
+        normalized_error = 0
+    if normalized_error != 0:
+        return "mower_error_code", f"err-code:{normalized_error}"
+
+    for key, trigger in (
+        ("_path_definition_error", "path_definition_error"),
+        ("_map_definition_error", "map_definition_error"),
+        ("_live_shadow_error", "live_shadow_error"),
+    ):
+        value = state.get(key)
+        if value not in (None, "", False):
+            return trigger, f"{trigger}:{value!s}"
+
+    return None
+
+
+def _install_automatic_diagnostics_reporting(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: AnthbotGenieDataUpdateCoordinator,
+) -> None:
+    """Install an opt-in, deduplicated coordinator listener for diagnostics."""
+    last_signature_sent_at: dict[str, float] = {}
+    last_any_sent_at = 0.0
+
+    def _handle_update() -> None:
+        nonlocal last_any_sent_at
+        if not _entry_option_enabled(entry, CONF_SEND_AUTOMATIC_DIAGNOSTICS):
+            return
+
+        installation_id = entry.data.get(CONF_DEVELOPER_INSTALLATION_ID)
+        if not isinstance(installation_id, str) or not installation_id:
+            return
+
+        state = coordinator.reported_state
+        if not isinstance(state, dict):
+            return
+        detected = _automatic_diagnostics_trigger(state)
+        if detected is None:
+            return
+        trigger, signature = detected
+
+        now = time.monotonic()
+        if now - last_any_sent_at < _AUTO_DIAGNOSTICS_MIN_SECONDS:
+            return
+        previous = last_signature_sent_at.get(signature)
+        if previous is not None and now - previous < _AUTO_DIAGNOSTICS_REPEAT_SECONDS:
+            return
+
+        # Automatic reports omit the plain serial number and alias; the report
+        # retains a one-way serial hash for repeated-fault correlation.
+        report = build_firmware_diagnostics_report(
+            coordinator,
+            include_raw_state=False,
+            include_identifiers=False,
+        )
+        last_signature_sent_at[signature] = now
+        last_any_sent_at = now
+        session = async_get_clientsession(hass)
+        hass.async_create_task(
+            async_send_diagnostics_report(
+                session,
+                DEVELOPER_DIAGNOSTICS_ENDPOINT,
+                installation_id=installation_id,
+                report=report,
+                trigger=trigger,
+            )
+        )
+
+    unsubscribe = coordinator.async_add_listener(_handle_update)
+    entry.async_on_unload(unsubscribe)
 
 
 async def async_setup_entry(
@@ -93,6 +216,7 @@ async def async_setup_entry(
     ]
 
     for coordinator in coordinators:
+        _install_automatic_diagnostics_reporting(hass, entry, coordinator)
         for zone in manual_zones(coordinator.reported_state):
             zone_id = zone.get("id")
             if not isinstance(zone_id, int):
@@ -191,7 +315,6 @@ class AnthbotButtonEntity(
         no_go = report.get("no_go") if isinstance(report, dict) else {}
         check = no_go.get("check") if isinstance(no_go, dict) else {}
         device = report.get("device") if isinstance(report, dict) else {}
-        email_summary = report_email_summary(report)
         event_data = {
             "entity_id": self.entity_id,
             "serial_number": self.coordinator.client.serial_number,
@@ -203,11 +326,6 @@ class AnthbotButtonEntity(
             "file_path": str(file_path),
             "media_source_id": media_source_id,
             "media_content_type": "application/json",
-            "email_title": (
-                "ANTHBOT firmware diagnostics - "
-                f"{self.coordinator.device.model} - {self.coordinator.client.serial_number}"
-            ),
-            "email_message": email_summary,
             "crossing_detected": (
                 check.get("crossing_detected") if isinstance(check, dict) else False
             ),
@@ -267,11 +385,15 @@ class AnthbotButtonEntity(
                     "attempting dock mowing on the live MQTT transport",
                     self.coordinator.client.serial_number,
                 )
-            await self.coordinator.client.async_publish_service_command(cmd="nest_mow_start", data=1)
+            await self.coordinator.client.async_publish_service_command(
+                cmd="nest_mow_start", data=1
+            )
             self.coordinator.remember_mowing_task("dock_edge")
         elif key == "stop_mow":
             await async_prepare_cloud_connection(self.coordinator)
-            await self.coordinator.client.async_publish_service_command(cmd="stop_all_tasks")
+            await self.coordinator.client.async_publish_service_command(
+                cmd="stop_all_tasks"
+            )
             await self.coordinator.async_clear_last_mowing_task()
         elif key == "return_to_dock":
             await async_prepare_cloud_connection(self.coordinator)
