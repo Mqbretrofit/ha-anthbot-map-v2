@@ -30,6 +30,18 @@ class DeveloperAgentReadonlyTests(unittest.TestCase):
         self.assertNotIn("stop_all_tasks", source)
         self.assertNotIn("factory_reset", source)
 
+    def test_rest_definition_probes_use_account_client(self) -> None:
+        source = (PACKAGE / "developer_agent.py").read_text(encoding="utf-8")
+        for method in (
+            "async_get_device_area_definition",
+            "async_get_device_ridable_area_definition",
+            "async_get_device_map_definition",
+            "async_get_device_map_archive",
+            "async_get_device_path_definition",
+        ):
+            self.assertIn(f"coordinator.account_client.{method}", source)
+            self.assertNotIn(f"coordinator.client.{method}", source)
+
     def test_credentials_are_not_part_of_probe_results(self) -> None:
         source = (PACKAGE / "developer_agent.py").read_text(encoding="utf-8")
         self.assertIn('"password"', source)
