@@ -1,6 +1,7 @@
 """Model compatibility entry point for the clean rebuild."""
 
 from .entity_identity import install_setting_entity_identity
+from .genie_path_diagnostics import install_genie_path_diagnostics
 from .genie_status import install_genie_live_status_support
 from .live_task_events import install_live_task_event_refresh
 from .m_series_legacy import install_m_series_compat as _install_legacy
@@ -51,6 +52,10 @@ def install_m_series_compat() -> None:
     # only those telemetry fields into the same HA update path used by the
     # M-series property shadow, without changing any M-series behavior.
     install_genie_live_status_support()
+    # Genie uses the shared proven path decoder rather than the M-series
+    # absolute-index assembler. Inspect only that already-decoded trajectory
+    # and publish the same read-only no-go crossing diagnostics.
+    install_genie_path_diagnostics()
     # Both Genie and M-series task-event sensors use the same REST event list.
     # Refresh it immediately after a real MQTT status transition so the cloud
     # event code does not remain stale for the five-minute ancillary interval.
