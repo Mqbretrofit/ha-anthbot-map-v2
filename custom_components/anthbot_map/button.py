@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 import logging
+from pathlib import Path
 from typing import Any
 
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
@@ -22,9 +23,17 @@ from .commands import (
     async_start_mowing,
     async_start_outer_edge_mowing,
 )
+from .firmware_diagnostics import (
+    build_firmware_diagnostics_report,
+    report_email_summary,
+    report_filename,
+    write_firmware_diagnostics_report,
+)
 from .zones import active_manual_zone_ids, auto_zones, manual_zones
 
 _LOGGER = logging.getLogger(__name__)
+_FIRMWARE_DIAGNOSTICS_EVENT = "anthbot_firmware_diagnostics_ready"
+_FIRMWARE_DIAGNOSTICS_MEDIA_DIR = "anthbot-firmware-diagnostics"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -60,6 +69,11 @@ BUTTONS: tuple[AnthbotButtonDescription, ...] = (
     AnthbotButtonDescription(key="reset_blade_maintenance", name="Reset blade maintenance"),
     AnthbotButtonDescription(key="reset_camera_maintenance", name="Reset camera maintenance"),
     AnthbotButtonDescription(key="reset_dock_contact_maintenance", name="Reset charging contact maintenance"),
+    AnthbotButtonDescription(
+        key="export_firmware_diagnostics",
+        name="Export firmware diagnostics",
+        icon="mdi:file-export-outline",
+    ),
 )
 
 
@@ -133,15 +147,103 @@ class AnthbotButtonEntity(
             model=coordinator.device.model,
             name=coordinator.device.alias,
         )
+        self._last_diagnostics_export: dict[str, Any] | None = None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Expose the mower serial so multi-mower cards can scope controls."""
-        return {"serial_number": self.coordinator.client.serial_number}
+        """Expose the mower serial and diagnostics-export metadata."""
+        attrs: dict[str, Any] = {
+            "serial_number": self.coordinator.client.serial_number
+        }
+        if (
+            self.entity_description.key == "export_firmware_diagnostics"
+            and isinstance(self._last_diagnostics_export, dict)
+        ):
+            attrs.update(self._last_diagnostics_export)
+        return attrs
+
+    async def _async_export_firmware_diagnostics(self) -> None:
+        """Write a shareable JSON report and announce it on the HA event bus."""
+        local_media_dir = self.hass.config.media_dirs.get("local")
+        if not isinstance(local_media_dir, str) or not local_media_dir:
+            raise AnthbotGenieApiError(
+                "Home Assistant local media directory is unavailable; configure media_source first"
+            )
+
+        report = build_firmware_diagnostics_report(
+            self.coordinator,
+            include_raw_state=False,
+            include_identifiers=True,
+        )
+        filename = report_filename(report)
+        folder = Path(local_media_dir) / _FIRMWARE_DIAGNOSTICS_MEDIA_DIR
+        file_path = folder / filename
+        await self.hass.async_add_executor_job(
+            write_firmware_diagnostics_report,
+            file_path,
+            report,
+        )
+
+        media_source_id = (
+            "media-source://media_source/local/"
+            f"{_FIRMWARE_DIAGNOSTICS_MEDIA_DIR}/{filename}"
+        )
+        no_go = report.get("no_go") if isinstance(report, dict) else {}
+        check = no_go.get("check") if isinstance(no_go, dict) else {}
+        device = report.get("device") if isinstance(report, dict) else {}
+        email_summary = report_email_summary(report)
+        event_data = {
+            "entity_id": self.entity_id,
+            "serial_number": self.coordinator.client.serial_number,
+            "model": self.coordinator.device.model,
+            "firmware_version": (
+                device.get("firmware_version") if isinstance(device, dict) else None
+            ),
+            "filename": filename,
+            "file_path": str(file_path),
+            "media_source_id": media_source_id,
+            "media_content_type": "application/json",
+            "email_title": (
+                "ANTHBOT firmware diagnostics - "
+                f"{self.coordinator.device.model} - {self.coordinator.client.serial_number}"
+            ),
+            "email_message": email_summary,
+            "crossing_detected": (
+                check.get("crossing_detected") if isinstance(check, dict) else False
+            ),
+            "boundary_crossings": (
+                check.get("boundary_crossings", 0) if isinstance(check, dict) else 0
+            ),
+            "points_inside": (
+                check.get("points_inside", 0) if isinstance(check, dict) else 0
+            ),
+            "traversals": (
+                check.get("traversals", 0) if isinstance(check, dict) else 0
+            ),
+        }
+        self._last_diagnostics_export = {
+            "last_report_filename": filename,
+            "last_report_media_source": media_source_id,
+            "last_report_created_at": report.get("generated_at"),
+            "last_report_crossing_detected": event_data["crossing_detected"],
+            "last_report_boundary_crossings": event_data["boundary_crossings"],
+        }
+        self.async_write_ha_state()
+        self.hass.bus.async_fire(_FIRMWARE_DIAGNOSTICS_EVENT, event_data)
+        _LOGGER.info(
+            "Exported ANTHBOT firmware diagnostics for %s to %s",
+            self.coordinator.client.serial_number,
+            file_path,
+        )
 
     async def async_press(self) -> None:
         """Run the button action."""
         key = self.entity_description.key
+        if key == "export_firmware_diagnostics":
+            # Diagnostics export is intentionally local/read-only. Do not wake
+            # the mower or generate extra cloud/MQTT traffic just to capture it.
+            await self._async_export_firmware_diagnostics()
+            return
         if key == "connect_cloud":
             connected = await async_prepare_cloud_connection(
                 self.coordinator, attempts=3, wait_seconds=5
