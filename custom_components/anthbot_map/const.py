@@ -29,14 +29,11 @@ DEFAULT_AREA_CODE = "36"
 DEFAULT_SHARE_ANONYMOUS_USAGE = False
 DEFAULT_SEND_AUTOMATIC_DIAGNOSTICS = False
 
-# Developer-reporting endpoints. These are deliberately separate so anonymous
-# installation statistics never share a payload contract with diagnostics.
-DEVELOPER_TELEMETRY_ENDPOINT = (
-    "https://installer.tmt-automation.com/api/anthbot/telemetry"
-)
-DEVELOPER_DIAGNOSTICS_ENDPOINT = (
-    "https://installer.tmt-automation.com/api/anthbot/diagnostics"
-)
+# Developer-reporting endpoints remain disabled on the test branch until the
+# project-controlled reporting server has a real HTTPS hostname. Never point
+# these at ANTHBOT/TMT vendor infrastructure.
+DEVELOPER_TELEMETRY_ENDPOINT = ""
+DEVELOPER_DIAGNOSTICS_ENDPOINT = ""
 
 # Known category_id values (as reported by /api/v1.8.2/device/bindList).
 # The app uses these as human-readable model names; mapping them keeps the
