@@ -2,6 +2,10 @@
 
 Small opt-in reporting backend for the ANTHBOT Map Home Assistant integration.
 
+Production reporting hostname:
+
+- `https://reports.mqbretrofithungary.online`
+
 It accepts two public ingest endpoints:
 
 - `POST /api/anthbot/telemetry` — anonymous/pseudonymous installation statistics;
@@ -29,6 +33,12 @@ Health check:
 
 ```bash
 curl http://127.0.0.1:8080/health
+```
+
+After DNS/TLS/reverse-proxy setup, the public check should be:
+
+```bash
+curl https://reports.mqbretrofithungary.online/health
 ```
 
 ## Public request contracts
@@ -113,10 +123,15 @@ Override the database location with:
 ANTHBOT_DB_PATH=/some/path/reporting.sqlite3
 ```
 
-## Reverse proxy
+## Reverse proxy and DNS
 
-`nginx.example.conf` contains body limits, rate limiting and logging recommendations. The public API should only be exposed over HTTPS. The admin routes should additionally be restricted by firewall, VPN or an IP allowlist when possible.
+Create DNS for `reports.mqbretrofithungary.online` pointing at the server that runs this container. `nginx.example.conf` contains body limits, rate limiting and logging recommendations. The public API should only be exposed over HTTPS. The admin routes should additionally be restricted by firewall, VPN or an IP allowlist when possible.
 
-## Before enabling in the integration
+The Home Assistant integration test branch is already configured for:
 
-The Home Assistant integration must point to the reporting hostname that actually runs this backend. Do not point the reporting client at an unrelated vendor API. The integration test branch intentionally keeps developer-report endpoints disabled until the real reporting hostname is chosen and deployed.
+```text
+https://reports.mqbretrofithungary.online/api/anthbot/telemetry
+https://reports.mqbretrofithungary.online/api/anthbot/diagnostics
+```
+
+Until DNS, TLS and the reporting container are actually online, opt-in uploads will simply fail best-effort and will not block normal integration setup or mower operation.
