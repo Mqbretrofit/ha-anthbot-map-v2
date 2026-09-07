@@ -3,15 +3,18 @@ from __future__ import annotations
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta, timezone
 import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
 import secrets
 import sqlite3
 from typing import Any, Literal
+from urllib.parse import parse_qs
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 USAGE_SCHEMA = "anthbot-map-anonymous-usage-v1"
@@ -19,6 +22,8 @@ DIAGNOSTICS_SCHEMA = "anthbot-map-diagnostics-upload-v1"
 DEFAULT_DB_PATH = "/data/anthbot_reporting.sqlite3"
 MAX_TELEMETRY_BYTES = 64 * 1024
 MAX_DIAGNOSTICS_BYTES = 2 * 1024 * 1024
+_DASHBOARD_COOKIE = "anthbot_admin_session"
+_DASHBOARD_SESSION_SECONDS = 12 * 60 * 60
 
 _SENSITIVE_KEY_PARTS = (
     "password",
@@ -127,7 +132,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="ANTHBOT Map reporting server",
-    version="1.0.0",
+    version="1.1.0",
     docs_url=None,
     redoc_url=None,
     lifespan=lifespan,
@@ -208,7 +213,15 @@ async def _limit_body_size(request: Request, call_next):
                     return _too_large_response(limit)
             except ValueError:
                 pass
-    return await call_next(request)
+    response = await call_next(request)
+    if request.url.path.startswith("/dashboard") or request.url.path.startswith(
+        "/api/anthbot/admin/"
+    ):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+    return response
 
 
 def _too_large_response(limit: int):
@@ -244,15 +257,65 @@ def _admin_token() -> str:
     return os.environ.get("ANTHBOT_ADMIN_TOKEN", "")
 
 
-def require_admin(authorization: str | None = Header(default=None)) -> None:
+def _dashboard_session_value() -> str:
+    token = _admin_token()
+    if not token:
+        return ""
+    return hmac.new(
+        token.encode("utf-8"),
+        b"anthbot-reporting-dashboard-session-v1",
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _request_is_admin(request: Request, authorization: str | None = None) -> bool:
     expected = _admin_token()
     if not expected:
-        raise HTTPException(status_code=503, detail="admin access is not configured")
-    supplied = ""
+        return False
     if isinstance(authorization, str) and authorization.startswith("Bearer "):
         supplied = authorization[7:]
-    if not supplied or not secrets.compare_digest(supplied, expected):
+        if supplied and secrets.compare_digest(supplied, expected):
+            return True
+    cookie = request.cookies.get(_DASHBOARD_COOKIE, "")
+    session_value = _dashboard_session_value()
+    return bool(cookie and session_value and secrets.compare_digest(cookie, session_value))
+
+
+def require_admin(
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> None:
+    if not _admin_token():
+        raise HTTPException(status_code=503, detail="admin access is not configured")
+    if not _request_is_admin(request, authorization):
         raise HTTPException(status_code=401, detail="invalid admin token")
+
+
+def _dashboard_file(name: str) -> str:
+    try:
+        return Path(__file__).with_name(name).read_text(encoding="utf-8")
+    except OSError as err:
+        raise HTTPException(status_code=503, detail="dashboard asset unavailable") from err
+
+
+def _installation_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    try:
+        model_counts = json.loads(row["model_counts_json"])
+    except (TypeError, ValueError):
+        model_counts = {}
+    if not isinstance(model_counts, dict):
+        model_counts = {}
+    return {
+        "installation_id": row["installation_id"],
+        "first_seen": row["first_seen"],
+        "last_seen": row["last_seen"],
+        "last_event": row["last_event"],
+        "country": row["country"],
+        "integration_version": row["integration_version"],
+        "home_assistant_version": row["home_assistant_version"],
+        "device_count": row["device_count"],
+        "model_counts": model_counts,
+    }
 
 
 @app.get("/health")
@@ -263,6 +326,58 @@ def health() -> dict[str, Any]:
     except sqlite3.Error:
         raise HTTPException(status_code=503, detail="database unavailable")
     return {"ok": True, "schema": "anthbot-reporting-server-v1"}
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard(request: Request) -> HTMLResponse:
+    if not _admin_token():
+        html = _dashboard_file("dashboard_login.html").replace(
+            "__ERROR__",
+            '<div class="error">Admin access is not configured. Set admin_token in the Home Assistant app configuration.</div>',
+        )
+        return HTMLResponse(html, status_code=503)
+    if _request_is_admin(request):
+        return HTMLResponse(_dashboard_file("dashboard.html"))
+    return HTMLResponse(_dashboard_file("dashboard_login.html").replace("__ERROR__", ""))
+
+
+@app.post("/dashboard/login")
+async def dashboard_login(request: Request):
+    if not _admin_token():
+        return HTMLResponse(
+            _dashboard_file("dashboard_login.html").replace(
+                "__ERROR__",
+                '<div class="error">Admin access is not configured.</div>',
+            ),
+            status_code=503,
+        )
+    raw = (await request.body()).decode("utf-8", errors="replace")
+    supplied = parse_qs(raw, keep_blank_values=True).get("token", [""])[0]
+    if not supplied or not secrets.compare_digest(supplied, _admin_token()):
+        return HTMLResponse(
+            _dashboard_file("dashboard_login.html").replace(
+                "__ERROR__", '<div class="error">Invalid admin token.</div>'
+            ),
+            status_code=401,
+        )
+    response = RedirectResponse(url="/dashboard", status_code=303)
+    response.set_cookie(
+        _DASHBOARD_COOKIE,
+        _dashboard_session_value(),
+        max_age=_DASHBOARD_SESSION_SECONDS,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        path="/",
+    )
+    return response
+
+
+@app.post("/dashboard/logout")
+def dashboard_logout() -> RedirectResponse:
+    response = RedirectResponse(url="/dashboard", status_code=303)
+    response.delete_cookie(_DASHBOARD_COOKIE, path="/")
+    return response
 
 
 @app.post("/api/anthbot/telemetry", status_code=202)
@@ -363,6 +478,9 @@ def admin_stats() -> dict[str, Any]:
 
     with _db() as conn:
         total = conn.execute("SELECT COUNT(*) FROM installations").fetchone()[0]
+        total_devices = conn.execute(
+            "SELECT COALESCE(SUM(device_count), 0) FROM installations"
+        ).fetchone()[0]
         active_7d = conn.execute(
             "SELECT COUNT(*) FROM installations WHERE last_seen >= ?", (since_7d,)
         ).fetchone()[0]
@@ -383,9 +501,7 @@ def admin_stats() -> dict[str, Any]:
             ORDER BY count DESC, name ASC
             """
         ).fetchall()
-        install_rows = conn.execute(
-            "SELECT model_counts_json FROM installations"
-        ).fetchall()
+        install_rows = conn.execute("SELECT model_counts_json FROM installations").fetchall()
         diag_24h = conn.execute(
             "SELECT COUNT(*) FROM diagnostics WHERE received_at >= ?", (since_24h,)
         ).fetchone()[0]
@@ -420,6 +536,7 @@ def admin_stats() -> dict[str, Any]:
             "active_7d": active_7d,
             "active_30d": active_30d,
         },
+        "total_devices": total_devices,
         "by_country": [dict(row) for row in country_rows],
         "by_integration_version": [dict(row) for row in version_rows],
         "by_model": [
@@ -434,6 +551,82 @@ def admin_stats() -> dict[str, Any]:
             "by_trigger_30d": [dict(row) for row in trigger_rows],
         },
     }
+
+
+@app.get("/api/anthbot/admin/installations", dependencies=[Depends(require_admin)])
+def admin_installations(
+    q: str | None = Query(default=None, max_length=160),
+    country: str | None = Query(default=None, max_length=128),
+    model: str | None = Query(default=None, max_length=128),
+    version: str | None = Query(default=None, max_length=64),
+    active_days: int | None = Query(default=None, ge=1, le=3650),
+    sort: str = Query(default="last_seen", max_length=32),
+    order: Literal["asc", "desc"] = Query(default="desc"),
+    limit: int = Query(default=200, ge=1, le=500),
+) -> dict[str, Any]:
+    with _db() as conn:
+        rows = conn.execute(
+            """
+            SELECT installation_id, first_seen, last_seen, last_event, country,
+                   integration_version, home_assistant_version, device_count,
+                   model_counts_json
+            FROM installations
+            """
+        ).fetchall()
+
+    items = [_installation_from_row(row) for row in rows]
+    if country:
+        items = [item for item in items if (item.get("country") or "Unknown") == country]
+    if version:
+        items = [
+            item
+            for item in items
+            if (item.get("integration_version") or "Unknown") == version
+        ]
+    if model:
+        items = [item for item in items if model in item.get("model_counts", {})]
+    if active_days is not None:
+        cutoff = _iso(_utcnow() - timedelta(days=active_days))
+        items = [item for item in items if str(item.get("last_seen") or "") >= cutoff]
+    if q:
+        needle = q.casefold()
+        filtered: list[dict[str, Any]] = []
+        for item in items:
+            haystack = " ".join(
+                [
+                    str(item.get("installation_id") or ""),
+                    str(item.get("country") or ""),
+                    str(item.get("integration_version") or ""),
+                    str(item.get("home_assistant_version") or ""),
+                    str(item.get("last_event") or ""),
+                    " ".join(item.get("model_counts", {}).keys()),
+                ]
+            ).casefold()
+            if needle in haystack:
+                filtered.append(item)
+        items = filtered
+
+    allowed_sort = {
+        "installation_id",
+        "country",
+        "device_count",
+        "integration_version",
+        "home_assistant_version",
+        "first_seen",
+        "last_seen",
+        "last_event",
+    }
+    sort_key = sort if sort in allowed_sort else "last_seen"
+
+    def _sort_value(item: dict[str, Any]):
+        value = item.get(sort_key)
+        if sort_key == "device_count":
+            return int(value or 0)
+        return str(value or "").casefold()
+
+    items.sort(key=_sort_value, reverse=order == "desc")
+    total_matching = len(items)
+    return {"count": total_matching, "items": items[:limit]}
 
 
 @app.get("/api/anthbot/admin/diagnostics", dependencies=[Depends(require_admin)])
