@@ -23,6 +23,9 @@ COPY app.py ./app.py
 COPY asgi.py ./asgi.py
 COPY dashboard.html ./dashboard.html
 COPY dashboard_login.html ./dashboard_login.html
+COPY developer_agent_api.py ./developer_agent_api.py
+COPY developer_agent_dashboard.py ./developer_agent_dashboard.py
+COPY developer_agent_dashboard.html ./developer_agent_dashboard.html
 COPY run.sh /run.sh
 RUN chmod a+x /run.sh
 
