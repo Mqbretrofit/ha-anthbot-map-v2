@@ -8,6 +8,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_DIR = ROOT / "custom_components" / "anthbot_map"
+FRONTEND_DIR = PACKAGE_DIR / "frontend"
 
 
 def _load_module(name: str, filename: str):
@@ -55,7 +56,6 @@ class DeveloperReportingTests(unittest.TestCase):
             ],
             home_assistant_version="2026.9.0",
         )
-
         self.assertEqual(payload["country"], "Hungary")
         self.assertEqual(payload["device_count"], 3)
         self.assertEqual(payload["models"], ["Genie 1000", "M9 Pro"])
@@ -78,19 +78,40 @@ class DeveloperReportingTests(unittest.TestCase):
         self.assertEqual(payload["report"], report)
         self.assertEqual(payload["trigger"], "no_go_crossing")
 
-    def test_config_flow_requires_explicit_opt_in_before_usage_send(self) -> None:
+    def test_reporting_is_not_mixed_into_account_or_battery_saver_forms(self) -> None:
         source = (PACKAGE_DIR / "config_flow.py").read_text(encoding="utf-8")
-        const_source = (PACKAGE_DIR / "const.py").read_text(encoding="utf-8")
         strings = (PACKAGE_DIR / "strings.json").read_text(encoding="utf-8")
+        self.assertNotIn("CONF_SHARE_ANONYMOUS_USAGE", source)
+        self.assertNotIn("CONF_SEND_AUTOMATIC_DIAGNOSTICS", source)
+        self.assertNotIn('"share_anonymous_usage"', strings)
+        self.assertNotIn('"send_automatic_diagnostics"', strings)
+        self.assertIn("CONF_CHARGER_SWITCH", source)
+        self.assertIn("options[CONF_BATTERY_SAVER_CONFIGS] = configs", source)
 
-        self.assertIn("DEFAULT_SHARE_ANONYMOUS_USAGE = False", const_source)
-        self.assertIn("DEFAULT_SEND_AUTOMATIC_DIAGNOSTICS = False", const_source)
-        self.assertIn(
-            "if bool(user_input.get(CONF_SHARE_ANONYMOUS_USAGE, False)):", source
-        )
-        self.assertIn("CONF_SEND_AUTOMATIC_DIAGNOSTICS", source)
-        self.assertIn("developer_reporting", source)
-        self.assertIn("Privacy information", strings)
+    def test_popup_follows_home_assistant_language_with_english_fallback(self) -> None:
+        source = (FRONTEND_DIR / "developer-optin.js").read_text(encoding="utf-8")
+        self.assertIn('hass?.locale?.language || hass?.language || "en"', source)
+        self.assertIn('return ANTHBOT_OPTIN_SUPPORTED.has(base) ? base : "en"', source)
+        self.assertNotIn("<select", source.lower())
+        for language in (
+            "en", "hu", "de", "fr", "es", "it", "pt", "nl", "pl", "cs",
+            "sk", "ro", "da", "sv", "no", "fi", "zh-CN", "zh-TW", "tr",
+            "th", "vi", "ko", "km",
+        ):
+            self.assertIn(f'"{language}"', source)
+
+    def test_popup_backend_is_version_gated_and_permanently_acknowledges_opt_in(self) -> None:
+        source = (PACKAGE_DIR / "developer_optin.py").read_text(encoding="utf-8")
+        self.assertIn('CONF_DEVELOPER_PROMPT_VERSION = "developer_prompt_version"', source)
+        self.assertIn('CONF_DEVELOPER_OPT_IN_ACKNOWLEDGED = "developer_opt_in_acknowledged"', source)
+        self.assertIn('"should_show": not acknowledged and prompt_version != version', source)
+        self.assertIn("options[CONF_DEVELOPER_OPT_IN_ACKNOWLEDGED] = True", source)
+        self.assertIn('event="opt_in"', source)
+
+    def test_popup_is_registered_from_independent_tracker_platform(self) -> None:
+        source = (PACKAGE_DIR / "device_tracker.py").read_text(encoding="utf-8")
+        self.assertIn("from .developer_optin import async_register_developer_optin", source)
+        self.assertIn("await async_register_developer_optin(hass)", source)
 
     def test_privacy_document_states_reporting_is_optional(self) -> None:
         privacy = (ROOT / "PRIVACY.md").read_text(encoding="utf-8")

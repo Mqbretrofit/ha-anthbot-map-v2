@@ -19,6 +19,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import AnthbotGenieDataUpdateCoordinator
+from .developer_optin import async_register_developer_optin
 
 
 def _safe_get(data: dict[str, Any], *path: str) -> Any:
@@ -36,6 +37,11 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the mower location tracker from a config entry."""
+    # Developer-reporting consent is intentionally registered from this small,
+    # independent platform so mower control, map rendering and Battery Saver
+    # remain untouched. Registration is idempotent for multi-mower accounts.
+    await async_register_developer_optin(hass)
+
     coordinators: list[AnthbotGenieDataUpdateCoordinator] = hass.data[DOMAIN][
         entry.entry_id
     ]

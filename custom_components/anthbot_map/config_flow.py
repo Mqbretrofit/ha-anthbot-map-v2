@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import logging
-import uuid
 
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.const import CONF_NAME, __version__ as HA_VERSION
+from homeassistant.const import CONF_NAME
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
@@ -23,11 +22,8 @@ from .const import (
     CONF_BATTERY_SAVER_CONFIGS,
     CONF_CHARGE_LIMIT,
     CONF_CHARGER_SWITCH,
-    CONF_DEVELOPER_INSTALLATION_ID,
     CONF_MAINTENANCE_LEVEL,
     CONF_RESUME_LEVEL,
-    CONF_SEND_AUTOMATIC_DIAGNOSTICS,
-    CONF_SHARE_ANONYMOUS_USAGE,
     CONF_SHARED_RTK_POWER,
     CONF_USERNAME,
     COUNTRY_AREA_CODES,
@@ -38,18 +34,10 @@ from .const import (
     DEFAULT_BATTERY_SAVER_CHARGE_LIMIT,
     DEFAULT_BATTERY_SAVER_MAINTENANCE_LEVEL,
     DEFAULT_BATTERY_SAVER_RESUME_LEVEL,
-    DEFAULT_SEND_AUTOMATIC_DIAGNOSTICS,
-    DEFAULT_SHARE_ANONYMOUS_USAGE,
-    DEVELOPER_TELEMETRY_ENDPOINT,
     DOMAIN,
 )
-from .developer_reporting import async_send_anonymous_usage_report
 
 _LOGGER = logging.getLogger(__name__)
-_PRIVACY_URL = (
-    "https://github.com/Mqbretrofit/ha-anthbot-map-v2/blob/"
-    "test/no-go-path-crossing-diagnostics/PRIVACY.md"
-)
 
 
 class AnthbotGenieConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -88,28 +76,11 @@ class AnthbotGenieConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if not devices:
                     errors["base"] = "no_devices"
                 else:
-                    entry_data = dict(user_input)
-                    installation_id = str(uuid.uuid4())
-                    entry_data[CONF_DEVELOPER_INSTALLATION_ID] = installation_id
-
-                    if bool(user_input.get(CONF_SHARE_ANONYMOUS_USAGE, False)):
-                        # Best effort only: reporting must never delay or block
-                        # successful Anthbot setup.
-                        self.hass.async_create_task(
-                            async_send_anonymous_usage_report(
-                                session,
-                                DEVELOPER_TELEMETRY_ENDPOINT,
-                                installation_id=installation_id,
-                                area_code=user_input[CONF_AREA_CODE],
-                                devices=devices,
-                                home_assistant_version=HA_VERSION,
-                                event="installation",
-                            )
-                        )
-
+                    # Developer reporting is deliberately not mixed into account
+                    # setup. The separate, optional frontend popup handles consent.
                     return self.async_create_entry(
                         title=user_input[CONF_NAME],
-                        data=entry_data,
+                        data=dict(user_input),
                     )
             except AnthbotGenieApiError as err:
                 _LOGGER.warning("Anthbot login or device discovery failed: %s", err)
@@ -140,46 +111,23 @@ class AnthbotGenieConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(
                     CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL
                 ): vol.All(vol.Coerce(int), vol.Range(min=10, max=3600)),
-                vol.Optional(
-                    CONF_SHARE_ANONYMOUS_USAGE,
-                    default=DEFAULT_SHARE_ANONYMOUS_USAGE,
-                ): selector.BooleanSelector(),
-                vol.Optional(
-                    CONF_SEND_AUTOMATIC_DIAGNOSTICS,
-                    default=DEFAULT_SEND_AUTOMATIC_DIAGNOSTICS,
-                ): selector.BooleanSelector(),
             }
         )
         return self.async_show_form(
             step_id="user",
             data_schema=schema,
             errors=errors,
-            description_placeholders={"privacy_url": _PRIVACY_URL},
         )
 
 
 class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
-    """Configure battery-saving behavior and developer reporting."""
+    """Configure per-mower Battery Saver behavior."""
 
     def __init__(self) -> None:
         self._serial_number: str | None = None
 
     def _coordinators(self) -> list:
         return self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, [])
-
-    def _current_option(self, key: str, default: bool = False) -> bool:
-        if key in self.config_entry.options:
-            return bool(self.config_entry.options.get(key))
-        return bool(self.config_entry.data.get(key, default))
-
-    def _installation_id(self) -> str:
-        """Return a stable local reporting ID, creating one for legacy entries."""
-        value = self.config_entry.options.get(CONF_DEVELOPER_INSTALLATION_ID)
-        if not isinstance(value, str) or not value:
-            value = self.config_entry.data.get(CONF_DEVELOPER_INSTALLATION_ID)
-        if isinstance(value, str) and value:
-            return value
-        return str(uuid.uuid4())
 
     async def async_step_init(self, user_input: dict | None = None) -> FlowResult:
         """Choose which discovered mower should be configured."""
@@ -216,7 +164,7 @@ class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
     async def async_step_battery_saver(
         self, user_input: dict | None = None
     ) -> FlowResult:
-        """Configure charger limits plus the two global reporting choices."""
+        """Configure the existing per-mower Battery Saver settings."""
         if self._serial_number is None:
             return await self.async_step_init()
 
@@ -225,14 +173,6 @@ class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
         current = configs.get(self._serial_number, {})
         if not isinstance(current, dict):
             current = {}
-
-        current_usage = self._current_option(
-            CONF_SHARE_ANONYMOUS_USAGE, DEFAULT_SHARE_ANONYMOUS_USAGE
-        )
-        current_diagnostics = self._current_option(
-            CONF_SEND_AUTOMATIC_DIAGNOSTICS,
-            DEFAULT_SEND_AUTOMATIC_DIAGNOSTICS,
-        )
 
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -243,23 +183,6 @@ class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
             ):
                 errors["base"] = "invalid_battery_thresholds"
             else:
-                new_usage = bool(user_input.get(CONF_SHARE_ANONYMOUS_USAGE, False))
-                new_diagnostics = bool(
-                    user_input.get(CONF_SEND_AUTOMATIC_DIAGNOSTICS, False)
-                )
-                installation_id = self._installation_id()
-
-                if (
-                    self.config_entry.data.get(CONF_DEVELOPER_INSTALLATION_ID)
-                    != installation_id
-                ):
-                    entry_data = dict(self.config_entry.data)
-                    entry_data[CONF_DEVELOPER_INSTALLATION_ID] = installation_id
-                    self.hass.config_entries.async_update_entry(
-                        self.config_entry,
-                        data=entry_data,
-                    )
-
                 saved_config = {
                     CONF_CHARGER_SWITCH: user_input[CONF_CHARGER_SWITCH],
                     CONF_CHARGE_LIMIT: user_input[CONF_CHARGE_LIMIT],
@@ -274,32 +197,10 @@ class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
                 }
                 configs[self._serial_number] = saved_config
 
+                # Preserve every unrelated option exactly as-is. Battery Saver
+                # must never overwrite developer-reporting consent or other data.
                 options = dict(self.config_entry.options)
                 options[CONF_BATTERY_SAVER_CONFIGS] = configs
-                options[CONF_SHARE_ANONYMOUS_USAGE] = new_usage
-                options[CONF_SEND_AUTOMATIC_DIAGNOSTICS] = new_diagnostics
-                options[CONF_DEVELOPER_INSTALLATION_ID] = installation_id
-
-                # Existing users who switch usage reporting on send one minimal
-                # opt-in report immediately. Battery-saver edits alone never send.
-                if new_usage and not current_usage:
-                    coordinators = self._coordinators()
-                    if coordinators:
-                        session = async_get_clientsession(self.hass)
-                        self.hass.async_create_task(
-                            async_send_anonymous_usage_report(
-                                session,
-                                DEVELOPER_TELEMETRY_ENDPOINT,
-                                installation_id=installation_id,
-                                area_code=self.config_entry.data.get(CONF_AREA_CODE),
-                                devices=[
-                                    coordinator.device for coordinator in coordinators
-                                ],
-                                home_assistant_version=HA_VERSION,
-                                event="opt_in",
-                            )
-                        )
-
                 return self.async_create_entry(title="", data=options)
 
         charger_entity = current.get(CONF_CHARGER_SWITCH)
@@ -337,14 +238,6 @@ class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
                 CONF_SHARED_RTK_POWER,
                 default=bool(current.get(CONF_SHARED_RTK_POWER, False)),
             ): selector.BooleanSelector(),
-            vol.Optional(
-                CONF_SHARE_ANONYMOUS_USAGE,
-                default=current_usage,
-            ): selector.BooleanSelector(),
-            vol.Optional(
-                CONF_SEND_AUTOMATIC_DIAGNOSTICS,
-                default=current_diagnostics,
-            ): selector.BooleanSelector(),
         }
         return self.async_show_form(
             step_id="battery_saver",
@@ -352,6 +245,5 @@ class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
             errors=errors,
             description_placeholders={
                 "serial_number": self._serial_number,
-                "privacy_url": _PRIVACY_URL,
             },
         )
