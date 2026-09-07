@@ -61,31 +61,23 @@ class DeveloperAgentReadonlyTests(unittest.TestCase):
         self.assertNotIn("expires_at", source)
         self.assertNotIn("ttl", source.lower())
 
-    def test_agent_consent_is_independent_from_battery_saver(self) -> None:
-        optin = (PACKAGE / "developer_agent_optin.py").read_text(encoding="utf-8")
+    def test_agent_stays_separate_but_consent_popups_are_not_registered(self) -> None:
         tracker = (PACKAGE / "device_tracker.py").read_text(encoding="utf-8")
         config_flow = (PACKAGE / "config_flow.py").read_text(encoding="utf-8")
-        self.assertIn("CONF_DEVELOPER_AGENT_ENABLED", optin)
-        self.assertIn("async_register_developer_agent_optin", tracker)
         self.assertIn("async_register_developer_agent", tracker)
+        self.assertNotIn("async_register_developer_agent_optin", tracker)
+        self.assertNotIn("async_register_developer_optin", tracker)
         self.assertNotIn("CONF_DEVELOPER_AGENT_ENABLED", config_flow)
 
-    def test_agent_popup_follows_ha_language_and_is_mirrored(self) -> None:
+    def test_legacy_popup_assets_remain_mirrored_but_are_not_auto_registered(self) -> None:
         source = (FRONTEND / "developer-agent-optin.js").read_text(encoding="utf-8")
-        self.assertIn('hass?.locale?.language || hass?.language || "en"', source)
-        self.assertIn("ANTHBOT_AGENT_SUPPORTED", source)
-        self.assertIn("developer_agent_update", source)
-        self.assertIn("nincs időkorlátja", source)
-        for language in (
-            "en", "hu", "de", "fr", "es", "it", "pt", "nl", "pl", "cs",
-            "sk", "ro", "da", "sv", "no", "fi", "zh-CN", "zh-TW", "tr",
-            "th", "vi", "ko", "km",
-        ):
-            self.assertIn(f'"{language}"', source)
         self.assertEqual(
             source,
             (WWW / "developer-agent-optin.js").read_text(encoding="utf-8"),
         )
+        tracker = (PACKAGE / "device_tracker.py").read_text(encoding="utf-8")
+        self.assertNotIn("developer-agent-optin.js", tracker)
+        self.assertNotIn("developer-optin.js", tracker)
 
     def test_agent_endpoints_are_project_controlled(self) -> None:
         const = (PACKAGE / "const.py").read_text(encoding="utf-8")
