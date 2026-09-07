@@ -46,6 +46,10 @@ from .const import (
 from .developer_reporting import async_send_anonymous_usage_report
 
 _LOGGER = logging.getLogger(__name__)
+_PRIVACY_URL = (
+    "https://github.com/Mqbretrofit/ha-anthbot-map-v2/blob/"
+    "test/no-go-path-crossing-diagnostics/PRIVACY.md"
+)
 
 
 class AnthbotGenieConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -146,7 +150,12 @@ class AnthbotGenieConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ): selector.BooleanSelector(),
             }
         )
-        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+        return self.async_show_form(
+            step_id="user",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={"privacy_url": _PRIVACY_URL},
+        )
 
 
 class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
@@ -162,6 +171,15 @@ class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
         if key in self.config_entry.options:
             return bool(self.config_entry.options.get(key))
         return bool(self.config_entry.data.get(key, default))
+
+    def _installation_id(self) -> str:
+        """Return a stable local reporting ID, creating one for legacy entries."""
+        value = self.config_entry.options.get(CONF_DEVELOPER_INSTALLATION_ID)
+        if not isinstance(value, str) or not value:
+            value = self.config_entry.data.get(CONF_DEVELOPER_INSTALLATION_ID)
+        if isinstance(value, str) and value:
+            return value
+        return str(uuid.uuid4())
 
     async def async_step_init(self, user_input: dict | None = None) -> FlowResult:
         """Choose which group of integration settings to edit."""
@@ -187,18 +205,17 @@ class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
             new_diagnostics = bool(
                 user_input.get(CONF_SEND_AUTOMATIC_DIAGNOSTICS, False)
             )
+            installation_id = self._installation_id()
             options = dict(self.config_entry.options)
             options[CONF_SHARE_ANONYMOUS_USAGE] = new_usage
             options[CONF_SEND_AUTOMATIC_DIAGNOSTICS] = new_diagnostics
+            options[CONF_DEVELOPER_INSTALLATION_ID] = installation_id
 
             # If an existing user opts in later, send the same minimal
             # installation payload once at the moment of opt-in.
             if new_usage and not current_usage:
-                installation_id = self.config_entry.data.get(
-                    CONF_DEVELOPER_INSTALLATION_ID
-                )
                 coordinators = self._coordinators()
-                if isinstance(installation_id, str) and installation_id and coordinators:
+                if coordinators:
                     session = async_get_clientsession(self.hass)
                     self.hass.async_create_task(
                         async_send_anonymous_usage_report(
@@ -228,6 +245,7 @@ class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
                     ): selector.BooleanSelector(),
                 }
             ),
+            description_placeholders={"privacy_url": _PRIVACY_URL},
         )
 
     async def async_step_battery_saver(
