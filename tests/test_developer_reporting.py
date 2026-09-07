@@ -38,6 +38,11 @@ class _Device:
         self.alias = alias
 
 
+class _NeverPostSession:
+    def post(self, *args, **kwargs):
+        raise AssertionError("blocked reporting endpoint must not be contacted")
+
+
 class DeveloperReportingTests(unittest.TestCase):
     def test_usage_payload_is_minimal_and_model_aware(self) -> None:
         payload = MODULE.build_anonymous_usage_payload(
@@ -92,6 +97,33 @@ class DeveloperReportingTests(unittest.TestCase):
         self.assertIn("optional and disabled by default", privacy)
         self.assertIn("works without enabling either reporting option", privacy)
         self.assertIn("does **not** contain", privacy)
+
+    def test_reporting_endpoint_requires_https_and_blocks_vendor_host(self) -> None:
+        self.assertTrue(
+            MODULE.reporting_endpoint_allowed(
+                "https://reports.example.org/api/anthbot/telemetry"
+            )
+        )
+        self.assertFalse(
+            MODULE.reporting_endpoint_allowed(
+                "http://reports.example.org/api/anthbot/telemetry"
+            )
+        )
+        self.assertFalse(
+            MODULE.reporting_endpoint_allowed(
+                "https://installer.tmt-automation.com/api/anthbot/telemetry"
+            )
+        )
+
+
+class DeveloperReportingAsyncTests(unittest.IsolatedAsyncioTestCase):
+    async def test_vendor_endpoint_is_blocked_before_network_call(self) -> None:
+        result = await MODULE.async_post_json(
+            _NeverPostSession(),
+            "https://installer.tmt-automation.com/api/anthbot/telemetry",
+            {"test": True},
+        )
+        self.assertFalse(result)
 
 
 if __name__ == "__main__":
