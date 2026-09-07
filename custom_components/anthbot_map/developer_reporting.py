@@ -13,12 +13,17 @@ import json
 import logging
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import urlparse
 
 from .const import COUNTRY_AREA_CODES
 
 _LOGGER = logging.getLogger(__name__)
 _USAGE_SCHEMA = "anthbot-map-anonymous-usage-v1"
 _DIAGNOSTICS_SCHEMA = "anthbot-map-diagnostics-upload-v1"
+
+# Never send developer reports to ANTHBOT/TMT vendor infrastructure. The
+# reporting backend must be a server controlled by this integration project.
+_BLOCKED_REPORTING_HOSTS = {"installer.tmt-automation.com"}
 
 
 def _integration_version() -> str | None:
@@ -88,6 +93,22 @@ def build_diagnostics_upload_payload(
     }
 
 
+def reporting_endpoint_allowed(endpoint: object) -> bool:
+    """Allow only HTTPS endpoints on project-controlled infrastructure."""
+    if not isinstance(endpoint, str) or not endpoint.strip():
+        return False
+    try:
+        parsed = urlparse(endpoint.strip())
+    except ValueError:
+        return False
+    hostname = (parsed.hostname or "").lower()
+    return (
+        parsed.scheme == "https"
+        and bool(hostname)
+        and hostname not in _BLOCKED_REPORTING_HOSTS
+    )
+
+
 async def async_post_json(
     session: Any,
     endpoint: str,
@@ -96,6 +117,9 @@ async def async_post_json(
     timeout_seconds: int = 8,
 ) -> bool:
     """POST JSON without ever making developer reporting block integration setup."""
+    if not reporting_endpoint_allowed(endpoint):
+        _LOGGER.debug("Developer reporting endpoint is disabled or not allowed")
+        return False
     try:
         async with session.post(
             endpoint,
