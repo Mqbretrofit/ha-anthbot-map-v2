@@ -149,7 +149,7 @@ class ReportingServerTests(unittest.TestCase):
     def test_dashboard_login_sets_secure_session_cookie(self) -> None:
         login_page = self.client.get("/dashboard")
         self.assertEqual(login_page.status_code, 200)
-        self.assertIn("Admin dashboard", login_page.text)
+        self.assertIn("Admin felület", login_page.text)
 
         bad = self.client.post(
             "/dashboard/login", data={"token": "wrong"}, follow_redirects=False
@@ -166,7 +166,7 @@ class ReportingServerTests(unittest.TestCase):
 
         dashboard = self.client.get("/dashboard")
         self.assertEqual(dashboard.status_code, 200)
-        self.assertIn("Usage telemetry & diagnostics dashboard", dashboard.text)
+        self.assertIn("Használati statisztikák és diagnosztika", dashboard.text)
 
         stats = self.client.get("/api/anthbot/admin/stats")
         self.assertEqual(stats.status_code, 200)
