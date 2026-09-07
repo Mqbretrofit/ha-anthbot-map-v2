@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Anthbot Map",
-        "description": "Configure Anthbot account discovery and cloud shadow polling. Developer reporting is optional and disabled by default. If enabled, anonymous usage statistics contain only integration/Home Assistant version, country, mower model/count and a random installation ID. Automatic diagnostics can contain technical mower/path state but excludes passwords, tokens and cloud credentials. [Privacy information](https://github.com/Mqbretrofit/ha-anthbot-map-v2/blob/test/no-go-path-crossing-diagnostics/PRIVACY.md)",
+        "description": "Configure Anthbot account discovery and cloud shadow polling. Developer reporting is optional and disabled by default. If enabled, anonymous usage statistics contain only integration/Home Assistant version, country, mower model/count and a random installation ID. Automatic diagnostics can contain technical mower/path state but excludes passwords, tokens and cloud credentials. [Privacy information]({privacy_url})",
         "data": {
           "name": "Name",
           "username": "Email / username",
@@ -37,7 +37,7 @@
       },
       "developer_reporting": {
         "title": "Developer reporting and privacy",
-        "description": "Both options are independent and optional. Turning them off stops future developer-report uploads. Anonymous usage statistics do not include account details, serial numbers, GPS coordinates or map data. Automatic diagnostics are privacy-filtered before upload. [Privacy information](https://github.com/Mqbretrofit/ha-anthbot-map-v2/blob/test/no-go-path-crossing-diagnostics/PRIVACY.md)",
+        "description": "Both options are independent and optional. Turning them off stops future developer-report uploads. Anonymous usage statistics do not include account details, serial numbers, GPS coordinates or map data. Automatic diagnostics are privacy-filtered before upload. [Privacy information]({privacy_url})",
         "data": {
           "share_anonymous_usage": "Share anonymous usage statistics with the developer",
           "send_automatic_diagnostics": "Send automatic diagnostics when a relevant error is detected"
