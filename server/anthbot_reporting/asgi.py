@@ -7,12 +7,14 @@ from developer_agent_api import (
     init_developer_agent_tables,
     router as developer_agent_router,
 )
+from developer_agent_dashboard import router as developer_agent_dashboard_router
 
 # Keep the developer-agent tables and routes isolated from the existing
 # reporting API. Import-time initialization is idempotent and uses CREATE TABLE
 # IF NOT EXISTS, so existing telemetry/diagnostics data is untouched.
 init_developer_agent_tables()
 fastapi_app.include_router(developer_agent_router)
+fastapi_app.include_router(developer_agent_dashboard_router)
 
 # Only the dashboard HTML is embeddable, and only from the Home Assistant
 # origins used by this deployment. Public ingest/admin API responses are not
