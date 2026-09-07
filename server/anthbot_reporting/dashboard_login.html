@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ANTHBOT Reporting Login</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 22px; color: #eef4ff; background: radial-gradient(circle at top left, #1a3157 0, #0b1220 34rem), #0b1220; }
+    .card { width: min(440px, 100%); background: linear-gradient(180deg, #182235, #0f1726); border: 1px solid #263349; border-radius: 20px; padding: 28px; box-shadow: 0 22px 65px rgba(0,0,0,.35); }
+    .brand { display: flex; align-items: center; gap: 13px; margin-bottom: 18px; }
+    .logo { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; font-weight: 800; background: linear-gradient(135deg,#6aa9ff,#8e7dff); }
+    h1 { margin: 0; font-size: 1.55rem; }
+    p { color: #9fb0ca; line-height: 1.55; }
+    form { display: grid; gap: 12px; margin-top: 20px; }
+    input { width: 100%; background: #0d1626; border: 1px solid #263349; color: #eef4ff; min-height: 46px; border-radius: 12px; padding: 10px 12px; outline: none; font: inherit; }
+    input:focus { border-color: #6aa9ff; box-shadow: 0 0 0 3px rgba(106,169,255,.12); }
+    button { min-height: 46px; border: 0; border-radius: 12px; color: white; cursor: pointer; font: inherit; font-weight: 700; background: linear-gradient(135deg,#4f8fe8,#6c63e7); }
+    .error { margin-top: 14px; color: #ffc4cc; background: rgba(255,122,138,.09); border: 1px solid rgba(255,122,138,.25); padding: 10px 12px; border-radius: 10px; }
+    .small { color: #7f91ac; font-size: .8rem; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="brand"><div class="logo">A</div><div><h1>ANTHBOT Reporting</h1><div style="color:#9fb0ca;font-size:.86rem">Admin dashboard</div></div></div>
+    <p>Enter the admin token configured in the ANTHBOT Reporting Server app. The token stays in an encrypted HTTPS request and is not stored in the browser.</p>
+    <form method="post" action="/dashboard/login">
+      <input type="password" name="token" placeholder="Admin token" autocomplete="current-password" required autofocus>
+      <button type="submit">Sign in</button>
+    </form>
+    __ERROR__
+    <div class="small">Session cookie: Secure · HttpOnly · SameSite=Strict</div>
+  </main>
+</body>
+</html>
