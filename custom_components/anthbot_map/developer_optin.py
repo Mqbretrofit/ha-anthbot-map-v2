@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import secrets
 import uuid
 from typing import Any
 
@@ -22,6 +23,8 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     CONF_AREA_CODE,
+    CONF_DEVELOPER_AGENT_ENABLED,
+    CONF_DEVELOPER_AGENT_KEY,
     CONF_DEVELOPER_INSTALLATION_ID,
     CONF_SEND_AUTOMATIC_DIAGNOSTICS,
     CONF_SHARE_ANONYMOUS_USAGE,
@@ -41,6 +44,7 @@ _UPDATE_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_SHARE_ANONYMOUS_USAGE): cv.boolean,
         vol.Optional(CONF_SEND_AUTOMATIC_DIAGNOSTICS): cv.boolean,
+        vol.Optional(CONF_DEVELOPER_AGENT_ENABLED): cv.boolean,
         vol.Optional("dismissed", default=False): cv.boolean,
     },
     extra=vol.PREVENT_EXTRA,
@@ -81,6 +85,7 @@ def _preference_state(hass: HomeAssistant) -> dict[str, Any]:
             "integration_version": version,
             "share_anonymous_usage": False,
             "send_automatic_diagnostics": False,
+            "developer_agent_enabled": False,
             "acknowledged": False,
             "prompt_version": None,
             "should_show": False,
@@ -104,6 +109,9 @@ def _preference_state(hass: HomeAssistant) -> dict[str, Any]:
         ),
         "send_automatic_diagnostics": _entry_option(
             entry, CONF_SEND_AUTOMATIC_DIAGNOSTICS, False
+        ),
+        "developer_agent_enabled": _entry_option(
+            entry, CONF_DEVELOPER_AGENT_ENABLED, False
         ),
         "acknowledged": acknowledged,
         "prompt_version": prompt_version,
@@ -156,10 +164,14 @@ async def async_register_developer_optin(hass: HomeAssistant) -> None:
         old_diagnostics = _entry_option(
             entry, CONF_SEND_AUTOMATIC_DIAGNOSTICS, False
         )
+        old_agent = _entry_option(entry, CONF_DEVELOPER_AGENT_ENABLED, False)
+
         usage_was_submitted = CONF_SHARE_ANONYMOUS_USAGE in service_call.data
         diagnostics_was_submitted = (
             CONF_SEND_AUTOMATIC_DIAGNOSTICS in service_call.data
         )
+        agent_was_submitted = CONF_DEVELOPER_AGENT_ENABLED in service_call.data
+
         new_usage = bool(
             service_call.data.get(CONF_SHARE_ANONYMOUS_USAGE, old_usage)
         )
@@ -168,12 +180,17 @@ async def async_register_developer_optin(hass: HomeAssistant) -> None:
                 CONF_SEND_AUTOMATIC_DIAGNOSTICS, old_diagnostics
             )
         )
+        new_agent = bool(
+            service_call.data.get(CONF_DEVELOPER_AGENT_ENABLED, old_agent)
+        )
 
         options = dict(entry.options)
         if usage_was_submitted:
             options[CONF_SHARE_ANONYMOUS_USAGE] = new_usage
         if diagnostics_was_submitted:
             options[CONF_SEND_AUTOMATIC_DIAGNOSTICS] = new_diagnostics
+        if agent_was_submitted:
+            options[CONF_DEVELOPER_AGENT_ENABLED] = new_agent
 
         # A dismissal suppresses the popup only for this integration version.
         # Saving at least one enabled checkbox records a permanent acknowledgement;
@@ -188,6 +205,7 @@ async def async_register_developer_optin(hass: HomeAssistant) -> None:
         if (
             (usage_was_submitted and new_usage)
             or (diagnostics_was_submitted and new_diagnostics)
+            or (agent_was_submitted and new_agent)
         ):
             acknowledged = True
         if acknowledged:
@@ -197,15 +215,22 @@ async def async_register_developer_optin(hass: HomeAssistant) -> None:
         installation_id = options.get(CONF_DEVELOPER_INSTALLATION_ID)
         if not isinstance(installation_id, str) or not installation_id:
             installation_id = entry_data.get(CONF_DEVELOPER_INSTALLATION_ID)
-        if (new_usage or new_diagnostics) and (
+        if (new_usage or new_diagnostics or new_agent) and (
             not isinstance(installation_id, str) or not installation_id
         ):
             installation_id = str(uuid.uuid4())
         if isinstance(installation_id, str) and installation_id:
-            # Keep the ID in data as well because automatic diagnostics reads it
-            # from there. It is random and contains no account/device identifier.
+            # Keep the random ID in data as well because background reporting
+            # components read it without exposing account/device identifiers.
             entry_data[CONF_DEVELOPER_INSTALLATION_ID] = installation_id
             options[CONF_DEVELOPER_INSTALLATION_ID] = installation_id
+
+        # The developer-agent key authenticates only this reporting agent. It is
+        # unrelated to the ANTHBOT account and is never returned to the frontend.
+        if new_agent:
+            agent_key = entry_data.get(CONF_DEVELOPER_AGENT_KEY)
+            if not isinstance(agent_key, str) or len(agent_key) < 32:
+                entry_data[CONF_DEVELOPER_AGENT_KEY] = secrets.token_urlsafe(32)
 
         hass.config_entries.async_update_entry(
             entry,
