@@ -3,14 +3,16 @@
     "step": {
       "user": {
         "title": "Anthbot Map",
-        "description": "Configure Anthbot account discovery and cloud shadow polling.",
+        "description": "Configure Anthbot account discovery and cloud shadow polling. Developer reporting is optional and disabled by default. If enabled, anonymous usage statistics contain only integration/Home Assistant version, country, mower model/count and a random installation ID. Automatic diagnostics can contain technical mower/path state but excludes passwords, tokens and cloud credentials. [Privacy information](https://github.com/Mqbretrofit/ha-anthbot-map-v2/blob/test/no-go-path-crossing-diagnostics/PRIVACY.md)",
         "data": {
           "name": "Name",
           "username": "Email / username",
           "password": "Password",
           "api_host": "Anthbot API host",
           "area_code": "Country",
-          "scan_interval": "Polling interval (seconds)"
+          "scan_interval": "Polling interval (seconds)",
+          "share_anonymous_usage": "Share anonymous usage statistics with the developer",
+          "send_automatic_diagnostics": "Send automatic diagnostics when a relevant error is detected"
         }
       }
     },
@@ -26,13 +28,29 @@
   "options": {
     "step": {
       "init": {
+        "title": "Anthbot Map settings",
+        "description": "Choose which settings to edit.",
+        "menu_options": {
+          "developer_reporting": "Developer reporting and privacy",
+          "battery_saver": "Battery saver"
+        }
+      },
+      "developer_reporting": {
+        "title": "Developer reporting and privacy",
+        "description": "Both options are independent and optional. Turning them off stops future developer-report uploads. Anonymous usage statistics do not include account details, serial numbers, GPS coordinates or map data. Automatic diagnostics are privacy-filtered before upload. [Privacy information](https://github.com/Mqbretrofit/ha-anthbot-map-v2/blob/test/no-go-path-crossing-diagnostics/PRIVACY.md)",
+        "data": {
+          "share_anonymous_usage": "Share anonymous usage statistics with the developer",
+          "send_automatic_diagnostics": "Send automatic diagnostics when a relevant error is detected"
+        }
+      },
+      "battery_saver": {
         "title": "Battery saver",
         "description": "Choose the mower to configure.",
         "data": {
           "mower": "Mower"
         }
       },
-      "battery_saver": {
+      "battery_saver_settings": {
         "title": "Battery saver",
         "description": "Configure the charger and limits for {serial_number}. The mode remains inactive until its switch is turned on.",
         "data": {
