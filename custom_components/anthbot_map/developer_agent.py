@@ -71,6 +71,11 @@ def _entry_option(entry: ConfigEntry, key: str, default: bool = False) -> bool:
     return bool(entry.data.get(key, default))
 
 
+def _is_sensitive_key(value: object) -> bool:
+    normalized = str(value).lower().replace("-", "_")
+    return any(part in normalized for part in _SENSITIVE_KEY_PARTS)
+
+
 def _safe_text(value: str) -> str:
     value = _URL_RE.sub("<url>", value)
     value = _BEARER_RE.sub("Bearer <redacted>", value)
@@ -97,8 +102,7 @@ def _safe_value(value: Any, *, depth: int = 0) -> Any:
         result: dict[str, Any] = {}
         for raw_key, child in value.items():
             key = str(raw_key)
-            normalized = key.lower().replace("-", "_")
-            if any(part in normalized for part in _SENSITIVE_KEY_PARTS):
+            if _is_sensitive_key(key):
                 continue
             result[key] = _safe_value(child, depth=depth + 1)
         return result
@@ -116,15 +120,18 @@ def _state_schema_snapshot(coordinator: Any) -> dict[str, Any]:
     state = getattr(coordinator, "reported_state", None)
     if not isinstance(state, dict):
         state = {}
-    keys = sorted(str(key) for key in state)
-    types = {
-        str(key): type(value).__name__
+
+    # Even key names can disclose that a credential/token field exists in a
+    # vendor response, so apply the same credential filter to both the key list
+    # and the type map before anything leaves Home Assistant.
+    safe_items = [
+        (str(key), value)
         for key, value in state.items()
-        if not any(
-            part in str(key).lower().replace("-", "_")
-            for part in _SENSITIVE_KEY_PARTS
-        )
-    }
+        if not _is_sensitive_key(key)
+    ]
+    keys = sorted(key for key, _value in safe_items)
+    types = {key: type(value).__name__ for key, value in safe_items}
+
     selected_names = (
         "robot_sta",
         "mower_status",
@@ -152,7 +159,7 @@ def _state_schema_snapshot(coordinator: Any) -> dict[str, Any]:
     selected = {
         name: _safe_value(state[name])
         for name in selected_names
-        if name in state
+        if name in state and not _is_sensitive_key(name)
     }
     return {
         "top_level_keys": keys,
