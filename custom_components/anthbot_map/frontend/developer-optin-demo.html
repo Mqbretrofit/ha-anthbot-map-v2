@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="hu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ANTHBOT Map – fejlesztés támogatása (teszt)</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --bg:#0f171f; --card:#1c252d; --card2:#222d36; --line:#37454f; --text:#f3f6f8;
+      --muted:#a9b6bf; --primary:#03a9d9; --primary2:#0788ba; --good:#62d991;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;background:linear-gradient(145deg,#111b24,#0b1218);color:var(--text)}
+    button,input{font:inherit}
+    .fake-ha{min-height:100vh;display:grid;grid-template-columns:76px 1fr}
+    .sidebar{background:#111a21;border-right:1px solid #26323a;padding:18px 10px;display:flex;flex-direction:column;align-items:center;gap:20px}
+    .ha-dot{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:#159fd0;color:white;font-weight:900}
+    .side-dot{width:34px;height:34px;border-radius:10px;background:#24323c}
+    .main{padding:24px}
+    .topbar{height:58px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #26323a;margin:-24px -24px 24px;padding:0 22px;background:#131d25}
+    .content-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;opacity:.38;filter:saturate(.7)}
+    .fake-card{height:150px;border:1px solid #31404b;border-radius:16px;background:linear-gradient(180deg,#202b34,#172129)}
+    .demo-note{position:fixed;left:18px;bottom:18px;z-index:10002;padding:10px 12px;border-radius:10px;background:rgba(9,18,24,.9);border:1px solid #33444f;color:#b7c4cc;font-size:12px;box-shadow:0 8px 30px rgba(0,0,0,.35)}
+    .demo-note button{margin-left:8px;border:1px solid #49606e;background:#202d36;color:#fff;border-radius:8px;padding:6px 9px;cursor:pointer}
+    .overlay{position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.58);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:20px}
+    .dialog{width:min(620px,100%);max-height:min(760px,92vh);overflow:auto;background:var(--card);border:1px solid #40505c;border-radius:20px;box-shadow:0 28px 80px rgba(0,0,0,.55)}
+    .head{padding:22px 24px 14px;display:flex;gap:14px;align-items:flex-start}
+    .icon{width:48px;height:48px;flex:0 0 48px;border-radius:15px;display:grid;place-items:center;background:linear-gradient(135deg,var(--primary),#607dff);font-size:24px}
+    h1{font-size:22px;line-height:1.25;margin:1px 0 7px}
+    .subtitle{color:var(--muted);line-height:1.5;font-size:14px}
+    .body{padding:0 24px 6px}
+    .choice{display:flex;align-items:flex-start;gap:12px;padding:15px 14px;margin:11px 0;border:1px solid var(--line);border-radius:14px;background:var(--card2);cursor:pointer}
+    .choice:hover{border-color:#4d6473}
+    .choice input{margin-top:3px;width:22px;height:22px;accent-color:var(--primary);flex:0 0 auto}
+    .choice strong{display:block;font-size:15px;margin-bottom:4px}
+    .choice span{display:block;color:var(--muted);font-size:13px;line-height:1.45}
+    .privacy{margin:14px 2px 4px;padding:13px 14px;border-radius:12px;background:#15222b;color:#b8c8d2;font-size:12.5px;line-height:1.5}
+    .privacy a{color:#62c7ed;text-decoration:none;font-weight:700}
+    .privacy a:hover{text-decoration:underline}
+    .test-warning{margin:12px 2px;color:#ffc86b;font-size:12px;line-height:1.45}
+    .actions{padding:16px 24px 22px;display:flex;justify-content:flex-end;gap:10px;border-top:1px solid #303d46;margin-top:12px}
+    .btn{min-height:42px;border-radius:11px;padding:9px 16px;border:1px solid #4a5964;background:#26333c;color:#fff;font-weight:700;cursor:pointer}
+    .btn.primary{border:0;background:linear-gradient(135deg,var(--primary),var(--primary2));padding-inline:20px}
+    .thanks{padding:34px;text-align:center}
+    .thanks .big{font-size:42px;margin-bottom:10px}.thanks h2{margin:0 0 9px}.thanks p{color:var(--muted);line-height:1.5}
+    @media(max-width:760px){.fake-ha{grid-template-columns:1fr}.sidebar{display:none}.main{padding:14px}.topbar{margin:-14px -14px 16px}.content-grid{grid-template-columns:1fr}.dialog{border-radius:16px}.head{padding:18px 17px 12px}.body{padding:0 17px 5px}.actions{padding:14px 17px 18px;flex-direction:column-reverse}.btn{width:100%}.demo-note{left:10px;right:10px;bottom:10px;text-align:center}}
+  </style>
+</head>
+<body>
+  <div class="fake-ha">
+    <aside class="sidebar"><div class="ha-dot">HA</div><div class="side-dot"></div><div class="side-dot"></div><div class="side-dot"></div></aside>
+    <main class="main">
+      <div class="topbar"><strong>ANTHBOT Map</strong><span style="color:#9fb0aa">Tesztkörnyezet</span></div>
+      <div class="content-grid"><div class="fake-card"></div><div class="fake-card"></div><div class="fake-card"></div><div class="fake-card"></div><div class="fake-card"></div><div class="fake-card"></div></div>
+    </main>
+  </div>
+
+  <div class="overlay" id="overlay" role="dialog" aria-modal="true" aria-labelledby="title">
+    <section class="dialog">
+      <div id="dialog-content">
+        <div class="head">
+          <div class="icon">♥</div>
+          <div>
+            <h1 id="title">Segítenél az ANTHBOT Map fejlesztésében?</h1>
+            <div class="subtitle">Az opcionális használati statisztikák és diagnosztikai adatok megosztásával segíthetsz a hibák gyorsabb javításában és a különböző ANTHBOT modellek jobb támogatásában.</div>
+          </div>
+        </div>
+        <div class="body">
+          <label class="choice">
+            <input id="usage" type="checkbox">
+            <span><strong>Használati statisztikák megosztása</strong><span>Minimális technikai adatok, például integrációverzió, Home Assistant verzió, ország és a használt ANTHBOT modellek száma. Felhasználónév, jelszó, sorozatszám, GPS-pozíció és térkép nem kerül elküldésre.</span></span>
+          </label>
+          <label class="choice">
+            <input id="diagnostics" type="checkbox">
+            <span><strong>Automatikus diagnosztikai jelentések küldése</strong><span>Hiba esetén adatvédelmi szűrésen átesett technikai diagnosztika küldhető a fejlesztés segítésére. A robot vezérlését ez nem módosítja.</span></span>
+          </label>
+          <div class="privacy">Az adatküldés teljesen önkéntes, később bármikor kikapcsolható. <a href="https://github.com/Mqbretrofit/ha-anthbot-map-v2/blob/test/no-go-path-crossing-diagnostics/PRIVACY.md" target="_blank" rel="noopener">Adatvédelmi tájékoztató</a></div>
+          <div class="test-warning"><strong>TESZT:</strong> ezen az oldalon egyik kapcsoló sem küld adatot és nem módosítja az integráció beállításait. Most csak a popup kinézetét és működését próbálod ki.</div>
+        </div>
+        <div class="actions">
+          <button class="btn" id="later" type="button">Most nem</button>
+          <button class="btn primary" id="save" type="button">Beállítások mentése</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="demo-note">Popup prototípus – biztonságos teszt <button id="reopen" type="button">Popup újranyitása</button></div>
+
+  <script>
+    const overlay = document.getElementById('overlay');
+    const content = document.getElementById('dialog-content');
+    const original = content.innerHTML;
+
+    function openPopup() {
+      content.innerHTML = original;
+      overlay.style.display = 'flex';
+      bind();
+    }
+    function closePopup() { overlay.style.display = 'none'; }
+    function bind() {
+      document.getElementById('later')?.addEventListener('click', closePopup);
+      document.getElementById('save')?.addEventListener('click', () => {
+        const usage = document.getElementById('usage')?.checked === true;
+        const diagnostics = document.getElementById('diagnostics')?.checked === true;
+        content.innerHTML = `<div class="thanks"><div class="big">✓</div><h2>${usage || diagnostics ? 'Köszönjük a segítséget!' : 'Beállítások elmentve'}</h2><p>${usage || diagnostics ? 'A végleges változatban a kiválasztott engedélyeket itt mentenénk el, és ez a felugró ablak a későbbi frissítéseknél már nem jelenne meg.' : 'A végleges változatban, ha egyik lehetőséget sem engedélyezed, egy későbbi frissítésnél újra felajánlhatjuk.'}</p><button class="btn primary" id="done" type="button">Rendben</button></div>`;
+        document.getElementById('done')?.addEventListener('click', closePopup);
+      });
+    }
+    document.getElementById('reopen').addEventListener('click', openPopup);
+    bind();
+  </script>
+</body>
+</html>
