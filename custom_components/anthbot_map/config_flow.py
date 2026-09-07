@@ -159,7 +159,7 @@ class AnthbotGenieConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
-    """Configure developer reporting and optional battery-saving behavior."""
+    """Configure battery-saving behavior and developer reporting."""
 
     def __init__(self) -> None:
         self._serial_number: str | None = None
@@ -182,16 +182,50 @@ class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
         return str(uuid.uuid4())
 
     async def async_step_init(self, user_input: dict | None = None) -> FlowResult:
-        """Choose which group of integration settings to edit."""
-        return self.async_show_menu(
+        """Choose which discovered mower should be configured."""
+        coordinators = self._coordinators()
+        if not coordinators:
+            return self.async_abort(reason="no_devices")
+        if len(coordinators) == 1:
+            self._serial_number = coordinators[0].client.serial_number
+            return await self.async_step_battery_saver()
+        if user_input is not None:
+            self._serial_number = user_input["mower"]
+            return await self.async_step_battery_saver()
+        mower_options = [
+            selector.SelectOptionDict(
+                value=coordinator.client.serial_number,
+                label=f"{coordinator.device.alias} ({coordinator.client.serial_number})",
+            )
+            for coordinator in coordinators
+        ]
+        return self.async_show_form(
             step_id="init",
-            menu_options=["developer_reporting", "battery_saver"],
+            data_schema=vol.Schema(
+                {
+                    vol.Required("mower"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=mower_options,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    )
+                }
+            ),
         )
 
-    async def async_step_developer_reporting(
+    async def async_step_battery_saver(
         self, user_input: dict | None = None
     ) -> FlowResult:
-        """Configure the two independent opt-in developer-reporting choices."""
+        """Configure charger limits plus the two global reporting choices."""
+        if self._serial_number is None:
+            return await self.async_step_init()
+
+        stored_configs = self.config_entry.options.get(CONF_BATTERY_SAVER_CONFIGS, {})
+        configs = dict(stored_configs) if isinstance(stored_configs, dict) else {}
+        current = configs.get(self._serial_number, {})
+        if not isinstance(current, dict):
+            current = {}
+
         current_usage = self._current_option(
             CONF_SHARE_ANONYMOUS_USAGE, DEFAULT_SHARE_ANONYMOUS_USAGE
         )
@@ -200,106 +234,6 @@ class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
             DEFAULT_SEND_AUTOMATIC_DIAGNOSTICS,
         )
 
-        if user_input is not None:
-            new_usage = bool(user_input.get(CONF_SHARE_ANONYMOUS_USAGE, False))
-            new_diagnostics = bool(
-                user_input.get(CONF_SEND_AUTOMATIC_DIAGNOSTICS, False)
-            )
-            installation_id = self._installation_id()
-            if self.config_entry.data.get(CONF_DEVELOPER_INSTALLATION_ID) != installation_id:
-                entry_data = dict(self.config_entry.data)
-                entry_data[CONF_DEVELOPER_INSTALLATION_ID] = installation_id
-                self.hass.config_entries.async_update_entry(
-                    self.config_entry,
-                    data=entry_data,
-                )
-            options = dict(self.config_entry.options)
-            options[CONF_SHARE_ANONYMOUS_USAGE] = new_usage
-            options[CONF_SEND_AUTOMATIC_DIAGNOSTICS] = new_diagnostics
-            options[CONF_DEVELOPER_INSTALLATION_ID] = installation_id
-
-            # If an existing user opts in later, send the same minimal
-            # installation payload once at the moment of opt-in.
-            if new_usage and not current_usage:
-                coordinators = self._coordinators()
-                if coordinators:
-                    session = async_get_clientsession(self.hass)
-                    self.hass.async_create_task(
-                        async_send_anonymous_usage_report(
-                            session,
-                            DEVELOPER_TELEMETRY_ENDPOINT,
-                            installation_id=installation_id,
-                            area_code=self.config_entry.data.get(CONF_AREA_CODE),
-                            devices=[coordinator.device for coordinator in coordinators],
-                            home_assistant_version=HA_VERSION,
-                            event="opt_in",
-                        )
-                    )
-
-            return self.async_create_entry(title="", data=options)
-
-        return self.async_show_form(
-            step_id="developer_reporting",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(
-                        CONF_SHARE_ANONYMOUS_USAGE,
-                        default=current_usage,
-                    ): selector.BooleanSelector(),
-                    vol.Optional(
-                        CONF_SEND_AUTOMATIC_DIAGNOSTICS,
-                        default=current_diagnostics,
-                    ): selector.BooleanSelector(),
-                }
-            ),
-            description_placeholders={"privacy_url": _PRIVACY_URL},
-        )
-
-    async def async_step_battery_saver(
-        self, user_input: dict | None = None
-    ) -> FlowResult:
-        """Choose the mower whose battery-saver settings should be edited."""
-        coordinators = self._coordinators()
-        if not coordinators:
-            return self.async_abort(reason="no_devices")
-        if len(coordinators) == 1:
-            self._serial_number = coordinators[0].client.serial_number
-            return await self.async_step_battery_saver_settings()
-        if user_input is not None:
-            self._serial_number = user_input["mower"]
-            return await self.async_step_battery_saver_settings()
-        options = [
-            selector.SelectOptionDict(
-                value=coordinator.client.serial_number,
-                label=f"{coordinator.device.alias} ({coordinator.client.serial_number})",
-            )
-            for coordinator in coordinators
-        ]
-        return self.async_show_form(
-            step_id="battery_saver",
-            data_schema=vol.Schema(
-                {
-                    vol.Required("mower"): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=options,
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
-                    )
-                }
-            ),
-        )
-
-    async def async_step_battery_saver_settings(
-        self, user_input: dict | None = None
-    ) -> FlowResult:
-        """Configure charger entity and charge thresholds."""
-        if self._serial_number is None:
-            return await self.async_step_battery_saver()
-        stored_configs = self.config_entry.options.get(CONF_BATTERY_SAVER_CONFIGS, {})
-        configs = dict(stored_configs) if isinstance(stored_configs, dict) else {}
-        current = configs.get(self._serial_number, {})
-        if not isinstance(current, dict):
-            current = {}
         errors: dict[str, str] = {}
         if user_input is not None:
             if (
@@ -309,17 +243,65 @@ class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
             ):
                 errors["base"] = "invalid_battery_thresholds"
             else:
-                saved_config = dict(user_input)
-                saved_config[CONF_SHARED_RTK_POWER] = bool(
-                    user_input.get(
-                        CONF_SHARED_RTK_POWER,
-                        current.get(CONF_SHARED_RTK_POWER, False),
-                    )
+                new_usage = bool(user_input.get(CONF_SHARE_ANONYMOUS_USAGE, False))
+                new_diagnostics = bool(
+                    user_input.get(CONF_SEND_AUTOMATIC_DIAGNOSTICS, False)
                 )
+                installation_id = self._installation_id()
+
+                if (
+                    self.config_entry.data.get(CONF_DEVELOPER_INSTALLATION_ID)
+                    != installation_id
+                ):
+                    entry_data = dict(self.config_entry.data)
+                    entry_data[CONF_DEVELOPER_INSTALLATION_ID] = installation_id
+                    self.hass.config_entries.async_update_entry(
+                        self.config_entry,
+                        data=entry_data,
+                    )
+
+                saved_config = {
+                    CONF_CHARGER_SWITCH: user_input[CONF_CHARGER_SWITCH],
+                    CONF_CHARGE_LIMIT: user_input[CONF_CHARGE_LIMIT],
+                    CONF_MAINTENANCE_LEVEL: user_input[CONF_MAINTENANCE_LEVEL],
+                    CONF_RESUME_LEVEL: user_input[CONF_RESUME_LEVEL],
+                    CONF_SHARED_RTK_POWER: bool(
+                        user_input.get(
+                            CONF_SHARED_RTK_POWER,
+                            current.get(CONF_SHARED_RTK_POWER, False),
+                        )
+                    ),
+                }
                 configs[self._serial_number] = saved_config
+
                 options = dict(self.config_entry.options)
                 options[CONF_BATTERY_SAVER_CONFIGS] = configs
+                options[CONF_SHARE_ANONYMOUS_USAGE] = new_usage
+                options[CONF_SEND_AUTOMATIC_DIAGNOSTICS] = new_diagnostics
+                options[CONF_DEVELOPER_INSTALLATION_ID] = installation_id
+
+                # Existing users who switch usage reporting on send one minimal
+                # opt-in report immediately. Battery-saver edits alone never send.
+                if new_usage and not current_usage:
+                    coordinators = self._coordinators()
+                    if coordinators:
+                        session = async_get_clientsession(self.hass)
+                        self.hass.async_create_task(
+                            async_send_anonymous_usage_report(
+                                session,
+                                DEVELOPER_TELEMETRY_ENDPOINT,
+                                installation_id=installation_id,
+                                area_code=self.config_entry.data.get(CONF_AREA_CODE),
+                                devices=[
+                                    coordinator.device for coordinator in coordinators
+                                ],
+                                home_assistant_version=HA_VERSION,
+                                event="opt_in",
+                            )
+                        )
+
                 return self.async_create_entry(title="", data=options)
+
         charger_entity = current.get(CONF_CHARGER_SWITCH)
         charger_field = (
             vol.Required(CONF_CHARGER_SWITCH, default=charger_entity)
@@ -355,10 +337,21 @@ class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
                 CONF_SHARED_RTK_POWER,
                 default=bool(current.get(CONF_SHARED_RTK_POWER, False)),
             ): selector.BooleanSelector(),
+            vol.Optional(
+                CONF_SHARE_ANONYMOUS_USAGE,
+                default=current_usage,
+            ): selector.BooleanSelector(),
+            vol.Optional(
+                CONF_SEND_AUTOMATIC_DIAGNOSTICS,
+                default=current_diagnostics,
+            ): selector.BooleanSelector(),
         }
         return self.async_show_form(
-            step_id="battery_saver_settings",
+            step_id="battery_saver",
             data_schema=vol.Schema(schema_fields),
             errors=errors,
-            description_placeholders={"serial_number": self._serial_number},
+            description_placeholders={
+                "serial_number": self._serial_number,
+                "privacy_url": _PRIVACY_URL,
+            },
         )
