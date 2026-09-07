@@ -1,0 +1,12 @@
+services:
+  anthbot-reporting:
+    build: .
+    container_name: anthbot-reporting
+    restart: unless-stopped
+    environment:
+      ANTHBOT_ADMIN_TOKEN: "CHANGE-ME-TO-A-LONG-RANDOM-TOKEN"
+      ANTHBOT_DB_PATH: "/data/anthbot_reporting.sqlite3"
+    volumes:
+      - ./data:/data
+    ports:
+      - "127.0.0.1:8080:8080"
