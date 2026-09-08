@@ -15,6 +15,7 @@ from typing import Any
 from urllib.parse import quote
 
 from ..api import AnthbotGenieApiError, AnthbotShadowApiClient
+from .m_series_log_probe import install_m_series_log_probe
 
 _LOGGER = logging.getLogger(__name__)
 _INSTALLED = False
@@ -152,3 +153,4 @@ def install_m_series_control_support() -> None:
         await _publish_native_simple_command(self, cmd=cmd, data=data)
 
     AnthbotShadowApiClient.async_publish_service_command = publish_service_command
+    install_m_series_log_probe()
