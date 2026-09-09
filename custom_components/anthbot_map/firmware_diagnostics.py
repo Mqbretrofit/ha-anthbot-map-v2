@@ -20,6 +20,7 @@ from urllib.parse import parse_qsl, urlparse
 from .path_zone_check import no_go_zones
 
 _SCHEMA = "anthbot-firmware-diagnostics-v1"
+_INTEGRATION_SCHEMA = "anthbot-map-integration-diagnostics-v1"
 _MAX_DEPTH = 12
 _MAX_STRING = 8192
 _URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
@@ -266,6 +267,42 @@ def _serial_hash(serial_number: str) -> str:
     return hashlib.sha256(serial_number.encode("utf-8")).hexdigest()
 
 
+def _copy_report(report: dict[str, Any]) -> dict[str, Any]:
+    """Return a detached JSON-safe copy for report profile filtering."""
+    if not isinstance(report, dict):
+        return {}
+    return json.loads(json.dumps(report, ensure_ascii=False))
+
+
+def manufacturer_report_view(report: dict[str, Any]) -> dict[str, Any]:
+    """Return the clean report intended for ANTHBOT/manufacturer support.
+
+    Integration parser/decoder exceptions and performance internals are omitted
+    so a vendor report contains mower, firmware, cloud telemetry and path
+    evidence rather than bugs in this Home Assistant integration.
+    """
+    result = _copy_report(report)
+    result["schema"] = _SCHEMA
+    result["report_kind"] = "manufacturer"
+    result["purpose"] = "Reproducible ANTHBOT mower/firmware diagnostics for manufacturer support"
+    result.pop("definitions", None)
+    result.pop("runtime_performance", None)
+    result.pop("raw_state", None)
+    connection = result.get("connection")
+    if isinstance(connection, dict):
+        connection.pop("live_shadow_error", None)
+    return result
+
+
+def integration_report_view(report: dict[str, Any]) -> dict[str, Any]:
+    """Return the internal Anthbot Map integration diagnostics profile."""
+    result = _copy_report(report)
+    result["schema"] = _INTEGRATION_SCHEMA
+    result["report_kind"] = "integration"
+    result["purpose"] = "Anthbot Map integration diagnostics; not a manufacturer support report"
+    return result
+
+
 def build_firmware_diagnostics_report(
     coordinator: Any,
     *,
@@ -274,7 +311,7 @@ def build_firmware_diagnostics_report(
     include_identifiers: bool = True,
     generated_at: datetime | None = None,
 ) -> dict[str, Any]:
-    """Build a shareable report from one mower coordinator."""
+    """Build the internal superset used to derive manufacturer/integration views."""
     state = getattr(coordinator, "reported_state", None)
     if not isinstance(state, dict):
         state = {}
@@ -401,25 +438,28 @@ def report_filename(report: dict[str, Any]) -> str:
 
 
 def write_firmware_diagnostics_report(path: Path, report: dict[str, Any]) -> None:
-    """Atomically write one UTF-8 JSON diagnostics report."""
+    """Atomically write the manufacturer-shareable UTF-8 JSON report."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True),
+        json.dumps(
+            manufacturer_report_view(report),
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        ),
         encoding="utf-8",
     )
     temporary.replace(path)
 
 
 def report_email_summary(report: dict[str, Any]) -> str:
-    """Return a concise plain-text summary suitable for an email body."""
+    """Return a manufacturer-safe concise plain-text summary for an email."""
+    report = manufacturer_report_view(report)
     device = report.get("device") if isinstance(report, dict) else {}
     path = report.get("path") if isinstance(report, dict) else {}
     no_go = report.get("no_go") if isinstance(report, dict) else {}
     check = no_go.get("check") if isinstance(no_go, dict) else {}
-    definitions = report.get("definitions") if isinstance(report, dict) else {}
-    map_definition = definitions.get("map") if isinstance(definitions, dict) else {}
-    path_definition = definitions.get("path") if isinstance(definitions, dict) else {}
     lines = [
         "ANTHBOT firmware diagnostics report",
         f"Model: {device.get('model') if isinstance(device, dict) else None}",
@@ -432,12 +472,6 @@ def report_email_summary(report: dict[str, Any]) -> str:
         f"Points inside: {check.get('points_inside', 0) if isinstance(check, dict) else 0}",
         f"Traversals: {check.get('traversals', 0) if isinstance(check, dict) else 0}",
     ]
-    map_error = map_definition.get("error") if isinstance(map_definition, dict) else None
-    path_error = path_definition.get("error") if isinstance(path_definition, dict) else None
-    if map_error:
-        lines.append(f"Map definition error: {map_error}")
-    if path_error:
-        lines.append(f"Path definition error: {path_error}")
     note = report.get("user_note") if isinstance(report, dict) else None
     if note:
         lines.extend(("", "User note:", str(note)))
