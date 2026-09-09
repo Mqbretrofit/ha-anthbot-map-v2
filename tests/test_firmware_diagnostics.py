@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import importlib.util
 from pathlib import Path
 import sys
+import tempfile
 import types
 import unittest
 
@@ -47,7 +48,7 @@ class _Coordinator:
     client = _Client()
     last_update_success = True
     _live_shadow_connected = True
-    _live_shadow_error = None
+    _live_shadow_error = "websocket reconnect failed"
     _map_definition_source = "m_series_map_manager:iot_map.bin"
     _last_map_time = "20260909175200"
     _last_map_key = "map-key-7"
@@ -115,6 +116,7 @@ class _Coordinator:
             "traversals": 1,
             "zone_ids": [3],
         },
+        "runtime_performance": {"path_merge_cache_hits": 4},
         "_task_events": {
             "data": [
                 {"code": 1000, "create_time": 10},
@@ -172,12 +174,44 @@ class FirmwareDiagnosticsTests(unittest.TestCase):
         )
         self.assertNotIn("raw_state", report)
 
+    def test_manufacturer_view_excludes_integration_failures(self) -> None:
+        report = MODULE.build_firmware_diagnostics_report(_Coordinator())
+        vendor = MODULE.manufacturer_report_view(report)
+
+        self.assertEqual(vendor["report_kind"], "manufacturer")
+        self.assertEqual(vendor["schema"], "anthbot-firmware-diagnostics-v1")
+        self.assertNotIn("definitions", vendor)
+        self.assertNotIn("runtime_performance", vendor)
+        self.assertNotIn("raw_state", vendor)
+        self.assertNotIn("live_shadow_error", vendor["connection"])
+        self.assertEqual(vendor["telemetry"]["path_time"], "20260909180000")
+        self.assertEqual(vendor["path"]["path_id"], "live-7")
+
+    def test_integration_view_keeps_parser_and_transport_errors(self) -> None:
+        report = MODULE.build_firmware_diagnostics_report(_Coordinator())
+        internal = MODULE.integration_report_view(report)
+
+        self.assertEqual(internal["report_kind"], "integration")
+        self.assertEqual(
+            internal["schema"], "anthbot-map-integration-diagnostics-v1"
+        )
+        self.assertEqual(
+            internal["definitions"]["path"]["error"],
+            "Unable to decode path chunk 17",
+        )
+        self.assertEqual(
+            internal["connection"]["live_shadow_error"],
+            "websocket reconnect failed",
+        )
+        self.assertEqual(internal["runtime_performance"]["path_merge_cache_hits"], 4)
+
     def test_raw_state_is_opt_in(self) -> None:
         report = MODULE.build_firmware_diagnostics_report(
             _Coordinator(), include_raw_state=True
         )
 
         self.assertEqual(report["raw_state"]["nested"]["ok"], 1)
+        self.assertNotIn("raw_state", MODULE.manufacturer_report_view(report))
 
     def test_identifiers_can_be_removed_without_losing_trace_hash(self) -> None:
         report = MODULE.build_firmware_diagnostics_report(
@@ -188,7 +222,7 @@ class FirmwareDiagnosticsTests(unittest.TestCase):
         self.assertIsNone(report["device"]["alias"])
         self.assertEqual(len(report["device"]["serial_sha256"]), 64)
 
-    def test_filename_and_email_summary_are_stable(self) -> None:
+    def test_filename_and_email_summary_are_manufacturer_safe(self) -> None:
         report = MODULE.build_firmware_diagnostics_report(
             _Coordinator(),
             note="Crossed zone 3 while mowing",
@@ -201,12 +235,20 @@ class FirmwareDiagnosticsTests(unittest.TestCase):
         self.assertTrue(filename.endswith("_20260907150000.json"))
         self.assertIn("Boundary crossings: 2", summary)
         self.assertIn("Crossed zone 3 while mowing", summary)
-        self.assertIn(
-            "Map definition error: HTTP 403 while fetching <url-redacted>", summary
-        )
-        self.assertIn(
-            "Path definition error: Unable to decode path chunk 17", summary
-        )
+        self.assertNotIn("Map definition error", summary)
+        self.assertNotIn("Path definition error", summary)
+        self.assertNotIn("websocket reconnect failed", summary)
+
+    def test_written_firmware_report_is_manufacturer_profile(self) -> None:
+        report = MODULE.build_firmware_diagnostics_report(_Coordinator())
+        with tempfile.TemporaryDirectory() as tempdir:
+            path = Path(tempdir) / "diag.json"
+            MODULE.write_firmware_diagnostics_report(path, report)
+            stored = __import__("json").loads(path.read_text("utf-8"))
+
+        self.assertEqual(stored["report_kind"], "manufacturer")
+        self.assertNotIn("definitions", stored)
+        self.assertNotIn("runtime_performance", stored)
 
     def test_button_exports_to_local_media_and_fires_email_ready_event(self) -> None:
         source = (PACKAGE_DIR / "button.py").read_text("utf-8")
