@@ -10,6 +10,13 @@ from app import _dashboard_file, _db, _request_is_admin, require_admin
 
 router = APIRouter()
 
+_INTEGRATION_TRIGGERS = {
+    "path_definition_error",
+    "map_definition_error",
+    "ridable_area_definition_error",
+    "live_shadow_error",
+}
+
 
 def _robot_summary(report: Any) -> dict[str, Any]:
     """Return lightweight mower identity fields already present in a stored report."""
@@ -26,6 +33,18 @@ def _robot_summary(report: Any) -> dict[str, Any]:
     }
 
 
+def _report_kind(report: Any, trigger: object) -> str:
+    """Return manufacturer/integration category, including legacy reports."""
+    if isinstance(report, dict):
+        value = report.get("report_kind")
+        if value in {"manufacturer", "integration"}:
+            return str(value)
+        schema = str(report.get("schema") or "")
+        if "integration-diagnostics" in schema:
+            return "integration"
+    return "integration" if str(trigger) in _INTEGRATION_TRIGGERS else "manufacturer"
+
+
 @router.get(
     "/api/anthbot/admin/diagnostics-summary",
     dependencies=[Depends(require_admin)],
@@ -33,7 +52,7 @@ def _robot_summary(report: Any) -> dict[str, Any]:
 def admin_diagnostics_summary(
     limit: int = Query(default=50, ge=1, le=500),
 ) -> dict[str, Any]:
-    """Return lightweight diagnostic rows including the mower they belong to."""
+    """Return lightweight diagnostic rows including mower and report category."""
     with _db() as conn:
         rows = conn.execute(
             """
@@ -58,6 +77,7 @@ def admin_diagnostics_summary(
                 "generated_at": row["generated_at"],
                 "received_at": row["received_at"],
                 "report_sha256": row["report_sha256"],
+                "report_kind": _report_kind(report, row["trigger"]),
                 "robot": _robot_summary(report),
             }
         )
@@ -95,6 +115,7 @@ def admin_diagnostic_detail(report_id: str) -> dict[str, Any]:
         "generated_at": row["generated_at"],
         "received_at": row["received_at"],
         "report_sha256": row["report_sha256"],
+        "report_kind": _report_kind(report, row["trigger"]),
         "report": report,
     }
 
