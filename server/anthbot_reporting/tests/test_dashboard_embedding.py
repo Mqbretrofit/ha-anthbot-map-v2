@@ -32,8 +32,9 @@ class DashboardEmbeddingTests(unittest.TestCase):
         self.assertIn("http://192.168.8.91:8123", csp)
         self.assertIn("https://ha.mqbretrofithungary.online", csp)
         self.assertIn("Automatikus hibariportok", response.text)
+        self.assertIn("Robot diagnosztikák", response.text)
         self.assertIn("diagnostic_event", response.text)
-        self.assertIn("Gyári hibariport", response.text)
+        self.assertIn("Robot hibariport", response.text)
 
     def test_dashboard_login_cookie_allows_iframe_session(self) -> None:
         response = self.client.post(
@@ -72,6 +73,35 @@ class DashboardEmbeddingTests(unittest.TestCase):
         self.assertEqual(summary["err_code"], 2072)
         self.assertEqual(summary["cloud_task_event_code"], 1036)
         self.assertEqual(summary["task_event_message"], "Wheel blocked")
+
+    def test_robot_identity_prefers_full_serial_number(self) -> None:
+        identity = diagnostics_dashboard._report_identity(
+            {
+                "schema": "anthbot-firmware-diagnostics-v1",
+                "device": {
+                    "model": "M9 Pro",
+                    "serial_number": "26230LGW00000110",
+                    "serial_sha256": "abcdef0123456789",
+                },
+            }
+        )
+        self.assertEqual(identity["report_type"], "robot")
+        self.assertEqual(identity["robot_model"], "M9 Pro")
+        self.assertEqual(identity["robot_serial_number"], "26230LGW00000110")
+        self.assertEqual(identity["robot_id"], "S/N: 26230LGW00000110")
+
+    def test_robot_identity_falls_back_to_hash_for_older_reports(self) -> None:
+        identity = diagnostics_dashboard._report_identity(
+            {
+                "schema": "anthbot-firmware-diagnostics-v1",
+                "device": {
+                    "model": "M9 Pro",
+                    "serial_sha256": "abcdef0123456789",
+                },
+            }
+        )
+        self.assertIsNone(identity["robot_serial_number"])
+        self.assertEqual(identity["robot_id"], "Robot ID: abcdef012345")
 
 
 if __name__ == "__main__":
