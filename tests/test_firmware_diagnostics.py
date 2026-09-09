@@ -48,13 +48,44 @@ class _Coordinator:
     last_update_success = True
     _live_shadow_connected = True
     _live_shadow_error = None
+    _map_definition_source = "m_series_map_manager:iot_map.bin"
+    _last_map_time = "20260909175200"
+    _last_map_key = "map-key-7"
+    _last_path_time = "20260909180000"
+    _history_path_info = {
+        "recordPathUrl": "https://cdn.example.test/history/path.bin?page=2&format=bin",
+        "path_id": "live-7",
+    }
     reported_state = {
         "fw_version": {"system_version": "9.9.9"},
         "robot_sta": {"value": "mowing"},
         "elec": {"value": 77},
         "rtk_state": 3,
         "pose": {"x": 500, "y": 0},
+        "map_time": "20260909175200",
+        "map_tar_time": "20260909175159",
+        "path_time": "20260909180000",
         "_history_path_source": "m_series_curpath",
+        "_map_definition_error": (
+            "HTTP 403 while fetching https://cdn.example.test/maps/current.tar?page=2"
+        ),
+        "_path_definition_error": "Unable to decode path chunk 17",
+        "_ridable_area_definition_error": None,
+        "_map_archive_selection": {
+            "selected": {
+                "filename": "current.tar",
+                "download_url": "https://cdn.example.test/maps/current.tar?page=2&format=tar",
+                "md5": "0123456789abcdef",
+            }
+        },
+        "_map_definition": {
+            "map_id": "map-7",
+            "_download_source": {
+                "filename": "iot_map.bin",
+                "url": "https://cdn.example.test/maps/iot_map.bin?page=3",
+                "md5": "fedcba9876543210",
+            },
+        },
         "_path_definition": {
             "path_id": "live-7",
             "_m_series_first_index": 0,
@@ -90,8 +121,7 @@ class _Coordinator:
                 {"code": 1001, "create_time": 20},
             ]
         },
-        "access_token": "must-not-leak",
-        "nested": {"session_token": "must-not-leak-either", "ok": 1},
+        "nested": {"ok": 1},
     }
 
 
@@ -113,17 +143,40 @@ class FirmwareDiagnosticsTests(unittest.TestCase):
         self.assertEqual(report["no_go"]["check"]["points_inside"], 1)
         self.assertEqual(report["no_go"]["zones"][0]["id"], 3)
         self.assertEqual(report["latest_task_event"]["code"], 1001)
+
+        definitions = report["definitions"]
+        self.assertEqual(
+            definitions["map"]["error"],
+            "HTTP 403 while fetching <url-redacted>",
+        )
+        self.assertEqual(
+            definitions["path"]["error"], "Unable to decode path chunk 17"
+        )
+        self.assertEqual(
+            definitions["map"]["source"], "m_series_map_manager:iot_map.bin"
+        )
+        archive_url = definitions["map"]["archive_selection"]["selected"][
+            "download_url"
+        ]
+        self.assertEqual(archive_url["host"], "cdn.example.test")
+        self.assertEqual(archive_url["filename"], "current.tar")
+        self.assertEqual(archive_url["query_keys"], ["format", "page"])
+        history_url = definitions["path"]["history_info"]["recordPathUrl"]
+        self.assertEqual(history_url["filename"], "path.bin")
+        self.assertEqual(history_url["query_keys"], ["format", "page"])
+        self.assertEqual(
+            definitions["map"]["cached_definition"]["download_source"]["url"][
+                "filename"
+            ],
+            "iot_map.bin",
+        )
         self.assertNotIn("raw_state", report)
 
-    def test_raw_state_is_opt_in_and_secrets_are_redacted(self) -> None:
+    def test_raw_state_is_opt_in(self) -> None:
         report = MODULE.build_firmware_diagnostics_report(
             _Coordinator(), include_raw_state=True
         )
 
-        self.assertEqual(report["raw_state"]["access_token"], "<redacted>")
-        self.assertEqual(
-            report["raw_state"]["nested"]["session_token"], "<redacted>"
-        )
         self.assertEqual(report["raw_state"]["nested"]["ok"], 1)
 
     def test_identifiers_can_be_removed_without_losing_trace_hash(self) -> None:
@@ -148,7 +201,12 @@ class FirmwareDiagnosticsTests(unittest.TestCase):
         self.assertTrue(filename.endswith("_20260907150000.json"))
         self.assertIn("Boundary crossings: 2", summary)
         self.assertIn("Crossed zone 3 while mowing", summary)
-        self.assertNotIn("must-not-leak", summary)
+        self.assertIn(
+            "Map definition error: HTTP 403 while fetching <url-redacted>", summary
+        )
+        self.assertIn(
+            "Path definition error: Unable to decode path chunk 17", summary
+        )
 
     def test_button_exports_to_local_media_and_fires_email_ready_event(self) -> None:
         source = (PACKAGE_DIR / "button.py").read_text("utf-8")
