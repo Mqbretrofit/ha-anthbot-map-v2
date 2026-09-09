@@ -166,7 +166,6 @@ class _RobotErrorReporter:
                 installation_id=installation_id,
                 trigger=trigger,
                 error_code=code,
-                event=event if isinstance(event, dict) else None,
             )
         )
 
@@ -176,7 +175,6 @@ class _RobotErrorReporter:
         installation_id: str,
         trigger: str,
         error_code: int | None,
-        event: dict[str, Any] | None,
     ) -> None:
         state = getattr(self.coordinator, "reported_state", None)
         if not isinstance(state, dict):
@@ -200,7 +198,9 @@ class _RobotErrorReporter:
             "mode": _state_value(state, "mode"),
             "robot_sta": _state_value(state, "robot_sta"),
             "online": _state_value(state, "online"),
-            "task_event": event,
+            # Reuse the already privacy-filtered task event produced by the
+            # diagnostics builder instead of copying raw coordinator data.
+            "task_event": report.get("latest_task_event"),
         }
 
         session = async_get_clientsession(self.hass)
