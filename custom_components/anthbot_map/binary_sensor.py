@@ -141,6 +141,7 @@ BINARY_SENSORS: tuple[AnthbotBinarySensorDescription, ...] = (
         device_class=BinarySensorDeviceClass.BATTERY_CHARGING,
         value_fn=_is_charging,
     ),
+    # --- Error presence -------------------------------------------------
     AnthbotBinarySensorDescription(
         key="error_active",
         translation_key="error_active",
@@ -164,6 +165,7 @@ BINARY_SENSORS: tuple[AnthbotBinarySensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=_is_no_go_path_crossing,
     ),
+    # --- Connectivity flags ---------------------------------------------
     AnthbotBinarySensorDescription(
         key="wifi_connected",
         translation_key="wifi_connected",
@@ -178,13 +180,124 @@ BINARY_SENSORS: tuple[AnthbotBinarySensorDescription, ...] = (
         name="Cellular connected",
         device_class=BinarySensorDeviceClass.CONNECTIVITY,
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: _truthy(data.get("cellular_state")),
+        value_fn=lambda data: _truthy(data.get("4g_state")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="cellular_heartbeat",
+        translation_key="cellular_heartbeat",
+        name="Cellular heartbeat",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("heart_4g")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="bluetooth_active",
+        translation_key="bluetooth_active",
+        name="Bluetooth active",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("bt_state")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="sim_present",
+        translation_key="sim_present",
+        name="SIM inserted",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(_safe_get(data, "sim_status", "status")),
     ),
     AnthbotBinarySensorDescription(
         key="rain_hold",
         name="Rain hold",
         icon="mdi:weather-rainy",
         value_fn=_is_rain_hold,
+    ),
+    # --- Map / mowing lifecycle -----------------------------------------
+    AnthbotBinarySensorDescription(
+        key="map_available",
+        translation_key="map_available",
+        name="Map available",
+        value_fn=lambda data: _nonzero(_safe_get(data, "has_map", "value")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="rtk_moving",
+        translation_key="rtk_moving",
+        name="RTK moving",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _nonzero(_safe_get(data, "rtk_move_sta", "value")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="accelerometer_active",
+        translation_key="accelerometer_active",
+        name="Accelerometer active",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(_safe_get(data, "acc_sta", "value")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="mowing_border",
+        translation_key="mowing_border",
+        name="Mowing border",
+        value_fn=lambda data: _nonzero(_safe_get(data, "mow_border", "value")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="mowing_nest",
+        translation_key="mowing_nest",
+        name="Mowing nest",
+        value_fn=lambda data: _nonzero(_safe_get(data, "mow_nest", "value")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="full_yard_mowing",
+        translation_key="full_yard_mowing",
+        name="Full-yard mowing enabled",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("mow_full")),
+    ),
+    # --- State flags mirroring switches (read-only copy) ----------------
+    AnthbotBinarySensorDescription(
+        key="anti_loss_state",
+        translation_key="anti_loss_state",
+        name="Anti-loss state",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("anti_loss_switch")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="camera_state",
+        translation_key="camera_state",
+        name="Camera state",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("camera_switch")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="edge_cut_state",
+        translation_key="edge_cut_state",
+        name="Edge-cut state",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("edge_switch")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="indoor_mode_state",
+        translation_key="indoor_mode_state",
+        name="Indoor mode state",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("indoor_switch")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="auto_upgrade_state",
+        translation_key="auto_upgrade_state",
+        name="Auto upgrade state",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("auto_upgrade")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="obstacle_avoidance_state",
+        translation_key="obstacle_avoidance_state",
+        name="Obstacle avoidance state",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(_safe_get(data, "pobctl", "switch")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="drc_enabled",
+        translation_key="drc_enabled",
+        name="DRC enabled",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("drc_switch")),
     ),
     AnthbotBinarySensorDescription(
         key="log_upload_enabled",
@@ -193,6 +306,7 @@ BINARY_SENSORS: tuple[AnthbotBinarySensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda data: _truthy(data.get("log_switch")),
     ),
+    # --- Admin flags ----------------------------------------------------
     AnthbotBinarySensorDescription(
         key="factory_reset_pending",
         translation_key="factory_reset_pending",
@@ -205,7 +319,6 @@ BINARY_SENSORS: tuple[AnthbotBinarySensorDescription, ...] = (
         key="unbind_pending",
         translation_key="unbind_pending",
         name="User unbind pending",
-        device_class=BinarySensorDeviceClass.PROBLEM,
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda data: _truthy(data.get("user_unbind")),
     ),
@@ -300,6 +413,10 @@ class AnthbotBinarySensorEntity(
                 "model": self.coordinator.device.model,
                 "source": "task_event",
                 "event_code": 1036 if event is not None else None,
+                # 1036 marks rain detection/return, not the dry transition that
+                # starts the configured post-rain delay. Keep the raw timestamp
+                # for diagnostics, but do not expose it as `detected_at` because
+                # the card intentionally treats that field as countdown start.
                 "rain_detected_at": event.get("create_time") if event else None,
                 "event_message": event.get("event_message") if event else None,
                 "rain_continue_time": rain_continue_time,
@@ -371,5 +488,5 @@ class AnthbotBinarySensorEntity(
             "custom_mowing_direction_enabled": custom_mowing_direction_enabled,
             "voice_volume": voice_volume,
             "voice_status": voice_status,
-            "robot_status_raw": robot_sta_value,
+            "robot_sta": robot_sta_value,
         }
