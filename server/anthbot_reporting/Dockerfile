@@ -26,6 +26,8 @@ COPY dashboard_login.html ./dashboard_login.html
 COPY developer_agent_api.py ./developer_agent_api.py
 COPY developer_agent_dashboard.py ./developer_agent_dashboard.py
 COPY developer_agent_dashboard.html ./developer_agent_dashboard.html
+COPY diagnostics_dashboard.py ./diagnostics_dashboard.py
+COPY diagnostic_detail.html ./diagnostic_detail.html
 COPY run.sh /run.sh
 RUN chmod a+x /run.sh
 
