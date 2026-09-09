@@ -1,0 +1,12 @@
+{
+  "options": {
+    "step": {
+      "init": {"title": "Anthbot Map -asetukset", "description": "Valitse muutettavat asetukset.", "menu_options": {"battery_saver": "Akun säästö", "developer_reporting": "Kehitys ja diagnostiikka"}},
+      "battery_saver_mower": {"title": "Akun säästö", "description": "Valitse määritettävä ruohonleikkuri.", "data": {"mower": "Ruohonleikkuri"}},
+      "battery_saver": {"title": "Akun säästö", "description": "Määritä laturi ja rajat laitteelle {serial_number}. Tila pysyy poissa käytöstä, kunnes sen kytkin otetaan käyttöön.", "data": {"charger_switch": "Älypistorasian kytkin", "charge_limit": "Yläraja lataukselle (%)", "maintenance_level": "Ylläpitolatauksen aloitustaso (%)", "resume_level": "Latauksen jatkamistaso (%)", "shared_rtk_power": "Latausasema ja RTK käyttävät samaa älypistorasiaa"}},
+      "developer_reporting": {"title": "Kehitys ja diagnostiikka", "description": "Nämä valinnat ovat vapaaehtoisia ja ne voi poistaa käytöstä milloin tahansa. Ne ovat erillisiä vain luku -tilassa toimivasta Developer Agentista.", "data": {"share_anonymous_usage": "Jaa anonyymejä käyttötilastoja", "send_automatic_diagnostics": "Lähetä automaattisia diagnostiikkaraportteja"}, "data_description": {"share_anonymous_usage": "Lähettää vain vähäisiä teknisiä käyttötietoja, kuten integraation/Home Assistantin version, maan ja ANTHBOT-mallien määrän. Käyttäjänimeä, salasanaa, sarjanumeroa, GPS-sijaintia tai karttaa ei lähetetä.", "send_automatic_diagnostics": "Lähettää yksityisyyden suojaamiseksi suodatettua teknistä diagnostiikkaa tuetuissa virhetilanteissa, kuten leikkurin virheissä, raja-/kieltoalueen ylityksissä sekä kartan tai reitin käsittelyvirheissä."}}
+    },
+    "error": {"invalid_battery_thresholds": "Jatkamisen ja ylläpitolatauksen tasojen on oltava ylärajaa pienempiä.", "reporting_service_unavailable": "Raportointiasetusten palvelu ei ole käytettävissä. Lataa Anthbot Map -integraatio uudelleen tai käynnistä Home Assistant uudelleen ja yritä uudelleen."},
+    "abort": {"no_devices": "Ladattua Anthbot-ruohonleikkuria ei ole käytettävissä."}
+  }
+}
