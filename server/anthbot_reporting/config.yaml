@@ -1,4 +1,4 @@
-name: ANTHBOT Reporting Server
+name: ANTHBOT Reporting Server - channel
 version: "1.0.0-test.8"
 slug: anthbot_reporting
 description: Opt-in telemetry, diagnostics, and admin dashboard backend for the ANTHBOT Map integration
