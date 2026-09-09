@@ -108,11 +108,10 @@ class DeveloperReportingTests(unittest.TestCase):
         self.assertIn("options[CONF_DEVELOPER_OPT_IN_ACKNOWLEDGED] = True", source)
         self.assertIn('event="opt_in"', source)
 
-    def test_popup_is_not_auto_registered_from_tracker_platform(self) -> None:
+    def test_popup_is_registered_from_independent_tracker_platform(self) -> None:
         source = (PACKAGE_DIR / "device_tracker.py").read_text(encoding="utf-8")
-        self.assertNotIn("from .developer_optin import async_register_developer_optin", source)
-        self.assertNotIn("await async_register_developer_optin(hass)", source)
-        self.assertNotIn("async_register_developer_agent_optin", source)
+        self.assertIn("from .developer_optin import async_register_developer_optin", source)
+        self.assertIn("await async_register_developer_optin(hass)", source)
 
     def test_privacy_document_states_reporting_is_optional(self) -> None:
         privacy = (ROOT / "PRIVACY.md").read_text(encoding="utf-8")
