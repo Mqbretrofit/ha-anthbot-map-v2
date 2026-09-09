@@ -56,11 +56,23 @@ class RuntimeOptimizationSourceTests(unittest.TestCase):
             self.assertIn(marker, source)
         self.assertIn("view = points", source)
 
+    def test_custom_integration_runtime_translations_exist(self) -> None:
+        translations = ROOT / "custom_components/anthbot_map/translations"
+        en = json.loads((translations / "en.json").read_text(encoding="utf-8"))
+        hu = json.loads((translations / "hu.json").read_text(encoding="utf-8"))
+        for payload in (en, hu):
+            menu = payload["options"]["step"]["init"]["menu_options"]
+            self.assertTrue(menu["battery_saver"])
+            self.assertTrue(menu["developer_reporting"])
+            reporting = payload["options"]["step"]["developer_reporting"]["data"]
+            self.assertTrue(reporting["share_anonymous_usage"])
+            self.assertTrue(reporting["send_automatic_diagnostics"])
+
     def test_current_test_manifest_version(self) -> None:
         manifest = json.loads(
             (ROOT / "custom_components/anthbot_map/manifest.json").read_text(encoding="utf-8")
         )
-        self.assertEqual("2.4.6-beta.7", manifest["version"])
+        self.assertEqual("2.4.6-beta.8", manifest["version"])
 
 
 if __name__ == "__main__":
