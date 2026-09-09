@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 from typing import Any
 
@@ -9,6 +10,43 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app import _dashboard_file, _db, _request_is_admin, require_admin
 
 router = APIRouter()
+
+
+def _normalize_task_event_time(value: Any) -> str | None:
+    """Normalize known task-event timestamp shapes to an ISO UTC string."""
+    if value is None or value == "":
+        return None
+
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        timestamp = float(value)
+        if timestamp > 10_000_000_000:
+            timestamp /= 1000
+        try:
+            return datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat()
+        except (OverflowError, OSError, ValueError):
+            return str(value)
+
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.isdigit():
+        try:
+            timestamp = float(text)
+            if timestamp > 10_000_000_000:
+                timestamp /= 1000
+            return datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat()
+        except (OverflowError, OSError, ValueError):
+            return text
+
+    raw = text.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        try:
+            parsed = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return text
+    return parsed.replace(tzinfo=parsed.tzinfo or timezone.utc).astimezone(timezone.utc).isoformat()
 
 
 def _diagnostic_event_summary(report: Any) -> dict[str, Any] | None:
@@ -23,6 +61,17 @@ def _diagnostic_event_summary(report: Any) -> dict[str, Any] | None:
     if not isinstance(task_event, dict):
         task_event = {}
 
+    task_event_message = (
+        task_event.get("event_message")
+        or task_event.get("message")
+        or task_event.get("msg")
+        or task_event.get("content")
+        or task_event.get("description")
+    )
+    task_event_time = _normalize_task_event_time(
+        task_event.get("create_time", task_event.get("time", task_event.get("timestamp")))
+    )
+
     summary = {
         "trigger": event.get("trigger"),
         "err_code": event.get("err_code"),
@@ -34,12 +83,8 @@ def _diagnostic_event_summary(report: Any) -> dict[str, Any] | None:
         "online": event.get("online"),
         "task_event_code": task_event.get("code"),
         "task_event_type": task_event.get("code_type"),
-        "task_event_message": (
-            task_event.get("message")
-            or task_event.get("msg")
-            or task_event.get("content")
-            or task_event.get("description")
-        ),
+        "task_event_message": task_event_message,
+        "task_event_time": task_event_time,
     }
     if not any(value is not None and value != "" for value in summary.values()):
         return None
@@ -84,7 +129,7 @@ def _report_identity(report: Any) -> dict[str, Any]:
     if is_robot_report:
         return {
             "report_type": "robot",
-            "report_type_label": "Robot / firmware",
+            "report_type_label": "Robot diagnosztika",
             "report_schema": schema,
             "robot_model": model,
             "robot_id": robot_id,
