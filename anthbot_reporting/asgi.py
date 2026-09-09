@@ -30,23 +30,42 @@ _FRAME_ANCESTORS = (
 
 _DASHBOARD_DIAGNOSTICS_LINK_SCRIPT = b"""
 <style>
-.diag-robot {
-  color: #dce7f8;
+.diag-robot,
+.diag-error,
+.diag-event {
   font-size: .82rem;
   margin-top: 5px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.diag-robot { color: #dce7f8; }
 .diag-robot strong { color: #baf7e7; font-weight: 650; }
+.diag-error { color: #ffd7dc; }
+.diag-error strong { color: #ff9ca8; font-weight: 700; }
+.diag-event { color: #ffe3a7; }
+.diag-event strong { color: #ffcc66; font-weight: 650; }
 </style>
 <script>
 (() => {
   const summaries = new Map();
+  const html = (value) => String(value ?? '').replace(/[&<>\"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#039;'}[c]));
 
   const reportIdFor = (item) => {
     const meta = item.querySelector('.diag-meta');
-    return (meta?.textContent || '').split('\u00b7')[0].trim();
+    return (meta?.textContent || '').split('\\u00b7')[0].trim();
+  };
+
+  const upsertLine = (item, className, afterClassName, markup) => {
+    let line = item.querySelector('.' + className);
+    if (!line) {
+      line = document.createElement('div');
+      line.className = className;
+      const anchor = item.querySelector('.' + afterClassName);
+      if (anchor) anchor.insertAdjacentElement('afterend', line);
+    }
+    if (line) line.innerHTML = markup;
+    return line;
   };
 
   const decorateRobot = (item, reportId) => {
@@ -59,28 +78,70 @@ _DASHBOARD_DIAGNOSTICS_LINK_SCRIPT = b"""
     if (robot.serial_number) {
       parts.push(robot.serial_number);
     } else if (robot.serial_sha256) {
-      parts.push('ID ' + String(robot.serial_sha256).slice(0, 8) + '\u2026');
+      parts.push('ID ' + String(robot.serial_sha256).slice(0, 8) + '\\u2026');
     }
     if (!parts.length) parts.push('Ismeretlen robot');
 
-    let line = item.querySelector('.diag-robot');
-    if (!line) {
-      line = document.createElement('div');
-      line.className = 'diag-robot';
-      const title = item.querySelector('.diag-title');
-      if (title?.parentNode) title.insertAdjacentElement('afterend', line);
+    upsertLine(
+      item,
+      'diag-robot',
+      'diag-title',
+      '<strong>Robot:</strong> ' + parts.map(html).join(' \\u00b7 '),
+    );
+
+    const diagnosticEvent = summary.diagnostic_event || null;
+    if (diagnosticEvent) {
+      const errorParts = [];
+      if (diagnosticEvent.err_code !== null && diagnosticEvent.err_code !== undefined && diagnosticEvent.err_code !== '') {
+        errorParts.push('hibakód ' + diagnosticEvent.err_code);
+      }
+      if (diagnosticEvent.err_description) errorParts.push(diagnosticEvent.err_description);
+      if (!errorParts.length && diagnosticEvent.task_event_code) {
+        errorParts.push('task event ' + diagnosticEvent.task_event_code);
+      }
+      if (errorParts.length) {
+        upsertLine(
+          item,
+          'diag-error',
+          'diag-robot',
+          '<strong>Hiba:</strong> ' + errorParts.map(html).join(' \\u00b7 '),
+        );
+      }
+
+      const contextParts = [];
+      if (diagnosticEvent.event_code !== null && diagnosticEvent.event_code !== undefined && diagnosticEvent.event_code !== '') {
+        contextParts.push('event ' + diagnosticEvent.event_code);
+      }
+      if (diagnosticEvent.cloud_task_event_code !== null && diagnosticEvent.cloud_task_event_code !== undefined && diagnosticEvent.cloud_task_event_code !== '') {
+        contextParts.push('cloud ' + diagnosticEvent.cloud_task_event_code);
+      }
+      if (diagnosticEvent.mode) contextParts.push('mode ' + diagnosticEvent.mode);
+      if (diagnosticEvent.robot_sta) contextParts.push('state ' + diagnosticEvent.robot_sta);
+      if (diagnosticEvent.task_event_message) contextParts.push(diagnosticEvent.task_event_message);
+      if (contextParts.length) {
+        upsertLine(
+          item,
+          'diag-event',
+          errorParts.length ? 'diag-error' : 'diag-robot',
+          '<strong>Esemény:</strong> ' + contextParts.map(html).join(' \\u00b7 '),
+        );
+      }
     }
-    line.innerHTML = '<strong>Robot:</strong> ' + parts
-      .map((value) => String(value).replace(/[&<>\"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#039;'}[c])))
-      .join(' \u00b7 ');
 
     const badge = item.querySelector('.pill.warn');
     if (badge) {
       const integration = summary.report_kind === 'integration';
-      badge.textContent = integration ? 'integr\u00e1ci\u00f3' : 'gy\u00e1ri riport';
+      const automaticError = summary.trigger === 'mower_error_code' || summary.trigger === 'task_event_error';
+      badge.textContent = integration
+        ? 'integr\\u00e1ci\\u00f3'
+        : automaticError
+          ? 'gy\\u00e1ri hibariport'
+          : 'gy\\u00e1ri riport';
       badge.title = integration
-        ? 'Anthbot Map integr\u00e1ci\u00f3s diagnosztika'
-        : 'ANTHBOT gy\u00e1rt\u00f3nak tov\u00e1bb\u00edthat\u00f3 diagnosztika';
+        ? 'Anthbot Map integr\\u00e1ci\\u00f3s diagnosztika'
+        : automaticError
+          ? 'Automatikusan r\\u00f6gz\\u00edtett ANTHBOT hibadiagnosztika'
+          : 'ANTHBOT gy\\u00e1rt\\u00f3nak tov\\u00e1bb\\u00edthat\\u00f3 diagnosztika';
     }
   };
 
