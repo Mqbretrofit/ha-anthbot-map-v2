@@ -73,6 +73,15 @@ _DASHBOARD_DIAGNOSTICS_LINK_SCRIPT = b"""
     line.innerHTML = '<strong>Robot:</strong> ' + parts
       .map((value) => String(value).replace(/[&<>\"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#039;'}[c])))
       .join(' \u00b7 ');
+
+    const badge = item.querySelector('.pill.warn');
+    if (badge) {
+      const integration = summary.report_kind === 'integration';
+      badge.textContent = integration ? 'integr\u00e1ci\u00f3' : 'gy\u00e1ri riport';
+      badge.title = integration
+        ? 'Anthbot Map integr\u00e1ci\u00f3s diagnosztika'
+        : 'ANTHBOT gy\u00e1rt\u00f3nak tov\u00e1bb\u00edthat\u00f3 diagnosztika';
+    }
   };
 
   const wireDiagnostics = () => {
@@ -98,10 +107,7 @@ _DASHBOARD_DIAGNOSTICS_LINK_SCRIPT = b"""
         }
       });
       const badge = item.querySelector('.pill.warn');
-      if (badge) {
-        badge.style.cursor = 'pointer';
-        badge.title = 'Diagnosztika megnyitasa';
-      }
+      if (badge) badge.style.cursor = 'pointer';
     });
   };
 
