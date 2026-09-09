@@ -9,6 +9,7 @@ These notes are intentionally separate from the release branches. In particular,
 - ANTHBOT Android app protocol reference generated from Hermes bytecode (`2.15.15`).
 - N8 command surface already extracted from the `2.15.16` app and isolated in `models/n8_control.py`.
 - Official ANTHBOT localization/copy workbook containing explicit `mgs` and `MGS03` feature markers and current MGS03 error/event copy.
+- Privacy-safe live shadow probes from other M-series devices. These are used only as **shared-schema clues**, never as proof that N8 uses the same field until an N8 capture confirms it.
 
 ## Strong MGS03 / N8 hardware evidence
 
@@ -26,6 +27,37 @@ Current N8 status adapter already exposes:
 - `_n8_grass_shield_in_position`
 
 from the N8 `mode` / `robot_sta` and `grass_state` reports.
+
+## Shared MGS shadow clues from a live M9 Pro
+
+A current privacy-safe M9 Pro shadow probe exposes this `device_config` shape:
+
+```text
+device_config.anti_loss_radius
+device_config.anti_loss_switch
+device_config.camera_switch
+device_config.child_lock_switch
+device_config.indoor_switch
+device_config.log_switch
+device_config.pin_code
+device_config.pobctl_level
+device_config.pobctl_switch
+device_config.rain_continue_time
+device_config.rain_switch
+device_config.volume
+```
+
+The same live probe also exposes:
+
+```text
+grass_state.grass_bag_in_position
+grass_state.grass_shield_in_position
+mapping_task.in_dump
+```
+
+This is useful because the newer N8/MGS app UI references the same feature families. It is **not yet proof** that N8 reports every field at exactly the same path. The N8 diagnostics discovery block therefore looks for these names without enabling writes from this evidence alone.
+
+Notably, the likely Child Lock report field is `device_config.child_lock_switch` on M9 Pro. An N8 before/after capture will confirm whether N8 uses the same field.
 
 ## N8 grass dumping
 
@@ -99,6 +131,8 @@ The `2.15.16` N8 command surface contains:
 
 Current integration exposes only the isolated N8 anti-loss on/off switch. `anti_loss_radius` remains read-only until the app's allowed range/step and exact user-facing units are confirmed.
 
+The shared M9 Pro shadow clue reports `anti_loss_radius = 50`, proving that this family can report a concrete numeric radius, but that single value does not establish the N8 minimum, maximum, step or unit conversion.
+
 ## Child lock
 
 The official MGS UI now contains a dedicated **Child Lock** feature.
@@ -108,7 +142,7 @@ Semantics from the app copy:
 - enabling it disables the robot panel buttons;
 - power and emergency-stop buttons remain functional.
 
-No child-lock write command has been enabled yet. The exact reported field and command/payload should be extracted from the 2.15.16 Hermes function that owns this UI before adding a Home Assistant switch.
+A live M9 Pro reports `device_config.child_lock_switch`, which is now included as a candidate in the privacy-safe N8 diagnostics scanner. No N8 child-lock write command is enabled yet: first confirm the N8 reported path with an official-app before/after capture, then recover the exact 2.15.16 command/payload.
 
 ## Visual obstacle sensitivity
 
@@ -125,7 +159,7 @@ cmd: perception_obstacle_ctl
 data: {switch: 0|1, level: 0|1|2}
 ```
 
-The N8 command adapter already permits this command. Live N8 validation is still useful to lock the numeric level-to-label order before replacing the generic `0..2` number entity with named options.
+The N8 command adapter already permits this command. The shared M9 Pro shadow uses `device_config.pobctl_switch` and `device_config.pobctl_level`; an N8 live capture will show whether the same reported schema is used. Live N8 validation is still required to lock the numeric level-to-label order before replacing the generic `0..2` number entity with named options.
 
 ## Rain behavior
 
@@ -250,6 +284,26 @@ These should be added through an N8-specific error/event normalization layer onc
 - volume: `volume_ctl`
 
 Recognition in the transport is **not** the same as enabling a Home Assistant entity. Write controls should only be exposed when payload semantics and constraints are sufficiently proven.
+
+## Privacy-safe N8 diff workflow
+
+The feature branch now adds an `n8_protocol` block to N8 diagnostics only. It records a compact set of relevant reported values plus candidate field names while redacting credentials and PIN fields.
+
+Use the included helper to compare two exports:
+
+```text
+python tools/compare_n8_protocol_reports.py before.json after.json
+```
+
+Recommended method:
+
+1. Export N8 diagnostics with the robot idle.
+2. Change exactly **one** setting in the official app.
+3. Wait for the reported shadow to update.
+4. Export N8 diagnostics again.
+5. Run the diff helper.
+
+This turns a Child Lock / anti-loss / sensitivity experiment into a short list of exact field changes instead of a manual full-shadow comparison.
 
 ## Highest-value next live N8 captures
 
