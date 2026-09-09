@@ -1,0 +1,12 @@
+{
+  "options": {
+    "step": {
+      "init": {"title": "Definições do Anthbot Map", "description": "Escolha as definições que pretende alterar.", "menu_options": {"battery_saver": "Poupança de bateria", "developer_reporting": "Desenvolvimento e diagnóstico"}},
+      "battery_saver_mower": {"title": "Poupança de bateria", "description": "Escolha o corta-relva a configurar.", "data": {"mower": "Corta-relva"}},
+      "battery_saver": {"title": "Poupança de bateria", "description": "Configure o carregador e os limites para {serial_number}. O modo permanece inativo até o respetivo interruptor ser ligado.", "data": {"charger_switch": "Interruptor da tomada inteligente", "charge_limit": "Limite superior de carga (%)", "maintenance_level": "Nível de início da recarga de manutenção (%)", "resume_level": "Nível de retoma da carga (%)", "shared_rtk_power": "A estação de carregamento e o RTK partilham a mesma tomada inteligente"}},
+      "developer_reporting": {"title": "Desenvolvimento e diagnóstico", "description": "Estas opções são voluntárias e podem ser desativadas novamente a qualquer momento. São independentes do Developer Agent apenas de leitura.", "data": {"share_anonymous_usage": "Partilhar estatísticas de utilização anónimas", "send_automatic_diagnostics": "Enviar relatórios de diagnóstico automáticos"}, "data_description": {"share_anonymous_usage": "Envia informações técnicas mínimas de utilização, como versão da integração/Home Assistant, país e contagem de modelos ANTHBOT. Nome de utilizador, palavra-passe, número de série, posição GPS e mapa não são enviados.", "send_automatic_diagnostics": "Envia diagnósticos técnicos filtrados para privacidade quando ocorrem erros suportados, como erros do corta-relva, cruzamentos de limites/zonas proibidas e falhas no processamento de mapas ou percursos."}}
+    },
+    "error": {"invalid_battery_thresholds": "Os níveis de retoma e recarga de manutenção devem ser inferiores ao limite superior de carga.", "reporting_service_unavailable": "O serviço de definições de relatórios não está disponível. Recarregue a integração Anthbot Map ou reinicie o Home Assistant e tente novamente."},
+    "abort": {"no_devices": "Não está disponível nenhum corta-relva Anthbot carregado."}
+  }
+}
