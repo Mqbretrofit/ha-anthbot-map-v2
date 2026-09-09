@@ -3,12 +3,65 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app import _dashboard_file, _db, _request_is_admin, require_admin
 
 router = APIRouter()
+
+
+def _robot_summary(report: Any) -> dict[str, Any]:
+    """Return lightweight mower identity fields already present in a stored report."""
+    if not isinstance(report, dict):
+        report = {}
+    device = report.get("device")
+    if not isinstance(device, dict):
+        device = {}
+    return {
+        "model": device.get("model"),
+        "alias": device.get("alias"),
+        "serial_number": device.get("serial_number"),
+        "serial_sha256": device.get("serial_sha256"),
+    }
+
+
+@router.get(
+    "/api/anthbot/admin/diagnostics-summary",
+    dependencies=[Depends(require_admin)],
+)
+def admin_diagnostics_summary(
+    limit: int = Query(default=50, ge=1, le=500),
+) -> dict[str, Any]:
+    """Return lightweight diagnostic rows including the mower they belong to."""
+    with _db() as conn:
+        rows = conn.execute(
+            """
+            SELECT report_id, installation_id, trigger, generated_at,
+                   received_at, report_sha256, report_json
+            FROM diagnostics ORDER BY received_at DESC LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        try:
+            report = json.loads(row["report_json"])
+        except (TypeError, ValueError):
+            report = {}
+        items.append(
+            {
+                "report_id": row["report_id"],
+                "installation_id": row["installation_id"],
+                "trigger": row["trigger"],
+                "generated_at": row["generated_at"],
+                "received_at": row["received_at"],
+                "report_sha256": row["report_sha256"],
+                "robot": _robot_summary(report),
+            }
+        )
+    return {"items": items}
 
 
 @router.get(
