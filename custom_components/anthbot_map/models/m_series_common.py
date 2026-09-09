@@ -8,6 +8,7 @@ from .m_series_legacy import install_m_series_compat as _install_legacy
 from .m_series_control import install_m_series_control_support
 from .n8_control import install_n8_control_support
 from .n8_map import install_n8_map_support
+from .n8_path import install_n8_path_support
 from .m_series_history import install_m_series_history_support
 from .m_series_map import install_m_series_map_support
 from .m_series_path import install_m_series_path_support
@@ -41,6 +42,9 @@ def install_m_series_compat() -> None:
     # M9 Pro continue through their exact existing routes.
     install_n8_control_support()
     install_m_series_path_support()
+    # Reuse the proven MGS absolute-index assembler through an N8-only wrapper;
+    # do not widen the M-series path model guard.
+    install_n8_path_support()
     install_m_series_map_support()
     # M-series app zones are stored inside the same map-manager archive as the
     # verified iot_map.bin boundary. Install this after map support so both
