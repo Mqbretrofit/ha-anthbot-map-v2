@@ -63,10 +63,14 @@ _DASHBOARD_DIAGNOSTICS_SCRIPT = """
       .report-empty{padding:12px;border:1px dashed #263349;border-radius:11px;color:#9fb0ca;font-size:.82rem}
       .diag-item.report-robot{border-color:rgba(128,224,199,.25)}
       .diag-item.report-integration{border-color:rgba(106,169,255,.25)}
+      .diag-item.report-error{border-color:rgba(255,122,138,.38);background:linear-gradient(180deg,rgba(65,25,36,.42),#0d1626)}
       .report-identity{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px}
       .report-mini{display:inline-flex;align-items:center;padding:2px 6px;border-radius:999px;border:1px solid #263349;background:#0e1828;color:#c8d7ed;font-size:.72rem}
       .report-type-robot{color:#baf7e7;border-color:rgba(128,224,199,.28)}
       .report-type-integration{color:#cfe3ff;border-color:rgba(106,169,255,.32)}
+      .report-type-error{color:#ffd7dc;border-color:rgba(255,122,138,.42)}
+      .report-error-line{margin-top:6px;color:#ffd7dc;font-size:.8rem;font-weight:650}
+      .report-event-line{margin-top:4px;color:#ffe3a7;font-size:.76rem;line-height:1.35}
     `;
     document.head.appendChild(style);
   };
@@ -76,16 +80,22 @@ _DASHBOARD_DIAGNOSTICS_SCRIPT = """
   };
 
   const itemHtml = (item) => {
-    const typeClass = item.report_type === 'robot'
-      ? 'report-robot'
-      : item.report_type === 'integration'
-        ? 'report-integration'
-        : '';
-    const badgeClass = item.report_type === 'robot'
-      ? 'report-type-robot'
-      : item.report_type === 'integration'
-        ? 'report-type-integration'
-        : '';
+    const error = item.diagnostic_event || null;
+    const isAutomaticError = item.trigger === 'mower_error_code' || item.trigger === 'task_event_error' || !!error;
+    const typeClass = isAutomaticError
+      ? 'report-error'
+      : item.report_type === 'robot'
+        ? 'report-robot'
+        : item.report_type === 'integration'
+          ? 'report-integration'
+          : '';
+    const badgeClass = isAutomaticError
+      ? 'report-type-error'
+      : item.report_type === 'robot'
+        ? 'report-type-robot'
+        : item.report_type === 'integration'
+          ? 'report-type-integration'
+          : '';
     const identity = [];
     if (item.robot_model) identity.push(`<span class="report-mini">${esc(item.robot_model)}</span>`);
     if (item.robot_id) identity.push(`<span class="report-mini mono">${esc(item.robot_id)}</span>`);
@@ -93,14 +103,38 @@ _DASHBOARD_DIAGNOSTICS_SCRIPT = """
       identity.push(`<span class="report-mini">telepítés: ${esc(shortId(item.installation_id))}</span>`);
     }
 
+    const errorParts = [];
+    if (error && error.err_code !== null && error.err_code !== undefined && error.err_code !== '') {
+      errorParts.push(`hibakód ${esc(error.err_code)}`);
+    }
+    if (error?.err_description) errorParts.push(esc(error.err_description));
+    if (!errorParts.length && error?.task_event_code) errorParts.push(`task event ${esc(error.task_event_code)}`);
+
+    const eventParts = [];
+    if (error && error.event_code !== null && error.event_code !== undefined && error.event_code !== '') {
+      eventParts.push(`event ${esc(error.event_code)}`);
+    }
+    if (error && error.cloud_task_event_code !== null && error.cloud_task_event_code !== undefined && error.cloud_task_event_code !== '') {
+      eventParts.push(`cloud ${esc(error.cloud_task_event_code)}`);
+    }
+    if (error?.mode) eventParts.push(`mode ${esc(error.mode)}`);
+    if (error?.robot_sta) eventParts.push(`state ${esc(error.robot_sta)}`);
+    if (error?.task_event_message) eventParts.push(esc(error.task_event_message));
+
+    const badgeLabel = isAutomaticError
+      ? 'Gyári hibariport'
+      : (item.report_type_label || 'Egyéb');
+
     return `
       <div class="diag-item ${typeClass}" data-report-id="${esc(item.report_id)}" tabindex="0" role="link">
         <div class="diag-main">
           <div class="diag-title">${esc(item.trigger || 'diagnosztika')}</div>
           <div class="diag-meta">${esc(item.report_id)} · ${esc(fmt(item.received_at))}</div>
           <div class="report-identity">${identity.join('')}</div>
+          ${errorParts.length ? `<div class="report-error-line">Hiba: ${errorParts.join(' · ')}</div>` : ''}
+          ${eventParts.length ? `<div class="report-event-line">Esemény: ${eventParts.join(' · ')}</div>` : ''}
         </div>
-        <span class="pill ${badgeClass}">${esc(item.report_type_label || 'Egyéb')}</span>
+        <span class="pill ${badgeClass}">${esc(badgeLabel)}</span>
       </div>`;
   };
 
@@ -130,12 +164,14 @@ _DASHBOARD_DIAGNOSTICS_SCRIPT = """
 
       const data = await res.json();
       const items = Array.isArray(data.items) ? data.items : [];
-      const robot = items.filter(x => x.report_type === 'robot');
-      const integration = items.filter(x => x.report_type === 'integration');
-      const other = items.filter(x => !['robot','integration'].includes(x.report_type));
+      const errors = items.filter(x => x.trigger === 'mower_error_code' || x.trigger === 'task_event_error' || x.diagnostic_event);
+      const robot = items.filter(x => x.report_type === 'robot' && !errors.includes(x));
+      const integration = items.filter(x => x.report_type === 'integration' && !errors.includes(x));
+      const other = items.filter(x => !['robot','integration'].includes(x.report_type) && !errors.includes(x));
 
       box.innerHTML = `
         <div class="report-groups">
+          ${groupHtml('Automatikus hibariportok', errors)}
           ${groupHtml('Robot / firmware riportok', robot)}
           ${groupHtml('Integrációs riportok', integration)}
           ${other.length ? groupHtml('Egyéb riportok', other) : ''}
