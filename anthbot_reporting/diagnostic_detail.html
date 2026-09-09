@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="hu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ANTHBOT diagnosztika</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0b1220;--panel:#121a2a;--panel2:#182235;--line:#263349;--text:#eef4ff;--muted:#9fb0ca;--accent:#6aa9ff;--accent2:#80e0c7;--warn:#ffcc66;--danger:#ff7a8a;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at top left,#14233d 0,var(--bg) 34rem),var(--bg);color:var(--text)}button{font:inherit}.shell{max-width:1180px;margin:0 auto;padding:24px}.topbar{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:18px}.title-wrap{min-width:0}.eyebrow{color:var(--muted);font-size:.8rem;margin-bottom:4px}h1{font-size:clamp(1.25rem,3vw,1.9rem);margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.actions{display:flex;gap:9px;flex-wrap:wrap}.btn{border:1px solid var(--line);background:var(--panel2);color:var(--text);padding:9px 13px;border-radius:11px;cursor:pointer;text-decoration:none}.btn:hover{border-color:var(--accent)}.card{background:linear-gradient(180deg,rgba(24,34,53,.97),rgba(15,23,38,.97));border:1px solid var(--line);border-radius:16px}.meta-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px}.meta{padding:14px}.label{color:var(--muted);font-size:.76rem}.value{margin-top:5px;font-size:.92rem;overflow-wrap:anywhere}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.section{margin-top:16px}.section-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 16px;border-bottom:1px solid var(--line)}.section-title{font-weight:700}.json-wrap{padding:0;overflow:hidden}.json{margin:0;padding:16px;max-height:68vh;overflow:auto;background:#08101c;color:#dce7f8;font:12.5px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}.empty,.error{padding:24px;color:var(--muted)}.error{color:#ffc4cc}.pill{display:inline-flex;align-items:center;border:1px solid rgba(255,204,102,.28);color:#ffe3a7;background:#0e1828;padding:4px 8px;border-radius:999px;font-size:.76rem}.footer{color:var(--muted);font-size:.78rem;padding:16px 2px 6px}.loading{padding:28px;color:var(--muted)}
+    @media(max-width:760px){.shell{padding:14px}.topbar{align-items:flex-start;flex-direction:column}.actions{width:100%}.btn{flex:1;text-align:center}.meta-grid{grid-template-columns:1fr}.json{max-height:none;font-size:11.5px}}
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <div class="topbar">
+      <div class="title-wrap"><div class="eyebrow">ANTHBOT Reporting Server</div><h1 id="title">Diagnosztika</h1></div>
+      <div class="actions"><a class="btn" href="/dashboard">← Vissza</a><button class="btn" id="copy" type="button">JSON másolása</button></div>
+    </div>
+    <div id="content" class="card loading">Diagnosztikai jelentés betöltése…</div>
+    <div class="footer">A teljes, szerveren tárolt adatvédelmi szűrésen átesett riport jelenik meg.</div>
+  </main>
+  <script>
+    const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+    const fmt = (v) => v ? new Intl.DateTimeFormat('hu-HU',{dateStyle:'medium',timeStyle:'medium'}).format(new Date(v)) : '—';
+    const reportId = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop() || '');
+    let current = null;
+
+    async function api(path) {
+      const res = await fetch(path,{credentials:'same-origin'});
+      if (res.status === 401) { location.href='/dashboard'; throw new Error('Nincs jogosultság'); }
+      if (!res.ok) throw new Error((await res.json().catch(()=>({}))).detail || `HTTP ${res.status}`);
+      return res.json();
+    }
+
+    function meta(label,value,mono=false){return `<div class="card meta"><div class="label">${esc(label)}</div><div class="value ${mono?'mono':''}">${esc(value ?? '—')}</div></div>`;}
+
+    function render(data){
+      current=data;
+      document.getElementById('title').textContent = data.trigger || 'Diagnosztika';
+      document.title = `${data.trigger || 'Diagnosztika'} – ANTHBOT`;
+      const pretty=JSON.stringify(data.report ?? {},null,2);
+      document.getElementById('content').className='';
+      document.getElementById('content').innerHTML=`
+        <div class="meta-grid">
+          ${meta('Riportazonosító',data.report_id,true)}
+          ${meta('Trigger',data.trigger)}
+          ${meta('Telepítés',data.installation_id,true)}
+          ${meta('Létrehozva',fmt(data.generated_at))}
+          ${meta('Beérkezett',fmt(data.received_at))}
+          ${meta('SHA-256',data.report_sha256,true)}
+        </div>
+        <section class="card section json-wrap">
+          <div class="section-head"><div class="section-title">Teljes diagnosztikai riport</div><span class="pill">JSON</span></div>
+          <pre class="json" id="json">${esc(pretty)}</pre>
+        </section>`;
+    }
+
+    async function boot(){
+      try{render(await api('/api/anthbot/admin/diagnostics/'+encodeURIComponent(reportId)));}
+      catch(err){const box=document.getElementById('content');box.className='card error';box.textContent='Nem sikerült megnyitni a diagnosztikát: '+err.message;}
+    }
+
+    document.getElementById('copy').onclick=async()=>{
+      if(!current)return;
+      const text=JSON.stringify(current.report ?? {},null,2);
+      try{await navigator.clipboard.writeText(text);document.getElementById('copy').textContent='Másolva ✓';setTimeout(()=>document.getElementById('copy').textContent='JSON másolása',1500);}catch(_){document.getElementById('copy').textContent='Másolás sikertelen';}
+    };
+    boot();
+  </script>
+</body>
+</html>
