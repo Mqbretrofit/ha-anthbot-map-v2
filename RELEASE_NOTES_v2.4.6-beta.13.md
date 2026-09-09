@@ -9,3 +9,5 @@
 - Rearms after an error clears, so the same error is reported again if it genuinely returns later.
 - Automatic reports remain privacy filtered: raw mower serial and alias are omitted; the existing anonymous serial hash remains available for identifying the same mower across reports.
 - No mower-control, map rendering, Battery Saver or model-specific control behavior is changed.
+
+Built directly on the proven v2.4.6-beta.12 mower/map behavior; the new reporter only observes already-published coordinator state.
