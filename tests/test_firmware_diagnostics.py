@@ -95,6 +95,54 @@ class _Coordinator:
     }
 
 
+class _N8Device:
+    model = "N8"
+    alias = "N8 test mower"
+    is_owner = True
+
+
+class _N8Coordinator:
+    device = _N8Device()
+    client = _Client()
+    last_update_success = True
+    _live_shadow_connected = True
+    _live_shadow_error = None
+    reported_state = {
+        "fw_version": {"system_version": "1.2.3"},
+        "mode": {"value": "dumpgrass"},
+        "grass_state": {
+            "grass_bag_in_position": 1,
+            "grass_shield_in_position": 0,
+        },
+        "anti_loss_switch": 1,
+        "anti_loss_radius": 8,
+        "rain_switch": 1,
+        "rain_continue_time": 10800,
+        "param_set": {
+            "work_mode": 1,
+            "cutter_height": 45,
+            "mow_count": 2,
+            "rid_switch": 1,
+            "nest_switch": 0,
+        },
+        "pobctl": {"switch": 1, "level": 2},
+        "device_config": {
+            "child_lock": 1,
+            "pin_code": "1234",
+            "anti_loss_radius": 8,
+        },
+        "_n8_dumping": True,
+        "_n8_grass_bag_in_position": 1,
+        "_n8_grass_shield_in_position": 0,
+        "_area_definition": {
+            "dump_grass_areas": [
+                {"id": 7, "points": [[1, 2], [3, 4], [5, 6]]},
+                {"id": 8, "points": [[11, 12], [13, 14], [15, 16]]},
+            ]
+        },
+    }
+
+
 class FirmwareDiagnosticsTests(unittest.TestCase):
     def test_report_contains_reproducible_path_and_no_go_evidence(self) -> None:
         report = MODULE.build_firmware_diagnostics_report(
@@ -114,6 +162,7 @@ class FirmwareDiagnosticsTests(unittest.TestCase):
         self.assertEqual(report["no_go"]["zones"][0]["id"], 3)
         self.assertEqual(report["latest_task_event"]["code"], 1001)
         self.assertNotIn("raw_state", report)
+        self.assertNotIn("n8_protocol", report)
 
     def test_raw_state_is_opt_in_and_secrets_are_redacted(self) -> None:
         report = MODULE.build_firmware_diagnostics_report(
@@ -125,6 +174,28 @@ class FirmwareDiagnosticsTests(unittest.TestCase):
             report["raw_state"]["nested"]["session_token"], "<redacted>"
         )
         self.assertEqual(report["raw_state"]["nested"]["ok"], 1)
+
+    def test_n8_report_contains_compact_protocol_discovery_evidence(self) -> None:
+        report = MODULE.build_firmware_diagnostics_report(_N8Coordinator())
+        n8 = report["n8_protocol"]
+
+        self.assertTrue(n8["direct"]["_n8_dumping"])
+        self.assertEqual(n8["direct"]["anti_loss_radius"], 8)
+        self.assertEqual(n8["param_set"]["work_mode"], 1)
+        self.assertEqual(n8["perception_obstacle"], {"switch": 1, "level": 2})
+        self.assertEqual(n8["dump_grass_areas"]["count"], 2)
+        self.assertEqual(n8["dump_grass_areas"]["ids"], [7, 8])
+        self.assertEqual(n8["candidate_fields"]["device_config.child_lock"], 1)
+        self.assertEqual(n8["candidate_fields"]["device_config.anti_loss_radius"], 8)
+        self.assertNotIn("device_config.pin_code", n8["candidate_fields"])
+
+    def test_pin_codes_are_redacted_from_opt_in_raw_state(self) -> None:
+        report = MODULE.build_firmware_diagnostics_report(
+            _N8Coordinator(), include_raw_state=True
+        )
+        self.assertEqual(
+            report["raw_state"]["device_config"]["pin_code"], "<redacted>"
+        )
 
     def test_identifiers_can_be_removed_without_losing_trace_hash(self) -> None:
         report = MODULE.build_firmware_diagnostics_report(
