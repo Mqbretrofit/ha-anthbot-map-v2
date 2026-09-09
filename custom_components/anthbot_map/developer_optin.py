@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import secrets
 import uuid
 from typing import Any
 
@@ -24,7 +23,6 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .const import (
     CONF_AREA_CODE,
     CONF_DEVELOPER_AGENT_ENABLED,
-    CONF_DEVELOPER_AGENT_KEY,
     CONF_DEVELOPER_INSTALLATION_ID,
     CONF_SEND_AUTOMATIC_DIAGNOSTICS,
     CONF_SHARE_ANONYMOUS_USAGE,
@@ -35,7 +33,8 @@ from .developer_reporting import async_send_anonymous_usage_report
 
 SERVICE_GET_DEVELOPER_REPORTING = "developer_reporting_get"
 SERVICE_UPDATE_DEVELOPER_REPORTING = "developer_reporting_update"
-CONF_DEVELOPER_OPT_IN_ACKNOWLEDGED = "developer_opt_in_acknowledged"
+CONF_DEVELOPER_REPORTING_ACKNOWLEDGED = "developer_reporting_opt_in_acknowledged"
+CONF_LEGACY_DEVELOPER_OPT_IN_ACKNOWLEDGED = "developer_opt_in_acknowledged"
 CONF_DEVELOPER_PROMPT_VERSION = "developer_prompt_version"
 
 _POPUP_RESOURCE_PATH = "/anthbot-map-v2/developer-optin.js"
@@ -44,7 +43,6 @@ _UPDATE_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_SHARE_ANONYMOUS_USAGE): cv.boolean,
         vol.Optional(CONF_SEND_AUTOMATIC_DIAGNOSTICS): cv.boolean,
-        vol.Optional(CONF_DEVELOPER_AGENT_ENABLED): cv.boolean,
         vol.Optional("dismissed", default=False): cv.boolean,
     },
     extra=vol.PREVENT_EXTRA,
@@ -75,6 +73,46 @@ def _first_entry(hass: HomeAssistant):
     return entries[0] if entries else None
 
 
+def _reporting_acknowledged(entry: Any) -> bool:
+    """Return reporting-only consent acknowledgement.
+
+    Older beta builds used one shared acknowledgement flag for both reporting
+    and the separate read-only Developer Agent. That made enabling the agent
+    suppress the two reporting checkboxes forever. Prefer the new dedicated
+    flag. For legacy installs, keep a previous reporting acknowledgement only
+    when reporting is currently enabled or the Developer Agent is not enabled.
+    This specifically repairs installs where the legacy flag was set solely by
+    opting into the Developer Agent.
+    """
+    if CONF_DEVELOPER_REPORTING_ACKNOWLEDGED in entry.options:
+        return bool(entry.options.get(CONF_DEVELOPER_REPORTING_ACKNOWLEDGED))
+    if CONF_DEVELOPER_REPORTING_ACKNOWLEDGED in entry.data:
+        return bool(entry.data.get(CONF_DEVELOPER_REPORTING_ACKNOWLEDGED))
+
+    usage_enabled = _entry_option(entry, CONF_SHARE_ANONYMOUS_USAGE, False)
+    diagnostics_enabled = _entry_option(
+        entry, CONF_SEND_AUTOMATIC_DIAGNOSTICS, False
+    )
+    if usage_enabled or diagnostics_enabled:
+        return True
+
+    legacy_acknowledged = bool(
+        entry.options.get(
+            CONF_LEGACY_DEVELOPER_OPT_IN_ACKNOWLEDGED,
+            entry.data.get(CONF_LEGACY_DEVELOPER_OPT_IN_ACKNOWLEDGED, False),
+        )
+    )
+    if not legacy_acknowledged:
+        return False
+
+    # The old shared flag is not trustworthy when the Developer Agent is on
+    # while both reporting choices are off: this is the beta.1-beta.5 bug.
+    developer_agent_enabled = _entry_option(
+        entry, CONF_DEVELOPER_AGENT_ENABLED, False
+    )
+    return not developer_agent_enabled
+
+
 def _preference_state(hass: HomeAssistant) -> dict[str, Any]:
     """Return frontend-safe popup state without account or mower identifiers."""
     entry = _first_entry(hass)
@@ -91,12 +129,7 @@ def _preference_state(hass: HomeAssistant) -> dict[str, Any]:
             "should_show": False,
         }
 
-    acknowledged = bool(
-        entry.options.get(
-            CONF_DEVELOPER_OPT_IN_ACKNOWLEDGED,
-            entry.data.get(CONF_DEVELOPER_OPT_IN_ACKNOWLEDGED, False),
-        )
-    )
+    acknowledged = _reporting_acknowledged(entry)
     prompt_version = entry.options.get(
         CONF_DEVELOPER_PROMPT_VERSION,
         entry.data.get(CONF_DEVELOPER_PROMPT_VERSION),
@@ -164,13 +197,11 @@ async def async_register_developer_optin(hass: HomeAssistant) -> None:
         old_diagnostics = _entry_option(
             entry, CONF_SEND_AUTOMATIC_DIAGNOSTICS, False
         )
-        old_agent = _entry_option(entry, CONF_DEVELOPER_AGENT_ENABLED, False)
 
         usage_was_submitted = CONF_SHARE_ANONYMOUS_USAGE in service_call.data
         diagnostics_was_submitted = (
             CONF_SEND_AUTOMATIC_DIAGNOSTICS in service_call.data
         )
-        agent_was_submitted = CONF_DEVELOPER_AGENT_ENABLED in service_call.data
 
         new_usage = bool(
             service_call.data.get(CONF_SHARE_ANONYMOUS_USAGE, old_usage)
@@ -180,42 +211,31 @@ async def async_register_developer_optin(hass: HomeAssistant) -> None:
                 CONF_SEND_AUTOMATIC_DIAGNOSTICS, old_diagnostics
             )
         )
-        new_agent = bool(
-            service_call.data.get(CONF_DEVELOPER_AGENT_ENABLED, old_agent)
-        )
 
         options = dict(entry.options)
         if usage_was_submitted:
             options[CONF_SHARE_ANONYMOUS_USAGE] = new_usage
         if diagnostics_was_submitted:
             options[CONF_SEND_AUTOMATIC_DIAGNOSTICS] = new_diagnostics
-        if agent_was_submitted:
-            options[CONF_DEVELOPER_AGENT_ENABLED] = new_agent
 
-        # A dismissal suppresses the popup only for this integration version.
-        # Saving at least one enabled checkbox records a permanent acknowledgement;
-        # later disabling reporting never makes future update prompts return.
+        # A dismissal suppresses the reporting popup only for this integration
+        # version. Enabling either reporting choice permanently acknowledges the
+        # reporting popup, independently from Developer Agent consent.
         options[CONF_DEVELOPER_PROMPT_VERSION] = _integration_version()
-        acknowledged = bool(
-            options.get(
-                CONF_DEVELOPER_OPT_IN_ACKNOWLEDGED,
-                entry.data.get(CONF_DEVELOPER_OPT_IN_ACKNOWLEDGED, False),
-            )
-        )
+        acknowledged = _reporting_acknowledged(entry)
         if (
             (usage_was_submitted and new_usage)
             or (diagnostics_was_submitted and new_diagnostics)
-            or (agent_was_submitted and new_agent)
         ):
             acknowledged = True
         if acknowledged:
-            options[CONF_DEVELOPER_OPT_IN_ACKNOWLEDGED] = True
+            options[CONF_DEVELOPER_REPORTING_ACKNOWLEDGED] = True
 
         entry_data = dict(entry.data)
         installation_id = options.get(CONF_DEVELOPER_INSTALLATION_ID)
         if not isinstance(installation_id, str) or not installation_id:
             installation_id = entry_data.get(CONF_DEVELOPER_INSTALLATION_ID)
-        if (new_usage or new_diagnostics or new_agent) and (
+        if (new_usage or new_diagnostics) and (
             not isinstance(installation_id, str) or not installation_id
         ):
             installation_id = str(uuid.uuid4())
@@ -224,13 +244,6 @@ async def async_register_developer_optin(hass: HomeAssistant) -> None:
             # components read it without exposing account/device identifiers.
             entry_data[CONF_DEVELOPER_INSTALLATION_ID] = installation_id
             options[CONF_DEVELOPER_INSTALLATION_ID] = installation_id
-
-        # The developer-agent key authenticates only this reporting agent. It is
-        # unrelated to the ANTHBOT account and is never returned to the frontend.
-        if new_agent:
-            agent_key = entry_data.get(CONF_DEVELOPER_AGENT_KEY)
-            if not isinstance(agent_key, str) or len(agent_key) < 32:
-                entry_data[CONF_DEVELOPER_AGENT_KEY] = secrets.token_urlsafe(32)
 
         hass.config_entries.async_update_entry(
             entry,
