@@ -14,7 +14,7 @@
   <main class="shell">
     <div class="topbar">
       <div class="title-wrap"><div class="eyebrow">ANTHBOT Reporting Server</div><h1 id="title">Diagnosztika</h1></div>
-      <div class="actions"><a class="btn" href="/dashboard">← Vissza</a><button class="btn" id="copy" type="button">JSON másolása</button></div>
+      <div class="actions"><a class="btn" href="/dashboard">← Vissza</a><button class="btn" id="copy" type="button">JSON másolása</button><button class="btn" id="select" type="button">JSON kijelölése</button><button class="btn" id="download" type="button">JSON letöltése</button></div>
     </div>
     <div id="content" class="card loading">Diagnosztikai jelentés betöltése…</div>
     <div class="footer">A teljes, szerveren tárolt adatvédelmi szűrésen átesett riport jelenik meg.</div>
@@ -33,12 +33,36 @@
     }
 
     function meta(label,value,mono=false){return `<div class="card meta"><div class="label">${esc(label)}</div><div class="value ${mono?'mono':''}">${esc(value ?? '—')}</div></div>`;}
+    function reportText(){return JSON.stringify(current?.report ?? {},null,2);}
+
+    async function copyText(text){
+      if(navigator.clipboard?.writeText){
+        try{await navigator.clipboard.writeText(text);return true;}catch(_){}
+      }
+      const area=document.createElement('textarea');
+      area.value=text;
+      area.setAttribute('readonly','');
+      area.style.position='fixed';
+      area.style.left='0';
+      area.style.top='0';
+      area.style.width='1px';
+      area.style.height='1px';
+      area.style.opacity='0';
+      document.body.appendChild(area);
+      area.focus();
+      area.select();
+      area.setSelectionRange(0,text.length);
+      let ok=false;
+      try{ok=document.execCommand('copy');}catch(_){}
+      area.remove();
+      return ok;
+    }
 
     function render(data){
       current=data;
       document.getElementById('title').textContent = data.trigger || 'Diagnosztika';
       document.title = `${data.trigger || 'Diagnosztika'} – ANTHBOT`;
-      const pretty=JSON.stringify(data.report ?? {},null,2);
+      const pretty=reportText();
       document.getElementById('content').className='';
       document.getElementById('content').innerHTML=`
         <div class="meta-grid">
@@ -51,7 +75,7 @@
         </div>
         <section class="card section json-wrap">
           <div class="section-head"><div class="section-title">Teljes diagnosztikai riport</div><span class="pill">JSON</span></div>
-          <pre class="json" id="json">${esc(pretty)}</pre>
+          <pre class="json" id="json" tabindex="0">${esc(pretty)}</pre>
         </section>`;
     }
 
@@ -62,8 +86,41 @@
 
     document.getElementById('copy').onclick=async()=>{
       if(!current)return;
-      const text=JSON.stringify(current.report ?? {},null,2);
-      try{await navigator.clipboard.writeText(text);document.getElementById('copy').textContent='Másolva ✓';setTimeout(()=>document.getElementById('copy').textContent='JSON másolása',1500);}catch(_){document.getElementById('copy').textContent='Másolás sikertelen';}
+      const button=document.getElementById('copy');
+      const ok=await copyText(reportText());
+      button.textContent=ok?'Másolva ✓':'Másolás sikertelen – jelöld ki';
+      setTimeout(()=>button.textContent='JSON másolása',1800);
+    };
+
+    document.getElementById('select').onclick=()=>{
+      const node=document.getElementById('json');
+      if(!node)return;
+      const selection=window.getSelection();
+      const range=document.createRange();
+      range.selectNodeContents(node);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      node.focus({preventScroll:true});
+      const button=document.getElementById('select');
+      button.textContent='Kijelölve ✓ – Ctrl+C';
+      setTimeout(()=>button.textContent='JSON kijelölése',2200);
+    };
+
+    document.getElementById('download').onclick=()=>{
+      if(!current)return;
+      const safeName=String(current.report_id || reportId || 'anthbot-diagnostics').replace(/[^A-Za-z0-9._-]/g,'_');
+      const blob=new Blob([reportText()+'\n'],{type:'application/json;charset=utf-8'});
+      const url=URL.createObjectURL(blob);
+      const link=document.createElement('a');
+      link.href=url;
+      link.download=safeName+'.json';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),1000);
+      const button=document.getElementById('download');
+      button.textContent='Letöltve ✓';
+      setTimeout(()=>button.textContent='JSON letöltése',1800);
     };
     boot();
   </script>
