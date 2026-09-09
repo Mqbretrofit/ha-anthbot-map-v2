@@ -26,6 +26,14 @@
   "options": {
     "step": {
       "init": {
+        "title": "Anthbot Map settings",
+        "description": "Choose which settings you want to change.",
+        "menu_options": {
+          "battery_saver": "Battery saver",
+          "developer_reporting": "Development and diagnostics"
+        }
+      },
+      "battery_saver_mower": {
         "title": "Battery saver",
         "description": "Choose the mower to configure.",
         "data": {
@@ -42,10 +50,23 @@
           "resume_level": "Resume charge level (%)",
           "shared_rtk_power": "Charging station and RTK share the same smart plug"
         }
+      },
+      "developer_reporting": {
+        "title": "Development and diagnostics",
+        "description": "These options are voluntary and can be turned off again at any time. They are independent from the read-only Developer Agent.",
+        "data": {
+          "share_anonymous_usage": "Share anonymous usage statistics",
+          "send_automatic_diagnostics": "Send automatic diagnostic reports"
+        },
+        "data_description": {
+          "share_anonymous_usage": "Sends minimal technical usage information such as integration/Home Assistant version, country and ANTHBOT model counts. Username, password, serial number, GPS position and map are not sent.",
+          "send_automatic_diagnostics": "Sends privacy-filtered technical diagnostics when supported errors occur, such as mower errors, boundary/no-go crossings and map/path processing failures."
+        }
       }
     },
     "error": {
-      "invalid_battery_thresholds": "The resume and idle recharge levels must be lower than the upper charge limit."
+      "invalid_battery_thresholds": "The resume and idle recharge levels must be lower than the upper charge limit.",
+      "reporting_service_unavailable": "The reporting settings service is not available. Reload the Anthbot Map integration or restart Home Assistant and try again."
     },
     "abort": {
       "no_devices": "No loaded Anthbot mower is available."
