@@ -33,6 +33,41 @@ def _robot_summary(report: Any) -> dict[str, Any]:
     }
 
 
+def _diagnostic_event_summary(report: Any) -> dict[str, Any] | None:
+    """Return the privacy-filtered automatic mower-error context, when present."""
+    if not isinstance(report, dict):
+        return None
+    event = report.get("diagnostic_event")
+    if not isinstance(event, dict):
+        return None
+
+    task_event = event.get("task_event")
+    if not isinstance(task_event, dict):
+        task_event = {}
+
+    summary = {
+        "trigger": event.get("trigger"),
+        "err_code": event.get("err_code"),
+        "err_description": event.get("err_description"),
+        "event_code": event.get("event_code"),
+        "cloud_task_event_code": event.get("cloud_task_event_code"),
+        "mode": event.get("mode"),
+        "robot_sta": event.get("robot_sta"),
+        "online": event.get("online"),
+        "task_event_code": task_event.get("code"),
+        "task_event_type": task_event.get("code_type"),
+        "task_event_message": (
+            task_event.get("message")
+            or task_event.get("msg")
+            or task_event.get("content")
+            or task_event.get("description")
+        ),
+    }
+    if not any(value is not None and value != "" for value in summary.values()):
+        return None
+    return summary
+
+
 def _report_kind(report: Any, trigger: object) -> str:
     """Return manufacturer/integration category, including legacy reports."""
     if isinstance(report, dict):
@@ -79,6 +114,7 @@ def admin_diagnostics_summary(
                 "report_sha256": row["report_sha256"],
                 "report_kind": _report_kind(report, row["trigger"]),
                 "robot": _robot_summary(report),
+                "diagnostic_event": _diagnostic_event_summary(report),
             }
         )
     return {"items": items}
