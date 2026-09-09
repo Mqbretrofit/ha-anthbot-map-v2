@@ -103,10 +103,23 @@ class DeveloperReportingTests(unittest.TestCase):
     def test_popup_backend_is_version_gated_and_permanently_acknowledges_opt_in(self) -> None:
         source = (PACKAGE_DIR / "developer_optin.py").read_text(encoding="utf-8")
         self.assertIn('CONF_DEVELOPER_PROMPT_VERSION = "developer_prompt_version"', source)
-        self.assertIn('CONF_DEVELOPER_OPT_IN_ACKNOWLEDGED = "developer_opt_in_acknowledged"', source)
+        self.assertIn(
+            'CONF_DEVELOPER_REPORTING_ACKNOWLEDGED = "developer_reporting_opt_in_acknowledged"',
+            source,
+        )
         self.assertIn('"should_show": not acknowledged and prompt_version != version', source)
-        self.assertIn("options[CONF_DEVELOPER_OPT_IN_ACKNOWLEDGED] = True", source)
+        self.assertIn("options[CONF_DEVELOPER_REPORTING_ACKNOWLEDGED] = True", source)
         self.assertIn('event="opt_in"', source)
+
+    def test_developer_agent_cannot_acknowledge_reporting_popup(self) -> None:
+        source = (PACKAGE_DIR / "developer_optin.py").read_text(encoding="utf-8")
+        self.assertIn("def _reporting_acknowledged", source)
+        self.assertIn("CONF_LEGACY_DEVELOPER_OPT_IN_ACKNOWLEDGED", source)
+        self.assertIn("developer_agent_enabled", source)
+        self.assertIn("return not developer_agent_enabled", source)
+        self.assertNotIn("agent_was_submitted", source)
+        self.assertNotIn("new_agent", source)
+        self.assertNotIn("CONF_DEVELOPER_AGENT_KEY", source)
 
     def test_popup_is_registered_from_independent_tracker_platform(self) -> None:
         source = (PACKAGE_DIR / "device_tracker.py").read_text(encoding="utf-8")
