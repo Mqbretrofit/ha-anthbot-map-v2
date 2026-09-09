@@ -1,0 +1,121 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Anthbot Map",
+        "description": "Az Anthbot-fiók, az eszközfelismerés és a felhőalapú állapotlekérdezés beállítása.",
+        "data": {
+          "name": "Név",
+          "username": "E-mail / felhasználónév",
+          "password": "Jelszó",
+          "api_host": "Anthbot API-kiszolgáló",
+          "area_code": "Ország",
+          "scan_interval": "Lekérdezési időköz (másodperc)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Ez az Anthbot-fiók már be van állítva."
+    },
+    "error": {
+      "cannot_connect": "Nem sikerült kapcsolódni vagy hitelesíteni az Anthbot felhőben.",
+      "no_devices": "A bejelentkezés sikerült, de nem található Anthbot eszköz ebben a fiókban.",
+      "unknown": "Váratlan hiba történt."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Anthbot Map beállítások",
+        "description": "Válaszd ki, melyik beállítást szeretnéd módosítani.",
+        "menu_options": {
+          "battery_saver": "Akkumulátorkímélő",
+          "developer_reporting": "Fejlesztés és diagnosztika"
+        }
+      },
+      "battery_saver_mower": {
+        "title": "Akkumulátorkímélő",
+        "description": "Válaszd ki a beállítandó robotfűnyírót.",
+        "data": {
+          "mower": "Robotfűnyíró"
+        }
+      },
+      "battery_saver": {
+        "title": "Akkumulátorkímélő",
+        "description": "A töltő és a határértékek beállítása ehhez: {serial_number}. A mód addig inaktív, amíg a kapcsolója nincs bekapcsolva.",
+        "data": {
+          "charger_switch": "Okoskonnektor kapcsoló",
+          "charge_limit": "Felső töltési határ (%)",
+          "maintenance_level": "Tétlen újratöltés indítási szintje (%)",
+          "resume_level": "Töltés folytatási szintje (%)",
+          "shared_rtk_power": "A töltőállomás és az RTK ugyanazt az okoskonnektort használja"
+        }
+      },
+      "developer_reporting": {
+        "title": "Fejlesztés és diagnosztika",
+        "description": "Ezek a lehetőségek önkéntesek, és bármikor újra kikapcsolhatók. A csak olvasási jogosultságú Developer Agenttől függetlenek.",
+        "data": {
+          "share_anonymous_usage": "Anonim használati statisztikák megosztása",
+          "send_automatic_diagnostics": "Automatikus diagnosztikai jelentések küldése"
+        },
+        "data_description": {
+          "share_anonymous_usage": "Minimális technikai használati adatokat küld, például az integráció és a Home Assistant verzióját, az országot és az ANTHBOT modellek számát. Felhasználónév, jelszó, sorozatszám, GPS-pozíció és térkép nem kerül elküldésre.",
+          "send_automatic_diagnostics": "Adatvédelmi szűrésen átesett technikai diagnosztikát küld támogatott hibák esetén, például robotfűnyíró-hibáknál, határ/no-go átlépéseknél és térkép-/útvonal-feldolgozási hibáknál."
+        }
+      }
+    },
+    "error": {
+      "invalid_battery_thresholds": "A folytatási és a tétlen újratöltési szintnek alacsonyabbnak kell lennie a felső töltési határnál.",
+      "reporting_service_unavailable": "A jelentésküldési beállítási szolgáltatás nem érhető el. Töltsd újra az Anthbot Map integrációt vagy indítsd újra a Home Assistantot, majd próbáld újra."
+    },
+    "abort": {
+      "no_devices": "Nincs betöltött Anthbot robotfűnyíró."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "mower_status": {"name": "Robotfűnyíró állapota"},
+      "cutting_height": {"name": "Vágási magasság"},
+      "voice_volume": {"name": "Hangerő"},
+      "mowing_time": {"name": "Nyírási idő (munkamenet)"},
+      "mowing_area": {"name": "Lenyírt terület (munkamenet)"},
+      "custom_mowing_direction": {"name": "Egyéni nyírási irány"},
+      "custom_mowing_direction_enabled": {"name": "Egyéni nyírási irány engedélyezve"},
+      "battery_level": {"name": "Akkumulátorszint"},
+      "zones": {"name": "Zónák"},
+      "auto_zones": {"name": "Automatikus zónák"}
+    },
+    "binary_sensor": {
+      "connection": {"name": "Kapcsolat"},
+      "charging": {"name": "Töltés"},
+      "custom_mowing_direction_enabled": {"name": "Egyéni nyírási irány engedélyezve"}
+    },
+    "button": {
+      "connect_cloud": {"name": "Felhő csatlakoztatása"},
+      "start_full_mow": {"name": "Teljes nyírás indítása"},
+      "stop_mow": {"name": "Nyírás leállítása"},
+      "return_to_dock": {"name": "Visszatérés a dokkolóhoz"},
+      "resume_mow": {"name": "Szüneteltetett feladat folytatása"},
+      "pause_mow": {"name": "Nyírás szüneteltetése"},
+      "reset_blade_maintenance": {"name": "Pengekarbantartás visszaállítása"},
+      "reset_camera_maintenance": {"name": "Kamerakarbantartás visszaállítása"},
+      "reset_dock_contact_maintenance": {"name": "Töltőérintkezők karbantartásának visszaállítása"}
+    },
+    "number": {
+      "mow_height_setting": {"name": "Nyírási magasság"},
+      "voice_volume_setting": {"name": "Hangerő"},
+      "custom_mowing_direction_setting": {"name": "Egyéni nyírási irány"},
+      "rain_continue_time_setting": {"name": "Eső utáni várakozási idő"},
+      "mow_count_setting": {"name": "Nyírási menetek száma"},
+      "visual_obstacle_level_setting": {"name": "Vizuális akadályérzékelés érzékenysége"}
+    },
+    "switch": {
+      "custom_mowing_direction_enabled": {"name": "Egyéni nyírási irány engedélyezve"},
+      "rain_perception_enabled": {"name": "Esőérzékelés"},
+      "visual_obstacle_detection_enabled": {"name": "Vizuális akadályérzékelés"},
+      "edge_following_return_enabled": {"name": "Visszatérés szegélykövetéssel"},
+      "automatic_dock_mowing_enabled": {"name": "Automatikus dokkoló körüli nyírás"},
+      "battery_saver_mode": {"name": "Akkumulátorkímélő mód"}
+    }
+  }
+}
