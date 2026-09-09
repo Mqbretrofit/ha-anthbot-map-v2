@@ -40,7 +40,12 @@ class DiagnosticDashboardTests(unittest.TestCase):
                 "trigger": "live_shadow_error",
                 "report": {
                     "schema": "anthbot-firmware-diagnostics-v1",
-                    "device": {"model": "M9 Pro", "serial_sha256": "abc"},
+                    "device": {
+                        "model": "M9 Pro",
+                        "alias": None,
+                        "serial_number": None,
+                        "serial_sha256": "abcdef0123456789",
+                    },
                     "telemetry": {"err_code": 100},
                     "path": {"path_id": "live-7", "points": 42},
                 },
@@ -62,6 +67,19 @@ class DiagnosticDashboardTests(unittest.TestCase):
         self.assertEqual(body["report"]["device"]["model"], "M9 Pro")
         self.assertEqual(body["report"]["telemetry"]["err_code"], 100)
 
+    def test_diagnostics_summary_identifies_robot_without_full_report(self) -> None:
+        report_id = self._create_report()
+        response = self.client.get(
+            "/api/anthbot/admin/diagnostics-summary?limit=20",
+            headers=self._admin_headers(),
+        )
+        self.assertEqual(response.status_code, 200)
+        item = response.json()["items"][0]
+        self.assertEqual(item["report_id"], report_id)
+        self.assertEqual(item["robot"]["model"], "M9 Pro")
+        self.assertEqual(item["robot"]["serial_sha256"], "abcdef0123456789")
+        self.assertNotIn("report", item)
+
     def test_single_diagnostic_detail_api_returns_404(self) -> None:
         response = self.client.get(
             "/api/anthbot/admin/diagnostics/AB-missing",
@@ -82,6 +100,8 @@ class DiagnosticDashboardTests(unittest.TestCase):
         self.assertEqual(dashboard.status_code, 200)
         self.assertIn("diagnosticLinked", dashboard.text)
         self.assertIn("/dashboard/diagnostics/", dashboard.text)
+        self.assertIn("diagnostics-summary?limit=20", dashboard.text)
+        self.assertIn("Robot:", dashboard.text)
 
     def test_diagnostic_detail_page_requires_dashboard_session(self) -> None:
         report_id = self._create_report()
