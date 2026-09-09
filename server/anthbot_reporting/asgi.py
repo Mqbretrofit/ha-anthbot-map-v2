@@ -29,14 +29,68 @@ _FRAME_ANCESTORS = (
 )
 
 _DASHBOARD_DIAGNOSTICS_LINK_SCRIPT = b"""
+<style>
+.diag-robot {
+  color: #dce7f8;
+  font-size: .82rem;
+  margin-top: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.diag-robot strong { color: #baf7e7; font-weight: 650; }
+</style>
 <script>
 (() => {
+  const summaries = new Map();
+
+  const reportIdFor = (item) => {
+    const meta = item.querySelector('.diag-meta');
+    return (meta?.textContent || '').split('\u00b7')[0].trim();
+  };
+
+  const decorateRobot = (item, reportId) => {
+    const summary = summaries.get(reportId);
+    if (!summary) return;
+    const robot = summary.robot || {};
+    const parts = [];
+    if (robot.model) parts.push(robot.model);
+    if (robot.alias) parts.push(robot.alias);
+    if (robot.serial_number) {
+      parts.push(robot.serial_number);
+    } else if (robot.serial_sha256) {
+      parts.push('ID ' + String(robot.serial_sha256).slice(0, 8) + '\u2026');
+    }
+    if (!parts.length) parts.push('Ismeretlen robot');
+
+    let line = item.querySelector('.diag-robot');
+    if (!line) {
+      line = document.createElement('div');
+      line.className = 'diag-robot';
+      const title = item.querySelector('.diag-title');
+      if (title?.parentNode) title.insertAdjacentElement('afterend', line);
+    }
+    line.innerHTML = '<strong>Robot:</strong> ' + parts
+      .map((value) => String(value).replace(/[&<>\"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#039;'}[c])))
+      .join(' \u00b7 ');
+
+    const badge = item.querySelector('.pill.warn');
+    if (badge) {
+      const integration = summary.report_kind === 'integration';
+      badge.textContent = integration ? 'integr\u00e1ci\u00f3' : 'gy\u00e1ri riport';
+      badge.title = integration
+        ? 'Anthbot Map integr\u00e1ci\u00f3s diagnosztika'
+        : 'ANTHBOT gy\u00e1rt\u00f3nak tov\u00e1bb\u00edthat\u00f3 diagnosztika';
+    }
+  };
+
   const wireDiagnostics = () => {
     document.querySelectorAll('.diag-item').forEach((item) => {
-      if (item.dataset.diagnosticLinked === '1') return;
-      const meta = item.querySelector('.diag-meta');
-      const reportId = (meta?.textContent || '').split('\u00b7')[0].trim();
+      const reportId = reportIdFor(item);
       if (!reportId) return;
+      decorateRobot(item, reportId);
+
+      if (item.dataset.diagnosticLinked === '1') return;
       const open = () => {
         location.href = '/dashboard/diagnostics/' + encodeURIComponent(reportId);
       };
@@ -53,17 +107,30 @@ _DASHBOARD_DIAGNOSTICS_LINK_SCRIPT = b"""
         }
       });
       const badge = item.querySelector('.pill.warn');
-      if (badge) {
-        badge.style.cursor = 'pointer';
-        badge.title = 'Diagnosztika megnyitasa';
-      }
+      if (badge) badge.style.cursor = 'pointer';
     });
   };
+
+  const loadSummaries = async () => {
+    try {
+      const response = await fetch('/api/anthbot/admin/diagnostics-summary?limit=20', {
+        credentials: 'same-origin',
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      (data.items || []).forEach((item) => summaries.set(item.report_id, item));
+      wireDiagnostics();
+    } catch (_err) {
+      // The dashboard remains usable even if the lightweight identity lookup fails.
+    }
+  };
+
   new MutationObserver(wireDiagnostics).observe(document.documentElement, {
     childList: true,
     subtree: true,
   });
   wireDiagnostics();
+  loadSummaries();
 })();
 </script>
 """
