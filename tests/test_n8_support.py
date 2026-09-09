@@ -86,8 +86,6 @@ def test_n8_rain_payload_is_normalized_inside_n8_layer_only() -> None:
     assert 'cmd == "ctl_rainer"' in control
     assert 'normalized["rain_switch"] = normalized.pop("switch")' in control
     assert 'normalized["rain_continue_time"] = normalized.pop("continue_time")' in control
-    # Existing shared beta.9 service remains untouched and keeps its historical
-    # payload names; only the N8 transport translates them.
     assert '"switch": switch_value' in init
     assert '"continue_time": rain_continue_time * 3600' in init
 
@@ -122,6 +120,21 @@ def test_n8_dump_buttons_are_only_added_for_n8() -> None:
     assert 'if is_n8_model(getattr(coordinator.device, "model", None)):' in buttons
     assert 'cmd="start_dump", data=1' in buttons
     assert 'cmd="stop_dump", data=1' in buttons
+
+
+def test_n8_work_mode_select_is_model_scoped() -> None:
+    selects = _read(INTEGRATION / "select.py")
+    assert '"Mulch": 0' in selects
+    assert '"Collect": 1' in selects
+    assert '"Sweep": 2' in selects
+    assert "AnthbotN8WorkModeSelect" in selects
+    assert 'if is_n8_model(getattr(coordinator.device, "model", None)):' in selects
+    assert 'cmd="param_set"' in selects
+    assert 'data={"work_mode": raw_value}' in selects
+    # Existing per-zone Normal/Efficient selector stays intact.
+    assert '"Normal": 0' in selects
+    assert '"Efficient": 1' in selects
+    assert "AnthbotZoneMowingModeSelect" in selects
 
 
 def test_n8_binary_sensors_are_model_scoped_and_generic_sensors_remain() -> None:
