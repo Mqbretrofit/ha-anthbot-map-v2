@@ -80,14 +80,26 @@ def test_n8_core_mowing_and_dump_commands_are_native() -> None:
     assert 'body = {"state": {"desired": {"cmd": cmd, "data": data}}}' in control
 
 
-def test_n8_rain_payload_is_normalized_inside_n8_layer_only() -> None:
+def test_n8_current_mgs_settings_use_device_config_inside_n8_layer_only() -> None:
     control = _read(MODELS / "n8_control.py")
     init = _read(INTEGRATION / "__init__.py")
+
+    assert '"device_config"' in control
+    assert 'cmd == "anti_loss_switch"' in control
+    assert 'return "device_config", {"anti_loss_switch": _binary_flag(data)}' in control
+    assert 'cmd == "anti_loss_radius"' in control
+    assert 'return "device_config", {"anti_loss_radius": value}' in control
+
     assert 'cmd == "ctl_rainer"' in control
-    assert 'normalized["rain_switch"] = normalized.pop("switch")' in control
-    assert 'normalized["rain_continue_time"] = normalized.pop("continue_time")' in control
+    assert 'normalized["rain_switch"] = _binary_flag(data["switch"])' in control
+    assert 'normalized["rain_continue_time"] = data["continue_time"]' in control
     assert '"switch": switch_value' in init
     assert '"continue_time": rain_continue_time * 3600' in init
+
+    assert 'cmd == "perception_obstacle_ctl"' in control
+    assert 'normalized["pobctl_switch"] = _binary_flag(data["switch"])' in control
+    assert 'normalized["pobctl_level"] = data["level"]' in control
+    assert 'cmd, data = _normalize_n8_command(cmd, data)' in control
 
 
 def test_n8_skips_genie_app_state_without_changing_m_series_detection() -> None:
@@ -138,10 +150,12 @@ def test_n8_work_mode_select_is_model_scoped() -> None:
 
 def test_n8_anti_loss_switch_is_model_scoped() -> None:
     switches = _read(INTEGRATION / "switch.py")
+    control = _read(MODELS / "n8_control.py")
     assert "N8_SWITCHES:" in switches
     assert 'key="n8_anti_loss_enabled"' in switches
     assert 'if is_n8_model(getattr(coordinator.device, "model", None)):' in switches
     assert 'cmd="anti_loss_switch", data=1 if enabled else 0' in switches
+    assert 'return "device_config", {"anti_loss_switch": _binary_flag(data)}' in control
     for existing in (
         "custom_mowing_direction_enabled",
         "visual_obstacle_detection_enabled",
