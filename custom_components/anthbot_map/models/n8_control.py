@@ -1,7 +1,7 @@
 """ANTHBOT N8 command transport.
 
 The N8 uses the same AWS named service shadow but has its own app command
-surface.  Keep this layer isolated from Genie and the M5/M9/M9 Pro wrappers so
+surface. Keep this layer isolated from Genie and the M5/M9/M9 Pro wrappers so
 existing mower families retain their proven routing.
 """
 
@@ -17,7 +17,7 @@ from ..api import AnthbotGenieApiError, AnthbotShadowApiClient
 _LOGGER = logging.getLogger(__name__)
 _INSTALLED = False
 
-# Commands confirmed in the ANTHBOT 2.15.16 N8 app protocol.  Dict-payload
+# Commands confirmed in the ANTHBOT 2.15.16 N8 app protocol. Dict-payload
 # commands are listed too because N8 must keep their app-native data object
 # unchanged instead of passing through legacy Genie payload reshaping.
 _N8_COMMANDS = {
@@ -65,6 +65,21 @@ def is_n8_model(model: object) -> bool:
 
 def _is_n8_client(client: AnthbotShadowApiClient) -> bool:
     return is_n8_model(getattr(client, "_device_model", ""))
+
+
+def _normalize_n8_payload(cmd: str, data: Any) -> Any:
+    """Translate shared beta.9 service payloads to N8 app field names."""
+    if cmd == "ctl_rainer" and isinstance(data, dict):
+        # Existing beta.9 services use ``switch`` / ``continue_time`` for the
+        # Genie/M-series path. N8 2.15.16 uses the reported-field names in the
+        # command object. Keep the translation entirely inside the N8 adapter.
+        normalized = dict(data)
+        if "switch" in normalized and "rain_switch" not in normalized:
+            normalized["rain_switch"] = normalized.pop("switch")
+        if "continue_time" in normalized and "rain_continue_time" not in normalized:
+            normalized["rain_continue_time"] = normalized.pop("continue_time")
+        return normalized
+    return data
 
 
 async def _publish_n8_command(
@@ -167,6 +182,7 @@ def install_n8_control_support() -> None:
         if cmd in {"mow_start", "stop_all_tasks", "charge_start", "start_dump", "stop_dump"} and data is None:
             data = 1
 
+        data = _normalize_n8_payload(cmd, data)
         await _publish_n8_command(self, cmd=cmd, data=data)
 
     AnthbotShadowApiClient.async_publish_service_command = publish_service_command
