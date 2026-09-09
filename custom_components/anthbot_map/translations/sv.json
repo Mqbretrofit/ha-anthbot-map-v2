@@ -1,0 +1,12 @@
+{
+  "options": {
+    "step": {
+      "init": {"title": "Anthbot Map-inställningar", "description": "Välj vilka inställningar du vill ändra.", "menu_options": {"battery_saver": "Batterisparläge", "developer_reporting": "Utveckling och diagnostik"}},
+      "battery_saver_mower": {"title": "Batterisparläge", "description": "Välj gräsklipparen som ska konfigureras.", "data": {"mower": "Gräsklippare"}},
+      "battery_saver": {"title": "Batterisparläge", "description": "Konfigurera laddare och gränser för {serial_number}. Läget förblir inaktivt tills dess brytare slås på.", "data": {"charger_switch": "Brytare för smart uttag", "charge_limit": "Övre laddningsgräns (%)", "maintenance_level": "Startnivå för underhållsladdning (%)", "resume_level": "Nivå för att återuppta laddning (%)", "shared_rtk_power": "Laddstation och RTK delar samma smarta uttag"}},
+      "developer_reporting": {"title": "Utveckling och diagnostik", "description": "Dessa alternativ är frivilliga och kan stängas av igen när som helst. De är oberoende av den skrivskyddade Developer Agent.", "data": {"share_anonymous_usage": "Dela anonym användningsstatistik", "send_automatic_diagnostics": "Skicka automatiska diagnostikrapporter"}, "data_description": {"share_anonymous_usage": "Skickar minimal teknisk användningsinformation, till exempel integrations-/Home Assistant-version, land och antal ANTHBOT-modeller. Användarnamn, lösenord, serienummer, GPS-position och karta skickas inte.", "send_automatic_diagnostics": "Skickar sekretessfiltrerad teknisk diagnostik vid fel som stöds, till exempel klipparfel, gräns-/förbjuden-zon-överträdelser och fel vid kart- eller ruttbearbetning."}}
+    },
+    "error": {"invalid_battery_thresholds": "Nivåerna för återupptagning och underhållsladdning måste vara lägre än den övre laddningsgränsen.", "reporting_service_unavailable": "Tjänsten för rapporteringsinställningar är inte tillgänglig. Ladda om Anthbot Map-integrationen eller starta om Home Assistant och försök igen."},
+    "abort": {"no_devices": "Ingen inläst Anthbot-gräsklippare är tillgänglig."}
+  }
+}

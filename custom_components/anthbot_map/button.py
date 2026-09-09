@@ -5,26 +5,45 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 import logging
+from pathlib import Path
+import time
 from typing import Any
 
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .api import AnthbotGenieApiError
-from .const import DOMAIN
+from .const import (
+    CONF_DEVELOPER_INSTALLATION_ID,
+    CONF_SEND_AUTOMATIC_DIAGNOSTICS,
+    DEVELOPER_DIAGNOSTICS_ENDPOINT,
+    DOMAIN,
+)
 from .coordinator import AnthbotGenieDataUpdateCoordinator
 from .commands import (
     async_prepare_cloud_connection,
     async_start_mowing,
     async_start_outer_edge_mowing,
 )
+from .developer_reporting import async_send_diagnostics_report
+from .firmware_diagnostics import (
+    build_firmware_diagnostics_report,
+    report_filename,
+    write_firmware_diagnostics_report,
+)
+from .models.n8_control import is_n8_model
 from .zones import active_manual_zone_ids, auto_zones, manual_zones
 
 _LOGGER = logging.getLogger(__name__)
+_FIRMWARE_DIAGNOSTICS_EVENT = "anthbot_firmware_diagnostics_ready"
+_FIRMWARE_DIAGNOSTICS_MEDIA_DIR = "anthbot-firmware-diagnostics"
+_AUTO_DIAGNOSTICS_REPEAT_SECONDS = 60 * 60
+_AUTO_DIAGNOSTICS_MIN_SECONDS = 60
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -59,8 +78,138 @@ BUTTONS: tuple[AnthbotButtonDescription, ...] = (
     AnthbotButtonDescription(key="pause_mow", name="Pause mowing task"),
     AnthbotButtonDescription(key="reset_blade_maintenance", name="Reset blade maintenance"),
     AnthbotButtonDescription(key="reset_camera_maintenance", name="Reset camera maintenance"),
-    AnthbotButtonDescription(key="reset_dock_contact_maintenance", name="Reset charging contact maintenance"),
+    AnthbotButtonDescription(
+        key="reset_dock_contact_maintenance",
+        name="Reset charging contact maintenance",
+    ),
+    AnthbotButtonDescription(
+        key="export_firmware_diagnostics",
+        name="Export & send firmware diagnostics",
+        icon="mdi:file-upload-outline",
+    ),
 )
+
+N8_BUTTONS: tuple[AnthbotButtonDescription, ...] = (
+    AnthbotButtonDescription(
+        key="start_dump",
+        name="Start grass dumping",
+        icon="mdi:delete-empty-outline",
+    ),
+    AnthbotButtonDescription(
+        key="stop_dump",
+        name="Stop grass dumping",
+        icon="mdi:stop-circle-outline",
+    ),
+)
+
+
+def _entry_option_enabled(entry: ConfigEntry, key: str) -> bool:
+    """Return the current option, with config-entry data as initial fallback."""
+    if key in entry.options:
+        return bool(entry.options.get(key))
+    return bool(entry.data.get(key, False))
+
+
+def _unwrap_simple_value(value: Any) -> Any:
+    """Unwrap the common ANTHBOT {value: ...} envelope."""
+    seen: set[int] = set()
+    while isinstance(value, dict) and "value" in value:
+        identity = id(value)
+        if identity in seen:
+            return None
+        seen.add(identity)
+        value = value.get("value")
+    return value
+
+
+def _automatic_diagnostics_trigger(
+    state: dict[str, Any],
+) -> tuple[str, str] | None:
+    """Return a stable trigger/signature for supported automatic reports."""
+    check = state.get("_no_go_path_check")
+    if isinstance(check, dict) and check.get("crossing_detected") is True:
+        signature = (
+            "no-go:"
+            f"{check.get('path_id')}:"
+            f"{check.get('boundary_crossings', 0)}:"
+            f"{check.get('points_inside', 0)}:"
+            f"{check.get('last_crossing')}"
+        )
+        return "no_go_path_crossing", signature
+
+    error_code = _unwrap_simple_value(state.get("err_code"))
+    try:
+        normalized_error = int(error_code)
+    except (TypeError, ValueError):
+        normalized_error = 0
+    if normalized_error != 0:
+        return "mower_error_code", f"err-code:{normalized_error}"
+
+    for key, trigger in (
+        ("_path_definition_error", "path_definition_error"),
+        ("_map_definition_error", "map_definition_error"),
+        ("_live_shadow_error", "live_shadow_error"),
+    ):
+        value = state.get(key)
+        if value not in (None, "", False):
+            return trigger, f"{trigger}:{value!s}"
+
+    return None
+
+
+def _install_automatic_diagnostics_reporting(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: AnthbotGenieDataUpdateCoordinator,
+) -> None:
+    """Install an opt-in, deduplicated coordinator listener for diagnostics."""
+    last_signature_sent_at: dict[str, float] = {}
+    last_any_sent_at = 0.0
+
+    def _handle_update() -> None:
+        nonlocal last_any_sent_at
+        if not _entry_option_enabled(entry, CONF_SEND_AUTOMATIC_DIAGNOSTICS):
+            return
+
+        installation_id = entry.data.get(CONF_DEVELOPER_INSTALLATION_ID)
+        if not isinstance(installation_id, str) or not installation_id:
+            return
+
+        state = coordinator.reported_state
+        if not isinstance(state, dict):
+            return
+        detected = _automatic_diagnostics_trigger(state)
+        if detected is None:
+            return
+        trigger, signature = detected
+
+        now = time.monotonic()
+        if now - last_any_sent_at < _AUTO_DIAGNOSTICS_MIN_SECONDS:
+            return
+        previous = last_signature_sent_at.get(signature)
+        if previous is not None and now - previous < _AUTO_DIAGNOSTICS_REPEAT_SECONDS:
+            return
+
+        report = build_firmware_diagnostics_report(
+            coordinator,
+            include_raw_state=False,
+            include_identifiers=False,
+        )
+        last_signature_sent_at[signature] = now
+        last_any_sent_at = now
+        session = async_get_clientsession(hass)
+        hass.async_create_task(
+            async_send_diagnostics_report(
+                session,
+                DEVELOPER_DIAGNOSTICS_ENDPOINT,
+                installation_id=installation_id,
+                report=report,
+                trigger=trigger,
+            )
+        )
+
+    unsubscribe = coordinator.async_add_listener(_handle_update)
+    entry.async_on_unload(unsubscribe)
 
 
 async def async_setup_entry(
@@ -73,12 +222,18 @@ async def async_setup_entry(
         entry.entry_id
     ]
     entities: list[ButtonEntity] = [
-        AnthbotButtonEntity(coordinator, description)
+        AnthbotButtonEntity(coordinator, description, entry)
         for coordinator in coordinators
         for description in BUTTONS
     ]
 
     for coordinator in coordinators:
+        if is_n8_model(getattr(coordinator.device, "model", None)):
+            entities.extend(
+                AnthbotButtonEntity(coordinator, description, entry)
+                for description in N8_BUTTONS
+            )
+        _install_automatic_diagnostics_reporting(hass, entry, coordinator)
         for zone in manual_zones(coordinator.reported_state):
             zone_id = zone.get("id")
             if not isinstance(zone_id, int):
@@ -121,9 +276,11 @@ class AnthbotButtonEntity(
         self,
         coordinator: AnthbotGenieDataUpdateCoordinator,
         description: AnthbotButtonDescription,
+        entry: ConfigEntry,
     ) -> None:
         super().__init__(coordinator)
         self.entity_description = description
+        self._config_entry = entry
         self._attr_unique_id = (
             f"{coordinator.client.serial_number}_{self.entity_description.key}"
         )
@@ -133,15 +290,126 @@ class AnthbotButtonEntity(
             model=coordinator.device.model,
             name=coordinator.device.alias,
         )
+        self._last_diagnostics_export: dict[str, Any] | None = None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Expose the mower serial so multi-mower cards can scope controls."""
-        return {"serial_number": self.coordinator.client.serial_number}
+        """Expose the mower serial and diagnostics-export metadata."""
+        attrs: dict[str, Any] = {
+            "serial_number": self.coordinator.client.serial_number
+        }
+        if (
+            self.entity_description.key == "export_firmware_diagnostics"
+            and isinstance(self._last_diagnostics_export, dict)
+        ):
+            attrs.update(self._last_diagnostics_export)
+        return attrs
+
+    async def _async_export_firmware_diagnostics(self) -> None:
+        """Write the local JSON report and explicitly upload a privacy-filtered copy."""
+        local_media_dir = self.hass.config.media_dirs.get("local")
+        if not isinstance(local_media_dir, str) or not local_media_dir:
+            raise AnthbotGenieApiError(
+                "Home Assistant local media directory is unavailable; configure media_source first"
+            )
+
+        report = build_firmware_diagnostics_report(
+            self.coordinator,
+            include_raw_state=False,
+            include_identifiers=True,
+        )
+        filename = report_filename(report)
+        folder = Path(local_media_dir) / _FIRMWARE_DIAGNOSTICS_MEDIA_DIR
+        file_path = folder / filename
+        await self.hass.async_add_executor_job(
+            write_firmware_diagnostics_report,
+            file_path,
+            report,
+        )
+
+        media_source_id = (
+            "media-source://media_source/local/"
+            f"{_FIRMWARE_DIAGNOSTICS_MEDIA_DIR}/{filename}"
+        )
+        no_go = report.get("no_go") if isinstance(report, dict) else {}
+        check = no_go.get("check") if isinstance(no_go, dict) else {}
+        device = report.get("device") if isinstance(report, dict) else {}
+
+        installation_id = self._config_entry.data.get(CONF_DEVELOPER_INSTALLATION_ID)
+        upload_status = "skipped_no_installation_id"
+        server_uploaded = False
+        if isinstance(installation_id, str) and installation_id:
+            server_report = build_firmware_diagnostics_report(
+                self.coordinator,
+                include_raw_state=False,
+                include_identifiers=False,
+            )
+            server_uploaded = await async_send_diagnostics_report(
+                async_get_clientsession(self.hass),
+                DEVELOPER_DIAGNOSTICS_ENDPOINT,
+                installation_id=installation_id,
+                report=server_report,
+                trigger="manual_export",
+            )
+            upload_status = "sent" if server_uploaded else "failed"
+
+        event_data = {
+            "entity_id": self.entity_id,
+            "serial_number": self.coordinator.client.serial_number,
+            "model": self.coordinator.device.model,
+            "firmware_version": (
+                device.get("firmware_version") if isinstance(device, dict) else None
+            ),
+            "filename": filename,
+            "file_path": str(file_path),
+            "media_source_id": media_source_id,
+            "media_content_type": "application/json",
+            "server_uploaded": server_uploaded,
+            "upload_status": upload_status,
+            "crossing_detected": (
+                check.get("crossing_detected") if isinstance(check, dict) else False
+            ),
+            "boundary_crossings": (
+                check.get("boundary_crossings", 0) if isinstance(check, dict) else 0
+            ),
+            "points_inside": (
+                check.get("points_inside", 0) if isinstance(check, dict) else 0
+            ),
+            "traversals": (
+                check.get("traversals", 0) if isinstance(check, dict) else 0
+            ),
+        }
+        self._last_diagnostics_export = {
+            "last_report_filename": filename,
+            "last_report_media_source": media_source_id,
+            "last_report_created_at": report.get("generated_at"),
+            "last_report_server_uploaded": server_uploaded,
+            "last_report_upload_status": upload_status,
+            "last_report_crossing_detected": event_data["crossing_detected"],
+            "last_report_boundary_crossings": event_data["boundary_crossings"],
+        }
+        self.async_write_ha_state()
+        self.hass.bus.async_fire(_FIRMWARE_DIAGNOSTICS_EVENT, event_data)
+        if server_uploaded:
+            _LOGGER.info(
+                "Exported and uploaded ANTHBOT firmware diagnostics for %s to %s",
+                self.coordinator.client.serial_number,
+                file_path,
+            )
+        else:
+            _LOGGER.warning(
+                "Exported ANTHBOT firmware diagnostics for %s to %s, server upload status=%s",
+                self.coordinator.client.serial_number,
+                file_path,
+                upload_status,
+            )
 
     async def async_press(self) -> None:
         """Run the button action."""
         key = self.entity_description.key
+        if key == "export_firmware_diagnostics":
+            await self._async_export_firmware_diagnostics()
+            return
         if key == "connect_cloud":
             connected = await async_prepare_cloud_connection(
                 self.coordinator, attempts=3, wait_seconds=5
@@ -165,15 +433,33 @@ class AnthbotButtonEntity(
                     "attempting dock mowing on the live MQTT transport",
                     self.coordinator.client.serial_number,
                 )
-            await self.coordinator.client.async_publish_service_command(cmd="nest_mow_start", data=1)
+            await self.coordinator.client.async_publish_service_command(
+                cmd="nest_mow_start", data=1
+            )
             self.coordinator.remember_mowing_task("dock_edge")
         elif key == "stop_mow":
             await async_prepare_cloud_connection(self.coordinator)
-            await self.coordinator.client.async_publish_service_command(cmd="stop_all_tasks")
+            await self.coordinator.client.async_publish_service_command(
+                cmd="stop_all_tasks"
+            )
             await self.coordinator.async_clear_last_mowing_task()
         elif key == "return_to_dock":
             await async_prepare_cloud_connection(self.coordinator)
             await self.coordinator.client.async_publish_service_command(cmd="charge_start")
+        elif key == "start_dump":
+            if not is_n8_model(getattr(self.coordinator.device, "model", None)):
+                raise AnthbotGenieApiError("Grass dumping is only supported by N8")
+            await async_prepare_cloud_connection(self.coordinator)
+            await self.coordinator.client.async_publish_service_command(
+                cmd="start_dump", data=1
+            )
+        elif key == "stop_dump":
+            if not is_n8_model(getattr(self.coordinator.device, "model", None)):
+                raise AnthbotGenieApiError("Grass dumping is only supported by N8")
+            await async_prepare_cloud_connection(self.coordinator)
+            await self.coordinator.client.async_publish_service_command(
+                cmd="stop_dump", data=1
+            )
         elif key == "resume_mow":
             task = self.coordinator.last_mowing_task
             if task is None:
@@ -219,8 +505,6 @@ class AnthbotButtonEntity(
                         f"Unsupported previous mowing task: {task_type}"
                     )
         elif key == "pause_mow":
-            # Also recover the current zone when mowing was started from the
-            # official app rather than from a Home Assistant button.
             if self.coordinator.last_mowing_task is None:
                 active_zone_ids = active_manual_zone_ids(
                     self.coordinator.reported_state
@@ -268,10 +552,6 @@ class AnthbotZoneButtonEntity(
         zone_name = zone.get("name")
         if not isinstance(zone_name, str) or not zone_name.strip():
             zone_name = str(zone_id)
-        # Manual zones already have a user-facing name (for example "Back" or
-        # "Zóna 1"), so do not prepend another "Zone" label. Keep automatically
-        # detected areas distinguishable without mixing the UI language into the
-        # user's zone name.
         self._attr_name = zone_name if zone_kind == "manual" else f"Auto: {zone_name}"
         self._attr_unique_id = (
             f"{coordinator.client.serial_number}_{zone_kind}_zone_{zone_id}"

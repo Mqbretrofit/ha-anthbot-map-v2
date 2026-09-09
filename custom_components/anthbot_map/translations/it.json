@@ -1,0 +1,12 @@
+{
+  "options": {
+    "step": {
+      "init": {"title": "Impostazioni Anthbot Map", "description": "Scegli quali impostazioni vuoi modificare.", "menu_options": {"battery_saver": "Risparmio batteria", "developer_reporting": "Sviluppo e diagnostica"}},
+      "battery_saver_mower": {"title": "Risparmio batteria", "description": "Scegli il rasaerba da configurare.", "data": {"mower": "Rasaerba"}},
+      "battery_saver": {"title": "Risparmio batteria", "description": "Configura caricatore e limiti per {serial_number}. La modalità resta inattiva finché il relativo interruttore non viene attivato.", "data": {"charger_switch": "Interruttore presa smart", "charge_limit": "Limite massimo di carica (%)", "maintenance_level": "Livello di avvio ricarica di mantenimento (%)", "resume_level": "Livello di ripresa carica (%)", "shared_rtk_power": "Stazione di ricarica e RTK condividono la stessa presa smart"}},
+      "developer_reporting": {"title": "Sviluppo e diagnostica", "description": "Queste opzioni sono facoltative e possono essere disattivate in qualsiasi momento. Sono indipendenti dal Developer Agent in sola lettura.", "data": {"share_anonymous_usage": "Condividi statistiche di utilizzo anonime", "send_automatic_diagnostics": "Invia automaticamente i rapporti diagnostici"}, "data_description": {"share_anonymous_usage": "Invia informazioni tecniche minime sull’utilizzo, come versione dell’integrazione/Home Assistant, paese e numero di modelli ANTHBOT. Nome utente, password, numero di serie, posizione GPS e mappa non vengono inviati.", "send_automatic_diagnostics": "Invia diagnostica tecnica filtrata per la privacy quando si verificano errori supportati, come errori del rasaerba, attraversamenti di confini/zone vietate ed errori di elaborazione mappa o percorso."}}
+    },
+    "error": {"invalid_battery_thresholds": "I livelli di ripresa e ricarica di mantenimento devono essere inferiori al limite massimo di carica.", "reporting_service_unavailable": "Il servizio delle impostazioni di report non è disponibile. Ricarica l’integrazione Anthbot Map o riavvia Home Assistant e riprova."},
+    "abort": {"no_devices": "Nessun rasaerba Anthbot caricato è disponibile."}
+  }
+}

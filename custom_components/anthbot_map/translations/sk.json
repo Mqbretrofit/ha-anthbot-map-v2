@@ -1,0 +1,12 @@
+{
+  "options": {
+    "step": {
+      "init": {"title": "Nastavenia Anthbot Map", "description": "Vyberte, ktoré nastavenia chcete zmeniť.", "menu_options": {"battery_saver": "Šetrenie batérie", "developer_reporting": "Vývoj a diagnostika"}},
+      "battery_saver_mower": {"title": "Šetrenie batérie", "description": "Vyberte kosačku, ktorú chcete nastaviť.", "data": {"mower": "Kosačka"}},
+      "battery_saver": {"title": "Šetrenie batérie", "description": "Nastavte nabíjačku a limity pre {serial_number}. Režim zostane neaktívny, kým nezapnete jeho prepínač.", "data": {"charger_switch": "Prepínač inteligentnej zásuvky", "charge_limit": "Horný limit nabitia (%)", "maintenance_level": "Úroveň spustenia udržiavacieho nabíjania (%)", "resume_level": "Úroveň obnovenia nabíjania (%)", "shared_rtk_power": "Nabíjacia stanica a RTK používajú rovnakú inteligentnú zásuvku"}},
+      "developer_reporting": {"title": "Vývoj a diagnostika", "description": "Tieto možnosti sú dobrovoľné a možno ich kedykoľvek znova vypnúť. Sú nezávislé od Developer Agent iba na čítanie.", "data": {"share_anonymous_usage": "Zdieľať anonymné štatistiky používania", "send_automatic_diagnostics": "Odosielať automatické diagnostické správy"}, "data_description": {"share_anonymous_usage": "Odosiela minimálne technické údaje o používaní, napríklad verziu integrácie/Home Assistant, krajinu a počty modelov ANTHBOT. Používateľské meno, heslo, sériové číslo, poloha GPS ani mapa sa neodosielajú.", "send_automatic_diagnostics": "Odosiela technickú diagnostiku filtrovanú z hľadiska súkromia pri podporovaných chybách, napríklad chybách kosačky, prekročení hraníc/zakázaných zón a chybách spracovania mapy alebo trasy."}}
+    },
+    "error": {"invalid_battery_thresholds": "Úrovne obnovenia a udržiavacieho nabíjania musia byť nižšie ako horný limit nabitia.", "reporting_service_unavailable": "Služba nastavení hlásení nie je dostupná. Znovu načítajte integráciu Anthbot Map alebo reštartujte Home Assistant a skúste to znova."},
+    "abort": {"no_devices": "Nie je dostupná žiadna načítaná kosačka Anthbot."}
+  }
+}

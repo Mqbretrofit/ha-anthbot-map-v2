@@ -20,6 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import AnthbotGenieDataUpdateCoordinator
+from .models.n8_control import is_n8_model
 from .task_events import latest_task_cycle_signal, task_event_items
 
 
@@ -109,6 +110,15 @@ def _is_rain_hold(data: dict[str, Any]) -> bool:
     return _rain_hold_event(data) is not None
 
 
+def _no_go_path_check(data: dict[str, Any]) -> dict[str, Any]:
+    value = data.get("_no_go_path_check")
+    return value if isinstance(value, dict) else {}
+
+
+def _is_no_go_path_crossing(data: dict[str, Any]) -> bool:
+    return _no_go_path_check(data).get("crossing_detected") is True
+
+
 @dataclass(frozen=True, kw_only=True)
 class AnthbotBinarySensorDescription(BinarySensorEntityDescription):
     """Describes an Anthbot binary sensor entity."""
@@ -146,6 +156,14 @@ BINARY_SENSORS: tuple[AnthbotBinarySensorDescription, ...] = (
         device_class=BinarySensorDeviceClass.PROBLEM,
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda data: _nonzero(_safe_get(data, "camera_error_sta", "value")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="no_go_path_crossing",
+        name="No-go path crossing",
+        icon="mdi:map-marker-alert",
+        device_class=BinarySensorDeviceClass.PROBLEM,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_is_no_go_path_crossing,
     ),
     # --- Connectivity flags ---------------------------------------------
     AnthbotBinarySensorDescription(
@@ -306,6 +324,27 @@ BINARY_SENSORS: tuple[AnthbotBinarySensorDescription, ...] = (
     ),
 )
 
+N8_BINARY_SENSORS: tuple[AnthbotBinarySensorDescription, ...] = (
+    AnthbotBinarySensorDescription(
+        key="n8_dumping",
+        name="Grass dumping",
+        icon="mdi:delete-empty-outline",
+        value_fn=lambda data: _truthy(data.get("_n8_dumping")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="n8_grass_bag_in_position",
+        name="Grass bag in position",
+        icon="mdi:delete-variant",
+        value_fn=lambda data: _truthy(data.get("_n8_grass_bag_in_position")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="n8_grass_shield_in_position",
+        name="Grass deflector in position",
+        icon="mdi:shield-check-outline",
+        value_fn=lambda data: _truthy(data.get("_n8_grass_shield_in_position")),
+    ),
+)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -316,11 +355,18 @@ async def async_setup_entry(
     coordinators: list[AnthbotGenieDataUpdateCoordinator] = hass.data[DOMAIN][
         entry.entry_id
     ]
-    async_add_entities(
+    entities: list[BinarySensorEntity] = [
         AnthbotBinarySensorEntity(coordinator, description)
         for coordinator in coordinators
         for description in BINARY_SENSORS
-    )
+    ]
+    for coordinator in coordinators:
+        if is_n8_model(getattr(coordinator.device, "model", None)):
+            entities.extend(
+                AnthbotBinarySensorEntity(coordinator, description)
+                for description in N8_BINARY_SENSORS
+            )
+    async_add_entities(entities)
 
 
 class AnthbotBinarySensorEntity(
@@ -374,6 +420,23 @@ class AnthbotBinarySensorEntity(
                 "rain_detected_at": event.get("create_time") if event else None,
                 "event_message": event.get("event_message") if event else None,
                 "rain_continue_time": rain_continue_time,
+            }
+        if self.entity_description.key == "no_go_path_crossing":
+            check = _no_go_path_check(state)
+            return {
+                "serial_number": self.coordinator.client.serial_number,
+                "model": self.coordinator.device.model,
+                "source": check.get("source"),
+                "path_id": check.get("path_id"),
+                "checked_point_count": check.get("checked_point_count", 0),
+                "checked_segment_count": check.get("checked_segment_count", 0),
+                "no_go_zone_count": check.get("no_go_zone_count", 0),
+                "points_inside": check.get("points_inside", 0),
+                "boundary_crossings": check.get("boundary_crossings", 0),
+                "traversals": check.get("traversals", 0),
+                "zone_ids": check.get("zone_ids", []),
+                "last_crossing": check.get("last_crossing"),
+                "zones": check.get("zones", []),
             }
         cutting_height = (
             state.get("param_set", {}).get("cutter_height")

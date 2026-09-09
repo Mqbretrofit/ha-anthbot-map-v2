@@ -1,0 +1,12 @@
+{
+  "options": {
+    "step": {
+      "init": {"title": "Anthbot Map-indstillinger", "description": "Vælg hvilke indstillinger du vil ændre.", "menu_options": {"battery_saver": "Batteribesparelse", "developer_reporting": "Udvikling og diagnostik"}},
+      "battery_saver_mower": {"title": "Batteribesparelse", "description": "Vælg den plæneklipper, der skal konfigureres.", "data": {"mower": "Plæneklipper"}},
+      "battery_saver": {"title": "Batteribesparelse", "description": "Konfigurer oplader og grænser for {serial_number}. Tilstanden forbliver inaktiv, indtil dens kontakt slås til.", "data": {"charger_switch": "Smart-stik-kontakt", "charge_limit": "Øvre ladegrænse (%)", "maintenance_level": "Startniveau for vedligeholdelsesopladning (%)", "resume_level": "Niveau for genoptagelse af opladning (%)", "shared_rtk_power": "Ladestation og RTK deler samme smart-stik"}},
+      "developer_reporting": {"title": "Udvikling og diagnostik", "description": "Disse indstillinger er frivillige og kan slås fra igen når som helst. De er uafhængige af den skrivebeskyttede Developer Agent.", "data": {"share_anonymous_usage": "Del anonyme brugsstatistikker", "send_automatic_diagnostics": "Send automatiske diagnosticeringsrapporter"}, "data_description": {"share_anonymous_usage": "Sender minimale tekniske brugsoplysninger som integrations-/Home Assistant-version, land og antal ANTHBOT-modeller. Brugernavn, adgangskode, serienummer, GPS-position og kort sendes ikke.", "send_automatic_diagnostics": "Sender privatlivsfiltreret teknisk diagnostik ved understøttede fejl, f.eks. plæneklipperfejl, grænse-/forbudszonekrydsninger og fejl ved kort- eller rutebehandling."}}
+    },
+    "error": {"invalid_battery_thresholds": "Niveauerne for genoptagelse og vedligeholdelsesopladning skal være lavere end den øvre ladegrænse.", "reporting_service_unavailable": "Tjenesten til rapporteringsindstillinger er ikke tilgængelig. Genindlæs Anthbot Map-integrationen eller genstart Home Assistant, og prøv igen."},
+    "abort": {"no_devices": "Ingen indlæst Anthbot-plæneklipper er tilgængelig."}
+  }
+}

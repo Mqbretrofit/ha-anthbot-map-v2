@@ -1,0 +1,12 @@
+{
+  "options": {
+    "step": {
+      "init": {"title": "Nastavení Anthbot Map", "description": "Vyberte, která nastavení chcete změnit.", "menu_options": {"battery_saver": "Úspora baterie", "developer_reporting": "Vývoj a diagnostika"}},
+      "battery_saver_mower": {"title": "Úspora baterie", "description": "Vyberte sekačku, kterou chcete nastavit.", "data": {"mower": "Sekačka"}},
+      "battery_saver": {"title": "Úspora baterie", "description": "Nastavte nabíječku a limity pro {serial_number}. Režim zůstane neaktivní, dokud nebude zapnut jeho přepínač.", "data": {"charger_switch": "Přepínač chytré zásuvky", "charge_limit": "Horní limit nabití (%)", "maintenance_level": "Úroveň spuštění udržovacího nabíjení (%)", "resume_level": "Úroveň obnovení nabíjení (%)", "shared_rtk_power": "Nabíjecí stanice a RTK používají stejnou chytrou zásuvku"}},
+      "developer_reporting": {"title": "Vývoj a diagnostika", "description": "Tyto možnosti jsou dobrovolné a lze je kdykoli znovu vypnout. Jsou nezávislé na Developer Agent pouze pro čtení.", "data": {"share_anonymous_usage": "Sdílet anonymní statistiky používání", "send_automatic_diagnostics": "Odesílat automatické diagnostické zprávy"}, "data_description": {"share_anonymous_usage": "Odesílá minimální technické údaje o používání, například verzi integrace/Home Assistant, zemi a počty modelů ANTHBOT. Uživatelské jméno, heslo, sériové číslo, poloha GPS ani mapa se neodesílají.", "send_automatic_diagnostics": "Odesílá technickou diagnostiku filtrovanou z hlediska soukromí při podporovaných chybách, například chybách sekačky, překročení hranic/zakázaných zón a chybách zpracování mapy nebo trasy."}}
+    },
+    "error": {"invalid_battery_thresholds": "Úrovně obnovení a udržovacího nabíjení musí být nižší než horní limit nabití.", "reporting_service_unavailable": "Služba nastavení hlášení není dostupná. Znovu načtěte integraci Anthbot Map nebo restartujte Home Assistant a zkuste to znovu."},
+    "abort": {"no_devices": "Není k dispozici žádná načtená sekačka Anthbot."}
+  }
+}

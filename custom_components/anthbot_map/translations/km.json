@@ -1,0 +1,12 @@
+{
+  "options": {
+    "step": {
+      "init": {"title": "ការកំណត់ Anthbot Map", "description": "ជ្រើសរើសការកំណត់ដែលអ្នកចង់ផ្លាស់ប្តូរ។", "menu_options": {"battery_saver": "សន្សំថ្ម", "developer_reporting": "ការអភិវឌ្ឍ និងវិនិច្ឆ័យ"}},
+      "battery_saver_mower": {"title": "សន្សំថ្ម", "description": "ជ្រើសរើសម៉ាស៊ីនកាត់ស្មៅដែលត្រូវកំណត់។", "data": {"mower": "ម៉ាស៊ីនកាត់ស្មៅ"}},
+      "battery_saver": {"title": "សន្សំថ្ម", "description": "កំណត់ឧបករណ៍សាក និងកម្រិតសម្រាប់ {serial_number}។ របៀបនេះនឹងនៅអសកម្ម រហូតដល់បើកស្វ៊ីចរបស់វា។", "data": {"charger_switch": "ស្វ៊ីចព្រីឆ្លាត", "charge_limit": "កម្រិតសាកអតិបរមា (%)", "maintenance_level": "កម្រិតចាប់ផ្តើមសាកថែទាំ (%)", "resume_level": "កម្រិតបន្តការសាក (%)", "shared_rtk_power": "ស្ថានីយសាក និង RTK ប្រើព្រីឆ្លាតដូចគ្នា"}},
+      "developer_reporting": {"title": "ការអភិវឌ្ឍ និងវិនិច្ឆ័យ", "description": "ជម្រើសទាំងនេះស្ម័គ្រចិត្ត និងអាចបិទវិញបានគ្រប់ពេល។ វាឯករាជ្យពី Developer Agent ដែលអានបានតែប៉ុណ្ណោះ។", "data": {"share_anonymous_usage": "ចែករំលែកស្ថិតិប្រើប្រាស់អនាមិក", "send_automatic_diagnostics": "ផ្ញើរបាយការណ៍វិនិច្ឆ័យដោយស្វ័យប្រវត្តិ"}, "data_description": {"share_anonymous_usage": "ផ្ញើតែព័ត៌មានបច្ចេកទេសប្រើប្រាស់អប្បបរមា ដូចជា កំណែ integration/Home Assistant ប្រទេស និងចំនួនម៉ូដែល ANTHBOT។ មិនផ្ញើឈ្មោះអ្នកប្រើ ពាក្យសម្ងាត់ លេខស៊េរី ទីតាំង GPS ឬផែនទីទេ។", "send_automatic_diagnostics": "ផ្ញើព័ត៌មានវិនិច្ឆ័យបច្ចេកទេសដែលបានចម្រោះសម្រាប់ភាពឯកជន នៅពេលមានកំហុសដែលគាំទ្រ ដូចជា កំហុសម៉ាស៊ីនកាត់ស្មៅ ការឆ្លងកាត់ព្រំដែន/តំបន់ហាមឃាត់ និងកំហុសដំណើរការផែនទី ឬផ្លូវ។"}}
+    },
+    "error": {"invalid_battery_thresholds": "កម្រិតបន្តសាក និងសាកថែទាំ ត្រូវតែទាបជាងកម្រិតសាកអតិបរមា។", "reporting_service_unavailable": "សេវាកំណត់របាយការណ៍មិនអាចប្រើបានទេ។ សូមផ្ទុក Anthbot Map integration ឡើងវិញ ឬចាប់ផ្តើម Home Assistant ឡើងវិញ ហើយសាកម្ដងទៀត។"},
+    "abort": {"no_devices": "មិនមានម៉ាស៊ីនកាត់ស្មៅ Anthbot ដែលបានផ្ទុកសម្រាប់ប្រើទេ។"}
+  }
+}

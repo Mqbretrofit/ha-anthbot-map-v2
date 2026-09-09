@@ -1,0 +1,12 @@
+{
+  "options": {
+    "step": {
+      "init": {"title": "Anthbot Map ayarları", "description": "Değiştirmek istediğiniz ayarları seçin.", "menu_options": {"battery_saver": "Pil tasarrufu", "developer_reporting": "Geliştirme ve tanılama"}},
+      "battery_saver_mower": {"title": "Pil tasarrufu", "description": "Yapılandırılacak çim biçme robotunu seçin.", "data": {"mower": "Çim biçme robotu"}},
+      "battery_saver": {"title": "Pil tasarrufu", "description": "{serial_number} için şarj cihazını ve sınırları yapılandırın. Mod, anahtarı açılana kadar etkin olmaz.", "data": {"charger_switch": "Akıllı priz anahtarı", "charge_limit": "Üst şarj sınırı (%)", "maintenance_level": "Bakım şarjı başlangıç seviyesi (%)", "resume_level": "Şarja devam etme seviyesi (%)", "shared_rtk_power": "Şarj istasyonu ve RTK aynı akıllı prizi kullanır"}},
+      "developer_reporting": {"title": "Geliştirme ve tanılama", "description": "Bu seçenekler isteğe bağlıdır ve istediğiniz zaman tekrar kapatılabilir. Salt okunur Developer Agent'tan bağımsızdır.", "data": {"share_anonymous_usage": "Anonim kullanım istatistiklerini paylaş", "send_automatic_diagnostics": "Otomatik tanılama raporları gönder"}, "data_description": {"share_anonymous_usage": "Entegrasyon/Home Assistant sürümü, ülke ve ANTHBOT model sayıları gibi asgari teknik kullanım bilgilerini gönderir. Kullanıcı adı, parola, seri numarası, GPS konumu ve harita gönderilmez.", "send_automatic_diagnostics": "Desteklenen hatalarda, örneğin biçme robotu hataları, sınır/yasak bölge geçişleri ve harita/rota işleme sorunlarında gizlilik filtreli teknik tanılama gönderir."}}
+    },
+    "error": {"invalid_battery_thresholds": "Devam etme ve bakım şarj seviyeleri üst şarj sınırından düşük olmalıdır.", "reporting_service_unavailable": "Raporlama ayarları hizmeti kullanılamıyor. Anthbot Map entegrasyonunu yeniden yükleyin veya Home Assistant'ı yeniden başlatıp tekrar deneyin."},
+    "abort": {"no_devices": "Yüklenmiş kullanılabilir bir Anthbot çim biçme robotu yok."}
+  }
+}

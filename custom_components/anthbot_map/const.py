@@ -19,10 +19,33 @@ CONF_CHARGE_LIMIT = "charge_limit"
 CONF_MAINTENANCE_LEVEL = "maintenance_level"
 CONF_RESUME_LEVEL = "resume_level"
 CONF_SHARED_RTK_POWER = "shared_rtk_power"
+CONF_SHARE_ANONYMOUS_USAGE = "share_anonymous_usage"
+CONF_SEND_AUTOMATIC_DIAGNOSTICS = "send_automatic_diagnostics"
+CONF_DEVELOPER_INSTALLATION_ID = "developer_installation_id"
+CONF_DEVELOPER_AGENT_ENABLED = "developer_agent_enabled"
+CONF_DEVELOPER_AGENT_KEY = "developer_agent_key"
 
 DEFAULT_NAME = "Anthbot Genie"
 DEFAULT_API_HOST = "api.anthbot.com"
 DEFAULT_AREA_CODE = "36"
+DEFAULT_SHARE_ANONYMOUS_USAGE = False
+DEFAULT_SEND_AUTOMATIC_DIAGNOSTICS = False
+DEFAULT_DEVELOPER_AGENT_ENABLED = False
+
+# Project-controlled developer-reporting endpoints. These remain opt-in and
+# are intentionally separate from ANTHBOT/TMT vendor infrastructure.
+DEVELOPER_TELEMETRY_ENDPOINT = (
+    "https://reports.mqbretrofithungary.online/api/anthbot/telemetry"
+)
+DEVELOPER_DIAGNOSTICS_ENDPOINT = (
+    "https://reports.mqbretrofithungary.online/api/anthbot/diagnostics"
+)
+DEVELOPER_AGENT_POLL_ENDPOINT = (
+    "https://reports.mqbretrofithungary.online/api/anthbot/developer-agent/poll"
+)
+DEVELOPER_AGENT_RESULT_ENDPOINT = (
+    "https://reports.mqbretrofithungary.online/api/anthbot/developer-agent/result"
+)
 
 # Known category_id values (as reported by /api/v1.8.2/device/bindList).
 # The app uses these as human-readable model names; mapping them keeps the

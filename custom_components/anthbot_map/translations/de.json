@@ -1,0 +1,47 @@
+{
+  "options": {
+    "step": {
+      "init": {
+        "title": "Anthbot Map Einstellungen",
+        "description": "Wähle aus, welche Einstellungen du ändern möchtest.",
+        "menu_options": {
+          "battery_saver": "Akkuschonung",
+          "developer_reporting": "Entwicklung und Diagnose"
+        }
+      },
+      "battery_saver_mower": {
+        "title": "Akkuschonung",
+        "description": "Wähle den zu konfigurierenden Mäher.",
+        "data": {"mower": "Mäher"}
+      },
+      "battery_saver": {
+        "title": "Akkuschonung",
+        "description": "Konfiguriere Ladegerät und Grenzwerte für {serial_number}. Der Modus bleibt inaktiv, bis sein Schalter eingeschaltet wird.",
+        "data": {
+          "charger_switch": "Smart-Plug-Schalter",
+          "charge_limit": "Obere Ladegrenze (%)",
+          "maintenance_level": "Startwert für Erhaltungsladung (%)",
+          "resume_level": "Ladung fortsetzen ab (%)",
+          "shared_rtk_power": "Ladestation und RTK verwenden denselben Smart Plug"
+        }
+      },
+      "developer_reporting": {
+        "title": "Entwicklung und Diagnose",
+        "description": "Diese Optionen sind freiwillig und können jederzeit wieder deaktiviert werden. Sie sind unabhängig vom schreibgeschützten Developer Agent.",
+        "data": {
+          "share_anonymous_usage": "Anonyme Nutzungsstatistiken teilen",
+          "send_automatic_diagnostics": "Automatische Diagnoseberichte senden"
+        },
+        "data_description": {
+          "share_anonymous_usage": "Sendet minimale technische Nutzungsdaten wie Integrations-/Home-Assistant-Version, Land und Anzahl der ANTHBOT-Modelle. Benutzername, Passwort, Seriennummer, GPS-Position und Karte werden nicht gesendet.",
+          "send_automatic_diagnostics": "Sendet datenschutzgefilterte technische Diagnosedaten bei unterstützten Fehlern, z. B. Mäherfehlern, Grenz-/Sperrzonenüberschreitungen und Karten-/Pfadverarbeitungsfehlern."
+        }
+      }
+    },
+    "error": {
+      "invalid_battery_thresholds": "Die Fortsetzungs- und Erhaltungsladegrenzen müssen unter der oberen Ladegrenze liegen.",
+      "reporting_service_unavailable": "Der Dienst für Berichtseinstellungen ist nicht verfügbar. Lade die Anthbot-Map-Integration neu oder starte Home Assistant neu und versuche es erneut."
+    },
+    "abort": {"no_devices": "Kein geladener Anthbot-Mäher ist verfügbar."}
+  }
+}

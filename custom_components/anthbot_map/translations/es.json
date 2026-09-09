@@ -1,0 +1,12 @@
+{
+  "options": {
+    "step": {
+      "init": {"title": "Ajustes de Anthbot Map", "description": "Elige qué ajustes quieres cambiar.", "menu_options": {"battery_saver": "Ahorro de batería", "developer_reporting": "Desarrollo y diagnósticos"}},
+      "battery_saver_mower": {"title": "Ahorro de batería", "description": "Elige el cortacésped que quieres configurar.", "data": {"mower": "Cortacésped"}},
+      "battery_saver": {"title": "Ahorro de batería", "description": "Configura el cargador y los límites para {serial_number}. El modo permanecerá inactivo hasta que se active su interruptor.", "data": {"charger_switch": "Interruptor del enchufe inteligente", "charge_limit": "Límite superior de carga (%)", "maintenance_level": "Nivel de inicio de recarga de mantenimiento (%)", "resume_level": "Nivel de reanudación de carga (%)", "shared_rtk_power": "La estación de carga y el RTK comparten el mismo enchufe inteligente"}},
+      "developer_reporting": {"title": "Desarrollo y diagnósticos", "description": "Estas opciones son voluntarias y se pueden desactivar de nuevo en cualquier momento. Son independientes del Developer Agent de solo lectura.", "data": {"share_anonymous_usage": "Compartir estadísticas de uso anónimas", "send_automatic_diagnostics": "Enviar informes de diagnóstico automáticos"}, "data_description": {"share_anonymous_usage": "Envía información técnica mínima de uso, como la versión de la integración/Home Assistant, el país y el número de modelos ANTHBOT. No se envían nombre de usuario, contraseña, número de serie, posición GPS ni mapa.", "send_automatic_diagnostics": "Envía diagnósticos técnicos filtrados para proteger la privacidad cuando se producen errores compatibles, como errores del cortacésped, cruces de límites/zonas prohibidas y fallos de procesamiento de mapas o rutas."}}
+    },
+    "error": {"invalid_battery_thresholds": "Los niveles de reanudación y recarga de mantenimiento deben ser inferiores al límite superior de carga.", "reporting_service_unavailable": "El servicio de ajustes de informes no está disponible. Recarga la integración Anthbot Map o reinicia Home Assistant e inténtalo de nuevo."},
+    "abort": {"no_devices": "No hay ningún cortacésped Anthbot cargado disponible."}
+  }
+}

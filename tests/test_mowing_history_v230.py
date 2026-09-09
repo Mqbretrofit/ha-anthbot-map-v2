@@ -103,13 +103,22 @@ process.stdout.write(JSON.stringify({longSeconds, explicitMilliseconds, filtered
     def test_release_version_and_frontend_mirrors_are_consistent(self) -> None:
         manifest = json.loads((INTEGRATION / "manifest.json").read_text(encoding="utf-8"))
         init_source = (INTEGRATION / "__init__.py").read_text(encoding="utf-8")
+        popup_backend = (INTEGRATION / "developer_optin.py").read_text(encoding="utf-8")
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 
         version = manifest["version"]
         self.assertRegex(version, r"^\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.-]+)?$")
-        self.assertIn(f'?v={version}', init_source)
+        # Stable releases keep the main card cache key aligned with the manifest.
+        # Test/prerelease builds may deliberately leave the unchanged card bundle
+        # on its previous cache key; the new popup has its own dynamic version key.
+        if "-" not in version:
+            self.assertIn(f'?v={version}', init_source)
+        self.assertIn(
+            'resource_url = f"{_POPUP_RESOURCE_PATH}?v={_integration_version()}"',
+            popup_backend,
+        )
         self.assertIn("Release tag $tag does not match manifest version", workflow)
-        for filename in ("anthbot-map-card.js", "i18n.js", "styles.css"):
+        for filename in ("anthbot-map-card.js", "i18n.js", "styles.css", "developer-optin.js"):
             self.assertEqual(
                 (INTEGRATION / "frontend" / filename).read_bytes(),
                 (ROOT / "www" / "anthbot-map" / filename).read_bytes(),

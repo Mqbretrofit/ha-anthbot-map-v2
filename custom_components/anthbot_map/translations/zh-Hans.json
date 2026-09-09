@@ -1,0 +1,12 @@
+{
+  "options": {
+    "step": {
+      "init": {"title": "Anthbot Map 设置", "description": "选择要修改的设置。", "menu_options": {"battery_saver": "电池节能", "developer_reporting": "开发与诊断"}},
+      "battery_saver_mower": {"title": "电池节能", "description": "选择要配置的割草机器人。", "data": {"mower": "割草机器人"}},
+      "battery_saver": {"title": "电池节能", "description": "为 {serial_number} 配置充电器和阈值。只有启用其开关后，此模式才会生效。", "data": {"charger_switch": "智能插座开关", "charge_limit": "最高充电上限 (%)", "maintenance_level": "维护充电启动电量 (%)", "resume_level": "恢复充电电量 (%)", "shared_rtk_power": "充电站与 RTK 共用同一个智能插座"}},
+      "developer_reporting": {"title": "开发与诊断", "description": "这些选项完全自愿，可随时再次关闭，并且与只读 Developer Agent 相互独立。", "data": {"share_anonymous_usage": "共享匿名使用统计", "send_automatic_diagnostics": "发送自动诊断报告"}, "data_description": {"share_anonymous_usage": "仅发送最少的技术使用信息，例如集成/Home Assistant 版本、国家和 ANTHBOT 型号数量。不会发送用户名、密码、序列号、GPS 位置和地图。", "send_automatic_diagnostics": "在发生支持的错误时发送经过隐私过滤的技术诊断信息，例如割草机器人错误、边界/禁区越界以及地图或路径处理错误。"}}
+    },
+    "error": {"invalid_battery_thresholds": "恢复充电和维护充电电量必须低于最高充电上限。", "reporting_service_unavailable": "报告设置服务不可用。请重新加载 Anthbot Map 集成或重启 Home Assistant 后重试。"},
+    "abort": {"no_devices": "没有可用的已加载 Anthbot 割草机器人。"}
+  }
+}

@@ -56,11 +56,30 @@ class RuntimeOptimizationSourceTests(unittest.TestCase):
             self.assertIn(marker, source)
         self.assertIn("view = points", source)
 
-    def test_v245_manifest_version(self) -> None:
+    def test_custom_integration_runtime_translations_exist_for_all_23_languages(self) -> None:
+        translations = ROOT / "custom_components/anthbot_map/translations"
+        languages = (
+            "en", "hu", "de", "fr", "es", "it", "pt", "nl", "pl", "cs",
+            "sk", "ro", "da", "sv", "nb", "fi", "zh-Hans", "zh-Hant", "tr",
+            "th", "vi", "ko", "km",
+        )
+        self.assertEqual(23, len(languages))
+        for language in languages:
+            path = translations / f"{language}.json"
+            self.assertTrue(path.is_file(), language)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            menu = payload["options"]["step"]["init"]["menu_options"]
+            self.assertTrue(menu["battery_saver"], language)
+            self.assertTrue(menu["developer_reporting"], language)
+            reporting = payload["options"]["step"]["developer_reporting"]["data"]
+            self.assertTrue(reporting["share_anonymous_usage"], language)
+            self.assertTrue(reporting["send_automatic_diagnostics"], language)
+
+    def test_stable_manifest_version(self) -> None:
         manifest = json.loads(
             (ROOT / "custom_components/anthbot_map/manifest.json").read_text(encoding="utf-8")
         )
-        self.assertEqual("2.4.5", manifest["version"])
+        self.assertEqual("2.4.6", manifest["version"])
 
 
 if __name__ == "__main__":

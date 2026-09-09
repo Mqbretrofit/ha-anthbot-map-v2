@@ -1,0 +1,12 @@
+{
+  "options": {
+    "step": {
+      "init": {"title": "Anthbot Map-instellingen", "description": "Kies welke instellingen je wilt wijzigen.", "menu_options": {"battery_saver": "Batterijbesparing", "developer_reporting": "Ontwikkeling en diagnostiek"}},
+      "battery_saver_mower": {"title": "Batterijbesparing", "description": "Kies de maaier die je wilt configureren.", "data": {"mower": "Maaier"}},
+      "battery_saver": {"title": "Batterijbesparing", "description": "Configureer de lader en limieten voor {serial_number}. De modus blijft inactief totdat de schakelaar wordt ingeschakeld.", "data": {"charger_switch": "Slimme-stekkerschakelaar", "charge_limit": "Bovenste laadlimiet (%)", "maintenance_level": "Startniveau onderhoudsladen (%)", "resume_level": "Niveau voor hervatten laden (%)", "shared_rtk_power": "Laadstation en RTK delen dezelfde slimme stekker"}},
+      "developer_reporting": {"title": "Ontwikkeling en diagnostiek", "description": "Deze opties zijn vrijwillig en kunnen op elk moment weer worden uitgeschakeld. Ze staan los van de alleen-lezen Developer Agent.", "data": {"share_anonymous_usage": "Anonieme gebruiksstatistieken delen", "send_automatic_diagnostics": "Automatische diagnoserapporten verzenden"}, "data_description": {"share_anonymous_usage": "Verstuurt minimale technische gebruiksinformatie, zoals integratie-/Home Assistant-versie, land en aantallen ANTHBOT-modellen. Gebruikersnaam, wachtwoord, serienummer, GPS-positie en kaart worden niet verzonden.", "send_automatic_diagnostics": "Verstuurt privacy-gefilterde technische diagnostiek bij ondersteunde fouten, zoals maaierfouten, grens-/verbodzone-overschrijdingen en fouten bij kaart- of padverwerking."}}
+    },
+    "error": {"invalid_battery_thresholds": "De niveaus voor hervatten en onderhoudsladen moeten lager zijn dan de bovenste laadlimiet.", "reporting_service_unavailable": "De service voor rapportage-instellingen is niet beschikbaar. Herlaad de Anthbot Map-integratie of start Home Assistant opnieuw en probeer het nogmaals."},
+    "abort": {"no_devices": "Er is geen geladen Anthbot-maaier beschikbaar."}
+  }
+}

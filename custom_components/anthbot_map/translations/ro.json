@@ -1,0 +1,12 @@
+{
+  "options": {
+    "step": {
+      "init": {"title": "Setări Anthbot Map", "description": "Alegeți setările pe care doriți să le modificați.", "menu_options": {"battery_saver": "Economisire baterie", "developer_reporting": "Dezvoltare și diagnosticare"}},
+      "battery_saver_mower": {"title": "Economisire baterie", "description": "Alegeți mașina de tuns iarba pe care doriți să o configurați.", "data": {"mower": "Mașină de tuns iarba"}},
+      "battery_saver": {"title": "Economisire baterie", "description": "Configurați încărcătorul și limitele pentru {serial_number}. Modul rămâne inactiv până când comutatorul său este pornit.", "data": {"charger_switch": "Comutator priză inteligentă", "charge_limit": "Limită superioară de încărcare (%)", "maintenance_level": "Nivel de pornire a încărcării de întreținere (%)", "resume_level": "Nivel de reluare a încărcării (%)", "shared_rtk_power": "Stația de încărcare și RTK folosesc aceeași priză inteligentă"}},
+      "developer_reporting": {"title": "Dezvoltare și diagnosticare", "description": "Aceste opțiuni sunt voluntare și pot fi dezactivate din nou în orice moment. Sunt independente de Developer Agent numai în citire.", "data": {"share_anonymous_usage": "Partajați statistici anonime de utilizare", "send_automatic_diagnostics": "Trimiteți rapoarte automate de diagnostic"}, "data_description": {"share_anonymous_usage": "Trimite informații tehnice minime despre utilizare, cum ar fi versiunea integrării/Home Assistant, țara și numărul modelelor ANTHBOT. Numele de utilizator, parola, numărul de serie, poziția GPS și harta nu sunt trimise.", "send_automatic_diagnostics": "Trimite diagnostic tehnic filtrat pentru confidențialitate la erori acceptate, cum ar fi erori ale mașinii, treceri peste limite/zone interzise și erori de procesare a hărții sau traseului."}}
+    },
+    "error": {"invalid_battery_thresholds": "Nivelurile de reluare și de încărcare de întreținere trebuie să fie mai mici decât limita superioară de încărcare.", "reporting_service_unavailable": "Serviciul pentru setările de raportare nu este disponibil. Reîncărcați integrarea Anthbot Map sau reporniți Home Assistant și încercați din nou."},
+    "abort": {"no_devices": "Nu este disponibilă nicio mașină de tuns Anthbot încărcată."}
+  }
+}

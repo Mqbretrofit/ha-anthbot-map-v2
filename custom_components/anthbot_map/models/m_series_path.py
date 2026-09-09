@@ -6,6 +6,7 @@ import math
 from typing import Any
 
 from ..coordinator import AnthbotGenieDataUpdateCoordinator
+from ..path_zone_check import evaluate_path_no_go, no_go_geometry_signature
 from . import m_series_legacy as _legacy
 
 _INSTALLED = False
@@ -157,6 +158,39 @@ def _merged(self: AnthbotGenieDataUpdateCoordinator) -> dict[str, Any] | None:
     return definition
 
 
+def _update_no_go_check(
+    self: AnthbotGenieDataUpdateCoordinator,
+    definition: dict[str, Any],
+    state: dict[str, Any],
+) -> dict[str, Any]:
+    """Evaluate the merged path only when path or no-go geometry changed."""
+    points = definition.get("_path_points")
+    if not isinstance(points, list):
+        points = []
+    geometry_signature = no_go_geometry_signature(state)
+    signature = (
+        id(points),
+        len(points),
+        definition.get("path_id"),
+        definition.get("_m_series_first_index"),
+        definition.get("_m_series_last_index"),
+        geometry_signature,
+    )
+    if getattr(self, "_m_series_no_go_check_signature", None) == signature:
+        cached = getattr(self, "_m_series_no_go_check", None)
+        if isinstance(cached, dict):
+            return cached
+
+    check = evaluate_path_no_go(
+        points,
+        state,
+        path_id=definition.get("path_id"),
+    )
+    self._m_series_no_go_check_signature = signature
+    self._m_series_no_go_check = check
+    return check
+
+
 def _attach(self: AnthbotGenieDataUpdateCoordinator, state: dict[str, Any]) -> dict[str, Any]:
     if not _is_m_series(getattr(self.device, "model", None)):
         return state
@@ -166,10 +200,12 @@ def _attach(self: AnthbotGenieDataUpdateCoordinator, state: dict[str, Any]) -> d
         return state
     result = dict(state)
     points = definition["_path_points"]
+    no_go_check = _update_no_go_check(self, definition, state)
     self._path_definition = definition
     self._history_path_source = "m_series_curpath"
     result["_path_definition"] = definition
     result["_history_path_source"] = "m_series_curpath"
+    result["_no_go_path_check"] = no_go_check
     result["path"] = points
     result["mowed_path"] = points
     result["cloud_path"] = points
@@ -206,6 +242,8 @@ def install_m_series_path_support() -> None:
             self._m_series_test4_live_path_id = None
             self._m_series_test4_latest_angle = None
             self._m_series_test4_latest_angle_index = -1
+            self._m_series_no_go_check_signature = None
+            self._m_series_no_go_check = None
 
     async def live_shadow(self, shadow_name: str, reported: dict[str, Any]) -> None:
         if _is_m_series(getattr(self.device, "model", None)) and isinstance(reported, dict):
@@ -220,8 +258,12 @@ def install_m_series_path_support() -> None:
                     # the short chunk and replacing the test4 assembled trail.
                     forwarded.pop("curpath", None)
                     points = merged["_path_points"]
+                    check_state = dict(getattr(self, "reported_state", {}) or {})
+                    check_state.update(reported)
+                    no_go_check = _update_no_go_check(self, merged, check_state)
                     forwarded["_path_definition"] = merged
                     forwarded["_history_path_source"] = "m_series_curpath"
+                    forwarded["_no_go_path_check"] = no_go_check
                     forwarded["path"] = points
                     forwarded["mowed_path"] = points
                     forwarded["cloud_path"] = points

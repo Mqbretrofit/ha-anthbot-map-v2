@@ -1,0 +1,12 @@
+{
+  "options": {
+    "step": {
+      "init": {"title": "Anthbot Map-innstillinger", "description": "Velg hvilke innstillinger du vil endre.", "menu_options": {"battery_saver": "Batterisparing", "developer_reporting": "Utvikling og diagnostikk"}},
+      "battery_saver_mower": {"title": "Batterisparing", "description": "Velg gressklipperen som skal konfigureres.", "data": {"mower": "Gressklipper"}},
+      "battery_saver": {"title": "Batterisparing", "description": "Konfigurer lader og grenser for {serial_number}. Modusen forblir inaktiv til bryteren slås på.", "data": {"charger_switch": "Bryter for smartplugg", "charge_limit": "Øvre ladegrense (%)", "maintenance_level": "Startnivå for vedlikeholdslading (%)", "resume_level": "Nivå for å gjenoppta lading (%)", "shared_rtk_power": "Ladestasjon og RTK deler samme smartplugg"}},
+      "developer_reporting": {"title": "Utvikling og diagnostikk", "description": "Disse valgene er frivillige og kan slås av igjen når som helst. De er uavhengige av den skrivebeskyttede Developer Agent.", "data": {"share_anonymous_usage": "Del anonym bruksstatistikk", "send_automatic_diagnostics": "Send automatiske diagnoserapporter"}, "data_description": {"share_anonymous_usage": "Sender minimal teknisk bruksinformasjon, som integrasjons-/Home Assistant-versjon, land og antall ANTHBOT-modeller. Brukernavn, passord, serienummer, GPS-posisjon og kart sendes ikke.", "send_automatic_diagnostics": "Sender personvernfiltrert teknisk diagnostikk ved støttede feil, som klipperfeil, grense-/forbudssonekryssinger og feil ved kart- eller rutebehandling."}}
+    },
+    "error": {"invalid_battery_thresholds": "Nivåene for gjenopptakelse og vedlikeholdslading må være lavere enn den øvre ladegrensen.", "reporting_service_unavailable": "Tjenesten for rapporteringsinnstillinger er ikke tilgjengelig. Last inn Anthbot Map-integrasjonen på nytt eller start Home Assistant på nytt og prøv igjen."},
+    "abort": {"no_devices": "Ingen innlastet Anthbot-gressklipper er tilgjengelig."}
+  }
+}

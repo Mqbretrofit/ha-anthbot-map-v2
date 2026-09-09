@@ -1,0 +1,12 @@
+{
+  "options": {
+    "step": {
+      "init": {"title": "Ustawienia Anthbot Map", "description": "Wybierz ustawienia, które chcesz zmienić.", "menu_options": {"battery_saver": "Oszczędzanie baterii", "developer_reporting": "Rozwój i diagnostyka"}},
+      "battery_saver_mower": {"title": "Oszczędzanie baterii", "description": "Wybierz kosiarkę do konfiguracji.", "data": {"mower": "Kosiarka"}},
+      "battery_saver": {"title": "Oszczędzanie baterii", "description": "Skonfiguruj ładowarkę i limity dla {serial_number}. Tryb pozostaje nieaktywny, dopóki jego przełącznik nie zostanie włączony.", "data": {"charger_switch": "Przełącznik inteligentnego gniazdka", "charge_limit": "Górny limit ładowania (%)", "maintenance_level": "Poziom rozpoczęcia ładowania podtrzymującego (%)", "resume_level": "Poziom wznowienia ładowania (%)", "shared_rtk_power": "Stacja ładująca i RTK korzystają z tego samego inteligentnego gniazdka"}},
+      "developer_reporting": {"title": "Rozwój i diagnostyka", "description": "Te opcje są dobrowolne i można je w każdej chwili ponownie wyłączyć. Są niezależne od Developer Agent tylko do odczytu.", "data": {"share_anonymous_usage": "Udostępniaj anonimowe statystyki użycia", "send_automatic_diagnostics": "Wysyłaj automatyczne raporty diagnostyczne"}, "data_description": {"share_anonymous_usage": "Wysyła minimalne informacje techniczne o użyciu, takie jak wersja integracji/Home Assistant, kraj i liczba modeli ANTHBOT. Nazwa użytkownika, hasło, numer seryjny, pozycja GPS i mapa nie są wysyłane.", "send_automatic_diagnostics": "Wysyła techniczne dane diagnostyczne przefiltrowane pod kątem prywatności przy obsługiwanych błędach, np. błędach kosiarki, przekroczeniach granic/stref zakazanych oraz błędach przetwarzania mapy lub trasy."}}
+    },
+    "error": {"invalid_battery_thresholds": "Poziomy wznowienia i ładowania podtrzymującego muszą być niższe niż górny limit ładowania.", "reporting_service_unavailable": "Usługa ustawień raportowania jest niedostępna. Przeładuj integrację Anthbot Map lub uruchom ponownie Home Assistant i spróbuj ponownie."},
+    "abort": {"no_devices": "Brak załadowanej kosiarki Anthbot."}
+  }
+}
