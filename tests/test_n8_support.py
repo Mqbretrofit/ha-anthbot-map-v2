@@ -131,10 +131,25 @@ def test_n8_work_mode_select_is_model_scoped() -> None:
     assert 'if is_n8_model(getattr(coordinator.device, "model", None)):' in selects
     assert 'cmd="param_set"' in selects
     assert 'data={"work_mode": raw_value}' in selects
-    # Existing per-zone Normal/Efficient selector stays intact.
     assert '"Normal": 0' in selects
     assert '"Efficient": 1' in selects
     assert "AnthbotZoneMowingModeSelect" in selects
+
+
+def test_n8_anti_loss_switch_is_model_scoped() -> None:
+    switches = _read(INTEGRATION / "switch.py")
+    assert "N8_SWITCHES:" in switches
+    assert 'key="n8_anti_loss_enabled"' in switches
+    assert 'if is_n8_model(getattr(coordinator.device, "model", None)):' in switches
+    assert 'cmd="anti_loss_switch", data=1 if enabled else 0' in switches
+    for existing in (
+        "custom_mowing_direction_enabled",
+        "visual_obstacle_detection_enabled",
+        "rain_perception_enabled",
+        "edge_following_return_enabled",
+        "automatic_dock_mowing_enabled",
+    ):
+        assert f'key="{existing}"' in switches
 
 
 def test_n8_binary_sensors_are_model_scoped_and_generic_sensors_remain() -> None:
