@@ -8,6 +8,7 @@ from developer_agent_api import (
     router as developer_agent_router,
 )
 from developer_agent_dashboard import router as developer_agent_dashboard_router
+from diagnostics_dashboard import router as diagnostics_dashboard_router
 
 # Keep the developer-agent routes isolated from the existing reporting API.
 # Its SQLite tables are initialized lazily on the first developer-agent request
@@ -15,6 +16,7 @@ from developer_agent_dashboard import router as developer_agent_dashboard_router
 # write access to /data (important for tests and tooling).
 fastapi_app.include_router(developer_agent_router)
 fastapi_app.include_router(developer_agent_dashboard_router)
+fastapi_app.include_router(diagnostics_dashboard_router)
 
 # Only the dashboard HTML is embeddable, and only from the Home Assistant
 # origins used by this deployment. Public ingest/admin API responses are not
