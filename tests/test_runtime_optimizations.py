@@ -75,11 +75,11 @@ class RuntimeOptimizationSourceTests(unittest.TestCase):
             self.assertTrue(reporting["share_anonymous_usage"], language)
             self.assertTrue(reporting["send_automatic_diagnostics"], language)
 
-    def test_current_test_manifest_version(self) -> None:
+    def test_stable_manifest_version(self) -> None:
         manifest = json.loads(
             (ROOT / "custom_components/anthbot_map/manifest.json").read_text(encoding="utf-8")
         )
-        self.assertEqual("2.4.6-beta.13", manifest["version"])
+        self.assertEqual("2.4.6", manifest["version"])
 
 
 if __name__ == "__main__":
