@@ -28,6 +28,46 @@ _FRAME_ANCESTORS = (
     "https://ha.mqbretrofithungary.online"
 )
 
+_DASHBOARD_DIAGNOSTICS_LINK_SCRIPT = b"""
+<script>
+(() => {
+  const wireDiagnostics = () => {
+    document.querySelectorAll('.diag-item').forEach((item) => {
+      if (item.dataset.diagnosticLinked === '1') return;
+      const meta = item.querySelector('.diag-meta');
+      const reportId = (meta?.textContent || '').split('\u00b7')[0].trim();
+      if (!reportId) return;
+      const open = () => {
+        location.href = '/dashboard/diagnostics/' + encodeURIComponent(reportId);
+      };
+      item.dataset.diagnosticLinked = '1';
+      item.tabIndex = 0;
+      item.setAttribute('role', 'link');
+      item.setAttribute('aria-label', 'Diagnosztika megnyitasa: ' + reportId);
+      item.style.cursor = 'pointer';
+      item.addEventListener('click', open);
+      item.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          open();
+        }
+      });
+      const badge = item.querySelector('.pill.warn');
+      if (badge) {
+        badge.style.cursor = 'pointer';
+        badge.title = 'Diagnosztika megnyitasa';
+      }
+    });
+  };
+  new MutationObserver(wireDiagnostics).observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+  });
+  wireDiagnostics();
+})();
+</script>
+"""
+
 
 class DeveloperAgentStorageMiddleware:
     """Create developer-agent tables only when one of its routes is used."""
@@ -53,11 +93,12 @@ class DashboardEmbeddingMiddleware:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope.get("type") != "http" or not str(scope.get("path", "")).startswith(
-            "/dashboard"
-        ):
+        path = str(scope.get("path", ""))
+        if scope.get("type") != "http" or not path.startswith("/dashboard"):
             await self.app(scope, receive, send)
             return
+
+        inject_diagnostic_links = path.rstrip("/") == "/dashboard"
 
         async def send_wrapped(message):
             if message.get("type") == "http.response.start":
@@ -70,6 +111,9 @@ class DashboardEmbeddingMiddleware:
                         # CSP allow-list for this Home Assistant deployment.
                         continue
                     if name == "content-security-policy":
+                        continue
+                    if inject_diagnostic_links and name == "content-length":
+                        # The dashboard body gets a tiny navigation script below.
                         continue
                     if name == "set-cookie":
                         value = raw_value.decode("latin-1")
@@ -88,6 +132,17 @@ class DashboardEmbeddingMiddleware:
                     )
                 )
                 message = {**message, "headers": headers}
+
+            elif message.get("type") == "http.response.body" and inject_diagnostic_links:
+                body = message.get("body", b"")
+                if b"</body>" in body:
+                    body = body.replace(
+                        b"</body>",
+                        _DASHBOARD_DIAGNOSTICS_LINK_SCRIPT + b"</body>",
+                        1,
+                    )
+                    message = {**message, "body": body}
+
             await send(message)
 
         await self.app(scope, receive, send_wrapped)
