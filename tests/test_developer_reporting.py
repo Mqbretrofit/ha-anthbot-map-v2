@@ -27,6 +27,10 @@ anthbot_package = sys.modules.setdefault(
 )
 anthbot_package.__path__ = [str(PACKAGE_DIR)]
 _load_module("custom_components.anthbot_map.const", "const.py")
+_load_module("custom_components.anthbot_map.path_zone_check", "path_zone_check.py")
+_load_module(
+    "custom_components.anthbot_map.firmware_diagnostics", "firmware_diagnostics.py"
+)
 MODULE = _load_module(
     "custom_components.anthbot_map.developer_reporting", "developer_reporting.py"
 )
@@ -68,15 +72,46 @@ class DeveloperReportingTests(unittest.TestCase):
     def test_unknown_country_is_not_invented(self) -> None:
         self.assertIsNone(MODULE.country_name_from_area_code("9999"))
 
-    def test_diagnostics_upload_wraps_existing_filtered_report(self) -> None:
-        report = {"schema": "anthbot-firmware-diagnostics-v1", "safe": True}
+    def test_manufacturer_trigger_gets_clean_vendor_report(self) -> None:
+        report = {
+            "schema": "anthbot-firmware-diagnostics-v1",
+            "safe": True,
+            "connection": {"live_shadow_connected": True, "live_shadow_error": "internal"},
+            "definitions": {"path": {"error": "decode failed"}},
+            "runtime_performance": {"cache_hits": 5},
+        }
         payload = MODULE.build_diagnostics_upload_payload(
             installation_id="random-install-id",
             report=report,
-            trigger="no_go_crossing",
+            trigger="mower_error_code",
         )
-        self.assertEqual(payload["report"], report)
-        self.assertEqual(payload["trigger"], "no_go_crossing")
+        vendor = payload["report"]
+        self.assertEqual(vendor["report_kind"], "manufacturer")
+        self.assertNotIn("definitions", vendor)
+        self.assertNotIn("runtime_performance", vendor)
+        self.assertNotIn("live_shadow_error", vendor["connection"])
+        self.assertEqual(payload["trigger"], "mower_error_code")
+
+    def test_integration_trigger_keeps_internal_failure_details(self) -> None:
+        report = {
+            "schema": "anthbot-firmware-diagnostics-v1",
+            "connection": {"live_shadow_error": "internal"},
+            "definitions": {"path": {"error": "decode failed"}},
+            "runtime_performance": {"cache_hits": 5},
+        }
+        payload = MODULE.build_diagnostics_upload_payload(
+            installation_id="random-install-id",
+            report=report,
+            trigger="path_definition_error",
+        )
+        internal = payload["report"]
+        self.assertEqual(internal["report_kind"], "integration")
+        self.assertEqual(
+            internal["schema"], "anthbot-map-integration-diagnostics-v1"
+        )
+        self.assertEqual(internal["definitions"]["path"]["error"], "decode failed")
+        self.assertEqual(internal["runtime_performance"]["cache_hits"], 5)
+        self.assertEqual(internal["connection"]["live_shadow_error"], "internal")
 
     def test_reporting_is_not_mixed_into_account_setup(self) -> None:
         source = (PACKAGE_DIR / "config_flow.py").read_text(encoding="utf-8")
