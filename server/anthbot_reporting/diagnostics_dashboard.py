@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app import _db, require_admin
+from app import _dashboard_file, _db, _request_is_admin, require_admin
 
 router = APIRouter()
 
@@ -43,3 +44,11 @@ def admin_diagnostic_detail(report_id: str) -> dict[str, Any]:
         "report_sha256": row["report_sha256"],
         "report": report,
     }
+
+
+@router.get("/dashboard/diagnostics/{report_id}", response_class=HTMLResponse)
+def dashboard_diagnostic_detail(report_id: str, request: Request):
+    """Serve the human-readable detail page for one diagnostic report."""
+    if not _request_is_admin(request):
+        return RedirectResponse(url="/dashboard", status_code=303)
+    return HTMLResponse(_dashboard_file("diagnostic_detail.html"))
