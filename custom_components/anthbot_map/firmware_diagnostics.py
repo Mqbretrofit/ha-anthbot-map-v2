@@ -15,12 +15,14 @@ import math
 from pathlib import Path
 import re
 from typing import Any
+from urllib.parse import parse_qsl, urlparse
 
 from .path_zone_check import no_go_zones
 
 _SCHEMA = "anthbot-firmware-diagnostics-v1"
 _MAX_DEPTH = 12
 _MAX_STRING = 8192
+_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 _SENSITIVE_KEY_PARTS = (
     "password",
     "passwd",
@@ -97,6 +99,102 @@ def _json_safe(value: Any, *, depth: int = 0) -> Any:
     return str(value)
 
 
+def _url_metadata(value: Any) -> Any:
+    """Preserve useful URL metadata without leaking signed query values."""
+    if not isinstance(value, str) or not value.strip():
+        return _json_safe(value)
+    try:
+        parsed = urlparse(value.strip())
+    except ValueError:
+        return "<url-redacted>"
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+        return "<url-redacted>"
+    filename = Path(parsed.path).name or None
+    try:
+        query_keys = sorted({key for key, _item in parse_qsl(parsed.query, keep_blank_values=True)})
+    except ValueError:
+        query_keys = []
+    return {
+        "redacted": True,
+        "scheme": parsed.scheme.lower(),
+        "host": parsed.hostname.lower(),
+        "filename": filename,
+        "query_keys": query_keys,
+    }
+
+
+def _diagnostic_safe(value: Any, *, depth: int = 0) -> Any:
+    """Return diagnostic metadata while replacing URL values with safe summaries."""
+    if depth >= _MAX_DEPTH:
+        return "<max-depth>"
+    if isinstance(value, str):
+        if value.strip().lower().startswith(("http://", "https://")):
+            return _url_metadata(value)
+        return _json_safe(value)
+    if isinstance(value, dict):
+        result: dict[str, Any] = {}
+        for raw_key, item in value.items():
+            key = str(raw_key)
+            normalized = key.lower().replace("-", "_")
+            if _is_sensitive_key(key):
+                result[key] = "<redacted>"
+            elif "url" in normalized or normalized.endswith("uri"):
+                result[key] = _url_metadata(item)
+            else:
+                result[key] = _diagnostic_safe(item, depth=depth + 1)
+        return result
+    if isinstance(value, (list, tuple, set)):
+        return [_diagnostic_safe(item, depth=depth + 1) for item in value]
+    return _json_safe(value, depth=depth)
+
+
+def _safe_error_text(value: Any) -> str | None:
+    """Keep the actual exception text while stripping any embedded signed URLs."""
+    if value is None:
+        return None
+    text = str(value)
+    text = _URL_RE.sub("<url-redacted>", text)
+    return text if len(text) <= _MAX_STRING else text[:_MAX_STRING] + "…"
+
+
+def _definition_metadata(value: Any) -> dict[str, Any]:
+    """Summarize one cached definition without duplicating its full geometry."""
+    if value is None:
+        return {"present": False, "type": None}
+    result: dict[str, Any] = {
+        "present": bool(value),
+        "type": type(value).__name__,
+    }
+    if isinstance(value, list):
+        result["item_count"] = len(value)
+        return result
+    if not isinstance(value, dict):
+        return result
+
+    result["top_level_keys"] = sorted(
+        str(key) for key in value if not _is_sensitive_key(key)
+    )
+    for key in (
+        "map_id",
+        "path_id",
+        "md5",
+        "filename",
+        "file_name",
+        "size",
+        "byte_length",
+        "version",
+        "time",
+        "timestamp",
+        "_m_series_first_index",
+        "_m_series_last_index",
+    ):
+        if key in value:
+            result[key] = _diagnostic_safe(value[key])
+    if "_download_source" in value:
+        result["download_source"] = _diagnostic_safe(value["_download_source"])
+    return result
+
+
 def _path_points(state: dict[str, Any]) -> tuple[list[Any], dict[str, Any]]:
     definition = state.get("_path_definition")
     if isinstance(definition, dict):
@@ -134,6 +232,8 @@ def _state_subset(state: dict[str, Any]) -> dict[str, Any]:
         "rain_continue_time",
         "online",
         "timestamp",
+        "map_time",
+        "map_tar_time",
         "path_time",
         "fw_version",
     )
@@ -192,6 +292,28 @@ def build_firmware_diagnostics_report(
     if not isinstance(no_go_check, dict):
         no_go_check = {}
 
+    map_definition = state.get("_map_definition")
+    path_definition = state.get("_path_definition")
+    map_error = state.get("_map_definition_error")
+    if map_error is None:
+        map_error = getattr(coordinator, "_map_definition_error", None)
+    path_error = state.get("_path_definition_error")
+    if path_error is None:
+        path_error = getattr(coordinator, "_path_definition_error", None)
+    ridable_error = state.get("_ridable_area_definition_error")
+    if ridable_error is None:
+        ridable_error = getattr(coordinator, "_ridable_area_definition_error", None)
+
+    map_source = state.get("_map_definition_source")
+    if map_source is None:
+        map_source = getattr(coordinator, "_map_definition_source", None)
+    history_source = state.get("_history_path_source")
+    if history_source is None:
+        history_source = getattr(coordinator, "_history_path_source", None)
+    history_info = state.get("_history_path_info")
+    if history_info is None:
+        history_info = getattr(coordinator, "_history_path_info", None)
+
     firmware = _unwrap_value(_safe_get(state, "fw_version", "system_version"))
     if firmware is None:
         firmware = _unwrap_value(state.get("firmware_version"))
@@ -217,12 +339,36 @@ def build_firmware_diagnostics_report(
         "connection": {
             "last_update_success": getattr(coordinator, "last_update_success", None),
             "live_shadow_connected": getattr(coordinator, "_live_shadow_connected", None),
-            "live_shadow_error": _json_safe(getattr(coordinator, "_live_shadow_error", None)),
+            "live_shadow_error": _safe_error_text(getattr(coordinator, "_live_shadow_error", None)),
         },
         "telemetry": _state_subset(state),
         "latest_task_event": _json_safe(_latest_task_event(state)),
+        "definitions": {
+            "map": {
+                "error": _safe_error_text(map_error),
+                "source": _json_safe(map_source),
+                "map_time": _json_safe(state.get("map_time")),
+                "map_tar_time": _json_safe(state.get("map_tar_time")),
+                "last_map_time": _json_safe(getattr(coordinator, "_last_map_time", None)),
+                "last_map_key": _json_safe(getattr(coordinator, "_last_map_key", None)),
+                "archive_selection": _diagnostic_safe(state.get("_map_archive_selection")),
+                "cached_definition": _definition_metadata(map_definition),
+            },
+            "path": {
+                "error": _safe_error_text(path_error),
+                "source": _json_safe(history_source),
+                "path_time": _json_safe(state.get("path_time")),
+                "last_path_time": _json_safe(getattr(coordinator, "_last_path_time", None)),
+                "history_info": _diagnostic_safe(history_info),
+                "cached_definition": _definition_metadata(path_definition),
+            },
+            "ridable_area": {
+                "error": _safe_error_text(ridable_error),
+                "ridable_area_time": _json_safe(state.get("ridable_area_time")),
+            },
+        },
         "path": {
-            "source": state.get("_history_path_source"),
+            "source": history_source,
             "path_id": _json_safe(path_id),
             "point_count": point_count,
             "first_point": _json_safe(points[0]) if points else None,
@@ -271,6 +417,9 @@ def report_email_summary(report: dict[str, Any]) -> str:
     path = report.get("path") if isinstance(report, dict) else {}
     no_go = report.get("no_go") if isinstance(report, dict) else {}
     check = no_go.get("check") if isinstance(no_go, dict) else {}
+    definitions = report.get("definitions") if isinstance(report, dict) else {}
+    map_definition = definitions.get("map") if isinstance(definitions, dict) else {}
+    path_definition = definitions.get("path") if isinstance(definitions, dict) else {}
     lines = [
         "ANTHBOT firmware diagnostics report",
         f"Model: {device.get('model') if isinstance(device, dict) else None}",
@@ -283,6 +432,12 @@ def report_email_summary(report: dict[str, Any]) -> str:
         f"Points inside: {check.get('points_inside', 0) if isinstance(check, dict) else 0}",
         f"Traversals: {check.get('traversals', 0) if isinstance(check, dict) else 0}",
     ]
+    map_error = map_definition.get("error") if isinstance(map_definition, dict) else None
+    path_error = path_definition.get("error") if isinstance(path_definition, dict) else None
+    if map_error:
+        lines.append(f"Map definition error: {map_error}")
+    if path_error:
+        lines.append(f"Path definition error: {path_error}")
     note = report.get("user_note") if isinstance(report, dict) else None
     if note:
         lines.extend(("", "User note:", str(note)))
