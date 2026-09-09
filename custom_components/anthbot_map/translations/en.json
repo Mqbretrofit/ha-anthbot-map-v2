@@ -1,0 +1,121 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Anthbot Map",
+        "description": "Configure Anthbot account discovery and cloud shadow polling.",
+        "data": {
+          "name": "Name",
+          "username": "Email / username",
+          "password": "Password",
+          "api_host": "Anthbot API host",
+          "area_code": "Country",
+          "scan_interval": "Polling interval (seconds)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This Anthbot account is already configured."
+    },
+    "error": {
+      "cannot_connect": "Could not connect or authenticate with Anthbot cloud.",
+      "no_devices": "Login succeeded but no Anthbot devices were found in this account.",
+      "unknown": "Unexpected error."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Anthbot Map settings",
+        "description": "Choose which settings you want to change.",
+        "menu_options": {
+          "battery_saver": "Battery saver",
+          "developer_reporting": "Development and diagnostics"
+        }
+      },
+      "battery_saver_mower": {
+        "title": "Battery saver",
+        "description": "Choose the mower to configure.",
+        "data": {
+          "mower": "Mower"
+        }
+      },
+      "battery_saver": {
+        "title": "Battery saver",
+        "description": "Configure the charger and limits for {serial_number}. The mode remains inactive until its switch is turned on.",
+        "data": {
+          "charger_switch": "Smart-plug switch",
+          "charge_limit": "Upper charge limit (%)",
+          "maintenance_level": "Idle recharge start level (%)",
+          "resume_level": "Resume charge level (%)",
+          "shared_rtk_power": "Charging station and RTK share the same smart plug"
+        }
+      },
+      "developer_reporting": {
+        "title": "Development and diagnostics",
+        "description": "These options are voluntary and can be turned off again at any time. They are independent from the read-only Developer Agent.",
+        "data": {
+          "share_anonymous_usage": "Share anonymous usage statistics",
+          "send_automatic_diagnostics": "Send automatic diagnostic reports"
+        },
+        "data_description": {
+          "share_anonymous_usage": "Sends minimal technical usage information such as integration/Home Assistant version, country and ANTHBOT model counts. Username, password, serial number, GPS position and map are not sent.",
+          "send_automatic_diagnostics": "Sends privacy-filtered technical diagnostics when supported errors occur, such as mower errors, boundary/no-go crossings and map/path processing failures."
+        }
+      }
+    },
+    "error": {
+      "invalid_battery_thresholds": "The resume and idle recharge levels must be lower than the upper charge limit.",
+      "reporting_service_unavailable": "The reporting settings service is not available. Reload the Anthbot Map integration or restart Home Assistant and try again."
+    },
+    "abort": {
+      "no_devices": "No loaded Anthbot mower is available."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "mower_status": {"name": "Mower status"},
+      "cutting_height": {"name": "Cutting height"},
+      "voice_volume": {"name": "Voice volume"},
+      "mowing_time": {"name": "Mowing time (session)"},
+      "mowing_area": {"name": "Mowing area (session)"},
+      "custom_mowing_direction": {"name": "Custom mowing direction"},
+      "custom_mowing_direction_enabled": {"name": "Custom mowing direction enabled"},
+      "battery_level": {"name": "Battery level"},
+      "zones": {"name": "Zones"},
+      "auto_zones": {"name": "Auto zones"}
+    },
+    "binary_sensor": {
+      "connection": {"name": "Connection"},
+      "charging": {"name": "Charging"},
+      "custom_mowing_direction_enabled": {"name": "Custom mowing direction enabled"}
+    },
+    "button": {
+      "connect_cloud": {"name": "Connect cloud"},
+      "start_full_mow": {"name": "Start full mow"},
+      "stop_mow": {"name": "Stop mow"},
+      "return_to_dock": {"name": "Return to dock"},
+      "resume_mow": {"name": "Resume paused task"},
+      "pause_mow": {"name": "Pause mowing task"},
+      "reset_blade_maintenance": {"name": "Reset blade maintenance"},
+      "reset_camera_maintenance": {"name": "Reset camera maintenance"},
+      "reset_dock_contact_maintenance": {"name": "Reset charging contact maintenance"}
+    },
+    "number": {
+      "mow_height_setting": {"name": "Mow height"},
+      "voice_volume_setting": {"name": "Voice volume"},
+      "custom_mowing_direction_setting": {"name": "Custom mowing direction"},
+      "rain_continue_time_setting": {"name": "Rain continue time"},
+      "mow_count_setting": {"name": "Mowing passes"},
+      "visual_obstacle_level_setting": {"name": "Visual obstacle sensitivity"}
+    },
+    "switch": {
+      "custom_mowing_direction_enabled": {"name": "Custom mowing direction enabled"},
+      "rain_perception_enabled": {"name": "Rain perception"},
+      "visual_obstacle_detection_enabled": {"name": "Visual obstacle detection"},
+      "edge_following_return_enabled": {"name": "Edge-following return"},
+      "automatic_dock_mowing_enabled": {"name": "Automatic dock-area mowing"},
+      "battery_saver_mode": {"name": "Battery saver mode"}
+    }
+  }
+}
