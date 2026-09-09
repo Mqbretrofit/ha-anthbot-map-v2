@@ -78,14 +78,25 @@ class DeveloperReportingTests(unittest.TestCase):
         self.assertEqual(payload["report"], report)
         self.assertEqual(payload["trigger"], "no_go_crossing")
 
-    def test_reporting_is_not_mixed_into_account_or_battery_saver_forms(self) -> None:
+    def test_reporting_is_not_mixed_into_account_setup(self) -> None:
         source = (PACKAGE_DIR / "config_flow.py").read_text(encoding="utf-8")
-        strings = (PACKAGE_DIR / "strings.json").read_text(encoding="utf-8")
-        self.assertNotIn("CONF_SHARE_ANONYMOUS_USAGE", source)
-        self.assertNotIn("CONF_SEND_AUTOMATIC_DIAGNOSTICS", source)
-        self.assertNotIn('"share_anonymous_usage"', strings)
-        self.assertNotIn('"send_automatic_diagnostics"', strings)
-        self.assertIn("CONF_CHARGER_SWITCH", source)
+        user_step = source.split("class AnthbotGenieOptionsFlow", 1)[0]
+        self.assertNotIn("selector.BooleanSelector", user_step)
+        self.assertIn("Consent can be changed later from integration options", user_step)
+
+    def test_reporting_is_available_in_integration_options(self) -> None:
+        source = (PACKAGE_DIR / "config_flow.py").read_text(encoding="utf-8")
+        self.assertIn('menu_options=["battery_saver", "developer_reporting"]', source)
+        self.assertIn("async_step_developer_reporting", source)
+        self.assertIn("CONF_SHARE_ANONYMOUS_USAGE", source)
+        self.assertIn("CONF_SEND_AUTOMATIC_DIAGNOSTICS", source)
+        self.assertIn("SERVICE_UPDATE_DEVELOPER_REPORTING", source)
+        self.assertIn("selector.BooleanSelector()", source)
+        self.assertIn("return_response=True", source)
+
+    def test_battery_saver_preserves_unrelated_options(self) -> None:
+        source = (PACKAGE_DIR / "config_flow.py").read_text(encoding="utf-8")
+        self.assertIn("options = dict(self.config_entry.options)", source)
         self.assertIn("options[CONF_BATTERY_SAVER_CONFIGS] = configs", source)
 
     def test_popup_follows_home_assistant_language_with_english_fallback(self) -> None:
@@ -110,16 +121,6 @@ class DeveloperReportingTests(unittest.TestCase):
         self.assertIn('"should_show": not acknowledged and prompt_version != version', source)
         self.assertIn("options[CONF_DEVELOPER_REPORTING_ACKNOWLEDGED] = True", source)
         self.assertIn('event="opt_in"', source)
-
-    def test_developer_agent_cannot_acknowledge_reporting_popup(self) -> None:
-        source = (PACKAGE_DIR / "developer_optin.py").read_text(encoding="utf-8")
-        self.assertIn("def _reporting_acknowledged", source)
-        self.assertIn("CONF_LEGACY_DEVELOPER_OPT_IN_ACKNOWLEDGED", source)
-        self.assertIn("developer_agent_enabled", source)
-        self.assertIn("return not developer_agent_enabled", source)
-        self.assertNotIn("agent_was_submitted", source)
-        self.assertNotIn("new_agent", source)
-        self.assertNotIn("CONF_DEVELOPER_AGENT_KEY", source)
 
     def test_popup_is_registered_from_independent_tracker_platform(self) -> None:
         source = (PACKAGE_DIR / "device_tracker.py").read_text(encoding="utf-8")
