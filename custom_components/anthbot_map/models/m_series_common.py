@@ -7,6 +7,7 @@ from .live_task_events import install_live_task_event_refresh
 from .m_series_legacy import install_m_series_compat as _install_legacy
 from .m_series_control import install_m_series_control_support
 from .n8_control import install_n8_control_support
+from .n8_map import install_n8_map_support
 from .m_series_history import install_m_series_history_support
 from .m_series_map import install_m_series_map_support
 from .m_series_path import install_m_series_path_support
@@ -36,7 +37,7 @@ def install_m_series_compat() -> None:
     _install_legacy()
     install_m_series_control_support()
     # N8 has its own command transport and is intentionally installed after the
-    # M-series wrapper.  It only intercepts N8 model strings, so Genie/M5/M9/
+    # M-series wrapper. It only intercepts N8 model strings, so Genie/M5/M9/
     # M9 Pro continue through their exact existing routes.
     install_n8_control_support()
     install_m_series_path_support()
@@ -45,6 +46,11 @@ def install_m_series_compat() -> None:
     # verified iot_map.bin boundary. Install this after map support so both
     # layers share one archive download and map.area_id can invalidate zones.
     install_m_series_zone_support()
+    # N8 uses the same MGS map-manager archive family but remains on its own
+    # activation guard. Install it after the shared downloader/area decoder are
+    # wrapped so a single N8 archive request provides boundary + zones + dump
+    # areas without changing M5/M9/M9 Pro routing.
+    install_n8_map_support()
     # Status owns the confirmed /device/v3/record/list refresh. Install it
     # before history so the history wrapper always enriches the freshly loaded
     # M-series records instead of having status overwrite the enriched payload.
