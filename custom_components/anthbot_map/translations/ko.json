@@ -1,0 +1,12 @@
+{
+  "options": {
+    "step": {
+      "init": {"title": "Anthbot Map 설정", "description": "변경할 설정을 선택하세요.", "menu_options": {"battery_saver": "배터리 절약", "developer_reporting": "개발 및 진단"}},
+      "battery_saver_mower": {"title": "배터리 절약", "description": "설정할 잔디깎이 로봇을 선택하세요.", "data": {"mower": "잔디깎이 로봇"}},
+      "battery_saver": {"title": "배터리 절약", "description": "{serial_number}의 충전기와 한도를 설정합니다. 스위치를 켜기 전까지 이 모드는 비활성 상태입니다.", "data": {"charger_switch": "스마트 플러그 스위치", "charge_limit": "최대 충전 한도 (%)", "maintenance_level": "유지 충전 시작 수준 (%)", "resume_level": "충전 재개 수준 (%)", "shared_rtk_power": "충전 스테이션과 RTK가 동일한 스마트 플러그를 사용함"}},
+      "developer_reporting": {"title": "개발 및 진단", "description": "이 옵션은 자발적이며 언제든 다시 끌 수 있습니다. 읽기 전용 Developer Agent와는 독립적입니다.", "data": {"share_anonymous_usage": "익명 사용 통계 공유", "send_automatic_diagnostics": "자동 진단 보고서 전송"}, "data_description": {"share_anonymous_usage": "통합/Home Assistant 버전, 국가, ANTHBOT 모델 수와 같은 최소한의 기술 사용 정보만 전송합니다. 사용자 이름, 비밀번호, 일련번호, GPS 위치 및 지도는 전송하지 않습니다.", "send_automatic_diagnostics": "지원되는 오류가 발생할 때 개인정보 보호 필터링된 기술 진단 정보를 전송합니다. 예: 잔디깎이 오류, 경계/금지 구역 침범, 지도 또는 경로 처리 오류."}}
+    },
+    "error": {"invalid_battery_thresholds": "충전 재개 및 유지 충전 수준은 최대 충전 한도보다 낮아야 합니다.", "reporting_service_unavailable": "보고 설정 서비스를 사용할 수 없습니다. Anthbot Map 통합을 다시 로드하거나 Home Assistant를 재시작한 후 다시 시도하세요."},
+    "abort": {"no_devices": "사용 가능한 로드된 Anthbot 잔디깎이 로봇이 없습니다."}
+  }
+}
