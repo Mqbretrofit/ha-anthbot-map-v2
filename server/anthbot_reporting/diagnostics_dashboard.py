@@ -92,7 +92,7 @@ def _diagnostic_event_summary(report: Any) -> dict[str, Any] | None:
 
 
 def _report_identity(report: Any) -> dict[str, Any]:
-    """Classify one stored report and extract admin-safe mower identity."""
+    """Classify one stored report and extract mower identity for the admin UI."""
     if not isinstance(report, dict):
         return {
             "report_type": "other",
@@ -100,6 +100,7 @@ def _report_identity(report: Any) -> dict[str, Any]:
             "report_schema": None,
             "robot_model": None,
             "robot_id": None,
+            "robot_serial_number": None,
             "robot_serial_hash": None,
         }
 
@@ -118,7 +119,16 @@ def _report_identity(report: Any) -> dict[str, Any]:
         if isinstance(serial_hash, str) and serial_hash.strip()
         else None
     )
-    robot_id = serial or (f"hash:{serial_hash[:12]}" if serial_hash else None)
+
+    # The mower serial number is the clearest stable device identifier for the
+    # reporting administrator and for reports forwarded to ANTHBOT support.
+    # It is not an account credential. Keep the hash as a fallback for older
+    # reports that were generated without the serial number.
+    robot_id = (
+        f"S/N: {serial}"
+        if serial
+        else (f"Robot ID: {serial_hash[:12]}" if serial_hash else None)
+    )
 
     is_robot_report = (
         schema == "anthbot-firmware-diagnostics-v1"
@@ -133,6 +143,7 @@ def _report_identity(report: Any) -> dict[str, Any]:
             "report_schema": schema,
             "robot_model": model,
             "robot_id": robot_id,
+            "robot_serial_number": serial,
             "robot_serial_hash": serial_hash,
         }
 
@@ -152,6 +163,7 @@ def _report_identity(report: Any) -> dict[str, Any]:
             "report_schema": schema,
             "robot_model": model,
             "robot_id": robot_id,
+            "robot_serial_number": serial,
             "robot_serial_hash": serial_hash,
         }
 
@@ -161,6 +173,7 @@ def _report_identity(report: Any) -> dict[str, Any]:
         "report_schema": schema,
         "robot_model": model,
         "robot_id": robot_id,
+        "robot_serial_number": serial,
         "robot_serial_hash": serial_hash,
     }
 
