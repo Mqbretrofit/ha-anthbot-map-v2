@@ -11,6 +11,41 @@ from app import _dashboard_file, _db, _request_is_admin, require_admin
 router = APIRouter()
 
 
+def _diagnostic_event_summary(report: Any) -> dict[str, Any] | None:
+    """Extract the privacy-filtered automatic mower-error context, when present."""
+    if not isinstance(report, dict):
+        return None
+    event = report.get("diagnostic_event")
+    if not isinstance(event, dict):
+        return None
+
+    task_event = event.get("task_event")
+    if not isinstance(task_event, dict):
+        task_event = {}
+
+    summary = {
+        "trigger": event.get("trigger"),
+        "err_code": event.get("err_code"),
+        "err_description": event.get("err_description"),
+        "event_code": event.get("event_code"),
+        "cloud_task_event_code": event.get("cloud_task_event_code"),
+        "mode": event.get("mode"),
+        "robot_sta": event.get("robot_sta"),
+        "online": event.get("online"),
+        "task_event_code": task_event.get("code"),
+        "task_event_type": task_event.get("code_type"),
+        "task_event_message": (
+            task_event.get("message")
+            or task_event.get("msg")
+            or task_event.get("content")
+            or task_event.get("description")
+        ),
+    }
+    if not any(value is not None and value != "" for value in summary.values()):
+        return None
+    return summary
+
+
 def _report_identity(report: Any) -> dict[str, Any]:
     """Classify one stored report and extract admin-safe mower identity."""
     if not isinstance(report, dict):
@@ -44,6 +79,7 @@ def _report_identity(report: Any) -> dict[str, Any]:
         schema == "anthbot-firmware-diagnostics-v1"
         or bool(device)
         or isinstance(report.get("telemetry"), dict)
+        or isinstance(report.get("diagnostic_event"), dict)
     )
     if is_robot_report:
         return {
@@ -98,6 +134,7 @@ def _row_payload(row: Any, *, include_report: bool) -> dict[str, Any]:
         "received_at": row["received_at"],
         "report_sha256": row["report_sha256"],
         **_report_identity(report),
+        "diagnostic_event": _diagnostic_event_summary(report),
     }
     if include_report:
         item["report"] = report
