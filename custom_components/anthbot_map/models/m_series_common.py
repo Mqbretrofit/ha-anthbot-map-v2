@@ -6,6 +6,7 @@ from .genie_status import install_genie_live_status_support
 from .live_task_events import install_live_task_event_refresh
 from .m_series_legacy import install_m_series_compat as _install_legacy
 from .m_series_control import install_m_series_control_support
+from .n8_control import install_n8_control_support
 from .m_series_history import install_m_series_history_support
 from .m_series_map import install_m_series_map_support
 from .m_series_path import install_m_series_path_support
@@ -34,6 +35,10 @@ def install_m_series_compat() -> None:
     install_setting_entity_identity()
     _install_legacy()
     install_m_series_control_support()
+    # N8 has its own command transport and is intentionally installed after the
+    # M-series wrapper.  It only intercepts N8 model strings, so Genie/M5/M9/
+    # M9 Pro continue through their exact existing routes.
+    install_n8_control_support()
     install_m_series_path_support()
     install_m_series_map_support()
     # M-series app zones are stored inside the same map-manager archive as the
