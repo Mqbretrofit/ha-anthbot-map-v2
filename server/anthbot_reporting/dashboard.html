@@ -161,7 +161,7 @@
           </div>
           <div class="grid section-grid">
             <div class="card section"><div class="section-head"><div class="section-title">Integrációverziók</div><div class="small">telepítések</div></div>${bars(s.by_integration_version)}</div>
-            <div class="card section"><div class="section-head"><div class="section-title">Legutóbbi diagnosztikák</div><div class="small">utolsó 20</div></div><div class="diag-list" id="diag-list"></div></div>
+            <div class="card section"><div class="section-head"><div class="section-title">Diagnosztikák</div><div class="small">utolsó 20 + no-go archívum</div></div><div class="diag-list" id="diag-list"></div></div>
           </div>
           <div class="footer"><span>ANTHBOT Reporting Server</span><span>Frissítve: <span id="updated">${fmt(s.generated_at)}</span></span></div>
         </div>`;
@@ -185,7 +185,10 @@
     function renderDiagnostics() {
       const box = el('diag-list'); if (!box) return;
       if (!state.diagnostics.length) { box.innerHTML = '<div class="empty">Még nem érkezett diagnosztikai jelentés.</div>'; return; }
-      box.innerHTML = state.diagnostics.map(d => `<div class="diag-item"><div class="diag-main"><div class="diag-title">${esc(d.trigger)}</div><div class="diag-meta">${esc(d.report_id)} · ${esc(shortId(d.installation_id))} · ${esc(fmt(d.received_at))}</div></div><span class="pill warn">diagnosztika</span></div>`).join('');
+      const latest = state.diagnostics.slice(0, 20);
+      const archivedNoGo = state.diagnostics.filter((d, index) => index >= 20 && d.trigger === 'no_go_path_crossing');
+      const visible = [...latest, ...archivedNoGo];
+      box.innerHTML = visible.map(d => `<div class="diag-item"><div class="diag-main"><div class="diag-title">${esc(d.trigger)}</div><div class="diag-meta">${esc(d.report_id)} · ${esc(shortId(d.installation_id))} · ${esc(fmt(d.received_at))}</div></div><span class="pill warn">${d.trigger === 'no_go_path_crossing' ? 'no-go megőrizve' : 'diagnosztika'}</span></div>`).join('');
     }
 
     function params() {
@@ -206,7 +209,7 @@
       const [stats, installations, diagnostics] = await Promise.all([
         api('/api/anthbot/admin/stats'),
         api('/api/anthbot/admin/installations?sort=last_seen&order=desc&limit=500'),
-        api('/api/anthbot/admin/diagnostics?limit=20')
+        api('/api/anthbot/admin/diagnostics?limit=500')
       ]);
       state.stats = stats; state.installations = installations.items || []; state.diagnostics = diagnostics.items || [];
       renderDashboard();
