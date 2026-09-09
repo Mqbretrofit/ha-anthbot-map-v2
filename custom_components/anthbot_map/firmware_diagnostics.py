@@ -34,6 +34,30 @@ _SENSITIVE_KEY_PARTS = (
     "session_token",
     "bearer",
 )
+_PIN_SENSITIVE_KEYS = {
+    "pin",
+    "pin_code",
+    "pincode",
+    "device_pin",
+    "device_pin_code",
+}
+_N8_DISCOVERY_KEY_PARTS = (
+    "child",
+    "lock",
+    "anti_loss",
+    "anti_theft",
+    "grass",
+    "dump",
+    "work_mode",
+    "perception",
+    "obstacle",
+    "rain",
+    "rainer",
+    "maintenance",
+    "border",
+    "nest",
+    "rid_switch",
+)
 
 
 def _integration_version() -> str | None:
@@ -69,7 +93,12 @@ def _safe_get(data: Any, *path: str) -> Any:
 
 def _is_sensitive_key(key: object) -> bool:
     normalized = str(key).lower().replace("-", "_")
-    return any(part in normalized for part in _SENSITIVE_KEY_PARTS)
+    return (
+        any(part in normalized for part in _SENSITIVE_KEY_PARTS)
+        or normalized in _PIN_SENSITIVE_KEYS
+        or normalized.endswith("_pin")
+        or normalized.endswith("_pincode")
+    )
 
 
 def _json_safe(value: Any, *, depth: int = 0) -> Any:
@@ -138,6 +167,139 @@ def _state_subset(state: dict[str, Any]) -> dict[str, Any]:
         "fw_version",
     )
     return {key: _json_safe(state[key]) for key in keys if key in state}
+
+
+def _is_n8_model_name(model: object) -> bool:
+    """Return whether a diagnostics model label identifies N8/MGS03."""
+    value = str(model or "").upper().replace("-", " ").replace("_", " ")
+    normalized = " ".join(value.split())
+    return "N8" in normalized or "MGS03" in normalized
+
+
+def _n8_candidate_scalars(
+    value: Any,
+    *,
+    path: tuple[str, ...] = (),
+    depth: int = 0,
+    result: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Collect small N8-relevant reported values without dumping full state.
+
+    This is intentionally a discovery aid. It lets an owner compare diagnostics
+    before/after changing a setting in the official app (for example Child Lock)
+    while avoiding credentials, PIN codes and large map/path payloads.
+    """
+    if result is None:
+        result = {}
+    if depth >= 6 or len(result) >= 128:
+        return result
+    if not isinstance(value, dict):
+        return result
+
+    for raw_key, item in value.items():
+        key = str(raw_key)
+        if _is_sensitive_key(key):
+            continue
+        normalized = key.lower().replace("-", "_")
+        current_path = path + (key,)
+        matched = any(part in normalized for part in _N8_DISCOVERY_KEY_PARTS)
+
+        if isinstance(item, dict):
+            _n8_candidate_scalars(
+                item,
+                path=current_path,
+                depth=depth + 1,
+                result=result,
+            )
+            continue
+
+        if not matched:
+            continue
+
+        path_key = ".".join(current_path)
+        if item is None or isinstance(item, (bool, int, float, str)):
+            result[path_key] = _json_safe(item)
+        elif isinstance(item, (list, tuple, set)):
+            sequence = list(item)
+            if len(sequence) <= 8 and all(
+                entry is None or isinstance(entry, (bool, int, float, str))
+                for entry in sequence
+            ):
+                result[path_key] = _json_safe(sequence)
+            else:
+                result[path_key] = {"item_count": len(sequence)}
+
+    return result
+
+
+def _n8_protocol_subset(state: dict[str, Any]) -> dict[str, Any]:
+    """Return a compact N8 protocol/reverse-engineering evidence block."""
+    direct_keys = (
+        "mode",
+        "robot_sta",
+        "grass_state",
+        "anti_loss_switch",
+        "anti_loss_radius",
+        "rain_switch",
+        "rain_continue_time",
+        "volume",
+        "_n8_dumping",
+        "_n8_grass_bag_in_position",
+        "_n8_grass_shield_in_position",
+        "_n8_mowing_records_source",
+    )
+    direct = {key: _json_safe(state[key]) for key in direct_keys if key in state}
+
+    param_set = state.get("param_set")
+    safe_param_keys = (
+        "work_mode",
+        "cutter_height",
+        "mow_count",
+        "mow_head",
+        "enable_adaptive_head",
+        "rid_switch",
+        "nest_switch",
+    )
+    params = (
+        {key: _json_safe(param_set[key]) for key in safe_param_keys if key in param_set}
+        if isinstance(param_set, dict)
+        else {}
+    )
+
+    pobctl = state.get("pobctl")
+    perception = (
+        {key: _json_safe(pobctl[key]) for key in ("switch", "level") if key in pobctl}
+        if isinstance(pobctl, dict)
+        else {}
+    )
+    device_config = state.get("device_config")
+    if isinstance(device_config, dict):
+        if "pobctl_switch" in device_config and "switch" not in perception:
+            perception["switch"] = _json_safe(device_config["pobctl_switch"])
+        if "pobctl_level" in device_config and "level" not in perception:
+            perception["level"] = _json_safe(device_config["pobctl_level"])
+
+    area_definition = state.get("_area_definition")
+    dumping_areas = None
+    if isinstance(area_definition, dict):
+        raw_dumping = area_definition.get("dump_grass_areas")
+        if isinstance(raw_dumping, (list, tuple)):
+            dumping_areas = {
+                "count": len(raw_dumping),
+                "ids": [
+                    item.get("id")
+                    for item in raw_dumping
+                    if isinstance(item, dict) and item.get("id") is not None
+                ],
+            }
+
+    return {
+        "direct": direct,
+        "param_set": params,
+        "perception_obstacle": perception,
+        "dump_grass_areas": _json_safe(dumping_areas),
+        "candidate_fields": _n8_candidate_scalars(state),
+    }
 
 
 def _latest_task_event(state: dict[str, Any]) -> dict[str, Any] | None:
@@ -237,6 +399,8 @@ def build_firmware_diagnostics_report(
         },
         "runtime_performance": _json_safe(state.get("runtime_performance")),
     }
+    if _is_n8_model_name(model):
+        report["n8_protocol"] = _n8_protocol_subset(state)
     if include_raw_state:
         report["raw_state"] = _json_safe(state)
     return report
