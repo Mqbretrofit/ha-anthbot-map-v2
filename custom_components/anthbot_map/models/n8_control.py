@@ -17,7 +17,7 @@ from ..api import AnthbotGenieApiError, AnthbotShadowApiClient
 _LOGGER = logging.getLogger(__name__)
 _INSTALLED = False
 
-# Commands confirmed in the ANTHBOT 2.15.16 N8 app protocol. Dict-payload
+# Commands confirmed in the ANTHBOT 2.15.16 N8/MGS app protocol. Dict-payload
 # commands are listed too because N8 must keep their app-native data object
 # unchanged instead of passing through legacy Genie payload reshaping.
 _N8_COMMANDS = {
@@ -44,6 +44,9 @@ _N8_COMMANDS = {
     "ctl_building_dump",
     "multi_map_ctl",
     "delete_sub_map",
+    "device_config",
+    # Older/shared integration entry points retained here so the N8 adapter can
+    # translate them to the current 2.15.16 MGS ``device_config`` command.
     "anti_loss_switch",
     "anti_loss_radius",
     "maintenance_switch",
@@ -67,19 +70,69 @@ def _is_n8_client(client: AnthbotShadowApiClient) -> bool:
     return is_n8_model(getattr(client, "_device_model", ""))
 
 
-def _normalize_n8_payload(cmd: str, data: Any) -> Any:
-    """Translate shared beta.9 service payloads to N8 app field names."""
+def _binary_flag(value: Any) -> Any:
+    """Preserve valid 0/1 app values without coercing unknown input."""
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int) and value in (0, 1):
+        return value
+    return value
+
+
+def _normalize_n8_command(cmd: str, data: Any) -> tuple[str, Any]:
+    """Translate shared controls to the current N8/MGS app command shape.
+
+    Static analysis of ANTHBOT 2.15.16 shows that the current MGS settings hook
+    writes anti-loss, rain and visual-perception settings through one generic
+    ``device_config`` command. Older command-specific builders remain in the
+    bundle, so callers can keep their established shared API while this N8-only
+    adapter emits the current app-native payload.
+    """
+    if cmd == "anti_loss_switch":
+        return "device_config", {"anti_loss_switch": _binary_flag(data)}
+
+    if cmd == "anti_loss_radius":
+        value = data
+        if isinstance(data, dict):
+            if "anti_loss_radius" in data:
+                value = data["anti_loss_radius"]
+            elif set(data) == {"data"}:
+                value = data["data"]
+        return "device_config", {"anti_loss_radius": value}
+
     if cmd == "ctl_rainer" and isinstance(data, dict):
-        # Existing beta.9 services use ``switch`` / ``continue_time`` for the
-        # Genie/M-series path. N8 2.15.16 uses the reported-field names in the
-        # command object. Keep the translation entirely inside the N8 adapter.
-        normalized = dict(data)
-        if "switch" in normalized and "rain_switch" not in normalized:
-            normalized["rain_switch"] = normalized.pop("switch")
-        if "continue_time" in normalized and "rain_continue_time" not in normalized:
-            normalized["rain_continue_time"] = normalized.pop("continue_time")
-        return normalized
-    return data
+        normalized: dict[str, Any] = {}
+        if "rain_switch" in data:
+            normalized["rain_switch"] = _binary_flag(data["rain_switch"])
+        elif "switch" in data:
+            normalized["rain_switch"] = _binary_flag(data["switch"])
+
+        if "rain_continue_time" in data:
+            normalized["rain_continue_time"] = data["rain_continue_time"]
+        elif "continue_time" in data:
+            normalized["rain_continue_time"] = data["continue_time"]
+
+        if normalized:
+            return "device_config", normalized
+        return cmd, data
+
+    if cmd == "perception_obstacle_ctl" and isinstance(data, dict):
+        normalized = {}
+        if "pobctl_switch" in data:
+            normalized["pobctl_switch"] = _binary_flag(data["pobctl_switch"])
+        elif "switch" in data:
+            normalized["pobctl_switch"] = _binary_flag(data["switch"])
+
+        if "pobctl_level" in data:
+            normalized["pobctl_level"] = data["pobctl_level"]
+        elif "level" in data:
+            normalized["pobctl_level"] = data["level"]
+
+        if normalized:
+            return "device_config", normalized
+        return cmd, data
+
+    return cmd, data
 
 
 async def _publish_n8_command(
@@ -182,7 +235,7 @@ def install_n8_control_support() -> None:
         if cmd in {"mow_start", "stop_all_tasks", "charge_start", "start_dump", "stop_dump"} and data is None:
             data = 1
 
-        data = _normalize_n8_payload(cmd, data)
+        cmd, data = _normalize_n8_command(cmd, data)
         await _publish_n8_command(self, cmd=cmd, data=data)
 
     AnthbotShadowApiClient.async_publish_service_command = publish_service_command
