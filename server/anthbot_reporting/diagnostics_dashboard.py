@@ -1,0 +1,45 @@
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from app import _db, require_admin
+
+router = APIRouter()
+
+
+@router.get(
+    "/api/anthbot/admin/diagnostics/{report_id}",
+    dependencies=[Depends(require_admin)],
+)
+def admin_diagnostic_detail(report_id: str) -> dict[str, Any]:
+    """Return one complete stored diagnostic report for the admin dashboard."""
+    with _db() as conn:
+        row = conn.execute(
+            """
+            SELECT report_id, installation_id, trigger, generated_at,
+                   received_at, report_sha256, report_json
+            FROM diagnostics WHERE report_id = ?
+            """,
+            (report_id,),
+        ).fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="report not found")
+
+    try:
+        report = json.loads(row["report_json"])
+    except (TypeError, ValueError) as err:
+        raise HTTPException(status_code=500, detail="stored report is invalid") from err
+
+    return {
+        "report_id": row["report_id"],
+        "installation_id": row["installation_id"],
+        "trigger": row["trigger"],
+        "generated_at": row["generated_at"],
+        "received_at": row["received_at"],
+        "report_sha256": row["report_sha256"],
+        "report": report,
+    }
