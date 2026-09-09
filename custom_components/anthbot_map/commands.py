@@ -161,8 +161,9 @@ async def async_start_outer_edge_mowing(
         for _ in range(4):
             await asyncio.sleep(2)
             state = coordinator.reported_state
-            robot_sta = state.get("value") if isinstance(state.get("robot_sta"), dict) else None
-            mode = str(robot_sta or state.get("mower_status") or "").lower()
+            robot_sta = state.get("robot_sta")
+            mode = robot_sta.get("value") if isinstance(robot_sta, dict) else None
+            mode = str(mode or state.get("mower_status") or "").lower()
             if mode in expected:
                 return True
 
