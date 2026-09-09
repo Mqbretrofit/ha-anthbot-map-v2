@@ -7,6 +7,7 @@ diagnostics, sends one privacy-filtered manufacturer report per error episode.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Callable
 
@@ -26,6 +27,7 @@ from .firmware_diagnostics import build_firmware_diagnostics_report
 
 _LOGGER = logging.getLogger(__name__)
 _REGISTRY_KEY = f"{DOMAIN}_automatic_robot_error_reporting"
+_REPORT_DEBOUNCE_SECONDS = 0.75
 
 
 def _entry_option(entry: ConfigEntry, key: str, default: bool = False) -> bool:
@@ -98,6 +100,15 @@ def _event_signature(event: dict[str, Any] | None) -> tuple[str, str, str] | Non
     )
 
 
+def _event_code(event: dict[str, Any] | None) -> int | None:
+    if not isinstance(event, dict):
+        return None
+    try:
+        return int(event.get("code"))
+    except (TypeError, ValueError):
+        return None
+
+
 def _state_value(state: dict[str, Any], key: str) -> Any:
     return _unwrap(state.get(key))
 
@@ -119,7 +130,7 @@ class _RobotErrorReporter:
         if not isinstance(state, dict):
             state = {}
         # Do not replay an old historical task-event error on every HA restart
-        # when the mower currently has no active err_code.  Active errors are
+        # when the mower currently has no active err_code. Active errors are
         # intentionally handled immediately after registration below.
         if _error_code(state) is None:
             event = _latest_task_event(state)
@@ -150,6 +161,14 @@ class _RobotErrorReporter:
             and event_signature != self.last_error_event_signature
         )
 
+        # A mower err_code and its task-event record can arrive in two separate
+        # shadow updates. Treat an error event with the same numeric code as the
+        # already-active mower error as the same incident, not a second report.
+        if event_is_new and not code_is_new and code is not None:
+            if _event_code(event) == code:
+                self.last_error_event_signature = event_signature
+                return
+
         if not code_is_new and not event_is_new:
             return
 
@@ -176,9 +195,16 @@ class _RobotErrorReporter:
         trigger: str,
         error_code: int | None,
     ) -> None:
+        # Give closely-related err_code/task-event shadow updates a short window
+        # to merge so one report captures the useful vendor event message too.
+        await asyncio.sleep(_REPORT_DEBOUNCE_SECONDS)
+        if not _entry_option(self.entry, CONF_SEND_AUTOMATIC_DIAGNOSTICS, False):
+            return
+
         state = getattr(self.coordinator, "reported_state", None)
         if not isinstance(state, dict):
             state = {}
+        current_error_code = _error_code(state) or error_code
 
         report = build_firmware_diagnostics_report(
             self.coordinator,
@@ -187,10 +213,10 @@ class _RobotErrorReporter:
         )
         report["diagnostic_event"] = {
             "trigger": trigger,
-            "err_code": error_code,
+            "err_code": current_error_code,
             "err_description": (
-                ERROR_CODE_DESCRIPTIONS.get(error_code)
-                if isinstance(error_code, int)
+                ERROR_CODE_DESCRIPTIONS.get(current_error_code)
+                if isinstance(current_error_code, int)
                 else None
             ),
             "event_code": _state_value(state, "event_code"),
