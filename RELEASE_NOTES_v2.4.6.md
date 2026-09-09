@@ -29,3 +29,4 @@
 - HACS validation.
 - Home Assistant hassfest validation.
 - JavaScript syntax and packaged frontend consistency checks.
+- Final stable release candidate validation passed before publication.
