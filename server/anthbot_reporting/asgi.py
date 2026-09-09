@@ -28,45 +28,150 @@ _FRAME_ANCESTORS = (
     "https://ha.mqbretrofithungary.online"
 )
 
-_DASHBOARD_DIAGNOSTICS_LINK_SCRIPT = b"""
+_DASHBOARD_DIAGNOSTICS_SCRIPT = """
 <script>
 (() => {
-  const wireDiagnostics = () => {
-    document.querySelectorAll('.diag-item').forEach((item) => {
-      if (item.dataset.diagnosticLinked === '1') return;
-      const meta = item.querySelector('.diag-meta');
-      const reportId = (meta?.textContent || '').split('\u00b7')[0].trim();
-      if (!reportId) return;
-      const open = () => {
-        location.href = '/dashboard/diagnostics/' + encodeURIComponent(reportId);
-      };
-      item.dataset.diagnosticLinked = '1';
-      item.tabIndex = 0;
-      item.setAttribute('role', 'link');
-      item.setAttribute('aria-label', 'Diagnosztika megnyitasa: ' + reportId);
-      item.style.cursor = 'pointer';
-      item.addEventListener('click', open);
-      item.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          open();
-        }
-      });
-      const badge = item.querySelector('.pill.warn');
-      if (badge) {
-        badge.style.cursor = 'pointer';
-        badge.title = 'Diagnosztika megnyitasa';
-      }
-    });
+  const processed = new WeakSet();
+
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
+  }[c]));
+
+  const fmt = (v) => {
+    if (!v) return '—';
+    try {
+      return new Intl.DateTimeFormat('hu-HU', {
+        dateStyle: 'medium',
+        timeStyle: 'short'
+      }).format(new Date(v));
+    } catch (_) {
+      return String(v);
+    }
   };
-  new MutationObserver(wireDiagnostics).observe(document.documentElement, {
+
+  const shortId = (v) => v ? String(v).slice(0, 8) + '…' : '—';
+
+  const ensureStyle = () => {
+    if (document.getElementById('anthbot-report-groups-style')) return;
+    const style = document.createElement('style');
+    style.id = 'anthbot-report-groups-style';
+    style.textContent = `
+      .report-groups{display:grid;gap:14px}
+      .report-group{display:grid;gap:8px}
+      .report-group-head{display:flex;align-items:center;justify-content:space-between;gap:10px;color:#dce7f8;font-weight:700}
+      .report-group-count{color:#9fb0ca;font-size:.78rem;font-weight:500}
+      .report-empty{padding:12px;border:1px dashed #263349;border-radius:11px;color:#9fb0ca;font-size:.82rem}
+      .diag-item.report-robot{border-color:rgba(128,224,199,.25)}
+      .diag-item.report-integration{border-color:rgba(106,169,255,.25)}
+      .report-identity{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px}
+      .report-mini{display:inline-flex;align-items:center;padding:2px 6px;border-radius:999px;border:1px solid #263349;background:#0e1828;color:#c8d7ed;font-size:.72rem}
+      .report-type-robot{color:#baf7e7;border-color:rgba(128,224,199,.28)}
+      .report-type-integration{color:#cfe3ff;border-color:rgba(106,169,255,.32)}
+    `;
+    document.head.appendChild(style);
+  };
+
+  const openReport = (reportId) => {
+    location.href = '/dashboard/diagnostics/' + encodeURIComponent(reportId);
+  };
+
+  const itemHtml = (item) => {
+    const typeClass = item.report_type === 'robot'
+      ? 'report-robot'
+      : item.report_type === 'integration'
+        ? 'report-integration'
+        : '';
+    const badgeClass = item.report_type === 'robot'
+      ? 'report-type-robot'
+      : item.report_type === 'integration'
+        ? 'report-type-integration'
+        : '';
+    const identity = [];
+    if (item.robot_model) identity.push(`<span class="report-mini">${esc(item.robot_model)}</span>`);
+    if (item.robot_id) identity.push(`<span class="report-mini mono">${esc(item.robot_id)}</span>`);
+    if (!item.robot_model && !item.robot_id) {
+      identity.push(`<span class="report-mini">telepítés: ${esc(shortId(item.installation_id))}</span>`);
+    }
+
+    return `
+      <div class="diag-item ${typeClass}" data-report-id="${esc(item.report_id)}" tabindex="0" role="link">
+        <div class="diag-main">
+          <div class="diag-title">${esc(item.trigger || 'diagnosztika')}</div>
+          <div class="diag-meta">${esc(item.report_id)} · ${esc(fmt(item.received_at))}</div>
+          <div class="report-identity">${identity.join('')}</div>
+        </div>
+        <span class="pill ${badgeClass}">${esc(item.report_type_label || 'Egyéb')}</span>
+      </div>`;
+  };
+
+  const groupHtml = (title, items) => `
+    <div class="report-group">
+      <div class="report-group-head">
+        <span>${esc(title)}</span>
+        <span class="report-group-count">${items.length} riport</span>
+      </div>
+      ${items.length ? items.map(itemHtml).join('') : '<div class="report-empty">Nincs ilyen riport.</div>'}
+    </div>`;
+
+  async function renderGroupedDiagnostics(box) {
+    if (!box || processed.has(box)) return;
+    processed.add(box);
+    ensureStyle();
+
+    try {
+      const res = await fetch('/api/anthbot/admin/diagnostics/summary?limit=50', {
+        credentials: 'same-origin'
+      });
+      if (res.status === 401) {
+        location.href = '/dashboard';
+        return;
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const data = await res.json();
+      const items = Array.isArray(data.items) ? data.items : [];
+      const robot = items.filter(x => x.report_type === 'robot');
+      const integration = items.filter(x => x.report_type === 'integration');
+      const other = items.filter(x => !['robot','integration'].includes(x.report_type));
+
+      box.innerHTML = `
+        <div class="report-groups">
+          ${groupHtml('Robot / firmware riportok', robot)}
+          ${groupHtml('Integrációs riportok', integration)}
+          ${other.length ? groupHtml('Egyéb riportok', other) : ''}
+        </div>`;
+
+      box.querySelectorAll('.diag-item[data-report-id]').forEach((item) => {
+        const reportId = item.dataset.reportId;
+        if (!reportId) return;
+        item.style.cursor = 'pointer';
+        item.setAttribute('aria-label', 'Diagnosztika megnyitása: ' + reportId);
+        item.addEventListener('click', () => openReport(reportId));
+        item.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            openReport(reportId);
+          }
+        });
+      });
+    } catch (err) {
+      box.innerHTML = `<div class="empty">A riportok csoportosítása nem sikerült: ${esc(err.message)}</div>`;
+    }
+  }
+
+  const wire = () => {
+    const box = document.getElementById('diag-list');
+    if (box) renderGroupedDiagnostics(box);
+  };
+
+  new MutationObserver(wire).observe(document.documentElement, {
     childList: true,
-    subtree: true,
+    subtree: true
   });
-  wireDiagnostics();
+  wire();
 })();
 </script>
-"""
+""".encode("utf-8")
 
 
 class DeveloperAgentStorageMiddleware:
@@ -98,7 +203,7 @@ class DashboardEmbeddingMiddleware:
             await self.app(scope, receive, send)
             return
 
-        inject_diagnostic_links = path.rstrip("/") == "/dashboard"
+        inject_diagnostics = path.rstrip("/") == "/dashboard"
 
         async def send_wrapped(message):
             if message.get("type") == "http.response.start":
@@ -109,7 +214,7 @@ class DashboardEmbeddingMiddleware:
                         continue
                     if name == "content-security-policy":
                         continue
-                    if inject_diagnostic_links and name == "content-length":
+                    if inject_diagnostics and name == "content-length":
                         continue
                     if name == "set-cookie":
                         value = raw_value.decode("latin-1")
@@ -129,12 +234,12 @@ class DashboardEmbeddingMiddleware:
                 )
                 message = {**message, "headers": headers}
 
-            elif message.get("type") == "http.response.body" and inject_diagnostic_links:
+            elif message.get("type") == "http.response.body" and inject_diagnostics:
                 body = message.get("body", b"")
                 if b"</body>" in body:
                     body = body.replace(
                         b"</body>",
-                        _DASHBOARD_DIAGNOSTICS_LINK_SCRIPT + b"</body>",
+                        _DASHBOARD_DIAGNOSTICS_SCRIPT + b"</body>",
                         1,
                     )
                     message = {**message, "body": body}
