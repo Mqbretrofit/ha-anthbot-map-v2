@@ -1,0 +1,12 @@
+{
+  "options": {
+    "step": {
+      "init": {"title": "Cài đặt Anthbot Map", "description": "Chọn cài đặt bạn muốn thay đổi.", "menu_options": {"battery_saver": "Tiết kiệm pin", "developer_reporting": "Phát triển và chẩn đoán"}},
+      "battery_saver_mower": {"title": "Tiết kiệm pin", "description": "Chọn máy cắt cỏ cần cấu hình.", "data": {"mower": "Máy cắt cỏ"}},
+      "battery_saver": {"title": "Tiết kiệm pin", "description": "Cấu hình bộ sạc và các ngưỡng cho {serial_number}. Chế độ sẽ không hoạt động cho đến khi bật công tắc của nó.", "data": {"charger_switch": "Công tắc ổ cắm thông minh", "charge_limit": "Giới hạn sạc trên (%)", "maintenance_level": "Mức bắt đầu sạc duy trì (%)", "resume_level": "Mức tiếp tục sạc (%)", "shared_rtk_power": "Trạm sạc và RTK dùng chung một ổ cắm thông minh"}},
+      "developer_reporting": {"title": "Phát triển và chẩn đoán", "description": "Các tùy chọn này hoàn toàn tự nguyện và có thể tắt lại bất cứ lúc nào. Chúng độc lập với Developer Agent chỉ đọc.", "data": {"share_anonymous_usage": "Chia sẻ thống kê sử dụng ẩn danh", "send_automatic_diagnostics": "Gửi báo cáo chẩn đoán tự động"}, "data_description": {"share_anonymous_usage": "Chỉ gửi thông tin kỹ thuật sử dụng tối thiểu như phiên bản tích hợp/Home Assistant, quốc gia và số lượng mẫu ANTHBOT. Không gửi tên người dùng, mật khẩu, số sê-ri, vị trí GPS hay bản đồ.", "send_automatic_diagnostics": "Gửi dữ liệu chẩn đoán kỹ thuật đã lọc để bảo vệ quyền riêng tư khi xảy ra lỗi được hỗ trợ, như lỗi máy cắt cỏ, vượt ranh giới/vùng cấm và lỗi xử lý bản đồ hoặc đường đi."}}
+    },
+    "error": {"invalid_battery_thresholds": "Mức tiếp tục sạc và sạc duy trì phải thấp hơn giới hạn sạc trên.", "reporting_service_unavailable": "Dịch vụ cài đặt báo cáo không khả dụng. Hãy tải lại tích hợp Anthbot Map hoặc khởi động lại Home Assistant rồi thử lại."},
+    "abort": {"no_devices": "Không có máy cắt cỏ Anthbot đã tải nào khả dụng."}
+  }
+}
