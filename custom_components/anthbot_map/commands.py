@@ -8,6 +8,7 @@ import logging
 from .api import AnthbotGenieApiError
 from .coordinator import AnthbotGenieDataUpdateCoordinator, is_robot_online
 from .models.m_series_common import install_m_series_compat
+from .models.n8_control import is_n8_model
 from .mower_status import raw_robot_status
 
 _LOGGER = logging.getLogger(__name__)
@@ -23,6 +24,11 @@ def _is_m_series(coordinator: AnthbotGenieDataUpdateCoordinator) -> bool:
     return "M5" in model or "M9" in model
 
 
+def _is_n8(coordinator: AnthbotGenieDataUpdateCoordinator) -> bool:
+    """Return whether this coordinator controls an N8 mower."""
+    return is_n8_model(getattr(coordinator.device, "model", ""))
+
+
 async def async_prepare_cloud_connection(
     coordinator: AnthbotGenieDataUpdateCoordinator,
     *,
@@ -32,15 +38,17 @@ async def async_prepare_cloud_connection(
 ) -> bool:
     """Request app-style MQTT properties and wait for live shadow state.
 
-    M5/M9 do not reliably acknowledge the app-style wake request with the
-    property-shadow timestamp/online fields used by Genie. A connected MQTT
-    session plus already-received M-series status/telemetry is sufficient proof
-    that the cloud path is usable, so do not block commands on the Genie-only
-    wake acknowledgement.
+    M5/M9 and N8 do not reliably acknowledge the app-style wake request with
+    the property-shadow timestamp/online fields used by Genie. A connected MQTT
+    session plus already-received native status/telemetry is sufficient proof
+    that the cloud path is usable, so do not block their commands on the
+    Genie-only wake acknowledgement.
     """
     if mowing_start:
         await coordinator.async_prepare_mowing_power()
     m_series = _is_m_series(coordinator)
+    n8 = _is_n8(coordinator)
+    native_app_model = m_series or n8
 
     for attempt in range(attempts):
         if not coordinator.live_shadow_connected:
@@ -48,7 +56,7 @@ async def async_prepare_cloud_connection(
             if not coordinator.live_shadow_connected:
                 continue
 
-        if m_series and raw_robot_status(coordinator.reported_state) is not None:
+        if native_app_model and raw_robot_status(coordinator.reported_state) is not None:
             return True
 
         try:
@@ -61,11 +69,11 @@ async def async_prepare_cloud_connection(
                 attempts,
                 err,
             )
-            if m_series and coordinator.live_shadow_connected:
+            if native_app_model and coordinator.live_shadow_connected:
                 return True
             continue
 
-        if m_series:
+        if native_app_model:
             return True
 
         for _ in range(wait_seconds):
@@ -103,15 +111,17 @@ async def async_start_mowing(
         )
 
     m_series = _is_m_series(coordinator)
+    n8 = _is_n8(coordinator)
     for attempt in range(2):
-        # Genie uses the historical app_state preamble. M5/M9/M9 Pro use the
-        # native app command wrapper directly; sending app_state to their
-        # service shadow can prevent the real mow_start from being accepted.
+        # Genie uses the historical app_state preamble. M5/M9/M9 Pro and N8
+        # use their native app command wrapper directly; sending app_state to
+        # their service shadow can prevent the real mow_start being accepted.
         if not m_series:
-            await coordinator.client.async_publish_service_command(
-                cmd="app_state", data=app_state
-            )
-            await asyncio.sleep(1.5)
+            if not n8:
+                await coordinator.client.async_publish_service_command(
+                    cmd="app_state", data=app_state
+                )
+                await asyncio.sleep(1.5)
 
         await coordinator.client.async_publish_service_command(cmd="mow_start", data=1)
 
@@ -151,9 +161,8 @@ async def async_start_outer_edge_mowing(
         for _ in range(4):
             await asyncio.sleep(2)
             state = coordinator.reported_state
-            robot_sta = state.get("robot_sta")
-            mode = robot_sta.get("value") if isinstance(robot_sta, dict) else None
-            mode = str(mode or state.get("mower_status") or "").lower()
+            robot_sta = state.get("value") if isinstance(state.get("robot_sta"), dict) else None
+            mode = str(robot_sta or state.get("mower_status") or "").lower()
             if mode in expected:
                 return True
 
