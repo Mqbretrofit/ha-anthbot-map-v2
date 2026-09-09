@@ -1,0 +1,12 @@
+{
+  "options": {
+    "step": {
+      "init": {"title": "Paramètres Anthbot Map", "description": "Choisissez les paramètres que vous souhaitez modifier.", "menu_options": {"battery_saver": "Économie de batterie", "developer_reporting": "Développement et diagnostics"}},
+      "battery_saver_mower": {"title": "Économie de batterie", "description": "Choisissez la tondeuse à configurer.", "data": {"mower": "Tondeuse"}},
+      "battery_saver": {"title": "Économie de batterie", "description": "Configurez le chargeur et les seuils pour {serial_number}. Le mode reste inactif tant que son interrupteur n’est pas activé.", "data": {"charger_switch": "Interrupteur de prise connectée", "charge_limit": "Limite de charge supérieure (%)", "maintenance_level": "Seuil de recharge d’entretien (%)", "resume_level": "Seuil de reprise de charge (%)", "shared_rtk_power": "La station de charge et le RTK partagent la même prise connectée"}},
+      "developer_reporting": {"title": "Développement et diagnostics", "description": "Ces options sont facultatives et peuvent être désactivées à tout moment. Elles sont indépendantes du Developer Agent en lecture seule.", "data": {"share_anonymous_usage": "Partager les statistiques d’utilisation anonymes", "send_automatic_diagnostics": "Envoyer automatiquement les rapports de diagnostic"}, "data_description": {"share_anonymous_usage": "Envoie un minimum d’informations techniques d’utilisation, comme les versions de l’intégration et de Home Assistant, le pays et le nombre de modèles ANTHBOT. Le nom d’utilisateur, le mot de passe, le numéro de série, la position GPS et la carte ne sont pas envoyés.", "send_automatic_diagnostics": "Envoie des diagnostics techniques filtrés pour la confidentialité lors d’erreurs prises en charge, par exemple des erreurs de tondeuse, des franchissements de limite/zone interdite et des erreurs de traitement de carte ou de trajet."}}
+    },
+    "error": {"invalid_battery_thresholds": "Les seuils de reprise et de recharge d’entretien doivent être inférieurs à la limite de charge supérieure.", "reporting_service_unavailable": "Le service de paramètres de rapport n’est pas disponible. Rechargez l’intégration Anthbot Map ou redémarrez Home Assistant puis réessayez."},
+    "abort": {"no_devices": "Aucune tondeuse Anthbot chargée n’est disponible."}
+  }
+}
