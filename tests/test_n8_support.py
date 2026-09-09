@@ -37,6 +37,26 @@ def test_n8_map_is_installed_after_shared_map_and_zone_decoders() -> None:
     ) < common.index("install_n8_map_support()")
 
 
+def test_n8_path_and_status_install_without_expanding_m_series_guards() -> None:
+    common = _read(MODELS / "m_series_common.py")
+    path = _read(MODELS / "n8_path.py")
+    status = _read(MODELS / "n8_status.py")
+    m_path = _read(MODELS / "m_series_path.py")
+    m_status = _read(MODELS / "m_series_status.py")
+
+    assert "install_n8_path_support()" in common
+    assert "install_n8_status_support()" in common
+    assert 'return "M5" in value or "M9" in value' in m_path
+    assert 'return "M5" in value or "M9" in value' in m_status
+    assert "is_n8_model(getattr(self.device, \"model\", None))" in path
+    assert "_legacy._decode_live_curpath" in path
+    assert '"n8_curpath"' in path
+    assert "is_n8_model(getattr(self.device, \"model\", None))" in status
+    assert 'state["_n8_dumping"]' in status
+    assert 'state["_n8_grass_bag_in_position"]' in status
+    assert 'state["_n8_grass_shield_in_position"]' in status
+
+
 def test_n8_control_does_not_claim_other_models() -> None:
     control = _read(MODELS / "n8_control.py")
     assert "if not _is_n8_client(self) or cmd not in _N8_COMMANDS:" in control
@@ -58,6 +78,18 @@ def test_n8_core_mowing_and_dump_commands_are_native() -> None:
     ):
         assert f'"{command}"' in control
     assert 'body = {"state": {"desired": {"cmd": cmd, "data": data}}}' in control
+
+
+def test_n8_rain_payload_is_normalized_inside_n8_layer_only() -> None:
+    control = _read(MODELS / "n8_control.py")
+    init = _read(INTEGRATION / "__init__.py")
+    assert 'cmd == "ctl_rainer"' in control
+    assert 'normalized["rain_switch"] = normalized.pop("switch")' in control
+    assert 'normalized["rain_continue_time"] = normalized.pop("continue_time")' in control
+    # Existing shared beta.9 service remains untouched and keeps its historical
+    # payload names; only the N8 transport translates them.
+    assert '"switch": switch_value' in init
+    assert '"continue_time": rain_continue_time * 3600' in init
 
 
 def test_n8_skips_genie_app_state_without_changing_m_series_detection() -> None:
@@ -90,6 +122,40 @@ def test_n8_dump_buttons_are_only_added_for_n8() -> None:
     assert 'if is_n8_model(getattr(coordinator.device, "model", None)):' in buttons
     assert 'cmd="start_dump", data=1' in buttons
     assert 'cmd="stop_dump", data=1' in buttons
+
+
+def test_n8_binary_sensors_are_model_scoped_and_generic_sensors_remain() -> None:
+    sensors = _read(INTEGRATION / "binary_sensor.py")
+    assert "N8_BINARY_SENSORS:" in sensors
+    assert 'key="n8_dumping"' in sensors
+    assert 'key="n8_grass_bag_in_position"' in sensors
+    assert 'key="n8_grass_shield_in_position"' in sensors
+    assert 'if is_n8_model(getattr(coordinator.device, "model", None)):' in sensors
+    for existing in (
+        "connection",
+        "charging",
+        "cellular_connected",
+        "cellular_heartbeat",
+        "bluetooth_active",
+        "sim_present",
+        "map_available",
+        "rtk_moving",
+        "accelerometer_active",
+        "mowing_border",
+        "mowing_nest",
+        "full_yard_mowing",
+        "anti_loss_state",
+        "camera_state",
+        "edge_cut_state",
+        "indoor_mode_state",
+        "auto_upgrade_state",
+        "obstacle_avoidance_state",
+        "drc_enabled",
+        "log_upload_enabled",
+        "factory_reset_pending",
+        "unbind_pending",
+    ):
+        assert f'key="{existing}"' in sensors
 
 
 def test_existing_core_button_keys_are_preserved() -> None:
