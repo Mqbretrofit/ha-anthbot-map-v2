@@ -1,10 +1,10 @@
 # ANTHBOT N8 / MGS03 voice protocol notes
 
-Status: read-side/live evidence plus static application evidence. Voice-package writing is intentionally not exposed yet.
+Status: static ANTHBOT Android 2.15.16 evidence plus shared-schema live clues. Voice-package writing is intentionally not exposed yet.
 
-## Real N8 report-side evidence
+## Live-data provenance
 
-A real N8 property-shadow capture reports:
+The currently available property-shadow capture containing:
 
 ```json
 {
@@ -19,19 +19,61 @@ A real N8 property-shadow capture reports:
 }
 ```
 
-This confirms that the N8 firmware has the same report-side concepts needed for voice-package download/install progress and volume control.
+belongs to an **Anthbot M9 Pro**, not an N8. It is therefore a useful shared-MGS schema clue only; it does not prove that an N8 firmware reports the identical voice state.
 
 The current Home Assistant volume control remains separate from voice-package selection.
 
-## Application evidence
+## Direct 2.15.16 Hermes evidence
 
-The reconstructed ANTHBOT application protocol contains the command family:
+The real ANTHBOT 2.15.16 Android XAPK contains a Hermes HBC98 bundle. Direct parsing identifies the current MGS voice hook:
+
+```text
+function #15705: useVoicePacket
+```
+
+That hook reads these voice-related state keys:
+
+```text
+volume
+music_package
+voice_status
+music_cfg
+music_language
+```
+
+and creates the current voice-package writer closure:
+
+```text
+function #27402: setupVoicePacket
+```
+
+The async writer behind it is function `#27405`. Its bytecode constructs an object with shape:
+
+```text
+cmd
+data
+```
+
+whose first literal is exactly:
 
 ```text
 voice_set
 ```
 
-and the older application bundle exposes the voice-package language resource:
+and then publishes it through the normal MGS `publishDeviceCommand` path. Therefore the current service command envelope is statically proven as:
+
+```json
+{
+  "cmd": "voice_set",
+  "data": "<dynamic package payload>"
+}
+```
+
+The command name/envelope is no longer inferred from strings alone. What remains unresolved is the exact dynamic `data` object passed into `setupVoicePacket` for each selectable package.
+
+## Voice-package API evidence
+
+The older reconstructed application bundle exposes the separately downloaded voice-package language resource:
 
 ```text
 /voice/package/language
@@ -48,23 +90,26 @@ voice_pack_option
 voice_resource_not_exist
 voice_settings
 voice_volume_set
+music_package
+music_cfg
+music_language
 ```
 
-## What is not proven yet
+## What is still not proven
 
-Do not expose an N8 voice-package selector until the current 2.15.16 data flow proves all of the following:
+Do not expose an N8 voice-package selector until the current 2.15.16 data flow or a real N8 capture proves all of the following:
 
 - exact request method and parameters used to list N8/MGS03 packages;
 - model/category filtering applied to the package list;
-- exact `voice_set` data object;
+- exact fields inside the dynamic `voice_set.data` value;
 - package identifier/name/version/checksum fields;
 - download URL acquisition and expiry behavior;
-- expected `voice_status.state` and `progress` transitions;
+- expected N8 `voice_status.state` and `progress` transitions;
 - rollback/failure behavior when a package is unavailable or incompatible.
 
-A literal `voice_set` command name is not enough to infer these values.
+The exact `{cmd:"voice_set", data:<dynamic>}` envelope is proven, but the dynamic package payload must not be guessed.
 
-## Highest-value live capture
+## Highest-value real N8 capture
 
 With the owner physically present, capture the property/service shadows while selecting a different official voice in the ANTHBOT app. The useful sequence is:
 
@@ -76,4 +121,4 @@ With the owner physically present, capture the property/service shadows while se
 
 Do not include account credentials, signed download query strings or PIN values in committed fixtures.
 
-Until that capture exists, the integration keeps voice-package control read-only/research-only and does not guess a writer.
+Until that capture exists, the integration keeps voice-package control research-only and does not guess the dynamic writer payload.
