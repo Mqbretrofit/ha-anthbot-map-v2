@@ -127,7 +127,7 @@ class _N8Coordinator:
         },
         "pobctl": {"switch": 1, "level": 2},
         "device_config": {
-            "child_lock": 1,
+            "child_lock_switch": 1,
             "pin_code": "1234",
             "anti_loss_radius": 8,
         },
@@ -185,7 +185,7 @@ class FirmwareDiagnosticsTests(unittest.TestCase):
         self.assertEqual(n8["perception_obstacle"], {"switch": 1, "level": 2})
         self.assertEqual(n8["dump_grass_areas"]["count"], 2)
         self.assertEqual(n8["dump_grass_areas"]["ids"], [7, 8])
-        self.assertEqual(n8["candidate_fields"]["device_config.child_lock"], 1)
+        self.assertEqual(n8["candidate_fields"]["device_config.child_lock_switch"], 1)
         self.assertEqual(n8["candidate_fields"]["device_config.anti_loss_radius"], 8)
         self.assertNotIn("device_config.pin_code", n8["candidate_fields"])
 
