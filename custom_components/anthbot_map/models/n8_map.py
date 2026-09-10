@@ -1,13 +1,21 @@
-"""ANTHBOT N8 map-manager and area-setting support.
+"""ANTHBOT N8 map-manager, area-setting and plan-setting support.
 
 N8 uses the MGS map-manager archive family but is kept outside the proven
-M5/M9/M9 Pro activation guards.  This adapter reuses the already-tested binary
+M5/M9/M9 Pro activation guards. This adapter reuses the already-tested binary
 and area-setting decoders while activating them only for N8 models.
+
+The same archive also carries ``time_setting.json`` in the current MGS app.
+That file is parsed read-only here into a privacy-safe structural summary so
+live N8 diagnostics can validate plan/DND firmware formats without enabling
+schedule writes.
 """
 
 from __future__ import annotations
 
+import io
+import json
 import logging
+import tarfile
 from typing import Any
 
 from ..coordinator import AnthbotGenieDataUpdateCoordinator
@@ -19,8 +27,73 @@ _INSTALLED = False
 _RETRY_SECONDS = 60.0
 
 
+def _decode_n8_time_setting(raw: bytes) -> dict[str, Any] | None:
+    """Extract the current MGS ``time_setting.json`` from map-manager bytes."""
+    if not raw:
+        return None
+    try:
+        with tarfile.open(fileobj=io.BytesIO(raw), mode="r:*") as archive:
+            for member in archive.getmembers():
+                if not member.isfile():
+                    continue
+                if member.name.rsplit("/", 1)[-1] != "time_setting.json":
+                    continue
+                extracted = archive.extractfile(member)
+                if extracted is None:
+                    return None
+                payload = json.loads(extracted.read().decode("utf-8"))
+                return payload if isinstance(payload, dict) else None
+    except (
+        tarfile.TarError,
+        OSError,
+        EOFError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+    ):
+        return None
+    return None
+
+
+def _summarize_n8_time_setting(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return schema evidence without exporting personal schedule times.
+
+    Static 2.15.16 analysis shows full plan envelopes with
+    ``timezone/timezone_sec/value`` and incremental envelopes adding
+    ``version``. The live probe records only counts, key sets and scalar
+    envelope metadata; individual start/end times are deliberately omitted.
+    """
+    value = payload.get("value")
+    entries = value if isinstance(value, list) else []
+    dnd_count = 0
+    appointment_count = 0
+    entry_key_sets: set[tuple[str, ...]] = set()
+
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        entry_key_sets.add(tuple(sorted(str(key) for key in item)))
+        if item.get("unlock") == 0:
+            dnd_count += 1
+        else:
+            appointment_count += 1
+
+    summary: dict[str, Any] = {
+        "top_level_keys": sorted(str(key) for key in payload),
+        "entry_count": len(entries),
+        "dnd_count": dnd_count,
+        "appointment_count": appointment_count,
+        "entry_key_sets": [list(keys) for keys in sorted(entry_key_sets)],
+    }
+    for key in ("timezone", "timezone_sec", "version"):
+        value = payload.get(key)
+        if value is None or isinstance(value, (bool, int, float, str)):
+            if key in payload:
+                summary[key] = value
+    return summary
+
+
 def install_n8_map_support() -> None:
-    """Install N8-only map-manager and area-setting refresh support."""
+    """Install N8-only map-manager, area and read-only plan refresh support."""
     global _INSTALLED
     if _INSTALLED:
         return
@@ -133,12 +206,36 @@ def install_n8_map_support() -> None:
                         }
                     )
 
+                time_setting = _decode_n8_time_setting(raw)
+                if isinstance(time_setting, dict):
+                    time_summary = _summarize_n8_time_setting(time_setting)
+                    setattr(self, "_n8_time_setting_summary", time_summary)
+                    diagnostics.update(
+                        {
+                            "time_setting_present": True,
+                            "plan_entry_count": time_summary.get("entry_count", 0),
+                            "dnd_count": time_summary.get("dnd_count", 0),
+                            "plan_version": time_summary.get("version"),
+                            "time_setting_source": "map_manager:time_setting.json",
+                        }
+                    )
+                else:
+                    setattr(self, "_n8_time_setting_summary", None)
+                    diagnostics.update(
+                        {
+                            "time_setting_present": False,
+                            "time_setting_source": "map_manager:time_setting.json-unavailable",
+                        }
+                    )
+
                 _LOGGER.info(
-                    "ANTHBOT N8: loaded map_manager for %s (%s), zones=%s dump_areas=%s",
+                    "ANTHBOT N8: loaded map_manager for %s (%s), zones=%s dump_areas=%s plans=%s dnd=%s",
                     self.client.serial_number,
                     model,
                     diagnostics.get("manual_zone_count", 0),
                     diagnostics.get("dump_grass_area_count", 0),
+                    diagnostics.get("plan_entry_count", 0),
+                    diagnostics.get("dnd_count", 0),
                 )
                 return diagnostics, True
             except Exception as err:  # noqa: BLE001 - preserve base fallback.
@@ -151,7 +248,7 @@ def install_n8_map_support() -> None:
                 )
 
         # Keep all beta.9 fallback behavior if N8 archive download/decoding is
-        # unavailable.  This call is intentionally after the N8 attempt only.
+        # unavailable. This call is intentionally after the N8 attempt only.
         fallback, fallback_attempted = await previous_refresh(
             self,
             property_state,
@@ -165,4 +262,8 @@ def install_n8_map_support() -> None:
     AnthbotGenieDataUpdateCoordinator._async_refresh_map_definition = refresh_map_definition
 
 
-__all__ = ["install_n8_map_support"]
+__all__ = [
+    "_decode_n8_time_setting",
+    "_summarize_n8_time_setting",
+    "install_n8_map_support",
+]
