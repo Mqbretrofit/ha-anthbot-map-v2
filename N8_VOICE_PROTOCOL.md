@@ -1,6 +1,6 @@
 # ANTHBOT N8 / MGS03 voice protocol notes
 
-Status: static ANTHBOT Android 2.15.16 reconstruction plus shared-schema live clues. The current package-list API, signed-download request and `voice_set` payload are now statically recovered. Public Home Assistant voice-package selection remains disabled until a real N8 validates package compatibility and report-side behavior.
+Status: static ANTHBOT Android 2.15.16 reconstruction plus shared-schema live clues. The current package-list API, signed-download request, filename derivation and `voice_set` payload are now statically recovered. Public Home Assistant voice-package selection remains disabled until a real N8 validates package compatibility and report-side behavior.
 
 ## Live-data provenance
 
@@ -145,7 +145,7 @@ Before constructing `voice_set.data`, the same package-selection generator reque
   "sn": "<device serial>",
   "category": "voice",
   "sub_category": "",
-  "filename": "<derived from packet.vp_url>"
+  "filename": "<filename from packet.vp_url>"
 }
 ```
 
@@ -157,7 +157,20 @@ presigned_url
 
 and that value becomes `music_url` in the final `voice_set` payload.
 
-The filename is derived from `packet.vp_url` through an app helper. The exact helper's filename-normalization behavior is not needed to establish the command shape and is intentionally not guessed here. The pure helper therefore accepts the already-derived filename instead of attempting to duplicate unknown normalization.
+The filename helper is now also fully reconstructed. Module function `#15700` (`getFilename`) does exactly:
+
+```text
+if vp_url is null/empty: raise voice_resource_not_exist
+filename = vp_url.substring(vp_url.lastIndexOf("/") + 1)
+```
+
+There is no URL decode, extension rewrite or additional normalization in this helper. For example:
+
+```text
+voices/en/girl.zip -> girl.zip
+```
+
+`models/n8_voice_payload.py` mirrors that exact substring behavior and uses it when constructing the non-publishing signed-URL request object.
 
 ## Report-side state semantics recovered from the app
 
@@ -192,12 +205,12 @@ This is useful for interpreting existing report-side state but is not used as ev
 
 ## Validation boundary
 
-The wire schema is no longer the blocker. A public selector remains disabled because a package installation downloads and applies mower firmware resources. Before exposing that action, a real N8 must confirm that the package list is applicable to the device and that the recovered state/acknowledgement lifecycle matches its firmware.
+The wire schema and filename derivation are no longer blockers. A public selector remains disabled because a package installation downloads and applies mower firmware resources. Before exposing that action, a real N8 must confirm that the package list is applicable to the device and that the recovered state/acknowledgement lifecycle matches its firmware.
 
 Specifically validate:
 
 - `/voice/package/language` returns packages applicable to that N8/account/region;
-- the selected packet's `vp_url` can be converted by the app flow into a usable signed URL;
+- the signed-URL request returns a usable N8 package URL for the derived filename;
 - the recovered `voice_set` payload is accepted unchanged by that N8 firmware;
 - `voice_status.state` / `progress` transition as expected;
 - checksum/version failures and incompatible package behavior are safe;
