@@ -30,6 +30,14 @@ python tools/n8_validation_bundle.py before.json after.json \
 
 Use `--json` when a machine-readable result is preferred.
 
+The dedicated hardware-test branch is:
+
+```text
+test/n8-validation-beta.12
+```
+
+Its manifest version is `2.4.6-beta.12`. CI packages an artifact named `anthbot-n8-validation-beta.12` containing the integration, this guide and the validation comparer. It is not a normal release and does not alter the beta.10 branch or published beta.11 tag.
+
 ## Baseline capture
 
 With the N8 online and idle:
