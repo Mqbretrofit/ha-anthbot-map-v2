@@ -33,6 +33,9 @@ Implemented in the integration/reverse-engineering line:
   field names without copying MD5 values, filenames or URLs.
 - `N8_COMMAND_INVENTORY.md` records the broader current MGS command surface and
   feature gates without exposing unvalidated controls.
+- Current 2.15.16 voice package listing, signed-URL request and complete
+  `voice_set.data` payload are statically reconstructed. `voice_set` is now
+  recognized by the N8 transport only; no public package selector is exposed.
 
 ## Dumping-area write protocol
 
@@ -237,6 +240,41 @@ before/after capture identifies its reported field and exact write route.
 
 See `N8_CHILD_LOCK_PROTOCOL.md`.
 
+## Voice package flow
+
+Static reconstruction of the 2.15.16 Voice Settings screen now closes the
+previous package-payload gap.
+
+The package list is requested with:
+
+```text
+GET /voice/package/language
+```
+
+Selectable packet metadata supplies at least `id`, `english_name`, `sex`, `md5`,
+`version` and `vp_url`. Before installing a package the app requests a signed URL
+with category `voice`, then publishes:
+
+```text
+cmd: voice_set
+data: {
+  music_package: <packet.id>,
+  english_name: <packet.english_name>,
+  sex: <packet.sex>,
+  music_url: <presigned_url>,
+  music_md5: <packet.md5>,
+  category: "voice_pack",
+  version: <packet.version>
+}
+```
+
+The app handles at least `voice_status.state == "downloading"` and `"success"`.
+`voice_set` is therefore recognized by the isolated N8 service-shadow transport,
+but no public Home Assistant package selector is created yet. The remaining
+blocker is real N8 compatibility/state validation, not unknown wire schema.
+
+See `N8_VOICE_PROTOCOL.md`.
+
 ## Still intentionally blocked
 
 Until live N8 validation or the remaining payload work is complete, keep these
@@ -245,7 +283,7 @@ writes disabled:
 - PIN write;
 - DND/schedule write;
 - Child Lock write;
-- voice-pack control;
+- public voice-pack control (wire schema recovered; real N8 validation pending);
 - map backup/restore/update/delete and sub-map deletion;
 - manual/remote driving and map-building controls;
 - advanced physical maintenance controls;
