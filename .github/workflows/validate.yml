@@ -29,7 +29,7 @@ jobs:
       - uses: home-assistant/actions/hassfest@master
 
   package-n8-validation:
-    if: github.ref == 'refs/heads/test/n8-validation-beta.12'
+    if: github.ref == 'refs/heads/test/n8-validation-beta.12' || github.ref == 'refs/heads/test/n8-validation-beta.12-stage2'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,7 +38,9 @@ jobs:
           mkdir -p build/custom_components build/tools
           cp -a custom_components/anthbot_map build/custom_components/
           cp tools/n8_validation_bundle.py build/tools/
+          cp tools/n8_validation_interpret.py build/tools/
           cp tools/n8_validation_windows.ps1 build/tools/
+          cp N8_VALIDATION_START.cmd build/
           cp N8_VALIDATION_WORKFLOW.md build/
           cp N8_VALIDATION_QUICKSTART.md build/
           cp N8_VALIDATION_BUILD.md build/
