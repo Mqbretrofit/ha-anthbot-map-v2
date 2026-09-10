@@ -50,6 +50,12 @@ _N8_COMMANDS = {
     "multi_map_ctl",
     "delete_sub_map",
     "device_config",
+    # Current MGS RTK/NRTK service-shadow commands. Static 2.15.16 analysis
+    # proves ctl_rtk_base takes scalar 1=NRTK, 2=RTK, 3=Auto, while the info
+    # request takes an empty object. They are transport-recognized only; no new
+    # public Home Assistant RTK writer is exposed from this evidence alone.
+    "ctl_rtk_base",
+    "req_rtk_base_info",
     # Older/shared integration entry points retained here so the N8 adapter can
     # translate them to the current 2.15.16 MGS command surface.
     "anti_loss_switch",
