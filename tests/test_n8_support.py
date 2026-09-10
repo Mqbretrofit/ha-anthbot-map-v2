@@ -80,6 +80,19 @@ def test_n8_core_mowing_and_dump_commands_are_native() -> None:
     assert 'body = {"state": {"desired": {"cmd": cmd, "data": data}}}' in control
 
 
+def test_n8_voice_set_is_native_transport_only() -> None:
+    control = _read(MODELS / "n8_control.py")
+    selects = _read(INTEGRATION / "select.py")
+    buttons = _read(INTEGRATION / "button.py")
+
+    assert '"voice_set"' in control
+    assert "cmd, data = _normalize_n8_command(cmd, data)" in control
+    # Static analysis has recovered the command and payload, but live N8 package
+    # compatibility is not validated yet. Keep it transport-only for now.
+    assert 'cmd="voice_set"' not in selects
+    assert 'cmd="voice_set"' not in buttons
+
+
 def test_n8_current_mgs_settings_use_device_config_inside_n8_layer_only() -> None:
     control = _read(MODELS / "n8_control.py")
     init = _read(INTEGRATION / "__init__.py")
