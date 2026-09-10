@@ -14,21 +14,34 @@
   <div class="card"><div class="toolbar"><button class="primary" id="refresh">Frissítés</button><span class="status" id="status">Betöltés…</span></div></div>
   <div class="grid">
     <section class="card"><h2>Telepítések</h2><div class="muted">Innen tudjuk szerveroldalon leállítani vagy újra aktiválni a tesztelést.</div><div id="installations"></div></section>
-    <section class="card"><h2>Új teszt</h2><div class="toolbar"><select id="installation"></select><select id="probe"></select><input id="targetModel" placeholder="Célmodell (opcionális)"><button class="primary" id="queue">Teszt sorba állítása</button></div><p class="muted">A szerver csak probe-azonosítót küld. URL, Python-kód vagy robotvezérlő parancs nem küldhető.</p></section>
+    <section class="card"><h2>Új teszt</h2><div class="toolbar"><select id="installation"></select><select id="targetModel"></select><select id="probe"></select><button class="primary" id="queue">Teszt sorba állítása</button></div><p class="muted">A modell kiválasztása kötelező. A probe-lista modellenként szűrt; a szerver csak probe-azonosítót küld. URL, Python-kód vagy robotvezérlő parancs nem küldhető.</p></section>
   </div>
   <section class="card"><h2>Tesztek és eredmények</h2><div id="jobs"></div></section>
 </main>
 <script>
 const $=s=>document.querySelector(s);let installations=[],allowed=[];
+const COMMON_PROBES=['state_schema','firmware_diagnostics','task_events','refresh_properties'];
+const MODEL_PROBES={
+  genie:[...COMMON_PROBES,'area_definition','ridable_area_definition','map_definition','path_definition'],
+  m5:[...COMMON_PROBES,'map_archive','path_definition'],
+  m9:[...COMMON_PROBES,'map_archive','path_definition'],
+  m9_pro:[...COMMON_PROBES,'map_archive','path_definition'],
+  n8:[...COMMON_PROBES,'map_archive','path_definition']
+};
+function modelFamily(model){const v=String(model||'').toUpperCase().replace(/[-_]/g,' ').replace(/\s+/g,' ').trim();if(v.includes('N8'))return'n8';if(v.includes('M9 PRO')||v.replace(/\s/g,'').includes('M9PRO'))return'm9_pro';if(v.includes('M9'))return'm9';if(v.includes('M5'))return'm5';return'genie'}
+function allowedForModel(model){const candidates=MODEL_PROBES[modelFamily(model)]||COMMON_PROBES;return candidates.filter(x=>allowed.includes(x))}
 async function api(url,opts={}){const r=await fetch(url,{credentials:'same-origin',headers:{'Content-Type':'application/json',...(opts.headers||{})},...opts});if(!r.ok){let t=await r.text();throw new Error(`${r.status} ${t}`)}return r.json()}
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 async function setEnabled(id,enabled){await api(`/api/anthbot/admin/developer-agent/installations/${id}/enabled`,{method:'POST',body:JSON.stringify({enabled})});await load()}
-async function queueJob(){const installation_id=$('#installation').value,action=$('#probe').value,target=$('#targetModel').value.trim();if(!installation_id||!action)return;await api('/api/anthbot/admin/developer-agent/jobs',{method:'POST',body:JSON.stringify({installation_id,action,target_model:target||null})});$('#targetModel').value='';await loadJobs()}
+async function queueJob(){const installation_id=$('#installation').value,action=$('#probe').value,target=$('#targetModel').value;if(!installation_id||!action||!target)return;const valid=allowedForModel(target);if(!valid.includes(action)){alert('Ez a probe ehhez a modellhez nincs engedélyezve.');renderProbeSelector();return}await api('/api/anthbot/admin/developer-agent/jobs',{method:'POST',body:JSON.stringify({installation_id,action,target_model:target})});await loadJobs()}
 function renderInstallations(){const host=$('#installations');if(!installations.length){host.innerHTML='<p class="muted">Még nincs engedélyezett fejlesztői ügynök.</p>';return}host.innerHTML=`<table><thead><tr><th>Modellek</th><th>Telepítés</th><th>Utolsó poll</th><th>Állapot</th><th></th></tr></thead><tbody>${installations.map(x=>`<tr><td>${esc((x.models||[]).join(', '))}</td><td class="id">${esc(x.installation_id)}</td><td>${esc(x.last_seen)}</td><td class="${x.server_enabled?'on':'off'}">${x.server_enabled?'AKTÍV':'LEÁLLÍTVA'}</td><td><button onclick="setEnabled('${x.installation_id}',${!x.server_enabled})">${x.server_enabled?'Leállítás':'Újra aktiválás'}</button></td></tr>`).join('')}</tbody></table>`}
-function renderSelectors(){const current=$('#installation').value;$('#installation').innerHTML=installations.map(x=>`<option value="${esc(x.installation_id)}">${esc((x.models||[]).join(', ')||x.installation_id)}</option>`).join('');if(current&&installations.some(x=>x.installation_id===current))$('#installation').value=current;$('#probe').innerHTML=allowed.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('')}
+function selectedInstallation(){return installations.find(x=>x.installation_id===$('#installation').value)||null}
+function renderModelSelector(){const current=$('#targetModel').value;const item=selectedInstallation();const models=item?.models||[];$('#targetModel').innerHTML=models.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');if(current&&models.includes(current))$('#targetModel').value=current;renderProbeSelector()}
+function renderProbeSelector(){const current=$('#probe').value;const model=$('#targetModel').value;const probes=model?allowedForModel(model):[];$('#probe').innerHTML=probes.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');if(current&&probes.includes(current))$('#probe').value=current;$('#queue').disabled=!$('#installation').value||!model||!probes.length}
+function renderSelectors(){const current=$('#installation').value;$('#installation').innerHTML=installations.map(x=>`<option value="${esc(x.installation_id)}">${esc((x.models||[]).join(', ')||x.installation_id)}</option>`).join('');if(current&&installations.some(x=>x.installation_id===current))$('#installation').value=current;renderModelSelector()}
 async function loadJobs(){const data=await api('/api/anthbot/admin/developer-agent/jobs?limit=100&include_result=true');const rows=data.items||[];$('#jobs').innerHTML=rows.length?`<table><thead><tr><th>ID</th><th>Telepítés</th><th>Probe</th><th>Állapot</th><th>Idő</th><th>Eredmény</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${x.job_id}</td><td class="id">${esc(x.installation_id)}</td><td>${esc(x.action)}${x.target_model?`<br><span class="muted">${esc(x.target_model)}</span>`:''}</td><td>${esc(x.status)}${x.error?`<br><span class="off">${esc(x.error)}</span>`:''}</td><td>${esc(x.created_at)}<br><span class="muted">${esc(x.completed_at||'')}</span></td><td>${x.result?`<details><summary>Megnyitás</summary><div class="result">${esc(JSON.stringify(x.result,null,2))}</div></details>`:'—'}</td></tr>`).join('')}</tbody></table>`:'<p class="muted">Még nincs teszt.</p>'}
 async function load(){try{$('#status').textContent='Frissítés…';const data=await api('/api/anthbot/admin/developer-agent/installations');installations=data.items||[];allowed=data.allowed_probes||[];renderInstallations();renderSelectors();await loadJobs();$('#status').textContent=`${installations.length} ügynök`;}catch(e){$('#status').textContent=`Hiba: ${e.message}`}}
-$('#refresh').addEventListener('click',load);$('#queue').addEventListener('click',queueJob);window.setEnabled=setEnabled;load();setInterval(load,30000);
+$('#refresh').addEventListener('click',load);$('#queue').addEventListener('click',queueJob);$('#installation').addEventListener('change',renderModelSelector);$('#targetModel').addEventListener('change',renderProbeSelector);window.setEnabled=setEnabled;load();setInterval(load,30000);
 </script>
 </body>
 </html>
