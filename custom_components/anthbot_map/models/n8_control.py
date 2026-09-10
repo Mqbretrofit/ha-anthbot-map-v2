@@ -50,6 +50,12 @@ _N8_COMMANDS = {
     "multi_map_ctl",
     "delete_sub_map",
     "device_config",
+    # The current 2.15.16 MGS voice flow publishes voice_set through the same
+    # service-shadow transport. The exact package payload is documented in
+    # N8_VOICE_PROTOCOL.md. Transport recognition only: no public HA voice-pack
+    # selector is exposed until a real N8 validates package compatibility and
+    # report-side state transitions.
+    "voice_set",
     # Current MGS RTK/NRTK service-shadow commands. Static 2.15.16 analysis
     # proves ctl_rtk_base takes scalar 1=NRTK, 2=RTK, 3=Auto, while the info
     # request takes an empty object. They are transport-recognized only; no new
