@@ -79,8 +79,15 @@ async def _refresh_n8_records_if_needed(
         )
 
 
+def _simple_reported_value(value: Any) -> Any:
+    """Unwrap the common N8 {value: ...} report envelope when present."""
+    if isinstance(value, dict) and "value" in value:
+        return value.get("value")
+    return value
+
+
 def _add_n8_status_aliases(state: dict[str, Any]) -> None:
-    """Expose N8-specific state without changing generic public status keys."""
+    """Expose N8-specific state without changing other mower-family routing."""
     status = raw_robot_status(state)
     mode_value = None
     mode = state.get("mode")
@@ -101,6 +108,19 @@ def _add_n8_status_aliases(state: dict[str, Any]) -> None:
             state["_n8_grass_bag_in_position"] = bag
         if shield is not None:
             state["_n8_grass_shield_in_position"] = shield
+
+    # Current MGS 2.15.16 reads global cutting height as the direct reported
+    # `cutter_height` property, while the existing shared HA number reads
+    # `param_set.cutter_height`. Mirror only this N8 field so the established
+    # entity remains readable without changing Genie/M5/M9/M9 Pro behavior.
+    cutter_height = _simple_reported_value(state.get("cutter_height"))
+    if isinstance(cutter_height, (int, float)):
+        existing = state.get("param_set")
+        params = dict(existing) if isinstance(existing, dict) else {}
+        if params.get("cutter_height") != cutter_height:
+            params["cutter_height"] = cutter_height
+            state["param_set"] = params
+        state["_n8_cutter_height"] = cutter_height
 
 
 def install_n8_status_support() -> None:
