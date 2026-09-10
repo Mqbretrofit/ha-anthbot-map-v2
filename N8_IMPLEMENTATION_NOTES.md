@@ -5,7 +5,7 @@ Base: `release/v2.4.6-beta.9`
 This branch deliberately keeps Genie, M5, M9 and M9 Pro routing unchanged and
 adds N8 through isolated model adapters.
 
-Implemented in the first integration pass:
+Implemented in the integration/reverse-engineering line:
 
 - N8 model-family detection and model boundary.
 - N8-only service-shadow command transport.
@@ -15,14 +15,17 @@ Implemented in the first integration pass:
   and `region_mow_start`).
 - N8-only map-manager/`area_setting.json` adapter using the already proven MGS
   decoders while leaving M-series activation guards unchanged.
-- N8-only Start grass dumping / Stop grass dumping button entities using
-  `start_dump` and `stop_dump`.
-- `dump_grass_areas` is loaded into the coordinator area definition for the
-  next map-card rendering/editing pass.
+- N8-only Start grass dumping / Stop grass dumping buttons using `start_dump`
+  and `stop_dump`.
+- `dump_grass_areas` is loaded into the coordinator area definition.
 - Current 2.15.16 MGS settings writes for anti-loss, rain and visual perception
   are translated N8-only to the app-native `device_config` command.
 - Visual obstacle sensitivity mapping is statically proven as Low=0,
   Medium=1, High=2.
+- N8 diagnostics/diff helpers exist for privacy-safe live protocol comparison.
+- Read-only N8 `time_setting.json` extraction now runs from the same map-manager
+  archive. It retains only structural summary data (counts, key sets,
+  timezone/version), not individual schedule start/end times.
 
 ## Dumping-area write protocol
 
@@ -33,22 +36,42 @@ without enabling it yet:
   `{dump_grass_areas: [...], delete_dump_areas: [...]}`;
 - remote dumping-area setup uses `ctl_building_dump` with
   `{dump_grass_areas: [...], state: "build_dump_set"}`;
-- native dump-area objects emitted to those writers contain `id`, `grassId`,
-  `eid`, `remote`, `disable`, `warningType`, and `vertexs`;
+- native dump-area objects contain `id`, `grassId`, `eid`, `remote`, `disable`,
+  `warningType`, and `vertexs`;
 - `vertexs` is an array of integer `[x, y]` pairs in millimetres;
-- the standard app-created dumping area is a 1.5 m x 1.5 m square, represented
+- the standard app-created dumping area is a 1.5 m x 1.5 m square represented
   by four possibly rotated corner points;
 - dump-area IDs are allocated in the 500..599 range.
 
-See `N8_DUMP_PROTOCOL.md` for the reconstructed wire schema.
+See `N8_DUMP_PROTOCOL.md`.
 
-Dumping-area editing is still intentionally not exposed in Home Assistant until
-a real N8 before/after map-manager capture validates the recovered static wire
-format against the cloud and confirms the persisted `area_setting.json` shape.
+Dumping-area editing is still intentionally not exposed until a real N8
+before/after map-manager capture validates the persisted `area_setting.json`.
 
-## Do Not Disturb
+## Do Not Disturb / schedules
 
-Static analysis now reconstructs the app's DND schedule object:
+Static HBC98 analysis now proves the actual schedule service command:
+
+```text
+cmd: mow_regular
+```
+
+The full plan envelope is:
+
+```text
+{timezone, timezone_sec, value}
+```
+
+and newer firmware can use the incremental form:
+
+```text
+{timezone, timezone_sec, version, value}
+```
+
+The current app enables incremental plans when mower firmware is at least
+`1.16.15`; end-time support is gated at firmware `1.15.13` for this app line.
+
+The DND item itself has:
 
 ```text
 start_time: caller supplied
@@ -60,34 +83,41 @@ repeat: 1
 workmode: 0
 ```
 
-The plan/time pipeline uses `no_disturb`, `appointment`,
-`delete_no_disturb`, and `delete_appointment`. The `dnd_set` string is proven
-as an app logging/event identifier, not a proven mower-shadow command.
+`unlock == 0` distinguishes DND from normal mowing appointments. `dnd_set` is
+analytics only; it is not the mower command.
 
-See `N8_DND_PROTOCOL.md` for details. DND remains disabled until the exact
-current time/plan write endpoint and enclosing object are captured and verified.
+`mow_regular` is now recognized by the N8 native transport so a future N8 plan
+writer cannot fall through to legacy Genie routing. No HA DND/schedule writer
+is exposed yet. The N8 map adapter probes `time_setting.json` read-only first so
+we can identify the live firmware schema/version without guessing.
+
+See `N8_DND_PROTOCOL.md`.
 
 ## Maintenance
 
-Static analysis now reconstructs most of the MGS maintenance command surface:
+Static 2.15.16 data-flow reconstruction now proves the reset mapping exactly:
+
+```text
+Blade maintenance reset             -> reset_id 1
+Camera maintenance reset            -> reset_id 2
+Charging station/contact reset       -> reset_id 0
+```
+
+These values already match the existing Home Assistant reset buttons. N8 routes
+`robot_maintenance_reset` through its native service-shadow adapter.
+
+The additional maintenance command family is also known:
 
 - `maintenance_switch` with scalar `1` / `0` enters/exits maintenance mode;
 - `maintenance_ctrl` uses `{sub: ...}`;
-- recovered `sub` values include cutter motor open/close, cutter lift
-  high/mid/low, chassis forward/backward/end;
-- `maintenance_check` drives the self-test flows; the all-components path uses
-  `["all"]`;
-- `robot_maintenance_reset` uses `{reset_id: ...}`;
-- the maintenance screen has route types blade=0, charging contacts=1,
-  camera=2, but static analysis has not yet directly proven that these values
-  are passed unchanged as `reset_id`.
+- known `sub` values cover cutter motor open/close, cutter lift high/mid/low,
+  chassis forward/backward/end;
+- `maintenance_check` drives the self-test paths.
 
-See `N8_MAINTENANCE_PROTOCOL.md` for exact recovered command shapes.
+Physical maintenance controls remain intentionally unexposed until an N8 owner
+can validate them while physically present at the mower.
 
-Advanced maintenance controls remain intentionally unexposed because several
-commands physically move the cutter, cutter lift or chassis. Live verification
-must be performed with the N8 owner physically present and must include stop /
-failsafe behavior.
+See `N8_MAINTENANCE_PROTOCOL.md`.
 
 ## Child Lock
 
@@ -105,15 +135,14 @@ Until live N8 validation or the remaining payload work is complete, keep these
 writes disabled:
 
 - PIN write;
-- DND schedule write;
+- DND/schedule write;
 - Child Lock write;
 - voice-pack control;
 - map backup/restore and multi-map mutation;
-- advanced maintenance controls;
+- advanced physical maintenance controls;
 - dumping-area editing;
-- anti-loss radius Home Assistant write until its upper range/validation is
-  confirmed.
+- anti-loss radius HA write until its upper range/validation is confirmed.
 
 The published `v2.4.6-beta.11` tag and the separate
-`release/v2.4.6-beta.10` branch are not part of this ongoing static-analysis
-work and must remain untouched unless explicitly requested.
+`release/v2.4.6-beta.10` branch are not part of this ongoing feature work and
+remain untouched unless explicitly requested.
