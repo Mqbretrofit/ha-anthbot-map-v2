@@ -155,7 +155,7 @@ DEX analysis of the MGS native map bridge proves that the React Native event ser
 
 Important details:
 
-- `vertexs` is the protocol spelling.
+- `vertexs` is the protocol spelling;
 - each vertex is exactly `[int, int]`;
 - `id` and `grassId` are emitted from the same integer native field;
 - native `eid` defaults to `-1`;
@@ -286,6 +286,57 @@ Current N8 branch exposes:
 
 through `param_set {work_mode: <0|1|2>}` and keeps the selector N8-only.
 
+## Do Not Disturb / schedule transport
+
+Direct HBC98 reconstruction now proves that current MGS/N8 schedule writes use:
+
+```text
+cmd: mow_regular
+```
+
+The full plan envelope is:
+
+```text
+{timezone, timezone_sec, value}
+```
+
+and the incremental envelope is:
+
+```text
+{timezone, timezone_sec, version, value}
+```
+
+where:
+
+```text
+timezone_sec = -Date().getTimezoneOffset() * 60
+timezone = timezone_sec / 3600
+```
+
+The writer waits up to 10 seconds for its response.
+
+The DND object is distinguished by `unlock == 0` and uses:
+
+```text
+start_time: caller supplied
+end_time: caller supplied
+active: caller supplied
+unlock: 0
+week: [1,2,3,4,5,6,7]
+repeat: 1
+workmode: 0
+```
+
+`dnd_set` is analytics only. The actual service command is `mow_regular`.
+
+The current app enables incremental-plan behavior when mower firmware is at least `1.16.15` and enables plan end-time behavior at firmware `1.15.13` (app-version gates are already satisfied by 2.15.16).
+
+The map-manager workflow also reads `time_setting.json`; the N8 adapter now extracts it **read-only** and records only a privacy-safe structural summary: top-level keys, entry key sets, counts, timezone metadata and version. Individual schedule times are not exported by this probe.
+
+`mow_regular` is recognized by the N8 native transport, but no HA DND/schedule writer is exposed until a real N8 confirms which full/incremental schema its firmware uses.
+
+See `N8_DND_PROTOCOL.md`.
+
 ## Border / charging-dock behavior
 
 Official MGS UI contains Border Recharge and edge-return behavior. Relevant identifiers include `nest_edge_grass`, `nest_edge_grass_start_each_task`, `nest_param_set`, `near_chg_mow_ctl`, `nest_mow_start`, and `nest_mow_stop`.
@@ -298,18 +349,45 @@ N8 map reading is confirmed through:
 
 ```text
 map_manager_<SN>.tar.gz
+  -> iot_map.bin
   -> area_setting.json
+  -> time_setting.json
 ```
 
 using `/device/v2/presigned_url`.
 
-The archive supplies custom/manual areas, region/auto areas, ridable areas and dumping areas. `multi_map_ctl`, `delete_sub_map`, map backup and restore paths exist in the app but mutation remains disabled pending exact payload/live validation.
+The archive supplies map geometry, custom/manual areas, region/auto areas, ridable areas, dumping areas and plan/DND settings. `multi_map_ctl`, `delete_sub_map`, map backup and restore paths exist in the app but mutation remains disabled pending exact payload/live validation.
 
 ## Maintenance
 
-MGS UI exposes blade/cutter, camera and charging-contact maintenance. Protocol identifiers include `maintenance_reset`, `robot_maintenance_reset`, `maintenance_switch`, `maintenance_check`, and `maintenance_ctrl`.
+MGS UI exposes blade/cutter, camera and charging-contact maintenance. The physical command family includes `maintenance_switch`, `maintenance_check`, and `maintenance_ctrl`.
 
-Advanced N8 maintenance writes remain disabled until component IDs/object shapes are confirmed.
+The reset data flow is now statically proven end-to-end. Screen route types are:
+
+```text
+blade             -> type 0
+camera            -> type 1
+station/contacts  -> type 2
+```
+
+The writer maps them to:
+
+```text
+Blade maintenance reset             -> reset_id 1
+Camera maintenance reset            -> reset_id 2
+Charging station/contact reset       -> reset_id 0
+```
+
+and publishes:
+
+```text
+cmd: robot_maintenance_reset
+data: {reset_id: ...}
+```
+
+These IDs match the existing Home Assistant reset buttons. Physical cutter/chassis maintenance controls remain disabled until an N8 owner is physically present for safety and failsafe validation.
+
+See `N8_MAINTENANCE_PROTOCOL.md`.
 
 ## N8/MGS03 error and event evidence
 
@@ -349,9 +427,10 @@ Change exactly one official-app setting between captures to isolate the reported
 2. Child Lock before/after;
 3. anti-loss radius before/after;
 4. visual sensitivity Low/Medium/High report values;
-5. **map-manager archive before and after one dumping-area add/edit/delete** — now primarily to validate the recovered wire schema and learn the persisted subset;
-6. state during `dumpgrass` and after a successful dump;
-7. grass-bag / deflector transition;
-8. one harmless maintenance-page read/reset only while the owner is physically present.
+5. map-manager archive before and after one dumping-area add/edit/delete;
+6. read-only `time_setting.json` structure/version plus one DND before/after change;
+7. state during `dumpgrass` and after a successful dump;
+8. grass-bag / deflector transition;
+9. one harmless maintenance-page reset only while the owner is physically present.
 
-The highest remaining blockers are Child Lock write identification, live dumping-area persistence validation, anti-loss maximum/range validation and exact live N8 error/status payloads.
+The highest remaining blockers are Child Lock write identification, live dumping-area persistence validation, DND full-vs-increment firmware confirmation, anti-loss maximum/range validation and exact live N8 error/status payloads.
