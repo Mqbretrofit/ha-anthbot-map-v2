@@ -22,6 +22,7 @@ from .const import (
     CONF_BATTERY_SAVER_CONFIGS,
     CONF_CHARGE_LIMIT,
     CONF_CHARGER_SWITCH,
+    CONF_DEVELOPER_AGENT_ENABLED,
     CONF_MAINTENANCE_LEVEL,
     CONF_RESUME_LEVEL,
     CONF_SEND_AUTOMATIC_DIAGNOSTICS,
@@ -36,10 +37,12 @@ from .const import (
     DEFAULT_BATTERY_SAVER_CHARGE_LIMIT,
     DEFAULT_BATTERY_SAVER_MAINTENANCE_LEVEL,
     DEFAULT_BATTERY_SAVER_RESUME_LEVEL,
+    DEFAULT_DEVELOPER_AGENT_ENABLED,
     DEFAULT_SEND_AUTOMATIC_DIAGNOSTICS,
     DEFAULT_SHARE_ANONYMOUS_USAGE,
     DOMAIN,
 )
+from .developer_agent_optin import SERVICE_UPDATE_DEVELOPER_AGENT
 from .developer_optin import SERVICE_UPDATE_DEVELOPER_REPORTING
 
 _LOGGER = logging.getLogger(__name__)
@@ -274,13 +277,17 @@ class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
     async def async_step_developer_reporting(
         self, user_input: dict | None = None
     ) -> FlowResult:
-        """Configure optional usage and automatic diagnostic reporting."""
+        """Configure optional reporting and read-only developer access."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            if not self.hass.services.has_service(
+            reporting_available = self.hass.services.has_service(
                 DOMAIN, SERVICE_UPDATE_DEVELOPER_REPORTING
-            ):
+            )
+            agent_available = self.hass.services.has_service(
+                DOMAIN, SERVICE_UPDATE_DEVELOPER_AGENT
+            )
+            if not reporting_available or not agent_available:
                 errors["base"] = "reporting_service_unavailable"
             else:
                 await self.hass.services.async_call(
@@ -297,9 +304,19 @@ class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
                     blocking=True,
                     return_response=True,
                 )
-                # The reporting service performs the same privacy/installation-ID
-                # bookkeeping as the consent popup. Return the freshly updated
-                # options so Home Assistant closes the options flow cleanly.
+                await self.hass.services.async_call(
+                    DOMAIN,
+                    SERVICE_UPDATE_DEVELOPER_AGENT,
+                    {
+                        CONF_DEVELOPER_AGENT_ENABLED: bool(
+                            user_input[CONF_DEVELOPER_AGENT_ENABLED]
+                        )
+                    },
+                    blocking=True,
+                    return_response=True,
+                )
+                # Both services update only their own consent fields and preserve
+                # every unrelated option, including Battery Saver settings.
                 return self.async_create_entry(
                     title="", data=dict(self.config_entry.options)
                 )
@@ -318,6 +335,13 @@ class AnthbotGenieOptionsFlow(config_entries.OptionsFlow):
                     default=self._entry_option(
                         CONF_SEND_AUTOMATIC_DIAGNOSTICS,
                         DEFAULT_SEND_AUTOMATIC_DIAGNOSTICS,
+                    ),
+                ): selector.BooleanSelector(),
+                vol.Required(
+                    CONF_DEVELOPER_AGENT_ENABLED,
+                    default=self._entry_option(
+                        CONF_DEVELOPER_AGENT_ENABLED,
+                        DEFAULT_DEVELOPER_AGENT_ENABLED,
                     ),
                 ): selector.BooleanSelector(),
             }
