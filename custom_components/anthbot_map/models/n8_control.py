@@ -35,6 +35,8 @@ _N8_COMMANDS = {
     "ridable_mow_start",
     "nest_mow_start",
     "nest_mow_stop",
+    "ctl_near_chg_mow",
+    "mow_delay",
     "mow_point",
     "mow_point_stop",
     "mow_regular",
