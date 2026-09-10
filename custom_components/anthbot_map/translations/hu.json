@@ -53,20 +53,22 @@
       },
       "developer_reporting": {
         "title": "Fejlesztés és diagnosztika",
-        "description": "Ezek a lehetőségek önkéntesek, és bármikor újra kikapcsolhatók. A csak olvasási jogosultságú Developer Agenttől függetlenek.",
+        "description": "Ezek a lehetőségek önkéntesek, és bármikor újra kikapcsolhatók.",
         "data": {
           "share_anonymous_usage": "Anonim használati statisztikák megosztása",
-          "send_automatic_diagnostics": "Automatikus diagnosztikai jelentések küldése"
+          "send_automatic_diagnostics": "Automatikus diagnosztikai jelentések küldése",
+          "developer_agent_enabled": "Csak olvasási fejlesztői lekérések engedélyezése"
         },
         "data_description": {
           "share_anonymous_usage": "Minimális technikai használati adatokat küld, például az integráció és a Home Assistant verzióját, az országot és az ANTHBOT modellek számát. Felhasználónév, jelszó, sorozatszám, GPS-pozíció és térkép nem kerül elküldésre.",
-          "send_automatic_diagnostics": "Adatvédelmi szűrésen átesett technikai diagnosztikát küld támogatott hibák esetén, például robotfűnyíró-hibáknál, határ/no-go átlépéseknél és térkép-/útvonal-feldolgozási hibáknál."
+          "send_automatic_diagnostics": "Adatvédelmi szűrésen átesett technikai diagnosztikát küld támogatott hibák esetén, például robotfűnyíró-hibáknál, határ/no-go átlépéseknél és térkép-/útvonal-feldolgozási hibáknál.",
+          "developer_agent_enabled": "Csak az integrációba előre beépített, csak olvasási térkép-, útvonal-, terület-, esemény- és tulajdonságlekéréseket engedélyezi a fejlesztői szerver számára. Tetszőleges kódot vagy robotvezérlő parancsot nem tud küldeni."
         }
       }
     },
     "error": {
       "invalid_battery_thresholds": "A folytatási és a tétlen újratöltési szintnek alacsonyabbnak kell lennie a felső töltési határnál.",
-      "reporting_service_unavailable": "A jelentésküldési beállítási szolgáltatás nem érhető el. Töltsd újra az Anthbot Map integrációt vagy indítsd újra a Home Assistantot, majd próbáld újra."
+      "reporting_service_unavailable": "A fejlesztési/diagnosztikai beállítási szolgáltatás nem érhető el. Töltsd újra az Anthbot Map integrációt vagy indítsd újra a Home Assistantot, majd próbáld újra."
     },
     "abort": {
       "no_devices": "Nincs betöltött Anthbot robotfűnyíró."
