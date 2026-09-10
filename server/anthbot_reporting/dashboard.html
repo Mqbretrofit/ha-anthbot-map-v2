@@ -29,7 +29,7 @@
     .logo { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; background: linear-gradient(135deg, var(--accent), #8e7dff); box-shadow: var(--shadow); font-weight: 800; }
     h1 { font-size: clamp(1.35rem, 3vw, 2rem); margin: 0; }
     .subtitle { color: var(--muted); margin-top: 4px; font-size: .94rem; }
-    .top-actions { display: flex; gap: 10px; align-items: center; }
+    .top-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
     .btn { border: 1px solid var(--line); background: var(--panel-2); color: var(--text); padding: 10px 14px; border-radius: 12px; cursor: pointer; transition: .18s ease; }
     .btn:hover { transform: translateY(-1px); border-color: var(--accent); }
     .btn.primary { background: linear-gradient(135deg, #4f8fe8, #6c63e7); border: 0; }
@@ -130,7 +130,7 @@
         <div class="shell">
           <div class="topbar">
             <div class="brand"><div class="logo">A</div><div><h1>ANTHBOT Statisztika</h1><div class="subtitle">Használati statisztikák és diagnosztika</div></div></div>
-            <div class="top-actions"><button class="btn" id="refresh">Frissítés</button><button class="btn danger" id="logout">Kijelentkezés</button></div>
+            <div class="top-actions"><button class="btn primary" id="developer-agent">Fejlesztői lekérések</button><button class="btn" id="refresh">Frissítés</button><button class="btn danger" id="logout">Kijelentkezés</button></div>
           </div>
           <div class="grid kpis">
             ${kpi('Telepítések', s.installations.total ?? 0, 'Egyedi, önként engedélyezett telepítések')}
@@ -216,6 +216,7 @@
     }
 
     function bind() {
+      el('developer-agent').onclick = () => { location.href = '/dashboard/developer-agent'; };
       el('refresh').onclick = loadAll;
       el('logout').onclick = async () => { await fetch('/dashboard/logout', {method:'POST', credentials:'same-origin'}); location.href='/dashboard'; };
       el('apply').onclick = loadInstallations;
