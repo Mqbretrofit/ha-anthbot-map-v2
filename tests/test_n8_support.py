@@ -82,11 +82,15 @@ def test_n8_core_mowing_and_dump_commands_are_native() -> None:
 
 def test_n8_voice_set_is_native_transport_only() -> None:
     control = _read(MODELS / "n8_control.py")
+    payload = _read(MODELS / "n8_voice_payload.py")
     selects = _read(INTEGRATION / "select.py")
     buttons = _read(INTEGRATION / "button.py")
 
     assert '"voice_set"' in control
     assert "cmd, data = _normalize_n8_command(cmd, data)" in control
+    assert '"category": "voice_pack"' in payload
+    assert '"music_package": packet["id"]' in payload
+    assert '"music_url": presigned_url' in payload
     # Static analysis has recovered the command and payload, but live N8 package
     # compatibility is not validated yet. Keep it transport-only for now.
     assert 'cmd="voice_set"' not in selects
