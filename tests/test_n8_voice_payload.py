@@ -47,16 +47,34 @@ def test_voice_set_payload_matches_recovered_21516_shape() -> None:
     ) == {"cmd": "voice_set", "data": data}
 
 
-def test_voice_signed_url_request_keeps_filename_derivation_outside_helper() -> None:
+def test_voice_filename_matches_app_substring_after_last_slash() -> None:
+    assert MODULE.voice_filename_from_vp_url("voices/english_girl.zip") == "english_girl.zip"
+    assert (
+        MODULE.voice_filename_from_vp_url("https://cdn.example/voice/de/girl.zip")
+        == "girl.zip"
+    )
+    assert MODULE.voice_filename_from_vp_url("already-a-file.bin") == "already-a-file.bin"
+
+
+def test_voice_signed_url_request_derives_filename_from_vp_url() -> None:
     assert MODULE.build_voice_signed_url_request(
         serial_number="TEST-SN",
-        filename="english_girl.zip",
+        vp_url="voices/english_girl.zip",
     ) == {
         "sn": "TEST-SN",
         "category": "voice",
         "sub_category": "",
         "filename": "english_girl.zip",
     }
+
+
+def test_voice_filename_rejects_empty_source() -> None:
+    try:
+        MODULE.voice_filename_from_vp_url("")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("voice filename helper accepted empty vp_url")
 
 
 def test_voice_payload_rejects_missing_required_metadata() -> None:
