@@ -1,6 +1,6 @@
 # ANTHBOT N8 / MGS03 voice protocol notes
 
-Status: static ANTHBOT Android 2.15.16 evidence plus shared-schema live clues. Voice-package writing is intentionally not exposed yet.
+Status: static ANTHBOT Android 2.15.16 reconstruction plus shared-schema live clues. The current package-list API, signed-download request and `voice_set` payload are now statically recovered. Public Home Assistant voice-package selection remains disabled until a real N8 validates package compatibility and report-side behavior.
 
 ## Live-data provenance
 
@@ -23,9 +23,36 @@ belongs to an **Anthbot M9 Pro**, not an N8. It is therefore a useful shared-MGS
 
 The current Home Assistant volume control remains separate from voice-package selection.
 
-## Direct 2.15.16 Hermes evidence
+## Current 2.15.16 package-list API
 
-The real ANTHBOT 2.15.16 Android XAPK contains a Hermes HBC98 bundle. Direct parsing identifies the current MGS voice hook:
+Direct HBC98 data-flow reconstruction identifies the package-list wrapper as function `#15706` (`list`). It calls the application's API client's `get` method with the fixed resource:
+
+```text
+GET /voice/package/language
+```
+
+No explicit request body is supplied by this wrapper.
+
+The selectable packet objects consumed by the current Voice Settings flow contain at least:
+
+```text
+id
+english_name
+sex
+md5
+version
+vp_url
+```
+
+The app can identify the currently selected packet either by packet `id` or by the combined key:
+
+```text
+<english_name>_<sex>
+```
+
+## Voice Settings hook and writer
+
+Direct parsing identifies the current MGS voice hook:
 
 ```text
 function #15705: useVoicePacket
@@ -47,78 +74,142 @@ and creates the current voice-package writer closure:
 function #27402: setupVoicePacket
 ```
 
-The async writer behind it is function `#27405`. Its bytecode constructs an object with shape:
-
-```text
-cmd
-data
-```
-
-whose first literal is exactly:
-
-```text
-voice_set
-```
-
-and then publishes it through the normal MGS `publishDeviceCommand` path. Therefore the current service command envelope is statically proven as:
+The async writer behind it is function `#27405`. It builds:
 
 ```json
 {
   "cmd": "voice_set",
-  "data": "<dynamic package payload>"
+  "data": "<caller supplied package object>"
 }
 ```
 
-The command name/envelope is no longer inferred from strings alone. What remains unresolved is the exact dynamic `data` object passed into `setupVoicePacket` for each selectable package.
+and publishes through the normal MGS `publishDeviceCommand` path with a 30-second command timeout.
 
-## Voice-package API evidence
+The Voice Settings component (`#15701`) stores `setupVoicePacket` in its environment and its package-selection generator (`#36081`) supplies the exact object described below. This closes the previous gap between the command wrapper and the UI-selected package metadata.
 
-The older reconstructed application bundle exposes the separately downloaded voice-package language resource:
+## Exact `voice_set.data` payload
 
-```text
-/voice/package/language
+The current 2.15.16 package-selection generator constructs exactly these fields before calling `setupVoicePacket`:
+
+```json
+{
+  "music_package": "<selected packet id>",
+  "english_name": "<selected packet english_name>",
+  "sex": "<selected packet sex>",
+  "music_url": "<fresh presigned URL>",
+  "music_md5": "<selected packet md5>",
+  "category": "voice_pack",
+  "version": "<selected packet version>"
+}
 ```
 
-The base APK itself does not contain the spoken audio files. Voice assets are downloaded separately, so package metadata/manifest data are required to reconstruct package selection safely.
-
-Related application identifiers include:
+Field provenance is statically traced as:
 
 ```text
-voice_status
-voice_pack_downloading
-voice_pack_option
-voice_resource_not_exist
-voice_settings
-voice_volume_set
-music_package
-music_cfg
-music_language
+music_package <- packet.id
+english_name  <- packet.english_name
+sex           <- packet.sex
+music_url     <- presigned_url returned by signed-URL request
+music_md5     <- packet.md5
+category      <- literal "voice_pack"
+version       <- packet.version
 ```
 
-## What is still not proven
+Therefore the complete current cloud command is:
 
-Do not expose an N8 voice-package selector until the current 2.15.16 data flow or a real N8 capture proves all of the following:
+```json
+{
+  "cmd": "voice_set",
+  "data": {
+    "music_package": "<packet.id>",
+    "english_name": "<packet.english_name>",
+    "sex": "<packet.sex>",
+    "music_url": "<presigned_url>",
+    "music_md5": "<packet.md5>",
+    "category": "voice_pack",
+    "version": "<packet.version>"
+  }
+}
+```
 
-- exact request method and parameters used to list N8/MGS03 packages;
-- model/category filtering applied to the package list;
-- exact fields inside the dynamic `voice_set.data` value;
-- package identifier/name/version/checksum fields;
-- download URL acquisition and expiry behavior;
-- expected N8 `voice_status.state` and `progress` transitions;
-- rollback/failure behavior when a package is unavailable or incompatible.
+The isolated N8 transport now recognizes `voice_set` so a future validated N8 package install cannot fall through to Genie/M5/M9/M9 Pro routing. This is transport recognition only; no public HA voice selector is added yet.
 
-The exact `{cmd:"voice_set", data:<dynamic>}` envelope is proven, but the dynamic package payload must not be guessed.
+## Signed package download URL
+
+Before constructing `voice_set.data`, the same package-selection generator requests a fresh signed URL. The request object is statically reconstructed as:
+
+```json
+{
+  "sn": "<device serial>",
+  "category": "voice",
+  "sub_category": "",
+  "filename": "<derived from packet.vp_url>"
+}
+```
+
+The response field consumed by the flow is:
+
+```text
+presigned_url
+```
+
+and that value becomes `music_url` in the final `voice_set` payload.
+
+The filename is derived from `packet.vp_url` through an app helper. The exact helper's filename-normalization behavior is not needed to establish the command shape and is intentionally not guessed here.
+
+## Report-side state semantics recovered from the app
+
+The current hook reads `voice_status.state` and explicitly handles at least:
+
+```text
+downloading
+success
+```
+
+When state is `downloading`, increasing `voice_status.progress` updates the visible install progress. When state becomes `success`, the local progress is reset to zero.
+
+The current package identity is derived from `voice_status.name` when available, with `music_package` used as a fallback.
+
+These are application-side expectations. Because the only available live `voice_status` capture is from an M9 Pro, a real N8 still needs to confirm that its firmware reports the same state/progress fields during an install.
+
+## Legacy music-language normalization
+
+The current bundle also contains compatibility normalization for older `music_cfg.music_language` names. Recovered aliases include:
+
+```text
+girl_zh -> Chinese_girl
+girl_en -> English_girl
+girl_de -> German_girl
+girl_it -> Italian_girl
+girl_es -> Spanish_girl
+girl_au -> Australian_girl
+girl_fr -> French_girl
+```
+
+This is useful for interpreting existing report-side state but is not used as evidence for an N8 package writer by itself.
+
+## What still requires real N8 validation
+
+The wire schema is no longer the blocker. Before exposing a public N8 voice-package selector, validate on a real N8:
+
+- `/voice/package/language` returns packages applicable to that N8/account/region;
+- the selected packet's `vp_url` can be converted by the app flow into a usable signed URL;
+- the recovered `voice_set` payload is accepted unchanged by that N8 firmware;
+- `voice_status.state` / `progress` transition as expected;
+- checksum/version failures and incompatible package behavior are safe;
+- current-package identification is stable after reconnect/restart.
 
 ## Highest-value real N8 capture
 
-With the owner physically present, capture the property/service shadows while selecting a different official voice in the ANTHBOT app. The useful sequence is:
+With the owner physically present, capture the package selection sequence:
 
-1. property shadow before selection;
-2. package-list API response/metadata if available;
-3. service shadow request containing `voice_set`;
-4. property shadow while `voice_status.progress` changes;
-5. final property shadow after installation.
+1. package-list response from `/voice/package/language`;
+2. property shadow before selection;
+3. signed-URL request/response with credentials and signed query parameters redacted;
+4. service-shadow request containing `voice_set`;
+5. property shadow while `voice_status.progress` changes;
+6. final property shadow after installation.
 
-Do not include account credentials, signed download query strings or PIN values in committed fixtures.
+Do not commit account credentials, serial numbers, signed URL query strings or PIN values.
 
-Until that capture exists, the integration keeps voice-package control research-only and does not guess the dynamic writer payload.
+Until that capture exists, the integration keeps voice-package control research-only even though the current 2.15.16 command payload is now fully reconstructed.
