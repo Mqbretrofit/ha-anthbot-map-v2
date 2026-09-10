@@ -125,7 +125,10 @@ class DeveloperReportingTests(unittest.TestCase):
         self.assertIn("async_step_developer_reporting", source)
         self.assertIn("CONF_SHARE_ANONYMOUS_USAGE", source)
         self.assertIn("CONF_SEND_AUTOMATIC_DIAGNOSTICS", source)
+        self.assertIn("CONF_DEVELOPER_AGENT_ENABLED", source)
         self.assertIn("SERVICE_UPDATE_DEVELOPER_REPORTING", source)
+        self.assertIn("SERVICE_UPDATE_DEVELOPER_AGENT", source)
+        self.assertIn("DEFAULT_DEVELOPER_AGENT_ENABLED", source)
         self.assertIn("selector.BooleanSelector()", source)
         self.assertIn("return_response=True", source)
 
