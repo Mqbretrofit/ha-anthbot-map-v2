@@ -38,7 +38,14 @@ Implemented in the integration/reverse-engineering line:
   recognized by the N8 transport only; no public package selector is exposed.
 - `models/n8_voice_payload.py` provides pure, non-publishing builders for the
   recovered voice command/signed-URL object so future live validation can use
-  the exact wire schema without enabling an entity prematurely.
+  the exact wire shape without re-inventing it.
+- `tools/n8_validation_bundle.py` combines before/after firmware diagnostics and
+  optional before/after map-manager archives. It reports only structural
+  changes, counts, field sets and short SHA-256 fingerprints; raw lawn geometry
+  and personal schedule times are deliberately omitted from the diff output.
+- `N8_VALIDATION_WORKFLOW.md` defines the exact one-change live test order for
+  Child Lock, anti-loss, obstacle sensitivity, near-dock/delay, DND and dumping
+  persistence validation.
 
 ## Dumping-area write protocol
 
@@ -243,40 +250,13 @@ before/after capture identifies its reported field and exact write route.
 
 See `N8_CHILD_LOCK_PROTOCOL.md`.
 
-## Voice package flow
+## Live validation build
 
-Static reconstruction of the 2.15.16 Voice Settings screen now closes the
-previous package-payload gap.
-
-The package list is requested with:
-
-```text
-GET /voice/package/language
-```
-
-Selectable packet metadata supplies at least `id`, `english_name`, `sex`, `md5`,
-`version` and `vp_url`. Before installing a package the app requests a signed URL
-with category `voice`, then publishes:
-
-```text
-cmd: voice_set
-data: {
-  music_package: <packet.id>,
-  english_name: <packet.english_name>,
-  sex: <packet.sex>,
-  music_url: <presigned_url>,
-  music_md5: <packet.md5>,
-  category: "voice_pack",
-  version: <packet.version>
-}
-```
-
-The app handles at least `voice_status.state == "downloading"` and `"success"`.
-`voice_set` is therefore recognized by the isolated N8 service-shadow transport,
-but no public Home Assistant package selector is created yet. The remaining
-blocker is real N8 compatibility/state validation, not unknown wire schema.
-
-See `N8_VOICE_PROTOCOL.md`.
+This branch is the dedicated `test/n8-validation-beta.12` hardware-test build.
+Its manifest is `2.4.6-beta.12`, and its CI packages an
+`anthbot-n8-validation-beta.12` artifact containing the integration plus the
+privacy-safe validation comparer and workflow notes. It is not a normal release
+and does not retarget or merge PR #26.
 
 ## Still intentionally blocked
 
@@ -286,7 +266,7 @@ writes disabled:
 - PIN write;
 - DND/schedule write;
 - Child Lock write;
-- public voice-pack control (wire schema recovered; real N8 validation pending);
+- voice-pack control;
 - map backup/restore/update/delete and sub-map deletion;
 - manual/remote driving and map-building controls;
 - advanced physical maintenance controls;
