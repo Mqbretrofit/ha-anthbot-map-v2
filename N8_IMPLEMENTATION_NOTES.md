@@ -20,6 +20,24 @@ Implemented in the first integration pass:
 - `dump_grass_areas` is loaded into the coordinator area definition for the
   next map-card rendering/editing pass.
 
+Static 2.15.16 XAPK analysis has now recovered the dumping-area write wire
+format without enabling it yet:
+
+- normal add/edit save uses `area_set` with
+  `{dump_grass_areas: [...], delete_dump_areas: [...]}`;
+- remote dumping-area setup uses `ctl_building_dump` with
+  `{dump_grass_areas: [...], state: "build_dump_set"}`;
+- native dump-area objects emitted to those writers contain `id`, `grassId`,
+  `eid`, `remote`, `disable`, `warningType`, and `vertexs`;
+- `vertexs` is an array of integer `[x, y]` pairs in millimetres;
+- the standard app-created dumping area is a 1.5 m x 1.5 m square, represented
+  by four possibly rotated corner points;
+- dump-area IDs are allocated in the 500..599 range.
+
+Dumping-area editing is still intentionally not exposed in Home Assistant until
+a real N8 before/after map-manager capture validates the recovered static wire
+format against the cloud and confirms the persisted `area_setting.json` shape.
+
 Still intentionally not enabled until live N8 validation or the remaining
 payload work is complete: PIN write, DND, voice-pack control, map backup writes,
 advanced maintenance control, and dumping-area editing.
