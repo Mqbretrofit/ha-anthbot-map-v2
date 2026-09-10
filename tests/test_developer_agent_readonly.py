@@ -68,7 +68,9 @@ class DeveloperAgentReadonlyTests(unittest.TestCase):
         self.assertIn("CONF_DEVELOPER_AGENT_ENABLED", optin)
         self.assertIn("async_register_developer_agent_optin", tracker)
         self.assertIn("async_register_developer_agent", tracker)
-        self.assertNotIn("CONF_DEVELOPER_AGENT_ENABLED", config_flow)
+        self.assertIn("CONF_DEVELOPER_AGENT_ENABLED", config_flow)
+        self.assertIn("SERVICE_UPDATE_DEVELOPER_AGENT", config_flow)
+        self.assertIn("DEFAULT_DEVELOPER_AGENT_ENABLED", config_flow)
 
     def test_agent_popup_follows_ha_language_and_is_mirrored(self) -> None:
         source = (FRONTEND / "developer-agent-optin.js").read_text(encoding="utf-8")
