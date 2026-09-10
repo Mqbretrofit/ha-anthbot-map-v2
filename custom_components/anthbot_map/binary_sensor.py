@@ -20,6 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import AnthbotGenieDataUpdateCoordinator
+from .models.n8_control import is_n8_model
 from .task_events import latest_task_cycle_signal, task_event_items
 
 
@@ -323,6 +324,27 @@ BINARY_SENSORS: tuple[AnthbotBinarySensorDescription, ...] = (
     ),
 )
 
+N8_BINARY_SENSORS: tuple[AnthbotBinarySensorDescription, ...] = (
+    AnthbotBinarySensorDescription(
+        key="n8_dumping",
+        name="Grass dumping",
+        icon="mdi:delete-empty-outline",
+        value_fn=lambda data: _truthy(data.get("_n8_dumping")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="n8_grass_bag_in_position",
+        name="Grass bag in position",
+        icon="mdi:delete-variant",
+        value_fn=lambda data: _truthy(data.get("_n8_grass_bag_in_position")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="n8_grass_shield_in_position",
+        name="Grass deflector in position",
+        icon="mdi:shield-check-outline",
+        value_fn=lambda data: _truthy(data.get("_n8_grass_shield_in_position")),
+    ),
+)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -333,11 +355,18 @@ async def async_setup_entry(
     coordinators: list[AnthbotGenieDataUpdateCoordinator] = hass.data[DOMAIN][
         entry.entry_id
     ]
-    async_add_entities(
+    entities: list[BinarySensorEntity] = [
         AnthbotBinarySensorEntity(coordinator, description)
         for coordinator in coordinators
         for description in BINARY_SENSORS
-    )
+    ]
+    for coordinator in coordinators:
+        if is_n8_model(getattr(coordinator.device, "model", None)):
+            entities.extend(
+                AnthbotBinarySensorEntity(coordinator, description)
+                for description in N8_BINARY_SENSORS
+            )
+    async_add_entities(entities)
 
 
 class AnthbotBinarySensorEntity(

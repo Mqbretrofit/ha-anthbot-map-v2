@@ -11,6 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import AnthbotGenieDataUpdateCoordinator
+from .models.n8_control import is_n8_model
 from .zones import async_update_zone_settings, auto_zones, manual_zones
 
 _MODE_TO_RAW: dict[str, int] = {
@@ -18,6 +19,13 @@ _MODE_TO_RAW: dict[str, int] = {
     "Efficient": 1,
 }
 _RAW_TO_MODE = {value: key for key, value in _MODE_TO_RAW.items()}
+
+_N8_WORK_MODE_TO_RAW: dict[str, int] = {
+    "Mulch": 0,
+    "Collect": 1,
+    "Sweep": 2,
+}
+_N8_RAW_TO_WORK_MODE = {value: key for key, value in _N8_WORK_MODE_TO_RAW.items()}
 
 
 async def async_setup_entry(
@@ -31,6 +39,8 @@ async def async_setup_entry(
     ]
     entities: list[SelectEntity] = []
     for coordinator in coordinators:
+        if is_n8_model(getattr(coordinator.device, "model", None)):
+            entities.append(AnthbotN8WorkModeSelect(coordinator))
         for zone_kind, zones in (
             ("manual", manual_zones(coordinator.reported_state)),
             ("auto", auto_zones(coordinator.reported_state)),
@@ -44,6 +54,62 @@ async def async_setup_entry(
                         )
                     )
     async_add_entities(entities)
+
+
+class AnthbotN8WorkModeSelect(
+    CoordinatorEntity[AnthbotGenieDataUpdateCoordinator], SelectEntity
+):
+    """N8 grass handling mode: mulch, collect or sweep."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Mowing work mode"
+    _attr_icon = "mdi:grass"
+    _attr_options = list(_N8_WORK_MODE_TO_RAW)
+
+    def __init__(self, coordinator: AnthbotGenieDataUpdateCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.client.serial_number}_n8_work_mode"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, coordinator.client.serial_number)},
+            manufacturer="Anthbot",
+            model=coordinator.device.model,
+            name=coordinator.device.alias,
+        )
+
+    @property
+    def current_option(self) -> str | None:
+        """Return the currently reported N8 work mode."""
+        param_set = self.coordinator.reported_state.get("param_set")
+        if not isinstance(param_set, dict):
+            return None
+        value = param_set.get("work_mode")
+        try:
+            raw = int(value)
+        except (TypeError, ValueError):
+            return None
+        return _N8_RAW_TO_WORK_MODE.get(raw)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, int | str | None]:
+        """Expose the exact raw N8 work-mode value."""
+        param_set = self.coordinator.reported_state.get("param_set")
+        value = param_set.get("work_mode") if isinstance(param_set, dict) else None
+        return {
+            "serial_number": self.coordinator.client.serial_number,
+            "model": self.coordinator.device.model,
+            "raw_work_mode": value,
+        }
+
+    async def async_select_option(self, option: str) -> None:
+        """Set N8 work mode through the app-compatible param_set command."""
+        raw_value = _N8_WORK_MODE_TO_RAW.get(option)
+        if raw_value is None:
+            raise ValueError(f"Unsupported N8 work mode: {option}")
+        await self.coordinator.client.async_publish_service_command(
+            cmd="param_set",
+            data={"work_mode": raw_value},
+        )
+        await self.coordinator.async_request_refresh()
 
 
 class AnthbotZoneMowingModeSelect(

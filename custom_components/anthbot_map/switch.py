@@ -15,6 +15,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .api import AnthbotGenieApiError
 from .const import DOMAIN
 from .coordinator import AnthbotGenieDataUpdateCoordinator
+from .models.n8_control import is_n8_model
 from .zones import async_update_zone_settings, auto_zones, manual_zones
 
 
@@ -60,6 +61,14 @@ SWITCHES: tuple[AnthbotSwitchDescription, ...] = (
     AnthbotSwitchDescription(key="automatic_dock_mowing_enabled", name="Automatic dock-area mowing"),
 )
 
+N8_SWITCHES: tuple[AnthbotSwitchDescription, ...] = (
+    AnthbotSwitchDescription(
+        key="n8_anti_loss_enabled",
+        name="Anti-loss protection",
+        icon="mdi:map-marker-radius-outline",
+    ),
+)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -77,6 +86,11 @@ async def async_setup_entry(
     ]
     entities.extend(AnthbotBatterySaverSwitchEntity(coordinator) for coordinator in coordinators)
     for coordinator in coordinators:
+        if is_n8_model(getattr(coordinator.device, "model", None)):
+            entities.extend(
+                AnthbotSwitchEntity(coordinator, description)
+                for description in N8_SWITCHES
+            )
         for zone_kind, zones in (
             ("manual", manual_zones(coordinator.reported_state)),
             ("auto", auto_zones(coordinator.reported_state)),
@@ -188,6 +202,8 @@ class AnthbotSwitchEntity(
     def is_on(self) -> bool:
         """Return current switch value."""
         state = self.coordinator.reported_state
+        if self.entity_description.key == "n8_anti_loss_enabled":
+            return _coerce_enabled_value(state.get("anti_loss_switch"))
         if self.entity_description.key == "rain_perception_enabled":
             return _coerce_enabled_value(state.get("rain_switch"))
         if self.entity_description.key == "visual_obstacle_detection_enabled":
@@ -211,6 +227,17 @@ class AnthbotSwitchEntity(
     async def _async_set_param_toggle(self, field: str, enabled: bool) -> None:
         await self.coordinator.client.async_publish_service_command(
             cmd="param_set", data={field: 1 if enabled else 0}
+        )
+        await self.coordinator.client.async_request_all_properties()
+        await asyncio.sleep(1)
+        await self.coordinator.async_request_refresh()
+
+    async def _async_set_anti_loss_enabled(self, enabled: bool) -> None:
+        """Set N8 anti-loss protection."""
+        if not is_n8_model(getattr(self.coordinator.device, "model", None)):
+            raise AnthbotGenieApiError("Anti-loss protection is only supported by N8")
+        await self.coordinator.client.async_publish_service_command(
+            cmd="anti_loss_switch", data=1 if enabled else 0
         )
         await self.coordinator.client.async_request_all_properties()
         await asyncio.sleep(1)
@@ -290,6 +317,9 @@ class AnthbotSwitchEntity(
 
     async def async_turn_on(self, **kwargs) -> None:
         """Turn switch on."""
+        if self.entity_description.key == "n8_anti_loss_enabled":
+            await self._async_set_anti_loss_enabled(True)
+            return
         if self.entity_description.key == "rain_perception_enabled":
             await self._async_set_rain_perception_enabled(True)
             return
@@ -306,6 +336,9 @@ class AnthbotSwitchEntity(
 
     async def async_turn_off(self, **kwargs) -> None:
         """Turn switch off."""
+        if self.entity_description.key == "n8_anti_loss_enabled":
+            await self._async_set_anti_loss_enabled(False)
+            return
         if self.entity_description.key == "rain_perception_enabled":
             await self._async_set_rain_perception_enabled(False)
             return

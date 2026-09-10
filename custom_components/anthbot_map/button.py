@@ -36,6 +36,7 @@ from .firmware_diagnostics import (
     report_filename,
     write_firmware_diagnostics_report,
 )
+from .models.n8_control import is_n8_model
 from .zones import active_manual_zone_ids, auto_zones, manual_zones
 
 _LOGGER = logging.getLogger(__name__)
@@ -85,6 +86,19 @@ BUTTONS: tuple[AnthbotButtonDescription, ...] = (
         key="export_firmware_diagnostics",
         name="Export & send firmware diagnostics",
         icon="mdi:file-upload-outline",
+    ),
+)
+
+N8_BUTTONS: tuple[AnthbotButtonDescription, ...] = (
+    AnthbotButtonDescription(
+        key="start_dump",
+        name="Start grass dumping",
+        icon="mdi:delete-empty-outline",
+    ),
+    AnthbotButtonDescription(
+        key="stop_dump",
+        name="Stop grass dumping",
+        icon="mdi:stop-circle-outline",
     ),
 )
 
@@ -176,8 +190,6 @@ def _install_automatic_diagnostics_reporting(
         if previous is not None and now - previous < _AUTO_DIAGNOSTICS_REPEAT_SECONDS:
             return
 
-        # Automatic reports omit the plain serial number and alias; the report
-        # retains a one-way serial hash for repeated-fault correlation.
         report = build_firmware_diagnostics_report(
             coordinator,
             include_raw_state=False,
@@ -216,6 +228,11 @@ async def async_setup_entry(
     ]
 
     for coordinator in coordinators:
+        if is_n8_model(getattr(coordinator.device, "model", None)):
+            entities.extend(
+                AnthbotButtonEntity(coordinator, description, entry)
+                for description in N8_BUTTONS
+            )
         _install_automatic_diagnostics_reporting(hass, entry, coordinator)
         for zone in manual_zones(coordinator.reported_state):
             zone_id = zone.get("id")
@@ -296,9 +313,6 @@ class AnthbotButtonEntity(
                 "Home Assistant local media directory is unavailable; configure media_source first"
             )
 
-        # Keep the existing local export fully useful to the owner: the local
-        # copy may contain the mower serial and alias, but still excludes raw
-        # credentials/tokens and raw coordinator state.
         report = build_firmware_diagnostics_report(
             self.coordinator,
             include_raw_state=False,
@@ -321,9 +335,6 @@ class AnthbotButtonEntity(
         check = no_go.get("check") if isinstance(no_go, dict) else {}
         device = report.get("device") if isinstance(report, dict) else {}
 
-        # Pressing this explicitly named Export & Send button is the user's
-        # manual send action. Keep server data aligned with automatic reports:
-        # omit the plain serial/alias and retain only the one-way serial hash.
         installation_id = self._config_entry.data.get(CONF_DEVELOPER_INSTALLATION_ID)
         upload_status = "skipped_no_installation_id"
         server_uploaded = False
@@ -397,9 +408,6 @@ class AnthbotButtonEntity(
         """Run the button action."""
         key = self.entity_description.key
         if key == "export_firmware_diagnostics":
-            # The explicit manual action saves a local JSON and sends the same
-            # diagnostics content in privacy-filtered form to the project server.
-            # It does not wake or otherwise command the mower.
             await self._async_export_firmware_diagnostics()
             return
         if key == "connect_cloud":
@@ -438,6 +446,20 @@ class AnthbotButtonEntity(
         elif key == "return_to_dock":
             await async_prepare_cloud_connection(self.coordinator)
             await self.coordinator.client.async_publish_service_command(cmd="charge_start")
+        elif key == "start_dump":
+            if not is_n8_model(getattr(self.coordinator.device, "model", None)):
+                raise AnthbotGenieApiError("Grass dumping is only supported by N8")
+            await async_prepare_cloud_connection(self.coordinator)
+            await self.coordinator.client.async_publish_service_command(
+                cmd="start_dump", data=1
+            )
+        elif key == "stop_dump":
+            if not is_n8_model(getattr(self.coordinator.device, "model", None)):
+                raise AnthbotGenieApiError("Grass dumping is only supported by N8")
+            await async_prepare_cloud_connection(self.coordinator)
+            await self.coordinator.client.async_publish_service_command(
+                cmd="stop_dump", data=1
+            )
         elif key == "resume_mow":
             task = self.coordinator.last_mowing_task
             if task is None:
@@ -483,8 +505,6 @@ class AnthbotButtonEntity(
                         f"Unsupported previous mowing task: {task_type}"
                     )
         elif key == "pause_mow":
-            # Also recover the current zone when mowing was started from the
-            # official app rather than from a Home Assistant button.
             if self.coordinator.last_mowing_task is None:
                 active_zone_ids = active_manual_zone_ids(
                     self.coordinator.reported_state
@@ -532,10 +552,6 @@ class AnthbotZoneButtonEntity(
         zone_name = zone.get("name")
         if not isinstance(zone_name, str) or not zone_name.strip():
             zone_name = str(zone_id)
-        # Manual zones already have a user-facing name (for example "Back" or
-        # "Zóna 1"), so do not prepend another "Zone" label. Keep automatically
-        # detected areas distinguishable without mixing the UI language into the
-        # user's zone name.
         self._attr_name = zone_name if zone_kind == "manual" else f"Auto: {zone_name}"
         self._attr_unique_id = (
             f"{coordinator.client.serial_number}_{zone_kind}_zone_{zone_id}"
