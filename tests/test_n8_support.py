@@ -124,6 +124,16 @@ def test_n8_map_adapter_reuses_decoders_without_expanding_m_series_guard() -> No
     assert '"dump_grass_area_count"' in n8_map
 
 
+def test_n8_map_adapter_probes_time_setting_read_only() -> None:
+    n8_map = _read(MODELS / "n8_map.py")
+    assert '"time_setting.json"' in n8_map
+    assert "_decode_n8_time_setting" in n8_map
+    assert "_summarize_n8_time_setting" in n8_map
+    assert 'setattr(self, "_n8_time_setting_summary", time_summary)' in n8_map
+    assert '"dnd_count"' in n8_map
+    assert '"plan_version"' in n8_map
+
+
 def test_n8_dump_buttons_are_only_added_for_n8() -> None:
     buttons = _read(INTEGRATION / "button.py")
     assert "N8_BUTTONS:" in buttons
@@ -217,3 +227,13 @@ def test_existing_core_button_keys_are_preserved() -> None:
         "export_firmware_diagnostics",
     ):
         assert f'key="{key}"' in buttons
+
+
+def test_n8_maintenance_reset_ids_match_current_mgs_app() -> None:
+    buttons = _read(INTEGRATION / "button.py")
+    control = _read(MODELS / "n8_control.py")
+    assert '"reset_blade_maintenance": 1' in buttons
+    assert '"reset_camera_maintenance": 2' in buttons
+    assert '"reset_dock_contact_maintenance": 0' in buttons
+    assert 'cmd="robot_maintenance_reset", data={"reset_id": reset_ids[key]}' in buttons
+    assert '"robot_maintenance_reset"' in control
