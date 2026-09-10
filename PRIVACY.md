@@ -4,7 +4,7 @@ Developer reporting is optional and disabled by default. The ANTHBOT Map integra
 
 ## Anonymous usage statistics
 
-If **Share anonymous usage statistics with the developer** is enabled, the integration sends a small report when the integration is installed or when an existing installation is opted in later.
+If **Share anonymous usage statistics with the developer** is enabled, the integration sends a small report when an existing installation is opted in and then sends a small heartbeat when the integration starts or reloads. This keeps the reported integration version, Home Assistant version and discovered mower/model counts current after updates.
 
 The payload contains:
 
