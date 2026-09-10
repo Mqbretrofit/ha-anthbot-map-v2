@@ -1,0 +1,93 @@
+"""Pure helpers for the statically recovered N8/MGS03 voice-package payload.
+
+These builders deliberately do not fetch packages, request signed URLs or publish
+commands. Public Home Assistant voice-package selection remains disabled until a
+real N8 validates package compatibility and report-side installation behavior.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
+
+_REQUIRED_PACKET_FIELDS = (
+    "id",
+    "english_name",
+    "sex",
+    "md5",
+    "version",
+)
+
+
+def build_voice_set_data(
+    packet: Mapping[str, Any],
+    *,
+    presigned_url: str,
+) -> dict[str, Any]:
+    """Return the exact 2.15.16 `voice_set.data` object.
+
+    `presigned_url` must already have been obtained through the app's voice
+    signed-URL flow. This helper intentionally does not derive a filename from
+    `vp_url`, because that normalization helper has not been fully reconstructed.
+    """
+    if not isinstance(packet, Mapping):
+        raise ValueError("voice packet must be a mapping")
+
+    missing = [key for key in _REQUIRED_PACKET_FIELDS if key not in packet]
+    if missing:
+        raise ValueError(f"voice packet missing required fields: {', '.join(missing)}")
+
+    if not isinstance(presigned_url, str) or not presigned_url.strip():
+        raise ValueError("presigned_url must be a non-empty string")
+
+    return {
+        "music_package": packet["id"],
+        "english_name": packet["english_name"],
+        "sex": packet["sex"],
+        "music_url": presigned_url,
+        "music_md5": packet["md5"],
+        "category": "voice_pack",
+        "version": packet["version"],
+    }
+
+
+def build_voice_set_command(
+    packet: Mapping[str, Any],
+    *,
+    presigned_url: str,
+) -> dict[str, Any]:
+    """Return the exact app-style `voice_set` command object."""
+    return {
+        "cmd": "voice_set",
+        "data": build_voice_set_data(packet, presigned_url=presigned_url),
+    }
+
+
+def build_voice_signed_url_request(
+    *,
+    serial_number: str,
+    filename: str,
+) -> dict[str, str]:
+    """Return the proven voice signed-URL request object.
+
+    The caller supplies the already-derived filename. The current app derives
+    that value from the selected packet's `vp_url`; this helper intentionally
+    does not guess the app's filename-normalization algorithm.
+    """
+    if not isinstance(serial_number, str) or not serial_number.strip():
+        raise ValueError("serial_number must be a non-empty string")
+    if not isinstance(filename, str) or not filename.strip():
+        raise ValueError("filename must be a non-empty string")
+    return {
+        "sn": serial_number,
+        "category": "voice",
+        "sub_category": "",
+        "filename": filename,
+    }
+
+
+__all__ = [
+    "build_voice_set_command",
+    "build_voice_set_data",
+    "build_voice_signed_url_request",
+]
