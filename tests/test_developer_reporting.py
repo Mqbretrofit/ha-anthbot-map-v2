@@ -165,6 +165,14 @@ class DeveloperReportingTests(unittest.TestCase):
         self.assertIn("from .developer_optin import async_register_developer_optin", source)
         self.assertIn("await async_register_developer_optin(hass)", source)
 
+    def test_enabled_anonymous_usage_heartbeats_on_each_integration_load(self) -> None:
+        source = (PACKAGE_DIR / "device_tracker.py").read_text(encoding="utf-8")
+        self.assertIn("CONF_SHARE_ANONYMOUS_USAGE", source)
+        self.assertIn("_async_schedule_usage_heartbeat", source)
+        self.assertIn("await _async_schedule_usage_heartbeat(hass, entry, coordinators)", source)
+        self.assertIn('event="heartbeat"', source)
+        self.assertIn("hass.async_create_task(", source)
+
     def test_privacy_document_states_reporting_is_optional(self) -> None:
         privacy = (ROOT / "PRIVACY.md").read_text(encoding="utf-8")
         self.assertIn("optional and disabled by default", privacy)
