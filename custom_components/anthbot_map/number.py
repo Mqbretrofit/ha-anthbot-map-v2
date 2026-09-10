@@ -20,6 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import AnthbotGenieDataUpdateCoordinator
+from .models.n8_control import is_n8_model
 from .zones import async_update_zone_settings, auto_zones, manual_zones
 
 
@@ -126,6 +127,25 @@ NUMBERS: tuple[AnthbotNumberDescription, ...] = (
 )
 
 
+N8_NUMBERS: tuple[AnthbotNumberDescription, ...] = (
+    AnthbotNumberDescription(
+        key="n8_anti_loss_radius_setting",
+        name="Anti-loss alarm radius",
+        native_min_value=50,
+        native_max_value=500,
+        native_step=1,
+        native_unit_of_measurement="m",
+        mode=NumberMode.BOX,
+        getter=lambda data: (
+            data.get("device_config", {}).get("anti_loss_radius")
+            if isinstance(data.get("device_config"), dict)
+            and data.get("device_config", {}).get("anti_loss_radius") is not None
+            else data.get("anti_loss_radius")
+        ),
+    ),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -141,6 +161,11 @@ async def async_setup_entry(
         for description in NUMBERS
     ]
     for coordinator in coordinators:
+        if is_n8_model(getattr(coordinator.device, "model", None)):
+            entities.extend(
+                AnthbotNumberEntity(coordinator, description)
+                for description in N8_NUMBERS
+            )
         for zone_kind, zones in (
             ("manual", manual_zones(coordinator.reported_state)),
             ("auto", auto_zones(coordinator.reported_state)),
@@ -264,6 +289,13 @@ class AnthbotNumberEntity(
                     "switch": switch_value,
                     "continue_time": int_value * 3600,
                 },
+            )
+        elif key == "n8_anti_loss_radius_setting":
+            if int_value < 50 or int_value > 500:
+                raise ValueError("N8 anti-loss radius must be 50..500 m")
+            await self.coordinator.client.async_publish_service_command(
+                cmd="anti_loss_radius",
+                data=int_value,
             )
         await self.coordinator.client.async_request_all_properties()
         await asyncio.sleep(1)
