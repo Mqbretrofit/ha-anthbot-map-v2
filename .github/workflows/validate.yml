@@ -35,10 +35,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Stage N8 validation build
         run: |
-          mkdir -p build/custom_components
+          mkdir -p build/custom_components build/tools
           cp -a custom_components/anthbot_map build/custom_components/
-          cp tools/n8_validation_bundle.py build/
+          cp tools/n8_validation_bundle.py build/tools/
+          cp tools/n8_validation_windows.ps1 build/tools/
           cp N8_VALIDATION_WORKFLOW.md build/
+          cp N8_VALIDATION_QUICKSTART.md build/
           cp N8_VALIDATION_BUILD.md build/
       - uses: actions/upload-artifact@v4
         with:
