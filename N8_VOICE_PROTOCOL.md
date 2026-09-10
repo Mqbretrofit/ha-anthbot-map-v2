@@ -190,9 +190,11 @@ girl_fr -> French_girl
 
 This is useful for interpreting existing report-side state but is not used as evidence for an N8 package writer by itself.
 
-## What still requires real N8 validation
+## Validation boundary
 
-The wire schema is no longer the blocker. Before exposing a public N8 voice-package selector, validate on a real N8:
+The wire schema is no longer the blocker. A public selector remains disabled because a package installation downloads and applies mower firmware resources. Before exposing that action, a real N8 must confirm that the package list is applicable to the device and that the recovered state/acknowledgement lifecycle matches its firmware.
+
+Specifically validate:
 
 - `/voice/package/language` returns packages applicable to that N8/account/region;
 - the selected packet's `vp_url` can be converted by the app flow into a usable signed URL;
