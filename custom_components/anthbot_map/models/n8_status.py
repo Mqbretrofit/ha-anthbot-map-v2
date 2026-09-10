@@ -109,19 +109,21 @@ def _add_n8_status_aliases(state: dict[str, Any]) -> None:
         if shield is not None:
             state["_n8_grass_shield_in_position"] = shield
 
-    # Real N8/MGS03 property-shadow captures report the physical-panel Child
-    # Lock under device_config.child_lock_switch. Keep it separate from
-    # ui_lock: that field is the app/device command lock and has different
-    # semantics. This alias is read-only until the Child Lock writer is proven.
+    # An M9 Pro shared-schema capture reports physical-panel Child Lock under
+    # device_config.child_lock_switch. The 2.15.16 bundle still does not prove
+    # this as the N8 write key, so only mirror it when an actual N8 state
+    # contains the field. Keep it separate from ui_lock, whose semantics are
+    # the generic app/device command lock.
     device_config = state.get("device_config")
     if isinstance(device_config, dict):
         child_lock = device_config.get("child_lock_switch")
         if child_lock is not None:
             state["_n8_child_lock"] = child_lock
 
-    # The same live N8 capture confirms the RTK selector acknowledgement shape:
-    # ctl_rtk_base.rtk_base_state, plus the reported NRTK SDK selector value.
-    # These aliases are observation-only; no public RTK writer is enabled here.
+    # M9 Pro shared-schema evidence also exposes ctl_rtk_base acknowledgement
+    # fields. Static 2.15.16 MGS analysis independently proves the 1/2/3 RTK
+    # mode command mapping, but the report path still needs a real N8 capture.
+    # Mirror these values only when they are genuinely present in N8 state.
     rtk_base_control = state.get("ctl_rtk_base")
     if isinstance(rtk_base_control, dict):
         rtk_base_state = rtk_base_control.get("rtk_base_state")
