@@ -2,22 +2,20 @@
 
 Status: static-analysis working notes for `feature/n8-support`.
 
-These notes are intentionally separate from the release branches. In particular, they do **not** change `release/v2.4.6-beta.10`, do not modify the already published `v2.4.6-beta.11` tag, and do not enable unvalidated write commands.
+These notes are intentionally separate from the release branches. They do **not** change `release/v2.4.6-beta.10`, do not modify the already published `v2.4.6-beta.11` tag, and do not enable unvalidated write commands.
 
 ## Sources used
 
 - ANTHBOT Android app protocol reference generated from Hermes bytecode (`2.15.15`).
 - Direct static analysis of the real ANTHBOT `2.15.16` Android XAPK. Its `index.android.bundle` is Hermes bytecode version 98.
+- Direct DEX analysis of the 2.15.16 MGS native map bridge (`MGSMapViewManager`, `com.anthbot.mgs.map.A`, `t4/e`, `u4/h`, `v4/e`).
 - N8 command surface isolated in `models/n8_control.py`.
-- Official ANTHBOT localization/copy workbook containing explicit `mgs` and `MGS03` feature markers and current MGS03 error/event copy.
-- Privacy-safe live shadow probes from other M-series devices. These are used only as **shared-schema clues**, never as proof that N8 uses the same field until N8 evidence confirms it.
+- Official ANTHBOT localization/copy workbook containing explicit `mgs` / `MGS03` feature markers and current MGS03 error/event copy.
+- Privacy-safe live shadow probes from other M-series devices, used only as shared-schema clues until N8 confirms them.
 
 ## Strong MGS03 / N8 hardware evidence
 
-The official app copy explicitly tags the following as `MGS03`:
-
-- grass bag / deflector installed check;
-- failure state when the grass bag or deflector is not installed.
+Official app copy explicitly tags grass-bag / deflector installation checks and related failure states as `MGS03` behavior.
 
 Current N8 status adapter exposes:
 
@@ -27,47 +25,16 @@ Current N8 status adapter exposes:
 
 from the N8 `mode` / `robot_sta` and `grass_state` reports.
 
-## Shared MGS shadow clues from a live M9 Pro
-
-A current privacy-safe M9 Pro shadow probe exposes this `device_config` shape:
-
-```text
-device_config.anti_loss_radius
-device_config.anti_loss_switch
-device_config.camera_switch
-device_config.child_lock_switch
-device_config.indoor_switch
-device_config.log_switch
-device_config.pin_code
-device_config.pobctl_level
-device_config.pobctl_switch
-device_config.rain_continue_time
-device_config.rain_switch
-device_config.volume
-```
-
-The same live probe also exposes:
-
-```text
-grass_state.grass_bag_in_position
-grass_state.grass_shield_in_position
-mapping_task.in_dump
-```
-
-This is a useful shared-schema clue, not proof that N8 reports every field at exactly the same path.
-
 ## Current 2.15.16 MGS settings transport: `device_config`
 
-Direct HBC98 analysis identified the current MGS settings hook `useDeviceConfig` and its writer `toggleDeviceConfig`.
-
-The current UI publishes settings as:
+Direct HBC98 analysis identified the current MGS settings writer. Current UI settings are published as:
 
 ```text
 cmd: device_config
 data: { ...device_config fields... }
 ```
 
-The current hook reads these fields:
+Confirmed current fields include:
 
 ```text
 log_switch
@@ -82,129 +49,72 @@ volume
 camera_switch
 ```
 
-Older command-specific builders such as `anti_loss_switch`, `anti_loss_radius`, `ctl_rainer` and `perception_obstacle_ctl` still exist in the bundle. However, the current MGS settings hook writes through `device_config`.
-
-For compatibility with the shared integration API, the N8-only transport now converts the existing shared calls into the current app-native command without changing Genie/M5/M9/M9 Pro routing.
+Older command-specific builders still exist in the bundle, but the current MGS settings path writes through `device_config`. The N8-only adapter translates shared Home Assistant calls without changing Genie/M5/M9/M9 Pro routing.
 
 ### Proven current payloads
 
+```text
 Rain:
+  device_config {rain_switch: 0|1, rain_continue_time: <seconds>}
 
-```text
-cmd: device_config
-data: {
-  rain_switch: 0|1,
-  rain_continue_time: <seconds>
-}
-```
+Anti-loss:
+  device_config {anti_loss_switch: 0|1}
+  device_config {anti_loss_radius: <integer>}
 
-Anti-loss switch:
-
-```text
-cmd: device_config
-data: {anti_loss_switch: 0|1}
-```
-
-Anti-loss radius:
-
-```text
-cmd: device_config
-data: {anti_loss_radius: <integer>}
-```
-
-Visual obstacle switch:
-
-```text
-cmd: device_config
-data: {pobctl_switch: 0|1}
-```
-
-Visual obstacle sensitivity:
-
-```text
-cmd: device_config
-data: {pobctl_level: <0|1|2>}
+Visual obstacle detection:
+  device_config {pobctl_switch: 0|1}
+  device_config {pobctl_level: 0|1|2}
 ```
 
 ## Anti-loss / boundary security
 
-Official MGS UI contains anti-loss mode and configurable boundary-security alarm distance.
+Static 2.15.16 analysis proves:
 
-Static 2.15.16 analysis now proves:
-
-- user-facing unit: **meters** (`m`);
-- value is parsed as an integer;
+- user-facing unit: **metres**;
+- value is integer;
 - minimum accepted value: **50 m**;
-- current writer: `device_config` with `anti_loss_radius`.
+- current writer: `device_config.anti_loss_radius`.
 
-The UI placeholder is `>=50m`, and invalid values below the minimum use the localized `safe_distance_limit` message with distance `50`.
-
-No explicit maximum or step beyond integer input has been found yet. Therefore the existing N8 anti-loss on/off switch can use the proven `device_config` route, but a Home Assistant anti-loss-radius number entity remains intentionally blocked until an upper bound is proven or a safe unrestricted-input design is chosen and live-tested.
+No explicit maximum has been recovered, so the anti-loss radius Home Assistant number remains blocked. The N8 anti-loss on/off switch can use the proven current route.
 
 ## Child lock / `ui_lock`
 
-The official MGS copy contains a **Child Lock** feature whose semantics are:
+Official MGS copy contains Child Lock: robot panel buttons are disabled while power and emergency-stop remain functional.
 
-- enabling it disables the robot panel buttons;
-- power and emergency-stop remain functional.
+A live M9 Pro reports `device_config.child_lock_switch`, but direct 2.15.16 Hermes analysis found no literal `child_lock` or `child_lock_switch` string. `ui_lock` exists only in confirmed read/gating paths and blocks commands through `device_locked` / `DEVICE_LOCK_FORBID_COMMAND`.
 
-A live M9 Pro reports `device_config.child_lock_switch`.
-
-However, direct `2.15.16` Hermes analysis found **no literal `child_lock` or `child_lock_switch` string in the bundle**. The bundle does contain `ui_lock`, but all confirmed references are read/gating paths. `checkDeviceOnline` uses `ui_lock.value` to forbid commands and surfaces the `device_locked` / `DEVICE_LOCK_FORBID_COMMAND` state.
-
-No `ui_lock` writer was found. Therefore `ui_lock` is a device/UI lock state but is **not proven to be the Child Lock setting**. No Child Lock Home Assistant write entity should be exposed until an N8 before/after capture identifies the reported field and exact official-app write path.
+Therefore `ui_lock` is **not** treated as proof of the Child Lock writer. No N8 Child Lock write entity should be exposed until a real N8 before/after capture identifies the exact field and command.
 
 ## Visual obstacle sensitivity
 
-Static `2.15.16` analysis now proves the numeric option mapping exactly:
+Static 2.15.16 analysis proves the numeric mapping:
 
-- `0` = **Low**
-- `1` = **Medium**
-- `2` = **High**
+- `0` = Low
+- `1` = Medium
+- `2` = High
 
-The option builder creates the values in the app with those IDs, and the low-level path has a dedicated warning before applying level `0`.
-
-Official MGS descriptions:
-
-- High: also avoids small obstacles such as stepping stones / leaf patches;
-- Medium: avoids common obstacles such as stone paths / patio edges;
-- Low: only avoids larger non-grass areas such as patios / gravel.
-
-The shared Home Assistant control still calls:
-
-```text
-cmd: perception_obstacle_ctl
-data: {switch: 0|1, level: 0|1|2}
-```
-
-For N8 only, the transport converts that to the current app-native `device_config` fields `pobctl_switch` and `pobctl_level`. Other mower families keep their existing route.
-
-A future N8-only UI cleanup can replace the raw `0..2` number with named Low/Medium/High options without guessing.
+The N8 adapter translates the existing shared obstacle command to current `device_config.pobctl_switch` / `device_config.pobctl_level` fields. A future N8-only UI can safely use named Low/Medium/High options after live path confirmation.
 
 ## Rain behavior
 
-The shared Home Assistant input is:
+Shared Home Assistant input remains:
 
 ```text
-cmd: ctl_rainer
-data: {switch: ..., continue_time: ...}
+ctl_rainer {switch: ..., continue_time: ...}
 ```
 
-For N8 only, the current transport converts it to:
+N8-only transport converts it to:
 
 ```text
-cmd: device_config
-data: {
+device_config {
   rain_switch: ...,
   rain_continue_time: ...
 }
 ```
 
-Official MGS copy also confirms that map building is prohibited in rain/night and the mower can automatically return to the charging station when rain/night is detected during map creation.
-
 ## N8 grass dumping
 
-Confirmed N8 command surface includes:
+Confirmed command surface includes:
 
 - `start_dump`
 - `stop_dump`
@@ -212,46 +122,137 @@ Confirmed N8 command surface includes:
 - `area_set`
 - `ridable_area_set`
 
-Home Assistant currently exposes only `start_dump` and `stop_dump` as direct buttons.
+Home Assistant currently exposes only direct Start/Stop grass dumping buttons. Dumping-area write UI is still disabled pending live N8 validation.
 
-Direct 2.15.16 HBC98 analysis has now reconstructed the outer dumping-area control protocol:
+### Remote dumping lifecycle
 
-Create/init mode:
-
-```text
-cmd: ctl_building_dump
-data: {state: build_dump_init}
-```
-
-Finish:
+Direct HBC98 analysis proves:
 
 ```text
-cmd: ctl_building_dump
-data: {state: build_dump_finish}
+ctl_building_dump {state: build_dump_init}
+ctl_building_dump {state: build_dump_continue}
+ctl_building_dump {state: build_dump_finish}
+ctl_building_dump {dump_grass_areas: [...], state: build_dump_set}
 ```
 
-Continue:
+The first three paths use 10-second timeouts. `build_dump_set` uses a 120-second timeout and waits for the current `map.area_id` path to update.
+
+### Exact native dumping-area object
+
+DEX analysis of the MGS native map bridge proves that the React Native event serializer emits:
+
+```json
+{
+  "vertexs": [[x1, y1], [x2, y2], [x3, y3], [x4, y4]],
+  "id": 500,
+  "grassId": 500,
+  "eid": -1,
+  "remote": false,
+  "disable": false,
+  "warningType": 0
+}
+```
+
+Important details:
+
+- `vertexs` is the protocol spelling.
+- each vertex is exactly `[int, int]`;
+- `id` and `grassId` are emitted from the same integer native field;
+- native `eid` defaults to `-1`;
+- `remote` is boolean;
+- `disable` is boolean;
+- `warningType` is integer;
+- the native parser requires `id` and `vertexs` and accepts optional `remote`, `eid`, `disable`;
+- native `addGrass(id, name, isRemote)` stores a `name` for the map overlay, but the serializer used by the current write path does **not** emit `name`. HBC comparison code can still read `name`, so it is treated as optional/app-side metadata rather than a required current wire field.
+
+### Exact coordinate transform
+
+The native map converter labels map metadata as `resolution`, `minX` and `minY` and performs:
 
 ```text
-cmd: ctl_building_dump
-data: {state: build_dump_continue}
+x_mm = int((x_transformed * resolution + minX) * 1000)
+y_mm = int((y_transformed * resolution + minY) * 1000)
 ```
 
-Set dumping areas:
+Inverse:
+
+```text
+x_transformed = (x_mm * 0.001 - minX) / resolution
+y_transformed = (y_mm * 0.001 - minY) / resolution
+```
+
+followed by the map matrix transform.
+
+Therefore `vertexs` contains **map/world millimetre coordinates**, not pixels and not latitude/longitude.
+
+### Official app geometry
+
+The native map UI creates a dumping area with side length:
+
+```text
+mapOverlayScale / mapResolution * 1.5
+```
+
+so the real map/world footprint is **1.5 m x 1.5 m**.
+
+The four corners are generated as left/top, right/top, right/bottom, left/bottom. If rotated, they are first rotated around the rectangle centre, then converted to millimetre integer pairs.
+
+### ID range
+
+The app allocates dump-area IDs with `getNewId(..., 500, 599)`, and the submit handler explicitly filters the same range. Dumping-area IDs are therefore **500..599**.
+
+### Normal add/edit save: exact `area_set` payload
+
+The native `topGrassAreaSubmit` event returns `nativeEvent.grasses`. The HBC handler forwards changed native objects unchanged to `updateGrassAreas(changedAreas, [])`.
+
+`updateGrassAreas` wraps them as:
+
+```json
+{
+  "dump_grass_areas": [...changed native grass objects...],
+  "delete_dump_areas": []
+}
+```
+
+and the generic area writer publishes:
+
+```text
+cmd: area_set
+data: {
+  dump_grass_areas: [...],
+  delete_dump_areas: [...]
+}
+```
+
+The `area_set` writer waits for `map.area_id` and uses a 30-second timeout.
+
+### Delete save
+
+The delete event exposes `nativeEvent.grassId`. The app calls:
+
+```text
+updateGrassAreas([], [grassId])
+```
+
+so `delete_dump_areas` is an array of integer dumping-area IDs.
+
+### Remote save
+
+Native remote creation emits `topReportRemoteGrass` with the same `nativeEvent.grasses` serializer output. The HBC handler passes that array directly to `setupRemoteGrass`, which sends:
 
 ```text
 cmd: ctl_building_dump
 data: {
-  dump_grass_areas: <area objects>,
+  dump_grass_areas: [...native grass objects...],
   state: build_dump_set
 }
 ```
 
-The `build_dump_set` path uses a 120-second command timeout in the app.
+Detailed static evidence is recorded in `N8_DUMP_PROTOCOL.md`.
 
-The official MGS UI proves support for one-click dumping, dedicated dumping areas, manual/remote area creation, updating an area, electronic-fence based definition, automatic nearest-area selection and invalidation after map changes.
+### App-side dumping-area validation rules
 
-App-side dumping-area validation rules found:
+Recovered UI/native rules include:
 
 - cannot be on the lawn boundary;
 - cannot be on an electronic bridge;
@@ -260,15 +261,20 @@ App-side dumping-area validation rules found:
 - must be at least 1 m from the inner lawn boundary;
 - cannot be within the 0.5 m strip immediately outside the boundary;
 - must be fully inside the plot boundary;
-- dumping-area center cannot be outside the map;
+- dumping-area centre cannot be outside the map;
 - dumping areas must be more than 1 m apart;
-- editing is blocked while an incompatible task is active;
-- creation must start with the mower inside the mapped area;
-- editing can pause the current task.
+- editing is blocked during incompatible tasks;
+- remote creation must start with the mower inside the mapped area.
 
-### Dumping-area writes still blocked
+### Dumping-area writes still blocked from HA
 
-The outer command is now known, but the exact `dump_grass_areas` geometry/object schema still needs to be reconstructed and matched to a real N8 map archive. Therefore dumping-area editing/writing remains disabled. Reading `dump_grass_areas` from `area_setting.json` is already implemented.
+The static object, coordinate transform and write payload are now recovered. What remains is **live validation**, not basic schema guessing. Before exposing writes we still need one real N8 before/after capture proving that:
+
+1. the cloud accepts the recovered 2.15.16 payload unchanged;
+2. `area_setting.json` persists the expected subset/shape;
+3. `map.area_id` changes as expected;
+4. the real mower applies the same coordinate frame and geometry;
+5. validation/warning behavior is safe enough for a Home Assistant editor.
 
 ## N8 work modes
 
@@ -278,29 +284,13 @@ Current N8 branch exposes:
 - `1` = Collect
 - `2` = Sweep
 
-through:
-
-```text
-cmd: param_set
-data: {work_mode: <0|1|2>}
-```
-
-This selector remains N8-only.
+through `param_set {work_mode: <0|1|2>}` and keeps the selector N8-only.
 
 ## Border / charging-dock behavior
 
-Official MGS UI contains **Border Recharge** and describes return-to-dock behavior along the lawn edge.
+Official MGS UI contains Border Recharge and edge-return behavior. Relevant identifiers include `nest_edge_grass`, `nest_edge_grass_start_each_task`, `nest_param_set`, `near_chg_mow_ctl`, `nest_mow_start`, and `nest_mow_stop`.
 
-Relevant protocol identifiers include:
-
-- `nest_edge_grass`
-- `nest_edge_grass_start_each_task`
-- `nest_param_set`
-- `near_chg_mow_ctl`
-- `nest_mow_start`
-- `nest_mow_stop`
-
-Current integration already has generic edge-following-return and automatic-dock-mowing controls plus N8-native command routing for `nest_mow_start`/`nest_mow_stop` and `param_set`. Exact N8 mapping between the app's Border Recharge UI and reported dock parameters still benefits from live N8 validation.
+Existing generic controls and N8-native routing remain unchanged; exact N8 dock parameter reporting still benefits from live validation.
 
 ## Mapping / multi-map
 
@@ -313,101 +303,55 @@ map_manager_<SN>.tar.gz
 
 using `/device/v2/presigned_url`.
 
-This yields custom/manual areas, region/auto areas, ridable areas and dumping areas.
-
-The app/protocol also exposes:
-
-- `multi_map_ctl`
-- `delete_sub_map`
-- multi-map archive/files;
-- map backup/restore UI paths.
-
-Map backup writes, restore writes, delete-sub-map and multi-map mutation remain disabled pending exact payload reconstruction and live validation.
+The archive supplies custom/manual areas, region/auto areas, ridable areas and dumping areas. `multi_map_ctl`, `delete_sub_map`, map backup and restore paths exist in the app but mutation remains disabled pending exact payload/live validation.
 
 ## Maintenance
 
-MGS UI exposes maintenance for blade/cutter, camera and charging contacts.
+MGS UI exposes blade/cutter, camera and charging-contact maintenance. Protocol identifiers include `maintenance_reset`, `robot_maintenance_reset`, `maintenance_switch`, `maintenance_check`, and `maintenance_ctrl`.
 
-Protocol identifiers include:
-
-- `maintenance_reset`
-- `robot_maintenance_reset`
-- `maintenance_switch`
-- `maintenance_check`
-- `maintenance_ctrl`
-
-The N8 transport recognizes the maintenance command family, but advanced N8 maintenance writes remain intentionally disabled until exact component IDs/object shapes are confirmed.
+Advanced N8 maintenance writes remain disabled until component IDs/object shapes are confirmed.
 
 ## N8/MGS03 error and event evidence
 
-Official current copy contains relevant codes/events including:
+Current copy contains, among others:
 
-- `E213` — Deflector not detected
-- `E212` — Grass bag not detected
-- `E211` — Grass bag close error
-- `E210` — Grass bag open error
-- `E206` — Millimeter-wave sensor warning
-- `E205` — Blade installation issue
+- `E213` — deflector not detected
+- `E212` — grass bag not detected
+- `E211` — grass bag close error
+- `E210` — grass bag open error
+- `E206` — millimetre-wave sensor warning
+- `E205` — blade installation issue
 - `E806` — LiDAR blocked
-- `E805` — High temperature; task paused
-- `E804` — Low temperature; task paused
+- `E805` — high temperature / task paused
+- `E804` — low temperature / task paused
 - `E802` / `E803` — LiDAR anomaly
-- `E801` — Current task timed out
-- `E807` — Map creation failed
-- `E420` — Mowing-height adjustment error
-- `E440` — Grass dumping incomplete; 10-minute completion window before dock return
-- `E106` — System communication error
+- `E801` — current task timed out
+- `E807` — map creation failed
+- `E420` — mowing-height adjustment error
+- `E440` — grass dumping incomplete; 10-minute completion window before dock return
+- `E106` — system communication error
 
-Additional current events include attach-grass-bag prompts, inaccessible/unconfigured dumping area and 4G recharge success.
-
-These should be added through an N8-specific error/event normalization layer once the exact live N8 error field shape is captured. The existing generic numeric `err_code` mapping should not be overloaded with string `E...` codes without payload evidence.
-
-## N8 commands recognized by the isolated transport
-
-`n8_control.py` recognizes:
-
-- mowing: `mow_start`, `mow_pause`, `mow_continue`, `stop_all_tasks`
-- charging: `charge_start`, `charge_pause`, `charge_continue`
-- zones: `custom_area_mow_start`, `custom_area_mow_stop`, `region_mow_start`, `region_mow_stop`, `ridable_mow_start`
-- dock edge: `nest_mow_start`, `nest_mow_stop`
-- point mowing: `mow_point`, `mow_point_stop`
-- dumping: `start_dump`, `stop_dump`, `ctl_building_dump`
-- area/map writes: `area_set`, `ridable_area_set`, `multi_map_ctl`, `delete_sub_map`
-- current settings: `device_config`
-- compatibility inputs translated N8-only: `anti_loss_switch`, `anti_loss_radius`, `ctl_rainer`, `perception_obstacle_ctl`
-- maintenance: `maintenance_switch`, `maintenance_check`, `maintenance_ctrl`, `robot_maintenance_reset`
-- parameters: `param_set`
-- volume: `volume_ctl`
-
-Recognition in the transport is **not** the same as exposing a Home Assistant entity. Write controls should only be exposed when payload semantics and constraints are sufficiently proven.
+These should enter an N8-specific error/event normalization layer only after the exact live N8 error field shape is captured.
 
 ## Privacy-safe N8 diff workflow
 
-N8 diagnostics include an `n8_protocol` discovery block. Use:
+N8 diagnostics include an `n8_protocol` discovery block. Compare two exports with:
 
 ```text
 python tools/compare_n8_protocol_reports.py before.json after.json
 ```
 
-Recommended method:
-
-1. Export N8 diagnostics with the robot idle.
-2. Change exactly one setting in the official app.
-3. Wait for the reported shadow update.
-4. Export N8 diagnostics again.
-5. Run the diff helper.
-
-This turns a Child Lock / anti-loss / sensitivity experiment into exact reported-field changes instead of a manual full-shadow comparison.
+Change exactly one official-app setting between captures to isolate the reported field change.
 
 ## Highest-value next live N8 captures
 
-1. full named `property` and `service` shadow reported state while idle;
-2. before/after Child Lock toggle;
-3. before/after anti-loss radius change;
-4. visual sensitivity Low/Medium/High report values, mainly to confirm the reported path despite the numeric app mapping now being statically proven;
-5. map-manager archive before and after adding/editing one dumping area, to recover the exact `dump_grass_areas` object schema;
+1. full named `property` and `service` shadow while idle;
+2. Child Lock before/after;
+3. anti-loss radius before/after;
+4. visual sensitivity Low/Medium/High report values;
+5. **map-manager archive before and after one dumping-area add/edit/delete** — now primarily to validate the recovered wire schema and learn the persisted subset;
 6. state during `dumpgrass` and after a successful dump;
-7. grass-bag open/close or deflector attach/detach transition;
-8. one harmless maintenance-page read/reset only when the owner is physically present.
+7. grass-bag / deflector transition;
+8. one harmless maintenance-page read/reset only while the owner is physically present.
 
-The highest remaining blockers are Child Lock write identification, dumping-area geometry schema, anti-loss maximum/range validation and exact live N8 error/status payloads.
+The highest remaining blockers are Child Lock write identification, live dumping-area persistence validation, anti-loss maximum/range validation and exact live N8 error/status payloads.
