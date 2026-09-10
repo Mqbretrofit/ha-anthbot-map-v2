@@ -134,6 +134,8 @@ Therefore the complete current cloud command is:
 
 The isolated N8 transport now recognizes `voice_set` so a future validated N8 package install cannot fall through to Genie/M5/M9/M9 Pro routing. This is transport recognition only; no public HA voice selector is added yet.
 
+A pure helper in `models/n8_voice_payload.py` mirrors the recovered object shape without publishing anything. Its tests deliberately use dummy URLs and identifiers; it exists to prevent future live-validation code from re-inventing or reshaping the proven wire object.
+
 ## Signed package download URL
 
 Before constructing `voice_set.data`, the same package-selection generator requests a fresh signed URL. The request object is statically reconstructed as:
@@ -155,7 +157,7 @@ presigned_url
 
 and that value becomes `music_url` in the final `voice_set` payload.
 
-The filename is derived from `packet.vp_url` through an app helper. The exact helper's filename-normalization behavior is not needed to establish the command shape and is intentionally not guessed here.
+The filename is derived from `packet.vp_url` through an app helper. The exact helper's filename-normalization behavior is not needed to establish the command shape and is intentionally not guessed here. The pure helper therefore accepts the already-derived filename instead of attempting to duplicate unknown normalization.
 
 ## Report-side state semantics recovered from the app
 
