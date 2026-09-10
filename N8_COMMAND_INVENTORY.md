@@ -81,7 +81,7 @@ get_all_props
 
 Some older command-specific builders coexist with newer `device_config` routes. Presence in this inventory does not prove that every command is used by every N8 firmware revision.
 
-## Important newly reconstructed commands
+## Important reconstructed commands
 
 ### Light switch
 
@@ -100,35 +100,61 @@ or with value `1`.
 
 The current settings screen exposes it only when `isLightSwitchEnabled()` is true. Static analysis of that gate shows it is enabled for debug/exhibitor/factory-style contexts, not normal production users. Therefore **do not add an N8 light switch merely because the command exists**.
 
-### Cutting control
+### Global cutting height
 
-A current MGS command constructor exists for:
+The current MGS Device Settings screen reads direct `cutter_height` and uses a dedicated writer:
 
-```text
-cmd: ctl_cutter
+```json
+{
+  "cmd": "ctl_cutter",
+  "data": 45
+}
 ```
 
-with caller-supplied data. The exact user-facing data semantics should be traced before introducing a new control; normal N8 cutting-height settings already flow through the proven parameter paths.
+The `data` value is the selected integer height in millimetres. The production picker contains exactly `30, 35, 40, 45, 50, 55, 60, 65, 70` mm.
+
+This is stronger than the earlier generic-constructor evidence: the complete screen -> modal -> save -> writer data-flow is now traced. The existing shared HA height entity already has the correct 30..70/5 range, so the N8-only transport translates the exact shared `param_set {cutter_height: value}` call to `ctl_cutter value`. Other mower families and other `param_set` fields are unchanged.
+
+See `N8_CUTTER_TIME_SYNC_PROTOCOL.md`.
 
 ### Near-dock mowing control
 
-A current MGS constructor exists for:
+The current MGS screen reads `near_chg_mow_ctl`. The switch is ON when that scalar equals `1`, and its handler sends the inverse current state. Exact payloads are therefore:
 
-```text
-cmd: ctl_near_chg_mow
+```json
+{"cmd":"ctl_near_chg_mow","data":1}
+{"cmd":"ctl_near_chg_mow","data":0}
 ```
 
-with caller-supplied data. This is related to the charging-station/near-dock mowing feature family and should not be conflated with `nest_mow_start`/`nest_mow_stop` until the payload data-flow is fully traced.
+The writer waits for the reported `near_chg_mow_ctl` and uses a 30-second timeout. This control is distinct from `nest_mow_start`/`nest_mow_stop` and from the around-dock parameter writer `nest_param_set`.
+
+The command is recognized by the isolated N8 transport, but no new HA switch is exposed before live N8 validation.
+
+See `N8_NEAR_DOCK_DELAY_PROTOCOL.md`.
 
 ### Mowing delay
 
-A current MGS constructor exists for:
+The current MGS Rain & Delayed Mowing screen reads `mow_delay_time`. The value is in **minutes**. The exact 2.15.16 picker contains:
 
 ```text
-cmd: mow_delay
+Off     -> 0
+1 hour  -> 60
+2 hours -> 120
+3 hours -> 180
 ```
 
-with caller-supplied data. No Home Assistant entity is added from this evidence alone.
+The modal passes the selected scalar unchanged through the save callback. Exact payloads are:
+
+```json
+{"cmd":"mow_delay","data":0}
+{"cmd":"mow_delay","data":60}
+{"cmd":"mow_delay","data":120}
+{"cmd":"mow_delay","data":180}
+```
+
+The writer waits for reported `mow_delay_time` and uses a 30-second timeout. The command is recognized by the isolated N8 transport, but no HA selector is exposed until a real N8 confirms the report shape/behavior.
+
+See `N8_NEAR_DOCK_DELAY_PROTOCOL.md`.
 
 ### Cleaning mode
 
@@ -162,6 +188,53 @@ data: {<changed fields>}
 ```
 
 This is strong evidence that around-dock/charging-station mowing has its own height/count/visual-perception parameters.
+
+### Local time
+
+The current MGS `local_time` writer uses:
+
+```text
+cmd: local_time
+data: {
+  time_zone,
+  year,
+  month,
+  day,
+  hour,
+  minute,
+  second,
+  week
+}
+```
+
+Static data-flow proves:
+
+- `time_zone = -Date.getTimezoneOffset() * 60`, in seconds;
+- `year = fullYear - 2000`;
+- `month = getMonth() + 1`;
+- `day`, `hour`, `minute`, `second` are local time fields;
+- `week` maps Monday=1 through Sunday=7 using `[7,1,2,3,4,5,6]` indexed by JavaScript `getDay()`.
+
+No HA writer is needed at present.
+
+### Position sync
+
+`sync_position` is reconstructed separately from the normal service-shadow writers. It obtains phone location and writes:
+
+```json
+{
+  "cmd": "sync_position",
+  "data": {
+    "lat": "<latitude as string>",
+    "lon": "<longitude as string>",
+    "time": "<Math.trunc(timestamp / 1000)>"
+  }
+}
+```
+
+Crucially, this path calls a lower-level `write` function and subscribes with `subscribeMessage`; it does **not** use the normal `publishDeviceCommand` path. Therefore `sync_position` must not be added to the cloud N8 transport without first identifying the local/BLE transport semantics.
+
+See `N8_CUTTER_TIME_SYNC_PROTOCOL.md`.
 
 ## Feature gates recovered from 2.15.16
 
@@ -220,4 +293,6 @@ In particular, keep these out of the public N8 HA control surface for now:
 - physical cutter/chassis maintenance controls;
 - debug/exhibitor light switch;
 - `clean_mode_cmd` until its N8 behavior is confirmed;
+- near-dock enable switch until its N8 behavior is confirmed;
+- delayed-mow selector until live report shape/behavior is confirmed;
 - Child Lock until its real writer is identified.
