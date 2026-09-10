@@ -20,6 +20,8 @@ Implemented in the integration/reverse-engineering line:
 - `dump_grass_areas` is loaded into the coordinator area definition.
 - Current 2.15.16 MGS settings writes for anti-loss, rain and visual perception
   are translated N8-only to the app-native `device_config` command.
+- Anti-loss radius is statically proven as integer **50..500 m**, step 1 m, and
+  is exposed only for N8 through the current `device_config` writer.
 - Visual obstacle sensitivity mapping is statically proven as Low=0,
   Medium=1, High=2.
 - N8 diagnostics/diff helpers exist for privacy-safe live protocol comparison.
@@ -94,7 +96,10 @@ analytics only; it is not the mower command.
 `mow_regular` is recognized by the N8 native transport so a future N8 plan
 writer cannot fall through to legacy Genie routing. No HA DND/schedule writer
 is exposed yet. The N8 map adapter probes `time_setting.json` read-only first so
-we can identify the live firmware schema/version without guessing.
+we can identify the live N8 firmware schema/version without guessing.
+
+Important: the available `1.0.42` firmware capture belongs to an **M9 Pro**, not
+an N8, and must not be used to choose the N8 plan writer path.
 
 See `N8_DND_PROTOCOL.md`.
 
@@ -189,20 +194,48 @@ See `N8_MAINTENANCE_PROTOCOL.md`.
 
 ## Child Lock
 
-The official MGS copy includes Child Lock and a live M9 Pro shadow exposes
-`device_config.child_lock_switch`. However, the real 2.15.16 HBC98 bundle has no
-literal `child_lock` / `child_lock_switch` writer.
+The official MGS copy includes Child Lock and an M9 Pro shadow exposes
+`device_config.child_lock_switch`. That capture is a shared-schema clue only;
+it is not N8 confirmation.
 
-Static analysis now rules out `ui_lock` more strongly: when `ui_lock.value == 1`,
-the generic app command guard rejects a long list of remote/app commands with
-`device_locked` / `DEVICE_LOCKED`. That behavior is different from the official
-Child Lock description, which disables the mower's physical panel buttons while
-leaving power and emergency stop available.
+Direct parsing of the real 2.15.16 HBC98 string/function tables now narrows the
+static result further. `useDeviceConfig` (function 15857) reads exactly these
+current MGS settings:
 
-A generic `device_config` publisher exists and accepts a dynamic data object, but
-that alone is not evidence that `child_lock_switch` is a valid N8 write field.
+```text
+log_switch
+indoor_switch
+rain_switch
+rain_continue_time
+anti_loss_switch
+anti_loss_radius
+pobctl_switch
+pobctl_level
+volume
+camera_switch
+```
+
+It creates the named setter closures `switchRainer`, `switchAntiLoss`,
+`setAntiLossRadius`, `updateVolume`, `switchIndoor`, `switchLog`,
+`switchVision`, `setVisionLever`, and `switchCamera`. There is no Child Lock
+setter in this hook. Its associated selector function (27794) reads the same ten
+`device_config` fields and no Child Lock field.
+
+The complete Hermes string table and DEX string scan contain no literal
+`child_lock` or `child_lock_switch`. This makes it unsafe to infer a writer from
+the M9 Pro report field alone; the current 2.15.16 MGS settings hook simply does
+not expose such a writer statically.
+
+Static analysis also rules out `ui_lock`: when `ui_lock.value == 1`, the generic
+app command guard rejects remote/app commands with `device_locked` /
+`DEVICE_LOCKED`. That behavior is different from the official Child Lock
+description, which disables the mower's physical panel buttons while leaving
+power and emergency stop available.
+
 Therefore Child Lock remains intentionally disabled until a real N8 official-app
 before/after capture identifies its reported field and exact write route.
+
+See `N8_CHILD_LOCK_PROTOCOL.md`.
 
 ## Still intentionally blocked
 
@@ -216,8 +249,7 @@ writes disabled:
 - map backup/restore/update/delete and sub-map deletion;
 - manual/remote driving and map-building controls;
 - advanced physical maintenance controls;
-- dumping-area editing;
-- anti-loss radius HA write until its upper range/validation is confirmed.
+- dumping-area editing.
 
 The published `v2.4.6-beta.11` tag and the separate
 `release/v2.4.6-beta.10` branch are not part of this ongoing feature work and
