@@ -253,10 +253,11 @@ See `N8_CHILD_LOCK_PROTOCOL.md`.
 ## Live validation build
 
 A separate `test/n8-validation-beta.12` branch is derived from this feature
-branch for hardware validation only. Its manifest is marked `2.4.6-beta.12` and
-its CI packages an `anthbot-n8-validation-beta.12` artifact containing the
-integration plus the privacy-safe validation comparer and workflow notes. It is
-not a normal release and does not retarget or merge PR #26.
+branch for hardware validation only. Its manifest is `2.4.6-beta.12` and its CI
+packages an `anthbot-n8-validation-beta.12` artifact containing the integration
+plus the privacy-safe validation comparer and workflow notes. The validation
+branch has green unit-tests, HACS, hassfest and packaging checks. It is not a
+normal release and does not retarget or merge PR #26.
 
 ## Still intentionally blocked
 
