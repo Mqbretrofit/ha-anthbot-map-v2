@@ -26,9 +26,11 @@ Implemented in the integration/reverse-engineering line:
 - Read-only N8 `time_setting.json` extraction now runs from the same map-manager
   archive. It retains only structural summary data (counts, key sets,
   timezone/version), not individual schedule start/end times.
-- A standalone privacy-safe `tools/summarize_n8_multi_maps.py` helper can now
-  inspect API Explorer/raw-shadow JSON and report only backup count, IDs,
-  timestamps and field names without copying MD5 values, filenames or URLs.
+- A standalone privacy-safe `tools/summarize_n8_multi_maps.py` helper can inspect
+  API Explorer/raw-shadow JSON and report only backup count, IDs, timestamps and
+  field names without copying MD5 values, filenames or URLs.
+- `N8_COMMAND_INVENTORY.md` records the broader current MGS command surface and
+  feature gates without exposing unvalidated controls.
 
 ## Dumping-area write protocol
 
@@ -131,10 +133,33 @@ conversion inside the writer. The upstream coordinate frame is therefore still
 a live-validation blocker.
 
 Both `multi_map_ctl` and `delete_sub_map` remain transport-recognized N8 commands
-only; no Home Assistant backup/restore/delete controls are exposed. New
-regression coverage explicitly protects that policy.
+only; no Home Assistant backup/restore/delete controls are exposed. Regression
+coverage explicitly protects that policy.
 
 See `N8_MULTI_MAP_PROTOCOL.md`.
+
+## Additional command/feature findings
+
+The 2.15.16 MGS command guard exposes a 31-command device-lock list, giving us an
+independent inventory of current command names. Newly catalogued commands include
+`remote_ctl`, `factory_reset`, `ctl_mapping`, `ctl_building_forbid`,
+`ctl_building_bridge`, `ctl_building_border`, `mow_remote`, `exit_remote`,
+`clean_mode_cmd`, and `nest_param_set` in addition to the already isolated N8
+surface.
+
+Useful feature gates recovered from the app are:
+
+```text
+Map backup:   app >= 2.8.0, mower firmware >= 1.15.0
+Nest edge:    app >= 2.9.0, mower firmware >= 1.16.0
+Maintenance:  app >= 2.9.4, mower firmware >= 1.16.20
+```
+
+A `light_switch {light_switch: 0|1}` writer also exists, but its current feature
+gate is restricted to debug/exhibitor/factory-style contexts, so it is not being
+added as a normal N8 control.
+
+See `N8_COMMAND_INVENTORY.md`.
 
 ## Maintenance
 
@@ -166,14 +191,18 @@ See `N8_MAINTENANCE_PROTOCOL.md`.
 
 The official MGS copy includes Child Lock and a live M9 Pro shadow exposes
 `device_config.child_lock_switch`. However, the real 2.15.16 HBC98 bundle has no
-literal `child_lock` / `child_lock_switch` writer. Its `ui_lock` references are
-confirmed command-gating/read paths, not a proven Child Lock setting write.
+literal `child_lock` / `child_lock_switch` writer.
 
-A generic `device_config` publisher is present and accepts a dynamic data
-object, but that alone is not evidence that `child_lock_switch` is a valid N8
-write field. Therefore Child Lock remains intentionally disabled until a real
-N8 official-app before/after capture identifies its reported field and exact
-write route.
+Static analysis now rules out `ui_lock` more strongly: when `ui_lock.value == 1`,
+the generic app command guard rejects a long list of remote/app commands with
+`device_locked` / `DEVICE_LOCKED`. That behavior is different from the official
+Child Lock description, which disables the mower's physical panel buttons while
+leaving power and emergency stop available.
+
+A generic `device_config` publisher exists and accepts a dynamic data object, but
+that alone is not evidence that `child_lock_switch` is a valid N8 write field.
+Therefore Child Lock remains intentionally disabled until a real N8 official-app
+before/after capture identifies its reported field and exact write route.
 
 ## Still intentionally blocked
 
@@ -185,6 +214,7 @@ writes disabled:
 - Child Lock write;
 - voice-pack control;
 - map backup/restore/update/delete and sub-map deletion;
+- manual/remote driving and map-building controls;
 - advanced physical maintenance controls;
 - dumping-area editing;
 - anti-loss radius HA write until its upper range/validation is confirmed.
