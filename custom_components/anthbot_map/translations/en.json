@@ -53,20 +53,22 @@
       },
       "developer_reporting": {
         "title": "Development and diagnostics",
-        "description": "These options are voluntary and can be turned off again at any time. They are independent from the read-only Developer Agent.",
+        "description": "These options are voluntary and can be turned off again at any time.",
         "data": {
           "share_anonymous_usage": "Share anonymous usage statistics",
-          "send_automatic_diagnostics": "Send automatic diagnostic reports"
+          "send_automatic_diagnostics": "Send automatic diagnostic reports",
+          "developer_agent_enabled": "Allow read-only developer requests"
         },
         "data_description": {
           "share_anonymous_usage": "Sends minimal technical usage information such as integration/Home Assistant version, country and ANTHBOT model counts. Username, password, serial number, GPS position and map are not sent.",
-          "send_automatic_diagnostics": "Sends privacy-filtered technical diagnostics when supported errors occur, such as mower errors, boundary/no-go crossings and map/path processing failures."
+          "send_automatic_diagnostics": "Sends privacy-filtered technical diagnostics when supported errors occur, such as mower errors, boundary/no-go crossings and map/path processing failures.",
+          "developer_agent_enabled": "Allows only pre-installed, read-only map, path, area, task-event and property probes requested by the ANTHBOT developer server. It cannot send arbitrary code or mower-control commands."
         }
       }
     },
     "error": {
       "invalid_battery_thresholds": "The resume and idle recharge levels must be lower than the upper charge limit.",
-      "reporting_service_unavailable": "The reporting settings service is not available. Reload the Anthbot Map integration or restart Home Assistant and try again."
+      "reporting_service_unavailable": "The development/diagnostics settings service is not available. Reload the Anthbot Map integration or restart Home Assistant and try again."
     },
     "abort": {
       "no_devices": "No loaded Anthbot mower is available."
