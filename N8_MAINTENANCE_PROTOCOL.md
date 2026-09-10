@@ -4,7 +4,7 @@ Status: static reverse-engineering notes for `feature/n8-support`.
 
 Source: direct analysis of the ANTHBOT Android app `2.15.16` Hermes HBC98 bundle.
 
-This document records the app protocol only. Advanced maintenance writes remain intentionally **disabled** in Home Assistant until they are validated on a real N8 with the owner physically present. Some of these commands move the cutter, cutter lift or chassis.
+This document records the app protocol only. Physical advanced-maintenance writes remain intentionally **disabled** in Home Assistant until they are validated on a real N8 with the owner physically present. Some of these commands move the cutter, cutter lift or chassis.
 
 ## `useDetection` maintenance surface
 
@@ -27,7 +27,7 @@ moveBackward
 moveStop
 ```
 
-The recovered closures map as follows:
+Recovered closures:
 
 ```text
 #26799 -> autoDetectionAll
@@ -53,35 +53,25 @@ The recovered closures map as follows:
 Enter maintenance mode:
 
 ```json
-{
-  "cmd": "maintenance_switch",
-  "data": 1
-}
+{"cmd":"maintenance_switch","data":1}
 ```
 
 Exit maintenance mode:
 
 ```json
-{
-  "cmd": "maintenance_switch",
-  "data": 0
-}
+{"cmd":"maintenance_switch","data":0}
 ```
 
 ## `maintenance_ctrl`
 
-The low-level control command uses this object shape:
+Low-level control shape:
 
 ```json
 {
-  "cmd": "maintenance_ctrl",
-  "data": {
-    "sub": "<operation>"
-  }
+  "cmd":"maintenance_ctrl",
+  "data":{"sub":"<operation>"}
 }
 ```
-
-Recovered `sub` operations:
 
 | UI action | `sub` value |
 | --- | --- |
@@ -98,43 +88,32 @@ Recovered `sub` operations:
 
 The current app repeatedly sends at least the cutter-open and chassis movement operations while the corresponding UI action remains active. The relevant closures use `setInterval` / `clearInterval`; the app passes scalar `100` to the interval setup.
 
-Do not interpret that scalar beyond what static analysis proves here, and do not reproduce these hold controls remotely until real-device behavior and stop/failsafe handling are verified.
+Do not reproduce these hold controls remotely until real-device behavior and stop/failsafe handling are verified.
 
 `moveStop` sends:
 
 ```json
-{
-  "cmd": "maintenance_ctrl",
-  "data": {
-    "sub": "chassis_ctrl_end"
-  }
-}
+{"cmd":"maintenance_ctrl","data":{"sub":"chassis_ctrl_end"}}
 ```
 
 and then clears the movement interval.
 
 ## Maintenance checks
 
-The app uses:
+The app uses `cmd: maintenance_check` for diagnostic/self-check flows.
 
-```text
-cmd: maintenance_check
-```
+Static evidence proves:
 
-for its diagnostic/self-check flows.
-
-Static evidence currently proves:
-
-- `autoDetectionAll` constructs the one-element list `["all"]` for the all-components check path;
-- `manualDetection` passes its caller-supplied component value into the check path;
-- semi-automatic detection also uses `maintenance_check`, with additional local state/result handling;
-- the app reads `check_states` from the result and maps returned entries for UI display.
+- `autoDetectionAll` constructs `["all"]` for the all-components path;
+- `manualDetection` passes its caller-supplied component value;
+- semi-automatic detection also uses `maintenance_check`, with additional local result handling;
+- the app reads `check_states` from the result for UI display.
 
 The exact complete request/result schema for every individual component is not yet considered proven enough for a Home Assistant control surface.
 
 ## Maintenance counters/status
 
-The MGS app reads `robot_maintenance` status with these percentage keys:
+The MGS app reads `robot_maintenance` percentage keys:
 
 ```text
 rc_pecent
@@ -142,7 +121,7 @@ cl_pecent
 ccp_pecent
 ```
 
-The maintenance UI also uses the following component data:
+The maintenance UI also uses:
 
 ```text
 blade
@@ -153,36 +132,65 @@ ele_sheet
 ele_sheetHours
 ```
 
-The current screen-navigation type mapping is statically recovered as:
+`ele_sheet` is the charging-station/contact maintenance item.
+
+## Proven screen type -> reset ID data flow
+
+The maintenance-detail navigation callbacks now prove the screen component types:
 
 ```text
-blade          -> type 0
-charging sheet -> type 1
-camera         -> type 2
+blade             -> type 0
+camera            -> type 1
+station/contacts  -> type 2
 ```
 
-Here `ele_sheet` is the charging-contact/sheet maintenance item shown by the app.
+The reset writer (HBC98 function `#27128`) does **not** pass these route types through unchanged. It maps them before publishing:
 
-## Maintenance reset
+```text
+type 0 -> reset_id 1
+type 1 -> reset_id 2
+type 2 -> reset_id 0
+```
 
-The reset writer is reconstructed exactly as:
+Therefore the exact semantic mapping is:
+
+```text
+Blade maintenance reset             -> reset_id 1
+Camera maintenance reset            -> reset_id 2
+Charging station/contact reset       -> reset_id 0
+```
+
+The reset command is:
 
 ```json
 {
-  "cmd": "robot_maintenance_reset",
-  "data": {
-    "reset_id": "<value>"
-  }
+  "cmd":"robot_maintenance_reset",
+  "data":{"reset_id":1}
 }
 ```
 
-The app subscribes to `robot_maintenance` around this reset path and includes success/timeout handling.
+with `reset_id` replaced by the component value above.
 
-Important: although the maintenance-page navigation types are proven to be `0`, `1`, and `2` as documented above, static analysis has **not yet directly proven** that those route `type` values are passed unchanged as `reset_id`. Keep the two facts separate until the data-flow is traced or a live N8 capture confirms it.
+This matches the existing Home Assistant integration mapping in `button.py`:
+
+```text
+reset_blade_maintenance        -> 1
+reset_camera_maintenance       -> 2
+reset_dock_contact_maintenance -> 0
+```
+
+So the existing reset buttons already use the statically recovered IDs. N8 routing remains isolated through `n8_control.py`, which recognizes `robot_maintenance_reset` and preserves its data object.
+
+The app subscribes to `robot_maintenance` around the reset path and includes success/timeout handling.
 
 ## Home Assistant exposure policy
 
-The N8 transport already recognizes the following protocol family so future verified controls can remain N8-isolated:
+The following distinction is important:
+
+- maintenance **counter resets** now have a statically proven component/ID mapping and the existing HA buttons already match it;
+- physical `maintenance_switch`, `maintenance_ctrl` movement/cutter actions and individual diagnostic checks still require live N8 validation before any new N8 UI is exposed.
+
+N8 transport currently recognizes:
 
 ```text
 maintenance_switch
@@ -191,15 +199,12 @@ maintenance_ctrl
 robot_maintenance_reset
 ```
 
-Recognition is not exposure. No new advanced maintenance button/switch should be added from this document alone.
-
-Before exposing writes, verify on a real N8:
+Before exposing new physical writes, verify on a real N8:
 
 1. entering/exiting maintenance mode;
 2. component check request/result shapes;
-3. exact `reset_id` mapping;
-4. cutter/chassis hold-command cadence;
-5. stop behavior if connectivity is lost;
-6. firmware state restrictions and safety interlocks.
+3. cutter/chassis hold-command cadence;
+4. stop behavior if connectivity is lost;
+5. firmware state restrictions and safety interlocks.
 
-The live movement/cutter tests must be done only with the owner physically present at the mower.
+Any live cutter/chassis test must be done only with the owner physically present at the mower.
