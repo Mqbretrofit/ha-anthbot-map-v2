@@ -26,6 +26,9 @@ Implemented in the integration/reverse-engineering line:
 - Read-only N8 `time_setting.json` extraction now runs from the same map-manager
   archive. It retains only structural summary data (counts, key sets,
   timezone/version), not individual schedule start/end times.
+- A standalone privacy-safe `tools/summarize_n8_multi_maps.py` helper can now
+  inspect API Explorer/raw-shadow JSON and report only backup count, IDs,
+  timestamps and field names without copying MD5 values, filenames or URLs.
 
 ## Dumping-area write protocol
 
@@ -86,16 +89,56 @@ workmode: 0
 `unlock == 0` distinguishes DND from normal mowing appointments. `dnd_set` is
 analytics only; it is not the mower command.
 
-`mow_regular` is now recognized by the N8 native transport so a future N8 plan
+`mow_regular` is recognized by the N8 native transport so a future N8 plan
 writer cannot fall through to legacy Genie routing. No HA DND/schedule writer
 is exposed yet. The N8 map adapter probes `time_setting.json` read-only first so
 we can identify the live firmware schema/version without guessing.
 
 See `N8_DND_PROTOCOL.md`.
 
+## Multi-map / map backup / sub-map deletion
+
+Static HBC98 analysis now proves the N8/MGS map-backup service command and its
+nested data shape:
+
+```text
+cmd: multi_map_ctl
+data: {sub_cmd: <operation>, id: <optional backup id>}
+```
+
+Recovered operations are:
+
+```text
+save_map      -> no id
+update_map    -> id required by the UI flow
+restore_map   -> id required by the UI flow
+delete_map    -> id required by the UI flow
+```
+
+The app reads `multi_maps.map_list`, `multi_maps.state` and `multi_maps.time`.
+Backup-list entries contain at least `id`, `map_file_name`, `md5`, and
+`time_stamp`. A `state` value of `-1` is handled as failure.
+
+A separate destructive sub-map command is also reconstructed exactly:
+
+```text
+cmd: delete_sub_map
+data: {point: [[x1,y1], [x2,y2], ...]}
+```
+
+The command clones the incoming point pairs but performs no coordinate
+conversion inside the writer. The upstream coordinate frame is therefore still
+a live-validation blocker.
+
+Both `multi_map_ctl` and `delete_sub_map` remain transport-recognized N8 commands
+only; no Home Assistant backup/restore/delete controls are exposed. New
+regression coverage explicitly protects that policy.
+
+See `N8_MULTI_MAP_PROTOCOL.md`.
+
 ## Maintenance
 
-Static 2.15.16 data-flow reconstruction now proves the reset mapping exactly:
+Static 2.15.16 data-flow reconstruction proves the reset mapping exactly:
 
 ```text
 Blade maintenance reset             -> reset_id 1
@@ -126,8 +169,11 @@ The official MGS copy includes Child Lock and a live M9 Pro shadow exposes
 literal `child_lock` / `child_lock_switch` writer. Its `ui_lock` references are
 confirmed command-gating/read paths, not a proven Child Lock setting write.
 
-Therefore Child Lock remains intentionally disabled until a real N8 official-app
-before/after capture identifies its reported field and exact write route.
+A generic `device_config` publisher is present and accepts a dynamic data
+object, but that alone is not evidence that `child_lock_switch` is a valid N8
+write field. Therefore Child Lock remains intentionally disabled until a real
+N8 official-app before/after capture identifies its reported field and exact
+write route.
 
 ## Still intentionally blocked
 
@@ -138,7 +184,7 @@ writes disabled:
 - DND/schedule write;
 - Child Lock write;
 - voice-pack control;
-- map backup/restore and multi-map mutation;
+- map backup/restore/update/delete and sub-map deletion;
 - advanced physical maintenance controls;
 - dumping-area editing;
 - anti-loss radius HA write until its upper range/validation is confirmed.
