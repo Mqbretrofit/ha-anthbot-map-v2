@@ -36,7 +36,7 @@ The dedicated hardware-test branch is:
 test/n8-validation-beta.12
 ```
 
-Its manifest version is `2.4.6-beta.12`. CI packages an artifact named `anthbot-n8-validation-beta.12` containing the integration, this guide and the validation comparer. It is not a normal release and does not alter the beta.10 branch or published beta.11 tag.
+Its manifest version is `2.4.6-beta.12`. CI packages an artifact named `anthbot-n8-validation-beta.12` containing the integration, this guide and the validation comparer. The branch's unit-tests, HACS, hassfest and package job are expected to stay green before an artifact is handed to a tester. It is not a normal release and does not alter the beta.10 branch or published beta.11 tag.
 
 ## Baseline capture
 
