@@ -16,7 +16,9 @@ sys.modules[spec.name] = MODULE
 spec.loader.exec_module(MODULE)
 
 
-def test_real_n8_firmware_uses_legacy_plan_feature_gates() -> None:
+def test_old_firmware_version_uses_legacy_plan_feature_gates() -> None:
+    # 1.0.42 is useful only as a generic old-version boundary example here;
+    # the observed 1.0.42 live capture belongs to an M9 Pro, not an N8.
     assert MODULE.supports_incremental_plan("1.0.42") is False
     assert MODULE.supports_plan_end_time("1.0.42") is False
 
