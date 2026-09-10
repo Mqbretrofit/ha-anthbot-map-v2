@@ -7,8 +7,11 @@ This is the short tester procedure for a real ANTHBOT N8.
 1. In Home Assistant press **Export & send firmware diagnostics** and keep the generated JSON as the BEFORE capture.
 2. In the official ANTHBOT app change **exactly one** N8 setting or perform exactly one N8 action.
 3. Wait until the mower/cloud state settles, then press **Export & send firmware diagnostics** again and keep the generated JSON as the AFTER capture.
-4. Run `tools/n8_validation_windows.ps1` and drag the BEFORE and AFTER JSON files into the prompts.
-5. Send back the generated `n8_validation_diff.json`.
+4. Double-click **`N8_VALIDATION_START.cmd`**.
+5. Drag the BEFORE and AFTER JSON files into the two prompts.
+6. Send back **both** generated files: `n8_validation_diff.json` and `n8_validation_summary.txt`.
+
+The summary automatically groups changed paths into likely N8 feature areas (for example Child Lock, anti-loss radius, obstacle sensitivity, DND or dumping area). This is only a triage hint: no path is treated as proven until a genuine N8 capture confirms it.
 
 For map/DND/dumping validation, also keep the matching BEFORE and AFTER `map_manager_*.tar.gz` archives and run:
 
