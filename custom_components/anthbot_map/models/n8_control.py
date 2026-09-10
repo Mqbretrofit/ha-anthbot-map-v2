@@ -37,6 +37,7 @@ _N8_COMMANDS = {
     "nest_mow_stop",
     "ctl_near_chg_mow",
     "mow_delay",
+    "ctl_cutter",
     "mow_point",
     "mow_point_stop",
     "mow_regular",
@@ -49,7 +50,7 @@ _N8_COMMANDS = {
     "delete_sub_map",
     "device_config",
     # Older/shared integration entry points retained here so the N8 adapter can
-    # translate them to the current 2.15.16 MGS ``device_config`` command.
+    # translate them to the current 2.15.16 MGS command surface.
     "anti_loss_switch",
     "anti_loss_radius",
     "maintenance_switch",
@@ -85,11 +86,10 @@ def _binary_flag(value: Any) -> Any:
 def _normalize_n8_command(cmd: str, data: Any) -> tuple[str, Any]:
     """Translate shared controls to the current N8/MGS app command shape.
 
-    Static analysis of ANTHBOT 2.15.16 shows that the current MGS settings hook
-    writes anti-loss, rain and visual-perception settings through one generic
-    ``device_config`` command. Older command-specific builders remain in the
-    bundle, so callers can keep their established shared API while this N8-only
-    adapter emits the current app-native payload.
+    Static analysis of ANTHBOT 2.15.16 shows that current MGS settings use a
+    mixture of the generic ``device_config`` writer and dedicated commands.
+    Callers can keep their established shared API while this N8-only adapter
+    emits the current app-native payload.
     """
     if cmd == "anti_loss_switch":
         return "device_config", {"anti_loss_switch": _binary_flag(data)}
@@ -134,6 +134,13 @@ def _normalize_n8_command(cmd: str, data: Any) -> tuple[str, Any]:
         if normalized:
             return "device_config", normalized
         return cmd, data
+
+    # The existing shared HA number uses param_set for global cutting height.
+    # Current MGS 2.15.16 instead sends the selected 30..70 mm scalar through
+    # ctl_cutter. Translate only the one-field global height payload; other
+    # param_set settings (work mode, mowing passes, heading, etc.) stay intact.
+    if cmd == "param_set" and isinstance(data, dict) and set(data) == {"cutter_height"}:
+        return "ctl_cutter", data["cutter_height"]
 
     return cmd, data
 
