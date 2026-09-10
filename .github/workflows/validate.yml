@@ -27,3 +27,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: home-assistant/actions/hassfest@master
+
+  package-n8-validation:
+    if: github.ref == 'refs/heads/test/n8-validation-beta.12'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stage N8 validation build
+        run: |
+          mkdir -p build/custom_components
+          cp -a custom_components/anthbot_map build/custom_components/
+          cp tools/n8_validation_bundle.py build/
+          cp N8_VALIDATION_WORKFLOW.md build/
+          cp N8_VALIDATION_BUILD.md build/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anthbot-n8-validation-beta.12
+          path: build/
+          if-no-files-found: error
