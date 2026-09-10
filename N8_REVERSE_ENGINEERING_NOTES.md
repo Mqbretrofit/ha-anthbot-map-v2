@@ -81,9 +81,11 @@ No explicit maximum has been recovered, so the anti-loss radius Home Assistant n
 
 Official MGS copy contains Child Lock: robot panel buttons are disabled while power and emergency-stop remain functional.
 
-A live M9 Pro reports `device_config.child_lock_switch`, but direct 2.15.16 Hermes analysis found no literal `child_lock` or `child_lock_switch` string. `ui_lock` exists only in confirmed read/gating paths and blocks commands through `device_locked` / `DEVICE_LOCK_FORBID_COMMAND`.
+A live M9 Pro reports `device_config.child_lock_switch`, but direct 2.15.16 Hermes analysis found no literal `child_lock` or `child_lock_switch` string.
 
-Therefore `ui_lock` is **not** treated as proof of the Child Lock writer. No N8 Child Lock write entity should be exposed until a real N8 before/after capture identifies the exact field and command.
+The recovered `ui_lock` logic now rules out a simple alias more strongly. When `ui_lock.value == 1`, the generic app command guard checks requested commands against a 31-command `DEVICE_LOCK_FORBID_COMMAND` list and raises `device_locked` / `DEVICE_LOCKED` for blocked remote/app commands. That is an app-command/device lock, whereas the documented Child Lock disables physical panel buttons. The semantics are different.
+
+A generic `device_config` publisher accepts dynamic objects, but that is not enough to prove `child_lock_switch` as an N8 write field. No N8 Child Lock entity should be exposed until a real N8 before/after capture identifies the exact reported field and writer.
 
 ## Visual obstacle sensitivity
 
@@ -155,7 +157,7 @@ DEX analysis of the MGS native map bridge proves that the React Native event ser
 
 Important details:
 
-- `vertexs` is the protocol spelling;
+- `vertexs` is the protocol spelling.
 - each vertex is exactly `[int, int]`;
 - `id` and `grassId` are emitted from the same integer native field;
 - native `eid` defaults to `-1`;
@@ -286,62 +288,13 @@ Current N8 branch exposes:
 
 through `param_set {work_mode: <0|1|2>}` and keeps the selector N8-only.
 
-## Do Not Disturb / schedule transport
-
-Direct HBC98 reconstruction now proves that current MGS/N8 schedule writes use:
-
-```text
-cmd: mow_regular
-```
-
-The full plan envelope is:
-
-```text
-{timezone, timezone_sec, value}
-```
-
-and the incremental envelope is:
-
-```text
-{timezone, timezone_sec, version, value}
-```
-
-where:
-
-```text
-timezone_sec = -Date().getTimezoneOffset() * 60
-timezone = timezone_sec / 3600
-```
-
-The writer waits up to 10 seconds for its response.
-
-The DND object is distinguished by `unlock == 0` and uses:
-
-```text
-start_time: caller supplied
-end_time: caller supplied
-active: caller supplied
-unlock: 0
-week: [1,2,3,4,5,6,7]
-repeat: 1
-workmode: 0
-```
-
-`dnd_set` is analytics only. The actual service command is `mow_regular`.
-
-The current app enables incremental-plan behavior when mower firmware is at least `1.16.15` and enables plan end-time behavior at firmware `1.15.13` (app-version gates are already satisfied by 2.15.16).
-
-The map-manager workflow also reads `time_setting.json`; the N8 adapter now extracts it **read-only** and records only a privacy-safe structural summary: top-level keys, entry key sets, counts, timezone metadata and version. Individual schedule times are not exported by this probe.
-
-`mow_regular` is recognized by the N8 native transport, but no HA DND/schedule writer is exposed until a real N8 confirms which full/incremental schema its firmware uses.
-
-See `N8_DND_PROTOCOL.md`.
-
 ## Border / charging-dock behavior
 
 Official MGS UI contains Border Recharge and edge-return behavior. Relevant identifiers include `nest_edge_grass`, `nest_edge_grass_start_each_task`, `nest_param_set`, `near_chg_mow_ctl`, `nest_mow_start`, and `nest_mow_stop`.
 
-Existing generic controls and N8-native routing remain unchanged; exact N8 dock parameter reporting still benefits from live validation.
+Static HBC98 analysis now shows `nest_param_set` carries only changed values among `cutter_height`, `mow_count`, `pobctl_switch`, and `pobctl_level`. The current app also contains a `ctl_near_chg_mow` writer. These paths remain unexposed until their live N8 state/behavior is confirmed.
+
+The feature gate for the nest-edge family uses app version >= `2.9.0` and mower firmware >= `1.16.0` in production paths.
 
 ## Mapping / multi-map
 
@@ -349,45 +302,69 @@ N8 map reading is confirmed through:
 
 ```text
 map_manager_<SN>.tar.gz
-  -> iot_map.bin
   -> area_setting.json
-  -> time_setting.json
 ```
 
 using `/device/v2/presigned_url`.
 
-The archive supplies map geometry, custom/manual areas, region/auto areas, ridable areas, dumping areas and plan/DND settings. `multi_map_ctl`, `delete_sub_map`, map backup and restore paths exist in the app but mutation remains disabled pending exact payload/live validation.
+The archive supplies custom/manual areas, region/auto areas, ridable areas and dumping areas.
+
+Static HBC98 analysis now reconstructs the map-backup writer exactly:
+
+```text
+cmd: multi_map_ctl
+data: {sub_cmd: <operation>, id: <optional backup id>}
+```
+
+with operations:
+
+```text
+save_map
+update_map
+restore_map
+delete_map
+```
+
+`save_map` omits the ID. The other backup operations receive the selected backup entry's ID from the UI.
+
+Reported backup state is read from `multi_maps.map_list`, `multi_maps.state`, and `multi_maps.time`; entries use at least `id`, `map_file_name`, `md5`, and `time_stamp`. `state == -1` is handled as failure. Save/update completion uses the `state` bit `2` after observing the expected list/MD5 change.
+
+The separate sub-map delete writer is:
+
+```text
+cmd: delete_sub_map
+data: {point: [[x1,y1], [x2,y2], ...]}
+```
+
+It clones input coordinate pairs but performs no coordinate conversion inside the command writer, so the upstream coordinate frame remains a live-validation blocker.
+
+The production map-backup gate requires app version >= `2.8.0` and mower firmware >= `1.15.0`.
+
+See `N8_MULTI_MAP_PROTOCOL.md`. Backup/restore/delete and sub-map mutation remain intentionally disabled in Home Assistant.
+
+## Additional current MGS command inventory
+
+The `DEVICE_LOCK_FORBID_COMMAND` list provides an independent 31-command inventory containing mowing, charging, map building/editing, remote-control, dumping and multi-map commands. Additional HBC constructors prove further commands such as `mow_regular`, `device_config`, `param_set`, `voice_set`, `ctl_cutter`, `ctl_near_chg_mow`, `mow_delay`, `local_time`, `sync_position`, and RTK request/control paths.
+
+A `light_switch {light_switch: 0|1}` writer exists, but its current `isLightSwitchEnabled` gate is restricted to debug/exhibitor/factory-style contexts instead of ordinary production users. It is therefore not exposed as an N8 Home Assistant light control.
+
+See `N8_COMMAND_INVENTORY.md`.
 
 ## Maintenance
 
-MGS UI exposes blade/cutter, camera and charging-contact maintenance. The physical command family includes `maintenance_switch`, `maintenance_check`, and `maintenance_ctrl`.
+MGS UI exposes blade/cutter, camera and charging-contact maintenance. Protocol identifiers include `maintenance_reset`, `robot_maintenance_reset`, `maintenance_switch`, `maintenance_check`, and `maintenance_ctrl`.
 
-The reset data flow is now statically proven end-to-end. Screen route types are:
-
-```text
-blade             -> type 0
-camera            -> type 1
-station/contacts  -> type 2
-```
-
-The writer maps them to:
+Static data-flow reconstruction proves the reset IDs used by the current app:
 
 ```text
-Blade maintenance reset             -> reset_id 1
-Camera maintenance reset            -> reset_id 2
-Charging station/contact reset       -> reset_id 0
+blade             -> 1
+camera            -> 2
+charging contacts -> 0
 ```
 
-and publishes:
+These match the existing Home Assistant reset buttons. Advanced physical maintenance writes remain disabled.
 
-```text
-cmd: robot_maintenance_reset
-data: {reset_id: ...}
-```
-
-These IDs match the existing Home Assistant reset buttons. Physical cutter/chassis maintenance controls remain disabled until an N8 owner is physically present for safety and failsafe validation.
-
-See `N8_MAINTENANCE_PROTOCOL.md`.
+The production maintenance feature gate uses app version >= `2.9.4` and mower firmware >= `1.16.20`.
 
 ## N8/MGS03 error and event evidence
 
@@ -419,6 +396,14 @@ N8 diagnostics include an `n8_protocol` discovery block. Compare two exports wit
 python tools/compare_n8_protocol_reports.py before.json after.json
 ```
 
+For raw/API Explorer backup-state captures, use:
+
+```text
+python tools/summarize_n8_multi_maps.py capture.json
+```
+
+The multi-map summarizer intentionally keeps structural metadata only and does not copy backup MD5 values, filenames or URLs.
+
 Change exactly one official-app setting between captures to isolate the reported field change.
 
 ## Highest-value next live N8 captures
@@ -428,9 +413,9 @@ Change exactly one official-app setting between captures to isolate the reported
 3. anti-loss radius before/after;
 4. visual sensitivity Low/Medium/High report values;
 5. map-manager archive before and after one dumping-area add/edit/delete;
-6. read-only `time_setting.json` structure/version plus one DND before/after change;
+6. `multi_maps` before/after one official-app backup creation;
 7. state during `dumpgrass` and after a successful dump;
 8. grass-bag / deflector transition;
-9. one harmless maintenance-page reset only while the owner is physically present.
+9. one harmless maintenance-page read/reset only while the owner is physically present.
 
-The highest remaining blockers are Child Lock write identification, live dumping-area persistence validation, DND full-vs-increment firmware confirmation, anti-loss maximum/range validation and exact live N8 error/status payloads.
+The highest remaining blockers are Child Lock write identification, live dumping-area persistence validation, multi-map live validation, anti-loss maximum/range validation and exact live N8 error/status payloads.
