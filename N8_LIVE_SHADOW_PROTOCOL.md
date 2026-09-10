@@ -1,12 +1,25 @@
 # ANTHBOT N8 / MGS03 live property-shadow evidence
 
-Status: read-only evidence from a real N8 capture, correlated with the ANTHBOT Android 2.15.16 static protocol reconstruction.
+Status: N8 validation notes combining ANTHBOT Android 2.15.16 static reconstruction with **shared-schema clues from an Anthbot M9 Pro capture**. The available capture is not a real N8 capture and must not be used as N8 proof.
 
 No account credentials, serial number, location coordinates or PIN values are recorded in this document.
 
-## Confirmed Child Lock report field
+## Source provenance correction
 
-The real N8 property shadow reports the physical-panel Child Lock as:
+The currently available live property-shadow/log probe was verified from its own device metadata as:
+
+```text
+model: Anthbot M9 Pro
+system firmware: 1.0.42
+```
+
+Therefore fields observed in that probe are useful because M9 Pro and N8/MGS03 share parts of the MGS protocol family, but they remain **candidate N8 report paths** until a real N8 reports the same fields.
+
+This distinction applies in particular to Child Lock, RTK acknowledgement fields, `voice_status`, `grass_state`, and the `device_config` grouping below.
+
+## Child Lock candidate report field
+
+The M9 Pro property shadow reports the physical-panel Child Lock candidate as:
 
 ```json
 {
@@ -16,9 +29,7 @@ The real N8 property shadow reports the physical-panel Child Lock as:
 }
 ```
 
-This supersedes the earlier diagnostic placeholder name `device_config.child_lock`.
-
-It is also independent of:
+This is independent of:
 
 ```json
 {
@@ -28,19 +39,15 @@ It is also independent of:
 }
 ```
 
-Static 2.15.16 analysis already showed that `ui_lock` participates in the generic command/device-lock guard. It must not be treated as the mower-panel Child Lock.
+Static 2.15.16 analysis shows that `ui_lock` participates in the generic app/device command-lock guard. It must not be treated as the mower-panel Child Lock.
 
-The integration now normalizes the observed read-side value to:
+The isolated N8 status adapter may mirror `device_config.child_lock_switch` to `_n8_child_lock` **only when an N8 actually reports that key**. This is opportunistic read-only normalization, not a claim that the field has already been observed on N8.
 
-```text
-_n8_child_lock
-```
+No Child Lock write command is exposed. The 2.15.16 Hermes bundle contains no literal `child_lock` or `child_lock_switch` command constructor, and a generic `device_config` publisher alone is not sufficient evidence to invent the write key.
 
-No Child Lock write command is exposed yet. A report field does not prove the command/payload used to change it.
+## RTK shared-schema clue
 
-## Confirmed RTK report shape
-
-The same real N8 reports:
+The M9 Pro capture reports:
 
 ```json
 {
@@ -51,32 +58,24 @@ The same real N8 reports:
 }
 ```
 
-This matches the statically reconstructed 2.15.16 selector mapping:
+Separately, static 2.15.16 MGS data-flow reconstruction proves the selector mapping and service command:
 
 ```text
 1 = NRTK
 2 = RTK
 3 = Auto
+
+ctl_rtk_base <scalar 1|2|3>
+req_rtk_base_info {}
 ```
 
-The integration now keeps read-only normalized aliases:
+The N8 status adapter therefore keeps `_n8_rtk_base_state` and `_n8_nrtk_base_sdk` only if those keys are present in a real N8 state. Public Home Assistant RTK writing remains disabled until an intentional N8 mode-change capture confirms the acknowledgement path and behavior.
 
-```text
-_n8_rtk_base_state
-_n8_nrtk_base_sdk
-```
+## Firmware warning
 
-The exact cloud commands `ctl_rtk_base` and `req_rtk_base_info` remain N8-native in the transport, but no public Home Assistant RTK selector is enabled until an intentional live command/acknowledgement test is performed.
+The observed `1.0.42` firmware belongs to the M9 Pro capture. It must **not** be used to choose the N8 DND/plan writer path.
 
-## Real firmware and feature-gate implications
-
-The captured N8 reports mower system firmware:
-
-```text
-1.0.42
-```
-
-That version is below several feature thresholds recovered from the current 2.15.16 app:
+Static 2.15.16 feature thresholds are still useful once an actual N8 firmware version is known:
 
 ```text
 map backup:          >= 1.15.0
@@ -86,13 +85,11 @@ incremental plans:   >= 1.16.15
 maintenance UI:      >= 1.16.20
 ```
 
-Therefore features found in the application bundle must not automatically be assumed to be enabled on this N8 firmware.
+For N8 DND/scheduling we therefore still need the real mower firmware plus its current `time_setting.json` before deciding between the full and incremental `mow_regular` envelopes.
 
-For DND/scheduling in particular, this firmware does not meet the incremental-plan threshold. The likely path is the legacy/full `mow_regular` plan envelope, but write support still stays disabled until the mower's actual `time_setting.json` is captured and a before/after DND edit confirms preservation semantics.
+## Voice shared-schema clue
 
-## Voice report shape
-
-The real N8 exposes:
+The M9 Pro capture exposes:
 
 ```json
 {
@@ -104,18 +101,19 @@ The real N8 exposes:
 }
 ```
 
-and the same property shadow exposes `device_config.volume`.
+and `device_config.volume`.
 
-The app protocol contains the `voice_set` command family and the earlier application analysis identified the separately downloaded voice-package system. This is enough to confirm that N8 has the report-side voice machinery, but not enough to invent a package-install payload or expose voice-pack selection in Home Assistant.
+The 2.15.16 app independently contains the MGS `voice_set` command family and the separately downloaded voice-package workflow. Those static facts justify continued N8 voice reverse engineering, but the M9 Pro report does not prove N8 package selection or its report transition.
 
-## Other observed N8 property fields
+## Other M9 Pro fields worth checking on N8
 
-The read-only capture also confirms the current MGS-style configuration grouping, including:
+The shared-schema capture contains:
 
 ```text
 device_config.anti_loss_radius
 device_config.anti_loss_switch
 device_config.camera_switch
+device_config.child_lock_switch
 device_config.indoor_switch
 device_config.log_switch
 device_config.pobctl_level
@@ -125,18 +123,23 @@ device_config.rain_switch
 device_config.volume
 grass_state.grass_bag_in_position
 grass_state.grass_shield_in_position
+ctl_rtk_base.nrtk_base_sdk
+ctl_rtk_base.rtk_base_state
+voice_status
 ```
 
-These observations support the existing N8-only normalization and keep the implementation separate from Genie/M5/M9/M9 Pro.
+Every one of these should be treated as a candidate read path until a real N8 capture verifies it, unless the field is independently proven by the 2.15.16 N8/MGS app data flow.
 
-## Next live captures
+## Highest-value real N8 captures
 
-Highest-value safe captures are:
-
-1. full property/service shadow before and after toggling Child Lock in the official app;
-2. `time_setting.json` before and after one DND edit;
-3. map-manager archive before and after one dumping-area edit;
-4. voice package list/selection request and the resulting `voice_status` transition;
-5. deliberate `ctl_rtk_base` mode change while physically present with the mower.
+1. full named `property` and `service` shadows while idle;
+2. Child Lock OFF -> ON -> OFF in the official app;
+3. anti-loss radius at two known values;
+4. visual sensitivity Low -> Medium -> High;
+5. `time_setting.json` before and after one DND edit;
+6. map-manager archive before and after one dumping-area add/edit/delete;
+7. state during and after one successful grass dump;
+8. voice-package list/selection request and resulting `voice_status` transition;
+9. deliberate RTK mode change while physically present with the mower.
 
 Until those captures exist, destructive or uncertain writers remain unexposed.
