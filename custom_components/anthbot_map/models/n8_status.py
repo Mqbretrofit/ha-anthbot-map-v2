@@ -109,6 +109,28 @@ def _add_n8_status_aliases(state: dict[str, Any]) -> None:
         if shield is not None:
             state["_n8_grass_shield_in_position"] = shield
 
+    # Real N8/MGS03 property-shadow captures report the physical-panel Child
+    # Lock under device_config.child_lock_switch. Keep it separate from
+    # ui_lock: that field is the app/device command lock and has different
+    # semantics. This alias is read-only until the Child Lock writer is proven.
+    device_config = state.get("device_config")
+    if isinstance(device_config, dict):
+        child_lock = device_config.get("child_lock_switch")
+        if child_lock is not None:
+            state["_n8_child_lock"] = child_lock
+
+    # The same live N8 capture confirms the RTK selector acknowledgement shape:
+    # ctl_rtk_base.rtk_base_state, plus the reported NRTK SDK selector value.
+    # These aliases are observation-only; no public RTK writer is enabled here.
+    rtk_base_control = state.get("ctl_rtk_base")
+    if isinstance(rtk_base_control, dict):
+        rtk_base_state = rtk_base_control.get("rtk_base_state")
+        nrtk_base_sdk = rtk_base_control.get("nrtk_base_sdk")
+        if rtk_base_state is not None:
+            state["_n8_rtk_base_state"] = rtk_base_state
+        if nrtk_base_sdk is not None:
+            state["_n8_nrtk_base_sdk"] = nrtk_base_sdk
+
     # Current MGS 2.15.16 reads global cutting height as the direct reported
     # `cutter_height` property, while the existing shared HA number reads
     # `param_set.cutter_height`. Mirror only this N8 field so the established
