@@ -36,6 +36,9 @@ Implemented in the integration/reverse-engineering line:
 - Current 2.15.16 voice package listing, signed-URL request and complete
   `voice_set.data` payload are statically reconstructed. `voice_set` is now
   recognized by the N8 transport only; no public package selector is exposed.
+- `models/n8_voice_payload.py` provides pure, non-publishing builders for the
+  recovered voice command/signed-URL object so future live validation can use
+  the exact wire schema without enabling an entity prematurely.
 
 ## Dumping-area write protocol
 
