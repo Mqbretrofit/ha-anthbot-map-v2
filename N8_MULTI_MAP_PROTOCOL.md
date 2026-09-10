@@ -102,7 +102,14 @@ time_stamp
 
 The UI passes the selected backup entry's `id` to delete/restore/update operations.
 
-The command-response path treats `state == -1` as failure. Save/update/delete flows monitor changes in `multi_maps`; restore additionally waits for map state / `map_id` change.
+The command-response path treats `state == -1` as failure. The current completion logic is more specific than a simple success boolean:
+
+- `save_map` watches for the backup list length to change and then requires the `multi_maps.state` completion bit `2` to be set (`state & 2 == 2`);
+- `update_map` watches the first backup entry's MD5 for a change and likewise requires the completion bit `2`;
+- `delete_map` watches the backup list length for a change;
+- `restore_map` watches map state / `map_id` rather than only the backup list.
+
+These observations explain which reported fields are useful in a live before/after capture without assigning undocumented meanings to every numeric `state` value.
 
 The app commonly reads the first `map_list` entry in the backup UI. This is not enough evidence to claim a server-side maximum backup count.
 
@@ -154,7 +161,7 @@ The command constructor has a main 30-second timeout plus a short auxiliary time
 
 ## Home Assistant exposure policy
 
-The N8 transport may recognize `multi_map_ctl` and `delete_sub_map` so these commands never fall through to legacy Genie routing. Recognition does **not** mean the integration should expose buttons for them yet.
+The N8 transport recognizes `multi_map_ctl` and `delete_sub_map` so these commands cannot accidentally fall through to legacy Genie routing. Recognition does **not** mean the integration exposes buttons for them.
 
 Keep all of these writes disabled until live N8 validation:
 
