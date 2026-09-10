@@ -19,17 +19,23 @@ _REQUIRED_PACKET_FIELDS = (
 )
 
 
+def voice_filename_from_vp_url(vp_url: str) -> str:
+    """Mirror the 2.15.16 app's `getFilename(vp_url)` helper exactly.
+
+    The app rejects null/empty input and otherwise returns the substring after
+    the last `/`. No URL decoding or other normalization is applied there.
+    """
+    if not isinstance(vp_url, str) or not vp_url:
+        raise ValueError("vp_url must be a non-empty string")
+    return vp_url[vp_url.rfind("/") + 1 :]
+
+
 def build_voice_set_data(
     packet: Mapping[str, Any],
     *,
     presigned_url: str,
 ) -> dict[str, Any]:
-    """Return the exact 2.15.16 `voice_set.data` object.
-
-    `presigned_url` must already have been obtained through the app's voice
-    signed-URL flow. This helper intentionally does not derive a filename from
-    `vp_url`, because that normalization helper has not been fully reconstructed.
-    """
+    """Return the exact 2.15.16 `voice_set.data` object."""
     if not isinstance(packet, Mapping):
         raise ValueError("voice packet must be a mapping")
 
@@ -66,23 +72,16 @@ def build_voice_set_command(
 def build_voice_signed_url_request(
     *,
     serial_number: str,
-    filename: str,
+    vp_url: str,
 ) -> dict[str, str]:
-    """Return the proven voice signed-URL request object.
-
-    The caller supplies the already-derived filename. The current app derives
-    that value from the selected packet's `vp_url`; this helper intentionally
-    does not guess the app's filename-normalization algorithm.
-    """
+    """Return the proven voice signed-URL request object."""
     if not isinstance(serial_number, str) or not serial_number.strip():
         raise ValueError("serial_number must be a non-empty string")
-    if not isinstance(filename, str) or not filename.strip():
-        raise ValueError("filename must be a non-empty string")
     return {
         "sn": serial_number,
         "category": "voice",
         "sub_category": "",
-        "filename": filename,
+        "filename": voice_filename_from_vp_url(vp_url),
     }
 
 
@@ -90,4 +89,5 @@ __all__ = [
     "build_voice_set_command",
     "build_voice_set_data",
     "build_voice_signed_url_request",
+    "voice_filename_from_vp_url",
 ]
