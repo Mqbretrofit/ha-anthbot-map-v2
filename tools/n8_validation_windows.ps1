@@ -12,7 +12,10 @@ param(
     [string]$AfterMap,
 
     [Parameter(Mandatory=$false)]
-    [string]$Output = "n8_validation_diff.json"
+    [string]$Output = "n8_validation_diff.json",
+
+    [Parameter(Mandatory=$false)]
+    [string]$Summary = "n8_validation_summary.txt"
 )
 
 $ErrorActionPreference = "Stop"
@@ -51,8 +54,12 @@ if ($AfterMap -and -not (Test-Path -LiteralPath $AfterMap)) {
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $PythonTool = Join-Path $ScriptDir "n8_validation_bundle.py"
+$InterpretTool = Join-Path $ScriptDir "n8_validation_interpret.py"
 if (-not (Test-Path -LiteralPath $PythonTool)) {
     throw "Hianyzik: $PythonTool"
+}
+if (-not (Test-Path -LiteralPath $InterpretTool)) {
+    throw "Hianyzik: $InterpretTool"
 }
 
 $Python = Get-Command py -ErrorAction SilentlyContinue
@@ -89,8 +96,22 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $result | Set-Content -LiteralPath $Output -Encoding UTF8
+
+$interpretArgs = @()
+$interpretArgs += $PythonPrefix
+$interpretArgs += $InterpretTool
+$interpretArgs += $Output
+$summaryText = & $PythonExe @interpretArgs
+if ($LASTEXITCODE -ne 0) {
+    throw "Az N8 validation interpreter hibaval allt le (exit code: $LASTEXITCODE)."
+}
+$summaryText | Set-Content -LiteralPath $Summary -Encoding UTF8
+
 Write-Host ""
-Write-Host "KESZ: $Output"
-Write-Host "Ezt a fajlt kuldd vissza elemzesre."
+Write-Host "KESZ:"
+Write-Host "  $Output"
+Write-Host "  $Summary"
 Write-Host ""
-$result
+Write-Host "Mindket fajlt kuldd vissza elemzesre."
+Write-Host ""
+$summaryText
