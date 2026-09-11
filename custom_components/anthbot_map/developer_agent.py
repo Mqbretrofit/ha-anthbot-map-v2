@@ -336,7 +336,7 @@ def _parse_inspector_path(path: str) -> list[tuple[str, Any]]:
         buffer.clear()
         if not key:
             raise ValueError("empty path segment")
-        if key.startswith("__") or _is_sensitive_key(key):
+        if key.startswith("__") or _is_sensitive_key(key) or key in _FRAMEWORK_LINK_KEYS:
             raise ValueError("path contains a protected field")
         tokens.append(("key", key))
 
@@ -394,7 +394,7 @@ def _resolve_inspector_path(coordinator: Any, path: str) -> Any:
     for kind, selector in tokens[1:]:
         if kind == "key":
             key = str(selector)
-            if key.startswith("__") or _is_sensitive_key(key):
+            if key.startswith("__") or _is_sensitive_key(key) or key in _FRAMEWORK_LINK_KEYS:
                 raise ValueError("path contains a protected field")
             if isinstance(current, dict):
                 if key not in current:
