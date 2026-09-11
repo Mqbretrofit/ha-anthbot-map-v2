@@ -13,6 +13,10 @@ class DeveloperAgentReadonlyTests(unittest.TestCase):
         source = (PACKAGE / "developer_agent.py").read_text(encoding="utf-8")
         for probe in (
             "state_schema",
+            "full_state",
+            "full_diagnostics",
+            "state_inspector",
+            "state_diff",
             "firmware_diagnostics",
             "area_definition",
             "ridable_area_definition",
@@ -21,6 +25,7 @@ class DeveloperAgentReadonlyTests(unittest.TestCase):
             "path_definition",
             "task_events",
             "refresh_properties",
+            "refresh_diagnostics",
         ):
             self.assertIn(f'"{probe}"', source)
         self.assertIn("DEVELOPER_AGENT_ALLOWED_PROBES", source)
@@ -29,6 +34,20 @@ class DeveloperAgentReadonlyTests(unittest.TestCase):
         self.assertNotIn("start_mow", source)
         self.assertNotIn("stop_all_tasks", source)
         self.assertNotIn("factory_reset", source)
+
+    def test_generic_diagnostics_are_full_but_read_only(self) -> None:
+        source = (PACKAGE / "developer_agent.py").read_text(encoding="utf-8")
+        self.assertIn('"reported_state": _safe_value(_reported_state(coordinator))', source)
+        self.assertIn("_runtime_snapshot(coordinator)", source)
+        self.assertIn("_resolve_inspector_path", source)
+        self.assertIn("vars(current)", source)
+        self.assertIn('job.get("params")', source)
+        self.assertIn('"probe_actions": sorted(DEVELOPER_AGENT_ALLOWED_PROBES)', source)
+        self.assertIn('"state_inspector_paths": True', source)
+        self.assertIn("key in _FRAMEWORK_LINK_KEYS", source)
+        self.assertIn('"__omitted__": "framework-link"', source)
+        self.assertNotIn("eval(", source)
+        self.assertNotIn("exec(", source)
 
     def test_rest_definition_probes_use_account_client(self) -> None:
         source = (PACKAGE / "developer_agent.py").read_text(encoding="utf-8")
@@ -47,6 +66,10 @@ class DeveloperAgentReadonlyTests(unittest.TestCase):
         self.assertIn('"password"', source)
         self.assertIn('"session_token"', source)
         self.assertIn('"bearer"', source)
+        self.assertIn('"agent_key"', source)
+        self.assertIn('"api_key"', source)
+        self.assertIn('"private_key"', source)
+        self.assertIn('"serial_number"', source)
         self.assertIn('"url"', source)
         self.assertIn("_is_sensitive_key", source)
         self.assertIn("safe_items", source)
