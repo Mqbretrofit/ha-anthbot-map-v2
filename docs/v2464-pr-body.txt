@@ -1,0 +1,1 @@
+Fixes: edge-triggered diagnostics, stale task-event handling, resilient AWS IoT reconnect/credential rotation, and M-series map identity separation.
