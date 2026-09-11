@@ -2,317 +2,183 @@
 
 [English](README.md) | Magyar
 
+[![Kiadás](https://img.shields.io/badge/release-v2.4.6.4-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.6.4)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
-[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Mqbretrofit&repository=ha-anthbot-map-v2&category=integration)
+[![Megnyitás HACS-ban](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Mqbretrofit&repository=ha-anthbot-map-v2&category=integration)
 [![Licenc: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Támogatás](https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-EA4AAA?logo=githubsponsors)](https://github.com/sponsors/Mqbretrofit)
 
-Nem hivatalos Home Assistant-integráció és egyedi térképkártya ANTHBOT
-robotfűnyírókhoz.
+Nem hivatalos Home Assistant-integráció és egyedi térképkártya ANTHBOT robotfűnyírókhoz.
 
-Az integráció összekapcsolja a Home Assistantot az ANTHBOT felhővel, létrehozza
-a robot vezérléséhez és állapotának megjelenítéséhez szükséges entitásokat,
-valamint tartalmazza az `anthbot-map-card` Lovelace-kártyát is.
-
-A kártyán megjeleníthető a robot, a töltőállomás, a gyep határvonala, a nyírási
-és tiltott zónák, az aktuális és korábbi nyírási útvonalak, a lenyírt terület,
-valamint egy saját légi vagy drónfelvétel a kertről.
+Az Anthbot Map összekapcsolja a Home Assistantot az ANTHBOT felhővel, modellenként kezeli a robotokat, és tartalmazza az `anthbot-map-card` Lovelace-kártyát. Vezérlést, térkép-/útvonal-/zónakezelést, nyírási előzményeket, diagnosztikát, Battery Saver funkciókat és külön Genie / M-széria / N8 működési ágakat biztosít.
 
 > [!WARNING]
-> Ez egy közösségi fejlesztés, amely nem áll kapcsolatban az ANTHBOT gyártójával.
+> Ez egy független közösségi projekt, amely nem áll kapcsolatban az ANTHBOT gyártójával és nem hivatalos ANTHBOT-termék.
 
 ## Aktuális verzió
 
-Stabil verzió: **2.4.5**
+Stabil verzió: **2.4.6.4**
 
-### A 2.4.5 legfontosabb változásai
+Legfrissebb kiadás: [Anthbot Map v2.4.6.4](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.6.4)
 
-- Jelentősen csökkenti a felesleges Home Assistant feldolgozást az ismétlődő MQTT shadow adatok kiszűrésével.
-- Cache-eli a változatlan M-szériás útvonal-összeállítást és a nyírási százalék geometriáját, így ezek nem számolódnak újra minden frissítésnél.
-- Javítja a Genie task-event REST lekérdezési ciklusát: stabil állapotban az integráció már nem tölti le néhány másodpercenként az eseménylistát.
-- Alacsony többletterhelésű futásidejű aktivitásdiagnosztika került a meglévő Map entitásba, Recorder-előzmény növelése nélkül.
-- Megmarad a 2.4.4 teljes esőkezelése, Battery Saver működése, ismétlődő Shutdown Guardja, Genie/M-széria modellkülönválasztása, térkép-, útvonal-, zóna-, előzmény- és egyéni vezérlése.
-- Közvetlenül tesztelve ANTHBOT Genie 1000, M9 Pro és Home Assistant Green környezetben; a 120 másodperces profiler teszteken nem látszott Anthbot runaway/busy loop.
+### A 2.4.6.4 legfontosabb változásai
 
-### A 2.4.4 legfontosabb változásai
+- Az automatikus diagnosztika esemény-élre működik, így ugyanaz a tartós diagnosztikai állapot nem kerül óránként újra elküldésre.
+- Induláskor a már fennálló diagnosztikai állapot kiindulási állapotként kerül felvételre, ezért egy régi esemény nem generál új riportot pusztán újraindítás miatt.
+- A korábbi cloud task-event hibák megmaradnak előzményként, de friss/elavult jelölést kapnak, és lejárat után önmagukban már nem indítanak automatikus hibariportot.
+- Az AWS IoT live-shadow figyelő váratlan futásidejű vagy transport hibák után sem áll le végleg.
+- Többszöri sikertelen reconnect után a kliens új ideiglenes IoT hitelesítőt kérhet és korlátozott reconnect-kísérletekkel tovább működik.
+- Az M-szériás térképnél külön kezeljük a logikai `map.map_id`, `area_id`, `plan_id` és a `map_manager_<serial>.tar.gz` belsejében található raster `map_id` értékeket.
+- Az eltérő logikai és raster map ID többé nem okoz felesleges map-manager újraletöltést.
+- Az M-szériás térképjavítás M5/M9 családra korlátozott; az N8 vezérlési útvonalát nem bővíti és nem módosítja.
 
-- Bekerült a **Genie és az M-széria közös eső miatti várakozás-kezelése**; a fő robotállapot továbbra is elsődleges marad, az eső miatti várakozás csak másodlagos állapotsorként jelenik meg.
-- Kikerült a nem bizonyítható eső utáni visszaszámlálás, így a kártya nem mutat becsült vagy félrevezető hátralévő időt.
-- Élő robotállapot-változás után az integráció azonnal frissíti a cloud task eventeket, így kisebb az esélye a beragadt `1036` / `1037` esőeseménynek.
-- Az **akkumulátorkímélő mód esőbiztos lett**: `1036` és a `1038` esővédelmi elutasítás esetén nem próbálja erőből folytatni a nyírást.
-- Eső miatti várakozás alatt is megmarad a Shutdown Guard működése és a közös RTK-táp kezelése.
-- Javítva lett az ismétlődő **55+1 perces Shutdown Guard**: a következő ciklus csak akkor indul újra, amikor a Home Assistant ténylegesen OFF állapotúnak látja az okoskonnektort.
-- Javult a Genie élő nyírási százalékának célterület-felismerése akkor is, ha nincs eltárolt `last_mowing_task`, az M9/M9 Pro működésének megváltoztatása nélkül.
-- A 2.4.3 meglévő Genie és M-szériás vezérlés-, térkép-, útvonal-, zóna-, előzmény- és egyéni gomb funkciói megmaradtak.
+### 2.4.6.x riportolás és fejlesztői diagnosztika
 
-### A 2.4.3 legfontosabb változásai
+A 2.4.6 sorozatban bekerült és tovább fejlődött az opcionális projektdiagnosztika:
 
-- **Az M-szérián már működik a térképkezelés**, beleértve a gyep határvonalát, a nyírási útvonalat és a zónakezelést. Az M-szériás térképkezelés **ANTHBOT M9 Pro modellen közvetlenül tesztelve és ellenőrizve lett**.
-- Különvált a Genie és az M-széria (**M5/M9/M9 Pro**) modellfüggő térkép-, vezérlés-, állapot- és előzménykezelése, így az egyik modell javítása nem írja felül a másik működését.
-- Javult az M-szériás zónanyírás és a nyírási előzmények zónaazonosítása; a kártya továbbra is a saját számított nyírási százalékát használja.
-- Az M9 Pro leállítási parancsa az alkalmazásban megfigyelt protokollhoz igazodik.
-- Visszakerültek a modellfüggő robotképek: az M9 Pro saját képet, az M9/M5 M9 képet kap, a Genie képe változatlan marad.
-- A 2.4.2 és a korábbi Genie funkciók megmaradtak.
+- külön kapcsolható anonim használati statisztika a telepítések/modellek/verziók áttekintéséhez;
+- külön kapcsolható automatikus diagnosztikai riport az újonnan aktív robot- és cloud task-event hibákhoz;
+- anonim statisztika engedélyezése esetén könnyű verzió-heartbeat induláskor/újratöltéskor;
+- külön **Csak olvasási fejlesztői lekérések engedélyezése** jogosultság az **Anthbot Map -> Beállítások -> Fejlesztés és diagnosztika** alatt;
+- opt-in read-only Developer Agent eszközök: `full_state`, `full_diagnostics`, `state_inspector`, `state_diff`, `refresh_diagnostics`;
+- szigorúan csak olvasási működés: nincs tetszőleges Python-, URL-, HTTP-, MQTT-, metódus-/property-futtatás és nincs robotvezérlő parancs a Developer Agentből.
 
-### A 2.4.2 legfontosabb változásai
+Az anonim statisztika, az automatikus diagnosztika és a read-only fejlesztői hozzáférés három külön jogosultság. A normál robotműködéshez egyik sem kötelező.
 
-- Bekerültek a robotonként, Home Assistantban mentett egyéni
-  kártyagomb-műveletek; a korábbi YAML `button_actions` beállítás továbbra is
-  használható.
-- Másik töltő-okoskonnektor kiválasztásakor az 55+1 perces anti-shutdown
-  védelem azonnal az új konnektorhoz igazodik.
-- Az akkukímélő mód százalékos határértékeinek módosítása nem nullázza a már
-  futó időzítéseket.
-- A korábbi verziókból megmaradt érvénytelen beállításokat a rendszer
-  automatikusan biztonságos értékre állítja.
-- Minden meglévő profil, fordítás, vezérlés, RTK-kezelés és újraindítás utáni
-  állapotmentés változatlanul megmaradt.
+### N8 támogatás
 
-### A 2.4.1 legfontosabb változásai
+Az N8-specifikus vezérlés, állapotkezelés, térkép-/útvonalkezelés és modellspecifikus entitások bekerültek, és tesztelésre elérhetők.
 
-- Három kész akkukímélő profil került be: **Max. akkukímélés**,
-  **Kiegyensúlyozott** és **Mindig indulásra kész**, valamint megmaradt a
-  teljesen állítható **Egyéni** profil.
-- Robotenként tartósan menti a felső töltési határt, a fenntartó töltés
-  indítási szintjét, a félbehagyott feladat folytatási szintjét, a közös
-  RTK-táp beállítását, az aktuális működési fázist és a shutdown-védelem
-  időzítését. A Home Assistant újraindítása már nem indítja újra az aktív
-  akkukímélő ciklust.
-- Bekerült az **55+1 perces anti-shutdown védelem**: dokkolt, készenléti
-  robotnál, kikapcsolt töltőtáp esetén 55 perc után egy percre bekapcsolja a
-  töltőt, majd újrakezdi a ciklust.
-- A kártyán látható a shutdown-védelem állapota és a következő impulzusig
-  hátralévő idő, beleértve az inicializálást és az aktív ébresztő töltést.
-- A normál fenntartó töltés különválik a rövid ébresztő impulzustól, és hiányzó
-  robot-telemetria esetén a rendszer nem kapcsolja le vakon a tápot.
-- Helyesen kezeli a közös és a külön RTK-tápot nyírás, dokkhoz visszatérés,
-  töltés és RTK-inicializálás közben.
-- Az akkumulátorkímélő mód kikapcsolásakor azonnal visszakapcsolja a töltőtápot,
-  a kézzel elindított töltést pedig nem téveszti össze automatikus
-  akkukímélő-váltással.
-- Javult az integráció leállítása és újratöltése; a mentett beállítások Home
-  Assistant-újraindítás nélkül, azonnal életbe lépnek.
-- Az akkukímélő csempe csak a beállítóablakot nyitja meg; a nagyobb be- és
-  kikapcsoló jelölőnégyzet a popupban marad.
-- Az új akkukímélő felület mind a 23 támogatott nyelven elérhető.
+- **Code/API validáció:** elkészült külön regressziós és modellszeparációs tesztekkel.
+- **Valós N8 hardveres validáció:** ebben a projektben még nem történt meg.
+- A Genie és M-szériás modellrouting továbbra is elkülönül az N8-tól.
 
-### A 2.4.0 legfontosabb változásai
-
-- Megjelent az opcionális akkumulátorkímélő mód Home Assistant `switch`
-  entitással vezérelt töltőkhöz.
-- Külön beállítható a felső töltési határ, a nyugalmi fenntartó töltés alsó
-  szintje és a megszakított feladat folytatási töltöttsége.
-- Az alacsony töltöttség miatti visszatérést az ANTHBOT felhő `1021`
-  feladateseménye jelzi; élő nyírási százalékot a felhő nem szolgáltat, ezért
-  az integráció nem becsül hamis értéket.
-- A Home Assistantból indított teljes, zóna-, szegély- és töltőkörüli nyírás
-  megjegyezhető és a helyreállító töltés után folytatható.
-- A töltő automatikus bekapcsolásakor a robot ideiglenesen elnémul, majd
-  visszakapja a korábbi hangerőt.
-- Új feladatesemény-szenzorok és diagnosztikai adatok készültek.
-
-### A 2.3.0 legfontosabb változásai
-
-- Megjelentek a korábbi nyírási feladatok és a hozzájuk elérhető terület-,
-  térkép- és útvonaladatok.
-- Külön kalibrálható a térkép, a robot, a nyírási útvonal és a dekódolt
-  határvonal.
-- Javítva lett a robot vízszintes mozgásakor hibásan tükrözött haladási irány.
-- Javítva lett a nyírási útvonal forgatása nem négyzetes térképeken.
-- Javult a több robotot tartalmazó ANTHBOT-fiókok kezelése.
-- Elkészült a kalibráció és a nyírási előzmények fordítása mind a 23 támogatott
-  nyelvre.
-- Kikerültek a megmaradt frontend debug üzenetek.
-- Megjelent az M5/M9 modellek kísérleti shadow- és élőútvonal-kezelése.
-
-> [!IMPORTANT]
-> **Az ANTHBOT M-szérián (M5/M9/M9 Pro) már működik a térképkezelés.** A
-> határvonal-, nyírásiútvonal- és zónakezelés **M9 Pro modellen közvetlenül
-> tesztelve és ellenőrizve lett**. Az M5 és M9 ugyanazt az M-szériás
-> modellréteget használja, de ezeket a modelleket még nem tudtuk közvetlenül
-> hardveren tesztelni.
+N8 tulajdonosok tesztjeit és modellspecifikus visszajelzéseit várjuk.
 
 ## Támogatott modellek
 
-Az integráció az ANTHBOT Genie és az M-széria modellcsaládját is támogatja.
+- **ANTHBOT Genie:** támogatott és közvetlenül hardveren tesztelt.
+- **ANTHBOT M9 Pro:** M-szériás vezérlés, állapot, térkép, útvonal, zóna és előzménykezelés támogatott és közvetlenül hardveren tesztelt.
+- **ANTHBOT M9:** támogatott a közös M-szériás implementáción keresztül; közvetlen hardverteszt még nem történt.
+- **ANTHBOT M5:** támogatott a közös M-szériás implementáción keresztül; közvetlen hardverteszt még nem történt.
+- **ANTHBOT N8:** az implementáció bekerült és tesztelhető; code/API szinten ellenőrzött, de valós N8 hardveres validáció még nincs.
 
-- **ANTHBOT Genie:** támogatott; a meglévő Genie funkciók változatlanul megmaradtak.
-- **ANTHBOT M9 Pro:** az M-szériás térkép-, vezérlés-, állapot- és előzménykezelés támogatott és közvetlenül hardveren tesztelt.
-- **ANTHBOT M9:** a közös M-szériás megvalósítással támogatott; közvetlen hardverteszt még nem történt.
-- **ANTHBOT M5:** a közös M-szériás megvalósítással támogatott; közvetlen hardverteszt még nem történt.
+## Fő funkciók
+
+- ANTHBOT felhős bejelentkezés a Home Assistant felületéről
+- több robot egy ANTHBOT-fiókban
+- tartós AWS IoT/MQTT live-shadow kapcsolat reconnect-felügyelettel
+- natív Home Assistant `lawn_mower` entitás
+- teljes terület-, zóna-, külső szegély- és töltőkörüli nyírás, ahol az adott modell támogatja
+- szüneteltetés, folytatás, leállítás és dokkhoz visszatérés
+- külön Genie / M-széria / N8 modellrouting
+- akkumulátor-, töltés-, státusz-, RTK-, hálózat-, firmware-, karbantartási-, hiba- és diagnosztikai adatok
+- térkép, gyep-határvonal, zónák, tiltott zónák, robotpozíció, élő útvonal és nyírási lefedettség
+- korábbi nyírási feladatok elérhető terület-, térkép-, útvonal-, időtartam- és zónaadatai
+- opcionális légi/drónfotó háttérként
+- teljes képernyős térkép, zoom, mozgatás és forgatás
+- külön térkép-, robot-, nyírásiútvonal- és dekódolthatárvonal-kalibráció
+- modellenkénti robotképek
+- robotonkénti egyéni kártyagomb-műveletek
+- Battery Saver profilok, töltési határértékek, közös/külön RTK-tápkezelés és újraindítás után is megmaradó állapot
+- ismétlődő 55+1 perces Shutdown Guard támogatott okoskonnektoros töltővezérléshez
+- eső miatti várakozás és cloud task-event diagnosztika
+- opcionális anonim statisztika, automatikus diagnosztika és read-only Developer Agent
+- 23 választható felületi nyelv
 
 ## Más ANTHBOT-integráció használata
 
-Az Anthbot Map v2 saját `anthbot_map` integrációs domaint használ, ezért egy
-korábbi ANTHBOT-integráció mellett is telepítve maradhat. A két integráció
-azonban ne legyen egyszerre engedélyezve.
+Az Anthbot Map v2 saját `anthbot_map` integrációs domaint használ, ezért egy korábbi ANTHBOT-integráció mellett is telepítve maradhat. Ugyanahhoz a robothoz két integráció ne legyen egyszerre engedélyezve.
 
 > [!CAUTION]
-> Ne futtasd egyszerre az Anthbot Map integrációt a
-> `vincentjanv/anthbot_genie_ha`, az AdrianTIonut fork vagy más ANTHBOT Home
-> Assistant-integráció mellett. Az egyidejű működés több felhőkapcsolatot
-> nyithat, és egymással ütköző parancsokat küldhet ugyanannak a robotnak.
+> Ne futtasd egyszerre az Anthbot Map integrációt a `vincentjanv/anthbot_genie_ha`, az AdrianTIonut fork vagy más ANTHBOT Home Assistant-integráció mellett ugyanarra a robotra. A párhuzamos integrációk egymással versengő felhőkapcsolatokat és ütköző parancsokat okozhatnak.
 
 Biztonságos átváltás és visszaállítás:
 
 1. Hagyd telepítve a korábbi integrációt.
-2. Tiltsd le a konfigurációs bejegyzését a **Beállítások -> Eszközök és
-   szolgáltatások** oldalon.
+2. Tiltsd le a konfigurációs bejegyzését a **Beállítások -> Eszközök és szolgáltatások** oldalon.
 3. Indítsd újra a Home Assistantot.
 4. Add hozzá és teszteld az **Anthbot Map** integrációt.
-5. Visszaállításhoz tiltsd le az Anthbot Map integrációt, engedélyezd újra a
-   régit, majd indítsd újra a Home Assistantot.
+5. Visszaállításhoz tiltsd le az Anthbot Map-et, engedélyezd a korábbi integrációt, majd indítsd újra a Home Assistantot.
 
-A korábbi integráció nyilvántartási bejegyzései miatt az új entitások `_2`,
-`_3` vagy más számozott végződést kaphatnak. Ez nem hiba.
-
-## Funkciók
-
-- ANTHBOT-fiók hozzáadása a Home Assistant kezelőfelületéről
-- több robot kezelése egy ANTHBOT-fiókból
-- felhőalapú állapotfrissítés és AWS IoT/MQTT shadow-kapcsolat
-- automatikus MQTT-újracsatlakozás
-- natív Home Assistant `lawn_mower` entitás
-- teljes terület, kézi zóna és automatikus zóna nyírása
-- külső szegély és töltőállomás körüli nyírás
-- nyírás szüneteltetése, folytatása és leállítása
-- visszaküldés a töltőállomásra
-- akkumulátor-, töltés-, állapot-, RTK-, hálózat-, firmware- és karbantartási
-  adatok
-- térkép-, zóna-, hiba- és diagnosztikai entitások
-- aktuális nyírási útvonal és lenyírt terület
-- korábbi nyírási feladatok terület-, térkép- és útvonalrészletekkel
-- saját kertfotó használata háttérként
-- teljes képernyős térkép, nagyítás, mozgatás és forgatás
-- külön térkép-, robot-, útvonal- és határvonal-kalibráció
-- a kártyáról kimásolható YAML-konfiguráció
-- 23 választható nyelv
+A meglévő entity registry bejegyzések miatt az új entity ID-k `_2`, `_3` vagy későbbi utótagot kaphatnak. Ez nem hiba.
 
 ## Követelmények
 
 - Home Assistant 2024.1.0 vagy újabb
-- HACS az ajánlott telepítéshez
+- HACS az ajánlott telepítési módhoz
 - működő ANTHBOT-fiók
-- internetkapcsolat az ANTHBOT felhő eléréséhez
+- internetkapcsolat az ANTHBOT felhőhöz
 
 # Telepítés
 
-## Telepítés HACS használatával
+## Telepítés HACS-ból
 
-### 1. Az egyéni repository hozzáadása
-
-1. Nyisd meg a **HACS -> Integrációk** oldalt.
-2. A jobb felső hárompontos menüben válaszd az **Egyéni tárolók / Custom
-   repositories** lehetőséget.
-3. Add hozzá ezt a címet:
+1. Nyisd meg a **HACS -> Integrations** oldalt.
+2. A hárompontos menüben válaszd a **Custom repositories** lehetőséget.
+3. Add hozzá:
 
    ```text
    https://github.com/Mqbretrofit/ha-anthbot-map-v2
    ```
 
-4. Kategóriának válaszd az **Integration** lehetőséget.
-5. Kattints a **Hozzáadás / Add** gombra.
+4. Típus: **Integration**.
+5. Telepítsd az **Anthbot Map** integrációt.
+6. Indítsd újra a Home Assistantot.
+7. Nyisd meg a **Beállítások -> Eszközök és szolgáltatások -> Integráció hozzáadása** oldalt, és keresd meg az **Anthbot Map** integrációt.
 
-### 2. Az integráció telepítése
+Az `anthbot-map-card` az integráció része, ezért nem kell külön HACS dashboard repository.
 
-1. A HACS-ban keresd meg az **Anthbot Map** integrációt.
-2. Telepítsd a legújabb stabil verziót.
+## Kézi telepítés
+
+1. Töltsd le a ZIP-et a legfrissebb GitHub kiadásból.
+2. Másold a `custom_components/anthbot_map/` mappát a `/config/custom_components/anthbot_map/` helyre.
 3. Indítsd újra a Home Assistantot.
+4. Add hozzá az **Anthbot Map** integrációt a **Beállítások -> Eszközök és szolgáltatások** oldalon.
 
-A térképkártyát nem kell külön HACS dashboard repositoryból telepíteni. Az
-`anthbot-map-card` az integráció része, és az integrációval együtt frissül.
+## Lovelace resource
 
-### 3. Az ANTHBOT-fiók hozzáadása
-
-1. Nyisd meg a **Beállítások -> Eszközök és szolgáltatások** oldalt.
-2. Kattints az **Integráció hozzáadása** gombra.
-3. Keresd meg az **Anthbot Map** integrációt.
-4. Add meg az ANTHBOT-fiókod adatait.
-5. Várd meg, amíg a Home Assistant létrehozza a robothoz tartozó eszközt és
-   entitásokat.
-
-## Lovelace-erőforrás
-
-Storage módú Lovelace használatakor az integráció automatikusan létrehozza vagy
-frissíti ezt a JavaScript-erőforrást:
+Lovelace storage módban az integráció automatikusan létrehozza vagy frissíti ezt:
 
 ```text
 /anthbot-map-v2/anthbot-map-card.js
 ```
 
-Az erőforrás típusa: **JavaScript module**. Normál telepítésnél ezt nem kell
-kézzel hozzáadni.
+Típus: **JavaScript module**.
 
-### Ha az erőforrás nem jött létre automatikusan
+Ha kézzel kell felvenni, ezt használd:
 
-1. Nyisd meg a **Beállítások -> Irányítópultok -> Erőforrások** oldalt.
-2. Adj hozzá egy új erőforrást:
+```text
+/anthbot-map-v2/anthbot-map-card.js?v=2.4.6.4
+```
 
-   ```text
-   /anthbot-map-v2/anthbot-map-card.js?v=2.4.5
-   ```
+Egyszerre csak egy Anthbot Map Card resource legyen engedélyezve.
 
-3. Típusnak válaszd a **JavaScript module** lehetőséget.
-4. Indítsd újra a Home Assistantot, majd nyomj `Ctrl+Shift+R`-t.
-
-Egyszerre csak egy Anthbot Map Card-erőforrás legyen engedélyezve.
-
-## Kézi telepítés
-
-1. Töltsd le a legújabb kiadás ZIP-fájlját.
-2. Másold a `custom_components/anthbot_map/` mappát a
-   `/config/custom_components/anthbot_map/` mappába.
-3. Indítsd újra a Home Assistantot.
-4. Nyisd meg a **Beállítások -> Eszközök és szolgáltatások** oldalt, és add
-   hozzá az **Anthbot Map** integrációt.
-
-# A térképkártya hozzáadása
+# Térképkártya hozzáadása
 
 ## Minimális konfiguráció
 
-A **Fejlesztői eszközök -> Állapotok** oldalon keresd meg az integráció által
-létrehozott térképentitást. Az entitásazonosító általában `_map` végződésű.
-
 ```yaml
 type: custom:anthbot-map-card
 entity: sensor.YOUR_MOWER_map
 name: Anthbot Map
 ```
 
-A `sensor.YOUR_MOWER_map` helyére a saját térképentitásodat kell írni.
+A `sensor.YOUR_MOWER_map` helyére az integráció által létrehozott tényleges map entitás kerüljön.
 
-## Saját kertfotó használata
+## Opcionális kertfotó
 
-Másold a kert felülnézeti képét például a `/config/www/garden.jpg` helyre, majd
-így hivatkozz rá:
+Másolj egy felülnézeti képet a `/config/www/garden.jpg` helyre, majd add meg:
 
 ```yaml
 image: /local/garden.jpg
 ```
 
-A legjobb eredményhez felülnézeti, lehetőleg torzításmentes légi vagy
-drónfelvétel használata ajánlott.
+A minimális perspektívatorzítású felülnézeti légi vagy drónfotó adja a legjobb kalibrációs eredményt.
 
-## Ajánlott teljes konfiguráció
+## Ajánlott kalibrációs blokkok
 
 ```yaml
-type: custom:anthbot-map-card
-entity: sensor.YOUR_MOWER_map
-name: Anthbot Map
-image: /local/garden.jpg
-height: 720
-fit: cover
-refresh_interval: 3
-robot_heading_source: cloud
-robot_heading_offset: 0
-mowed_path_color: rgba(255, 235, 59, 0.82)
-mowed_path_width: 10
-boundary_width: 3
-boundary_color: rgba(74, 101, 255, 0.9)
-show_zones: true
-show_no_go_zones: true
-show_no_go_labels: true
-show_mowed_path: true
-show_decoded_boundary: true
 calibration:
   offsetX: 0
   offsetY: 0
@@ -339,106 +205,9 @@ decodedBoundaryCalibration:
   rotation: 0
 ```
 
-## Alapértelmezett menüelrendezés
+Ajánlott sorrend: alap térképigazítás, nyírási útvonal igazítása, robot kalibrációja, majd a dekódolt határvonal igazítása.
 
-A kártya megadható főpanellel indulhat, a lebegő menü eleve nyitva lehet, és
-egy kiválasztott almenü is automatikusan lenyitható. Ezek az opciók nem
-kötelezőek; ha nincsenek megadva, a jelenlegi működés változatlan marad.
-
-```yaml
-type: custom:anthbot-map-card
-entity: sensor.YOUR_MOWER_map
-default_panel: settings
-menu_open: true
-default_submenu: edgeSettings
-```
-
-A `default_panel` támogatott értékei: `control`, `settings`, `interface`,
-`status`, `maintenance` és `diagnostics`.
-
-Hasznos `default_submenu` értékek például: `global`,
-`custom-button-actions`, `edgeSettings`, `manual`, `auto`, `zone-set`
-és `auto-zone-set`. Egy konkrét zóna almenüje is megadható a generált
-kulcsával, például `manual-3` vagy `auto-2`. Ha a `default_submenu`
-meg van adva YAML-ban, ez induláskor elsőbbséget élvez a böngészőben korábban
-megjegyzett almenüvel szemben.
-
-# Kalibráció
-
-A négy kalibrációs rész eltérő térképréteget szabályoz.
-
-## Térkép illesztése
-
-A `calibration` blokk az ANTHBOT teljes térképi koordinátarendszerének
-alapillesztését végzi el a kertfotóhoz. Ezt állítsd be először.
-
-```yaml
-calibration:
-  offsetX: 0
-  offsetY: 0
-  scaleX: 1
-  scaleY: 1
-  rotation: 0
-```
-
-## Robot kalibráció
-
-A `robotCalibration` a robotikon helyzetének, méretének és
-iránykorrekciójának finomhangolására használható. Nem forgatja el a nyírási
-útvonalat.
-
-```yaml
-robotCalibration:
-  offsetX: 0
-  offsetY: 0
-  scaleX: 1
-  scaleY: 1
-  rotation: 0
-```
-
-## Nyírási útvonal kalibráció
-
-A `mowingPathCalibration` külön mozgatja, méretezi és forgatja az aktuális és
-korábbi nyírási útvonalakat, valamint a lenyírt terület megjelenítését.
-
-```yaml
-mowingPathCalibration:
-  offsetX: 0
-  offsetY: 0
-  scaleX: 1
-  scaleY: 1
-  rotation: 0
-```
-
-Ez a kalibráció független a robotikon irányától.
-
-## Határvonal kalibráció
-
-A `decodedBoundaryCalibration` a dekódolt gyephatárvonal külön illesztésére
-használható.
-
-```yaml
-decodedBoundaryCalibration:
-  offsetX: 0
-  offsetY: 0
-  scaleX: 1
-  scaleY: 1
-  rotation: 0
-```
-
-## A kalibráció ajánlott sorrendje
-
-1. A **Térkép illesztése** résznél igazítsd a teljes térképet a kertfotóhoz.
-2. A **Nyírási útvonal kalibrációja** résznél illeszd az útvonalat és a
-   lefedettséget.
-3. A **Robot kalibrációja** résznél állítsd be a robotikont és annak irányát.
-4. A **Határvonal illesztése** résznél igazítsd a dekódolt határvonalat.
-5. Kattints a **YAML másolása** gombra, és mentsd el az elkészített beállítást.
-
-Az `offsetX`, `offsetY`, `scaleX` és `scaleY` arányértékek. A kalibrációs
-blokkokban a `rotation` értéke radiánban értendő.
-
-# A robot haladási iránya
+## Robot iránya
 
 Ajánlott beállítás:
 
@@ -446,116 +215,95 @@ Ajánlott beállítás:
 robot_heading_source: cloud
 ```
 
-Elérhető módok:
+Lehetséges módok:
 
-- `cloud`: a hivatalos alkalmazással kompatibilis felhőalapú `pose.yaw`;
-  ajánlott;
-- `movement`: az irány kiszámítása az egymást követő pozíciókból;
-- `auto`: elsődlegesen a mozgási irányt használja, szükség esetén pedig a
-  felhőadatokra vált.
+- `cloud`: a gyári app működéséhez igazodó cloud `pose.yaw`; ajánlott
+- `movement`: irányszámítás az egymást követő pozíciókból
+- `auto`: elsődlegesen movement, szükség esetén cloud fallback
 
-A hivatalos alkalmazás a `pose.yaw` értékét milliradiánként kezeli. A kártya
-ugyanezt az átváltást használja:
+# Battery Saver
 
-```text
-fok = yaw * 180 / (pi * 1000)
-```
+A Battery Saver Home Assistant `switch` entitással tudja vezérelni a töltő tápját. A kiválasztott profiltól/beállításoktól függően kezelheti a felső töltési szintet, nyugalmi fenntartó töltést, félbehagyott feladat folytatási küszöbét, közös/külön RTK-tápot és az ismétlődő 55+1 perces Shutdown Guardot.
 
-Fix képi szögeltérésnél használható:
+A Battery Saver állapota robotonként tartósan mentett, ezért a Home Assistant újraindítása nem nullázza az aktív akkukezelési ciklust.
 
-```yaml
-robot_heading_offset: 0
-robot_image_rotation: 90
-```
+> [!IMPORTANT]
+> A töltőtáp automatizálásához megfelelően konfigurált Home Assistant `switch` entitás szükséges. Az automatikus használat előtt ellenőrizd a teljes beállítást.
 
-Ez a két érték fokban értendő.
+# Fejlesztés és diagnosztika
+
+Az opcionális projekt-riportolási engedélyeket az **Anthbot Map -> Beállítások -> Fejlesztés és diagnosztika** oldalon lehet kezelni.
+
+A jogosultságok egymástól függetlenek:
+
+- **Anonim használati statisztika megosztása**
+- **Automatikus diagnosztika**
+- **Csak olvasási fejlesztői lekérések engedélyezése**
+
+A normál robotvezérléshez egyik sem szükséges.
+
+A riportolás célja a valós modellen/API-n jelentkező problémák feltárása úgy, hogy a robotvezérlési útvonal elkülönítve maradjon. A Developer Agent csak az integrációba előre beépített biztonságos read-only probe-okat használhatja.
 
 # Nyírási előzmények
 
-1. Nyisd meg az **Anthbot Map** kártyát.
-2. Nyisd ki a jobb alsó sarokban található lebegő menüt.
-3. Válaszd a **Diagnosztika** fület.
-4. Nyisd le a **Korábbi nyírási feladatok** részt.
-5. Kattints egy befejezett nyírásra.
-
-Az előzmények megjeleníthetik a dátumot, időtartamot, lenyírt területet,
-folyamatot, nyírási módot, indítási okot, zónákat, valamint a korábbi terület-,
-térkép- és útvonaladatokat.
-
-A lista körülbelül ötpercenként frissül az ANTHBOT felhőből. A részletes képi
-nézet csak akkor nyílik meg, ha a felhőrekord tartalmaz terület-, térkép- vagy
-útvonalfájlt. Az összefoglaló képi fájl nélkül is látható marad.
-
-# Nyelv beállítása
-
-Alapértelmezésben a kártya a Home Assistant kezelőfelületének nyelvét követi:
-
-```yaml
-language: auto
-```
-
-Támogatott nyelvek: angol, magyar, német, francia, spanyol, olasz, portugál,
-holland, lengyel, cseh, szlovák, román, dán, svéd, norvég, finn, egyszerűsített
-kínai, hagyományos kínai, török, thai, vietnámi, koreai és khmer. Nem támogatott
-nyelvnél a kártya angolra vált.
+Nyisd meg az Anthbot Map kártyát, válaszd a **Diagnosztika**, majd a **Korábbi nyírási feladatok** részt. A befejezett munkákhoz elérhető lehet dátum, időtartam, lenyírt terület, százalék, nyírási mód, indítás oka, érintett zónák és korábbi térkép-/útvonaladat.
 
 # Frissítés
 
-HACS használata esetén:
+HACS használatakor:
 
 1. Telepítsd a HACS által felajánlott frissítést.
 2. Indítsd újra a Home Assistantot.
-3. Frissítsd a böngészőt `Ctrl+Shift+R` használatával.
+3. Frissítsd keményen a böngészőt `Ctrl+Shift+R` billentyűvel.
 
-Storage módú Lovelace esetén az integráció automatikusan frissíti az erőforrás
-verzióparaméterét. YAML erőforrásmódban frissítés után módosítsd a
-gyorsítótárat megkerülő verzióparamétert, például:
-`/anthbot-map-v2/anthbot-map-card.js?v=2.4.5`.
+YAML resource módban a cache-busting verziót is állítsd az aktuális verzióra, például:
 
-# Hibaelhárítás
+```text
+/anthbot-map-v2/anthbot-map-card.js?v=2.4.6.4
+```
+
+# Hibakeresés
 
 ## A kártya nem található
 
 Ellenőrizd, hogy:
 
-- telepítve van-e az Anthbot Map, és újraindult-e a Home Assistant;
-- létezik-e a `/config/www/anthbot-map-v2/anthbot-map-card.js` fájl;
-- szerepel-e az erőforrások között az `/anthbot-map-v2/anthbot-map-card.js`;
-- az erőforrás típusa **JavaScript module**-e;
-- nincs-e engedélyezve egy régi, duplikált Anthbot Map Card-erőforrás.
+- az Anthbot Map telepítve van és a Home Assistant újra lett indítva;
+- létezik a `/config/www/anthbot-map-v2/anthbot-map-card.js`;
+- az `/anthbot-map-v2/anthbot-map-card.js` JavaScript module-ként szerepel;
+- nincs engedélyezve régi, duplikált Anthbot Map Card resource.
 
-Ezután nyomj `Ctrl+Shift+R`-t.
+Ezután `Ctrl+Shift+R`.
 
 ## Nem jelenik meg a térkép
 
-Ellenőrizd, hogy a helyes térképentitás van-e megadva, az állapota `ready`-e,
-és az attribútumai között megtalálható-e a `pose` és a térképadat. Ellenőrizd a
-Home Assistant naplójában az `anthbot_map` hibákat is.
+Ellenőrizd, hogy a megfelelő robot map entitása van kiválasztva, annak állapota ready, és az attribútumokban van aktuális robot-/térképadat. Nézd meg a Home Assistant naplóban az `anthbot_map` hibákat is.
 
-Az M-szériás térképkezelés támogatott; a határvonal-, útvonal- és zónakezelés M9 Pro hardveren közvetlenül tesztelve lett.
+## N8 probléma
 
-## A robot iránya hibás
+Az N8 támogatás jelenleg tesztelésre elérhető, de ebben a projektben még nem történt valós N8 hardveres validáció. N8-specifikus hiba jelentésekor csatolj személyes adatoktól megtisztított diagnosztikát.
 
-Elsőként használd a `robot_heading_source: cloud` beállítást. Ha a robotikon
-állandó szögeltéréssel jelenik meg, állítsd be a `robot_heading_offset` értékét,
-majd finomhangold a **Robot kalibrációja** résznél.
+# Hibák jelentése
 
-## Nem jelennek meg a nyírási előzmények
-
-Ellenőrizd, hogy 2.3.0 vagy újabb verzió van-e telepítve, a megfelelő robot
-térképentitását használod-e, szerepel-e `mowing_records` az attribútumok között,
-működik-e a felhőkapcsolat, és eltelt-e legalább öt perc az utolsó frissítés
-óta.
-
-# Hibabejelentés
-
-Hibát itt lehet bejelenteni:
+Issue nyitása:
 
 https://github.com/Mqbretrofit/ha-anthbot-map-v2/issues
 
-Hibabejelentés előtt töröld vagy takard ki a jelszavakat, bearer tokeneket,
-AWS-azonosítókat és kulcsokat, robotsorozatszámokat, PIN-kódokat,
-GPS-koordinátákat, kertfotókat és más személyes adatokat.
+Diagnosztika közzététele előtt távolítsd el a jelszavakat, bearer tokeneket, AWS ID-kat/kulcsokat, PIN-kódokat, GPS-koordinátákat, kertfotókat és egyéb személyes adatokat.
+
+# A fejlesztés támogatása
+
+Az Anthbot Map fejlesztése protokollkutatást, modellenkénti fejlesztést, valódi eszközös tesztelést, diagnosztikát és folyamatos kompatibilitási munkát igényel.
+
+Ha hasznos számodra a projekt, GitHub Sponsorson támogathatod a további fejlesztést:
+
+**https://github.com/sponsors/Mqbretrofit**
+
+Havi és egyszeri támogatás is választható. Konkrét modell vagy funkció fejlesztése a repository **Sponsored feature request** issue űrlapján is javasolható.
+
+További információ: [SUPPORT.md](SUPPORT.md)
+
+A támogatás ezt a független, nyílt forráskódú projektet segíti. Nem jelent beleszólási jogot a roadmapbe, és nem garantálja, hogy egy kért funkció technikailag megvalósítható.
 
 # Köszönet
 
@@ -563,6 +311,10 @@ GPS-koordinátákat, kertfotókat és más személyes adatokat.
 - https://github.com/AdrianTIonut/anthbot_genie_ha
 - https://github.com/reloxx13/ioBroker.anthbot-genie
 
+# Korábbi részletes dokumentáció
+
+A korábbi 2.4.5 magyar README változatlanul megőrzésre kerül a `docs/archive/README_HU_v2.4.5.md` fájlban. Az aktuális működéshez és verzióhoz ezt a README-t és a legfrissebb release note-okat kell alapul venni.
+
 # Licenc
 
-MIT - részletek a [LICENSE](LICENSE) fájlban.
+MIT - lásd [LICENSE](LICENSE).
