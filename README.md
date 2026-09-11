@@ -15,6 +15,12 @@ Anthbot Map connects Home Assistant to the ANTHBOT cloud, creates model-aware mo
 > [!WARNING]
 > This is an independent community project and is not affiliated with or endorsed by ANTHBOT.
 
+## ❤️ Support development
+
+Anthbot Map is an independent open-source community project. Continued development includes protocol research, model-specific implementation, map/path decoding, diagnostics, regression testing and real-device validation.
+
+If this integration is useful to you, you can support continued development through **[GitHub Sponsors](https://github.com/sponsors/Mqbretrofit)**. For sponsored feature requests, priority development and additional support options, see **[SUPPORT.md](SUPPORT.md)**.
+
 ## Current version
 
 Stable version: **2.4.6.4**
@@ -290,20 +296,6 @@ Open an issue at:
 https://github.com/Mqbretrofit/ha-anthbot-map-v2/issues
 
 Before publishing diagnostics, remove passwords, bearer tokens, AWS IDs/keys, PIN codes, GPS coordinates, garden photographs, and other private information.
-
-# Support development
-
-Anthbot Map requires protocol research, model-specific development, real-device testing, diagnostics, and ongoing compatibility work.
-
-If the project is useful to you, you can support continued development through **GitHub Sponsors**:
-
-**https://github.com/sponsors/Mqbretrofit**
-
-Monthly and one-time sponsorship options are available. Specific model/feature work can also be proposed through the repository's **Sponsored feature request** issue form.
-
-More information: [SUPPORT.md](SUPPORT.md)
-
-Sponsorship supports this independent open-source project. It does not buy control over the roadmap or guarantee that a requested feature is technically feasible.
 
 # Credits
 
