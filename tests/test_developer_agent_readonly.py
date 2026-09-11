@@ -44,6 +44,8 @@ class DeveloperAgentReadonlyTests(unittest.TestCase):
         self.assertIn('job.get("params")', source)
         self.assertIn('"probe_actions": sorted(DEVELOPER_AGENT_ALLOWED_PROBES)', source)
         self.assertIn('"state_inspector_paths": True', source)
+        self.assertIn("key in _FRAMEWORK_LINK_KEYS", source)
+        self.assertIn('"__omitted__": "framework-link"', source)
         self.assertNotIn("eval(", source)
         self.assertNotIn("exec(", source)
 
