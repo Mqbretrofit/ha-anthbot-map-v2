@@ -1,1 +1,0 @@
-Implementation is intentionally isolated in models/reliability_v2464.py and installed after existing model adapters. This allows rollback of the maintenance layer without touching mower-control payloads.
