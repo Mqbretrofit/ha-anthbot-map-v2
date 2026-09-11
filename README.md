@@ -3,148 +3,147 @@
 [English](README.md) | [Magyar](README_HU.md)
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
+[![GitHub release](https://img.shields.io/github/v/release/Mqbretrofit/ha-anthbot-map-v2)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/latest)
 [![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Mqbretrofit&repository=ha-anthbot-map-v2&category=integration)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Unofficial Home Assistant integration and custom map card for ANTHBOT robotic
-lawn mowers.
+Unofficial Home Assistant integration and custom Lovelace map card for ANTHBOT robotic lawn mowers.
 
-The integration connects Home Assistant to the ANTHBOT cloud, creates the
-entities required to monitor and control the mower, and bundles the
-`anthbot-map-card` Lovelace card.
-
-The card can display the mower, charging station, lawn boundary, mowing zones,
-no-go zones, live and historical mowing paths, covered area, and an optional
-aerial or drone photograph of the garden.
+Anthbot Map connects Home Assistant to the ANTHBOT cloud, creates model-aware mower entities and bundles the `anthbot-map-card`. The card can display the mower, charging station, lawn boundary, mowing zones, no-go zones, live and historical mowing paths, calculated coverage and an optional aerial/drone photograph of the garden.
 
 > [!WARNING]
-> This is a community project and is not affiliated with ANTHBOT.
+> This is a community project and is not affiliated with ANTHBOT/TMT.
 
-## Current version
+## Current stable version
 
-Stable version: **2.4.5**
+**Anthbot Map 2.4.6.4**
 
-### Highlights in 2.4.5
+- Release: [v2.4.6.4](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.6.4)
+- HACS installs the latest stable GitHub release.
+- The bundled frontend resource uses the matching `?v=2.4.6.4` cache key.
 
-- Greatly reduces unnecessary Home Assistant work by filtering duplicate MQTT shadow data before coordinator fan-out.
-- Caches unchanged M-series path assembly and mowing-progress geometry instead of rebuilding them on every update.
-- Fixes the Genie task-event REST polling loop so stable operation no longer downloads task events every few seconds.
-- Adds low-overhead runtime activity diagnostics on the existing Map entity for support investigations without Recorder history growth.
-- Preserves the 2.4.4 rain handling, Battery Saver, recurring Shutdown Guard, model-specific Genie/M-series behavior, map/path/zone/history features and custom controls.
-- Directly validated on ANTHBOT Genie 1000, M9 Pro and Home Assistant Green; no Anthbot runaway/busy loop was observed in 120-second profiler tests.
+### What changed in 2.4.6.4
 
-### Highlights in 2.4.4
+- Automatic diagnostics are now episode/edge triggered, so the same persistent `no_go_path_crossing` or other unchanged diagnostic condition is not uploaded repeatedly every hour.
+- Existing diagnostic conditions are seeded at Home Assistant/integration startup, so a restart does not replay an old condition as a new report.
+- Historical cloud task-event errors remain visible as history but now carry explicit fresh/stale metadata; an expired event no longer independently triggers a new automatic robot-error report.
+- The AWS IoT live-shadow listener survives unexpected runtime/transport failures, reconnects with bounded backoff and rotates temporary IoT credentials after repeated reconnect failures.
+- M-series map identity now keeps logical `map.map_id`, `area_id`, `plan_id` and the raster `map_id` embedded in `map_manager_<serial>.tar.gz` as separate protocol-layer identifiers.
+- The M-series fallback no longer derives `map_manager_<map_id>.tar.gz` from a logical map id, and a valid serial-named map-manager is not repeatedly downloaded just because logical and raster IDs differ.
+- Genie, M-series and N8 routing remain separated; normal mower-control payloads were not changed by this maintenance release.
 
-- Adds shared rain-hold handling for **Genie and M-series** task events while keeping the normal mower state as the primary status and showing rain waiting only as a secondary line.
-- Removes the unverified rain countdown so the card no longer displays a guessed remaining time.
-- Refreshes cloud task events immediately after live mower-status transitions, reducing stale `1036` / `1037` rain-event states.
-- Makes **Battery Saver rain-safe**: rain return `1036` and rain-protection rejection `1038` prevent forced mowing resume while rain protection is active.
-- Preserves Shutdown Guard operation during rain hold and keeps shared RTK power available when configured.
-- Fixes the recurring **55+1 minute Shutdown Guard** cycle by waiting until Home Assistant actually reports the smart plug as OFF before re-arming the next cycle.
-- Improves Genie live mowing-progress target fallback when `last_mowing_task` is unavailable while preserving M9/M9 Pro progress behavior.
-- Preserves the existing Genie and M-series model-specific control, map, path, zone, history and custom-button functionality from 2.4.3.
+### Recent 2.4.6.x releases
 
-### Highlights in 2.4.3
+#### 2.4.6.3 — full read-only developer diagnostics
 
-- **M-series map handling now works**, including lawn boundary, mowing path and zone handling. The M-series map implementation has been **directly tested and verified on ANTHBOT M9 Pro**.
-- Genie and M-series (**M5/M9/M9 Pro**) model-specific map, control, status and history paths are separated to prevent cross-model regressions.
-- M-series zone mowing and mowing-history zone association have been improved while keeping the card's own calculated mowing percentage.
-- M9 Pro STOP handling follows the observed official-app protocol.
-- Model-specific mower images are restored: M9 Pro uses its own image, M9/M5 use the M9 image, and the Genie image remains unchanged.
-- Existing Genie functionality and the features from the 2.4.2 release are preserved.
+- Added opt-in `full_state`, `full_diagnostics`, `state_inspector`, `state_diff` and `refresh_diagnostics` Developer Agent probes.
+- Added capability advertisement and safe server-side parameters so future field-level diagnostics normally do not require a new integration build.
+- Read-only diagnostics do not permit arbitrary Python, arbitrary HTTP/MQTT, method/property execution or mower-control commands.
+- Credential-like and sensitive fields remain redacted/protected.
 
-### Highlights in 2.4.2
+#### 2.4.6.2 — reporting heartbeat hotfix
 
-- Adds per-mower custom card-button actions saved in Home Assistant while
-  preserving the existing YAML `button_actions` format.
-- Immediately rebinds the restart-safe 55+1 minute anti-shutdown guard when
-  the configured charger smart plug changes.
-- Changing the battery-saver percentage thresholds does not reset timers that
-  are already running.
-- Invalid settings left over from previous versions are automatically corrected
-  to safe values.
-- Preserves all existing battery-saver profiles, translations, RTK handling,
-  mower controls, and restart persistence.
+- When anonymous usage statistics are enabled, startup/reload sends a lightweight non-blocking heartbeat with the actually running integration version and already-approved anonymous metadata.
+- No heartbeat is sent when anonymous statistics are disabled.
 
-### Highlights in 2.4.1
+#### 2.4.6.1 — Developer Agent setting
 
-- Added three ready-made battery-care profiles: **Maximum battery care**,
-  **Balanced**, and **Always ready**, plus fully adjustable custom settings.
-- Battery-saver settings and operating state are persisted per mower, including
-  charge limits, shared RTK power, current phase, and anti-shutdown timing.
-  Home Assistant restarts no longer reset the active battery-saver cycle.
-- Added the **55+1 minute anti-shutdown protection**: while the mower is docked
-  in standby with charger power off, the charger is enabled for one minute
-  after 55 minutes, then the cycle restarts.
-- The card shows anti-shutdown status and the countdown to the next keep-awake
-  pulse, including initialization and active pulse states.
-- Normal maintenance charging is kept separate from the short keep-awake pulse,
-  and charger power is not switched blindly while mower telemetry is unavailable.
-- Shared and separate RTK power are handled correctly during mowing, return to
-  dock, charging, and RTK initialization.
-- Disabling Battery saver mode immediately restores charger power, while
-  deliberate manual charging remains separate from automatic battery-saver
-  transitions.
-- Fixed integration unload/reload handling and made saved settings apply to the
-  running coordinator without requiring a Home Assistant restart.
-- The Battery saver tile remains a settings-dialog opener; the larger mode
-  checkbox stays inside the dialog.
-- The complete battery-saver interface is available in all 23 supported
-  languages.
+- Added **Allow read-only developer requests** under **Anthbot Map -> Settings -> Development and diagnostics**.
+- Anonymous usage statistics, automatic diagnostics and read-only developer access are three independent permissions.
 
-### Highlights in 2.4.0
+#### 2.4.6 — reporting, diagnostics and N8 test support
 
-- Added an optional battery-saving mode for chargers controlled by a Home
-  Assistant switch entity.
-- Added independently configurable upper charge, idle maintenance, and
-  interrupted-task resume levels.
-- Low-battery returns are detected from ANTHBOT cloud task event `1021`; live
-  mowing progress is not exposed by the cloud API and is not estimated.
-- Home Assistant-started full-map, zone, outer-edge, and dock-edge tasks can be
-  remembered and resumed after recovery charging.
-- Automatic charger switch-on temporarily mutes the mower and restores the
-  previous volume afterwards.
-- Added cloud task event sensors and task-event diagnostics.
+- Added opt-in anonymous usage statistics and opt-in automatic diagnostic reports for newly active mower/task-event errors.
+- Added N8-specific control, status, map/path handling and model-scoped entities for testing.
+- N8 code/API paths are regression-tested and isolated from Genie and M-series detection.
+- Existing Genie and M-series control/map/path/zone/history/Battery Saver behavior was preserved.
 
-### Highlights in 2.3.0
-
-- Previous mowing tasks now include their available area, map, and path data.
-- The map, mower icon, mowing path, and decoded boundary can be calibrated
-  separately.
-- Mirrored mower heading during horizontal travel has been corrected.
-- Mowing-path rotation on non-square maps has been corrected.
-- Accounts containing multiple mowers are handled more reliably.
-- Calibration and mowing-history text is available in all 23 supported
-  languages.
-- Remaining frontend debug output has been removed.
-- Experimental M5/M9 shadow and live-path handling has been added.
-
-> [!IMPORTANT]
-> **Map handling is now supported on the ANTHBOT M-series (M5/M9/M9 Pro).**
-> Boundary, mowing-path and zone handling have been directly tested and verified
-> on an **M9 Pro**. M5 and M9 use the same model-specific M-series architecture,
-> but those two models have not been directly hardware-tested by this project yet.
+For older changes, see the [GitHub Releases](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases) page and [CHANGELOG.md](CHANGELOG.md).
 
 ## Supported models
 
-The integration supports ANTHBOT Genie and the M-series model family.
+| Model family | Status | Notes |
+| --- | --- | --- |
+| ANTHBOT Genie | Supported | Shared Genie path; real-device validation includes Genie 1000. |
+| ANTHBOT M9 Pro | Supported | M-series map/control/status/history path; directly hardware-tested. |
+| ANTHBOT M9 | Supported through shared M-series implementation | Not directly hardware-validated by this project yet. |
+| ANTHBOT M5 | Supported through shared M-series implementation | Not directly hardware-validated by this project yet. |
+| ANTHBOT N8 | Testing available | Model-specific code/API path is implemented and isolated; real N8 hardware validation is still required. |
 
-- **ANTHBOT Genie:** supported; existing Genie functionality is preserved.
-- **ANTHBOT M9 Pro:** M-series map/control/status/history path supported and directly hardware-tested.
-- **ANTHBOT M9:** supported through the shared M-series implementation; not directly hardware-tested by this project yet.
-- **ANTHBOT M5:** supported through the shared M-series implementation; not directly hardware-tested by this project yet.
+> [!IMPORTANT]
+> Model-specific behavior is intentionally separated. Genie, M5/M9/M9 Pro and N8 fixes should not be widened into another model family without protocol evidence.
+
+## Main features
+
+- ANTHBOT cloud login from the Home Assistant UI
+- multiple mowers on one ANTHBOT account
+- persistent AWS IoT/MQTT shadow updates plus cloud REST data
+- resilient automatic MQTT reconnect handling
+- native Home Assistant `lawn_mower` entity
+- full-area, manual-zone and automatic-zone mowing
+- outer-edge and dock-surroundings mowing where supported by the model
+- pause, resume, stop and return-to-dock controls
+- battery, charging, status, RTK, network, firmware and maintenance entities
+- map, zone, task-event, error and diagnostic entities
+- live mowing path and calculated mowing-coverage display
+- previous mowing tasks with available area/map/path details
+- model-specific map/path handling for Genie, M-series and N8 paths
+- optional aerial or drone photograph as the map background
+- fullscreen map, zoom, pan and rotation
+- separate map, mower, mowing-path and decoded-boundary calibration
+- per-mower custom card-button actions stored in Home Assistant
+- Battery Saver and 55+1 minute Shutdown Guard for smart-plug-controlled chargers
+- rain-aware Battery Saver/return handling
+- generated YAML that can be copied from the card
+- 23 interface languages
+- optional anonymous usage reporting, automatic diagnostics and read-only Developer Agent access
+
+## Battery Saver and Shutdown Guard
+
+Battery Saver is optional and is intended for installations where the mower/RTK power supply is controlled by a Home Assistant `switch` entity.
+
+It supports:
+
+- per-mower persistent settings and operating state;
+- **Maximum battery care**, **Balanced**, **Always ready** and fully adjustable custom profiles;
+- configurable upper charge limit, maintenance-charge level and interrupted-task resume level;
+- shared or separate RTK power handling;
+- restart-safe state persistence;
+- a **55+1 minute Shutdown Guard** that periodically restores charger power briefly while a docked mower is intentionally kept without charger power;
+- rain-safe recovery behavior so rain-protection events do not force an inappropriate mowing resume.
+
+Battery Saver settings are available from the card and are stored in Home Assistant.
+
+## Development, reporting and diagnostics
+
+Open **Settings -> Devices & services -> Anthbot Map -> Configure -> Development and diagnostics**.
+
+The three permissions are independent and disabled unless the user enables them:
+
+1. **Share anonymous usage statistics** — sends limited installation/model/version information to the project reporting server.
+2. **Send automatic diagnostics** — sends privacy-filtered diagnostic context when a new supported error episode is detected.
+3. **Allow read-only developer requests** — enables the opt-in Developer Agent used for remote read-only troubleshooting.
+
+The project reporting endpoint is operated separately from ANTHBOT/TMT vendor infrastructure.
+
+### Read-only Developer Agent
+
+From 2.4.6.3 the Developer Agent supports generic diagnostics rather than one-off hard-coded field probes:
+
+- `full_state` — complete credential-redacted reported state, including internal integration keys;
+- `full_diagnostics` — full state plus safe runtime snapshots/object inventories;
+- `state_inspector` — read selected nested paths under safe diagnostic roots;
+- `state_diff` — create/reset a baseline and return changed reported-state paths;
+- `refresh_diagnostics` — perform a read-only property refresh, then collect full diagnostics.
+
+The diagnostic boundary deliberately excludes mower-control commands, arbitrary code execution, arbitrary files, arbitrary URLs, arbitrary HTTP/MQTT calls, Home Assistant-wide internals and credential/session objects.
 
 ## Using another ANTHBOT integration
 
-Anthbot Map v2 uses its own `anthbot_map` integration domain, so it can remain
-installed beside an older ANTHBOT integration. Do not enable both integrations
-at the same time.
+Anthbot Map v2 uses its own `anthbot_map` integration domain, so an older ANTHBOT integration may remain installed for rollback. Do **not** enable two ANTHBOT integrations for the same mower at the same time.
 
 > [!CAUTION]
-> Do not run Anthbot Map together with `vincentjanv/anthbot_genie_ha`, the
-> AdrianTIonut fork, or another ANTHBOT Home Assistant integration. Concurrent
-> integrations can open competing cloud sessions and send conflicting commands
-> to the same mower.
+> Do not run Anthbot Map together with `vincentjanv/anthbot_genie_ha`, the AdrianTIonut fork or another ANTHBOT Home Assistant integration. Concurrent integrations can open competing cloud sessions and send conflicting commands to the same mower.
 
 Safe migration and rollback:
 
@@ -152,31 +151,9 @@ Safe migration and rollback:
 2. Disable its config entry under **Settings -> Devices & services**.
 3. Restart Home Assistant.
 4. Add and test **Anthbot Map**.
-5. To roll back, disable Anthbot Map, enable the previous integration, and
-   restart Home Assistant.
+5. To roll back, disable Anthbot Map, enable the previous integration and restart Home Assistant.
 
-Existing entity-registry entries can cause the new entity IDs to receive an
-`_2`, `_3`, or later suffix. This is expected and is not an error.
-
-## Features
-
-- ANTHBOT cloud login from the Home Assistant UI
-- multiple mowers on one ANTHBOT account
-- cloud polling and persistent AWS IoT/MQTT shadow updates
-- automatic MQTT reconnection
-- native Home Assistant `lawn_mower` entity
-- full-area, manual-zone, and automatic-zone mowing
-- outer-edge and dock-surroundings mowing
-- pause, resume, stop, and return-to-dock commands
-- battery, charging, status, RTK, network, firmware, and maintenance data
-- map, zone, error, and diagnostic entities
-- live mowing path and mowing-coverage display
-- previous mowing tasks with area, map, and path detail
-- optional aerial or drone photograph as the background
-- fullscreen map, zoom, pan, and rotation
-- separate map, mower, path, and boundary calibration
-- generated YAML that can be copied from the card
-- 23 selectable interface languages
+Existing entity-registry entries can cause new entity IDs to receive an `_2`, `_3` or later suffix. This is expected and is not an integration error.
 
 ## Requirements
 
@@ -208,8 +185,7 @@ Existing entity-registry entries can cause the new entity IDs to receive an
 2. Install the latest stable version.
 3. Restart Home Assistant.
 
-The map card does not need a separate HACS dashboard repository. The
-`anthbot-map-card` is bundled with the integration and is updated with it.
+The `anthbot-map-card` is bundled with the integration and is updated with it. A separate HACS dashboard repository is not required.
 
 ### 3. Add the ANTHBOT account
 
@@ -235,7 +211,7 @@ Resource type: **JavaScript module**. No manual setup is normally required.
 2. Add:
 
    ```text
-   /anthbot-map-v2/anthbot-map-card.js?v=2.4.5
+   /anthbot-map-v2/anthbot-map-card.js?v=2.4.6.4
    ```
 
 3. Select type **JavaScript module**.
@@ -245,9 +221,8 @@ Only one Anthbot Map Card resource should be enabled at a time.
 
 ## Manual installation
 
-1. Download the ZIP file from the latest GitHub release.
-2. Copy `custom_components/anthbot_map/` to
-   `/config/custom_components/anthbot_map/`.
+1. Download the ZIP file from the [latest GitHub release](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/latest).
+2. Copy `custom_components/anthbot_map/` to `/config/custom_components/anthbot_map/`.
 3. Restart Home Assistant.
 4. Open **Settings -> Devices & services** and add **Anthbot Map**.
 
@@ -255,8 +230,7 @@ Only one Anthbot Map Card resource should be enabled at a time.
 
 ## Minimal configuration
 
-Find the map entity under **Developer Tools -> States**. Its entity ID normally
-ends with `_map`.
+Find the map entity under **Developer Tools -> States**. Its entity ID normally ends with `_map`.
 
 ```yaml
 type: custom:anthbot-map-card
@@ -274,8 +248,7 @@ Copy a top-down image to `/config/www/garden.jpg` and reference it as:
 image: /local/garden.jpg
 ```
 
-A top-down aerial or drone photograph with minimal perspective distortion gives
-the best calibration result.
+A top-down aerial or drone photograph with minimal perspective distortion gives the best calibration result.
 
 ## Recommended full configuration
 
@@ -326,9 +299,7 @@ decodedBoundaryCalibration:
 
 ## Default menu layout
 
-The card can start on a selected main panel, with the floating menu already open,
-and with a selected submenu expanded. These options are optional; when omitted,
-the existing behaviour remains unchanged.
+The card can start on a selected main panel, with the floating menu already open and with a selected submenu expanded.
 
 ```yaml
 type: custom:anthbot-map-card
@@ -338,14 +309,9 @@ menu_open: true
 default_submenu: edgeSettings
 ```
 
-Supported `default_panel` values are `control`, `settings`, `interface`,
-`status`, `maintenance`, and `diagnostics`.
+Supported `default_panel` values are `control`, `settings`, `interface`, `status`, `maintenance` and `diagnostics`.
 
-Useful `default_submenu` values include `global`, `custom-button-actions`,
-`edgeSettings`, `manual`, `auto`, `zone-set`, and `auto-zone-set`.
-A specific zone submenu can also be selected with its generated key, for example
-`manual-3` or `auto-2`. YAML defaults take precedence over the previously
-remembered browser submenu only when `default_submenu` is configured.
+Useful `default_submenu` values include `global`, `custom-button-actions`, `edgeSettings`, `manual`, `auto`, `zone-set` and `auto-zone-set`. A specific zone submenu can also be selected with a generated key such as `manual-3` or `auto-2`.
 
 # Calibration
 
@@ -353,8 +319,7 @@ The four calibration sections control different map layers.
 
 ## Map alignment
 
-`calibration` performs the base alignment of the complete ANTHBOT map
-coordinate system to the garden photograph. Use it first.
+`calibration` performs the base alignment of the complete ANTHBOT map coordinate system to the garden photograph. Use it first.
 
 ```yaml
 calibration:
@@ -367,8 +332,7 @@ calibration:
 
 ## Mower calibration
 
-`robotCalibration` fine-tunes the mower icon's position, size, and direction
-correction. It does not rotate the mowing path.
+`robotCalibration` fine-tunes the mower icon position, size and direction correction. It does not rotate the mowing path.
 
 ```yaml
 robotCalibration:
@@ -381,8 +345,7 @@ robotCalibration:
 
 ## Mowing-path calibration
 
-`mowingPathCalibration` independently moves, scales, and rotates the current
-mowing path, historical paths, and mowing-coverage rendering.
+`mowingPathCalibration` independently moves, scales and rotates the current mowing path, historical paths and mowing-coverage rendering.
 
 ```yaml
 mowingPathCalibration:
@@ -414,8 +377,7 @@ decodedBoundaryCalibration:
 4. Use **Boundary alignment** to align the decoded boundary.
 5. Select **Copy YAML** and save the generated configuration.
 
-`offsetX`, `offsetY`, `scaleX`, and `scaleY` are relative values. `rotation`
-values in calibration blocks are radians.
+`offsetX`, `offsetY`, `scaleX` and `scaleY` are relative values. `rotation` values in calibration blocks are radians.
 
 # Mower heading
 
@@ -454,12 +416,9 @@ These two values are degrees.
 4. Expand **Previous mowing tasks**.
 5. Select a completed session.
 
-History entries can show the date, duration, mowed area, progress, mowing mode,
-start reason, affected zones, and available historical area, map, and path.
+History entries can show the date, duration, mowed area, progress, mowing mode, start reason, affected zones and available historical area/map/path data.
 
-The list is refreshed from the ANTHBOT cloud approximately every five minutes.
-Visual detail opens only when the cloud record contains an area, map, or path
-file. The summary remains visible when no visual file is available.
+The list is refreshed from the ANTHBOT cloud periodically. Visual detail opens only when the cloud record contains an area, map or path file; the summary remains visible when no visual file is available.
 
 # Language
 
@@ -469,10 +428,7 @@ The card follows the Home Assistant interface language by default:
 language: auto
 ```
 
-Supported languages are English, Hungarian, German, French, Spanish, Italian,
-Portuguese, Dutch, Polish, Czech, Slovak, Romanian, Danish, Swedish, Norwegian,
-Finnish, simplified Chinese, traditional Chinese, Turkish, Thai, Vietnamese,
-Korean, and Khmer. Unsupported languages fall back to English.
+Supported languages are English, Hungarian, German, French, Spanish, Italian, Portuguese, Dutch, Polish, Czech, Slovak, Romanian, Danish, Swedish, Norwegian, Finnish, simplified Chinese, traditional Chinese, Turkish, Thai, Vietnamese, Korean and Khmer. Unsupported languages fall back to English.
 
 # Updating
 
@@ -480,11 +436,13 @@ When using HACS:
 
 1. Install the update offered by HACS.
 2. Restart Home Assistant.
-3. Hard-refresh the browser with `Ctrl+Shift+R`.
+3. Hard-refresh the browser with `Ctrl+Shift+R` if the frontend still looks old.
 
-In Lovelace storage mode, the integration updates the resource version
-automatically. In YAML resource mode, update the cache-busting query after an
-upgrade, for example `/anthbot-map-v2/anthbot-map-card.js?v=2.4.5`.
+In Lovelace storage mode, the integration updates the resource version automatically. In YAML resource mode, update the cache-busting query after an upgrade, for example:
+
+```text
+/anthbot-map-v2/anthbot-map-card.js?v=2.4.6.4
+```
 
 # Troubleshooting
 
@@ -501,22 +459,25 @@ Then hard-refresh with `Ctrl+Shift+R`.
 
 ## Map is not displayed
 
-Check that the correct map entity is configured, its state is `ready`, and its
-attributes contain `pose` and map data. Also check the Home Assistant log for
-`anthbot_map` errors.
+Check that the correct map entity is configured, its state is `ready`, and its attributes contain the expected map/pose data for the mower model. Also check the Home Assistant log for `anthbot_map` errors.
 
-M-series map handling is supported and has been directly tested on M9 Pro hardware.
+M-series map handling is supported and has been directly tested on M9 Pro hardware. N8 map/path support is currently a model-specific testing path and still needs real-device verification.
 
 ## Mower heading is incorrect
 
-Start with `robot_heading_source: cloud`. If the icon has a constant angular
-offset, adjust `robot_heading_offset`, then fine-tune **Mower calibration**.
+Start with `robot_heading_source: cloud`. If the icon has a constant angular offset, adjust `robot_heading_offset`, then fine-tune **Mower calibration**.
 
 ## Mowing history is missing
 
-Check that version 2.3.0 or newer is installed, the card uses the correct
-mower's map entity, `mowing_records` is present in its attributes, the cloud
-connection works, and at least five minutes have passed since the last refresh.
+Check that the card uses the correct mower's map entity, `mowing_records` is present in its attributes, the cloud connection works and the corresponding cloud record actually contains history data.
+
+## Repeated old diagnostic/error report
+
+Version 2.4.6.4 adds episode-based deduplication and stale task-event handling. After updating, restart Home Assistant once so the current condition becomes the startup baseline.
+
+## Live map/position stopped after an MQTT error
+
+Version 2.4.6.4 keeps the live-shadow supervisor running after normal transport/runtime failures and rotates temporary IoT credentials after repeated reconnect failures. Check the `anthbot_map` logs and Developer Agent diagnostics before changing model-specific code.
 
 # Reporting problems
 
@@ -524,9 +485,7 @@ Open an issue at:
 
 https://github.com/Mqbretrofit/ha-anthbot-map-v2/issues
 
-Before publishing diagnostics, remove passwords, bearer tokens, AWS IDs and
-keys, mower serial numbers, PIN codes, GPS coordinates, garden photographs,
-and other personal data.
+If you attach diagnostics manually, remove passwords, bearer tokens, AWS IDs/keys, mower serial numbers, PIN codes, GPS coordinates, garden photographs and other personal data. Built-in project diagnostics apply their own filtering, but you should still review anything you publish publicly.
 
 # Credits
 
