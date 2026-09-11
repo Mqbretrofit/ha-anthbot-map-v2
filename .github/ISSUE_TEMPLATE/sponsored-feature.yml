@@ -1,0 +1,72 @@
+name: Sponsored feature request
+description: Propose and optionally sponsor a specific Anthbot Map feature, model, or protocol investigation.
+title: "[Sponsored feature] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for supporting Anthbot Map development. This form is for clearly scoped features, mower-model support, and protocol investigations that you may want to sponsor.
+
+        Please do not post passwords, tokens, cloud credentials, or other secrets.
+
+  - type: dropdown
+    id: request_type
+    attributes:
+      label: Request type
+      options:
+        - Small feature / UI improvement
+        - Integration or control feature
+        - Map / path / zone feature
+        - New mower model support
+        - Protocol investigation
+        - Diagnostics / compatibility work
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: mower_model
+    attributes:
+      label: Mower model
+      description: Exact ANTHBOT model, if applicable.
+      placeholder: e.g. Genie 1000, M9 Pro, N8
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: What should the feature do?
+      description: Describe the desired behavior and the user problem it solves.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Available test material
+      description: Tell us whether you can provide diagnostics, protocol captures, screenshots, app behavior, or access to matching hardware for testing. Do not include secrets.
+
+  - type: dropdown
+    id: contribution_range
+    attributes:
+      label: Indicative sponsorship range
+      description: This is not a payment or binding quote. Scope and feasibility are agreed before work begins.
+      options:
+        - I want a quote first
+        - €50–100
+        - €100–300
+        - €300–500+
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Project terms
+      options:
+        - label: I understand that sponsorship does not guarantee feasibility or acceptance.
+          required: true
+        - label: I understand that sponsored work will normally be contributed back to the public open-source project.
+          required: true
+        - label: I have not included passwords, tokens, cloud credentials, or other secrets in this issue.
+          required: true
