@@ -17,7 +17,6 @@ import asyncio
 import hashlib
 import json
 import logging
-from pathlib import Path
 import re
 from typing import Any, Awaitable, Callable
 
@@ -32,6 +31,7 @@ from .const import (
     DEVELOPER_AGENT_POLL_ENDPOINT,
     DEVELOPER_AGENT_RESULT_ENDPOINT,
     DOMAIN,
+    INTEGRATION_VERSION,
 )
 from .firmware_diagnostics import build_firmware_diagnostics_report
 
@@ -97,12 +97,8 @@ _STATE_DIFF_BASELINES: dict[int, Any] = {}
 
 
 def _integration_version() -> str | None:
-    try:
-        payload = json.loads(Path(__file__).with_name("manifest.json").read_text("utf-8"))
-    except (OSError, TypeError, ValueError):
-        return None
-    value = payload.get("version") if isinstance(payload, dict) else None
-    return str(value) if value is not None else None
+    """Return the integration version without blocking file I/O."""
+    return INTEGRATION_VERSION
 
 
 def _entry_option(entry: ConfigEntry, key: str, default: bool = False) -> bool:
