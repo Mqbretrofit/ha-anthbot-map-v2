@@ -7,8 +7,6 @@ popup and a separate Lovelace resource for the popup code.
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 import uuid
 from typing import Any
 
@@ -28,6 +26,7 @@ from .const import (
     CONF_SHARE_ANONYMOUS_USAGE,
     DEVELOPER_TELEMETRY_ENDPOINT,
     DOMAIN,
+    INTEGRATION_VERSION,
 )
 from .developer_reporting import async_send_anonymous_usage_report
 
@@ -50,15 +49,8 @@ _UPDATE_SCHEMA = vol.Schema(
 
 
 def _integration_version() -> str:
-    """Return the currently installed integration version."""
-    try:
-        manifest = json.loads(
-            Path(__file__).with_name("manifest.json").read_text(encoding="utf-8")
-        )
-        value = manifest.get("version") if isinstance(manifest, dict) else None
-    except (OSError, TypeError, ValueError):
-        value = None
-    return str(value or "unknown")
+    """Return the currently installed integration version without file I/O."""
+    return INTEGRATION_VERSION
 
 
 def _entry_option(entry: Any, key: str, default: bool = False) -> bool:
