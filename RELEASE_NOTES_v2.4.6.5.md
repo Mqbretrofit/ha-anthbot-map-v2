@@ -8,7 +8,8 @@ Reliability and Home Assistant Recorder hotfix release built on v2.4.6.4.
 - Hardened automatic diagnostics deduplication. Request-specific S3/cloud fields such as `RequestId`, `HostId` and signed URLs no longer make the same persistent map/path/live error look like a new failure on every retry.
 - Ensured only one automatic-diagnostics listener can be installed per coordinator and added episode-clear and hard-repeat guards.
 - Added a second M5/M9/M9 Pro `iot_map.bin` decoder path: the existing vector-boundary format remains preferred, with the proven LZ4 raster decoder used as fallback.
-- Added privacy-safe map-manager probe diagnostics so failed decode/download stages remain visible even if the legacy fallback later returns a different 404.
+- Added an M9/M9 Pro-only final map-manager rescue path: when the current serial-named archive is valid but `iot_map.bin` is still an unknown encoding, usable `area_setting.json` manual-zone geometry is converted to the same convex-hull fallback boundary already used by the frontend instead of falling through to the known-missing `multi_maps/map_<serial>_0` object. M5 and N8 are not routed through this rescue path.
+- Added privacy-safe map-manager probe diagnostics so failed decode/download stages remain visible even if a legacy fallback later returns a different 404.
 - Reduced excessive Home Assistant Recorder churn found in field data from a 14.6 GB SQLite database:
   - removed fast-changing shared mower attributes from unrelated sensor and binary-sensor entities;
   - stopped task-event age counters from changing entity attributes every update;
@@ -24,4 +25,4 @@ This release prevents/reduces **future** ANTHBOT Recorder growth. It intentional
 
 ## Scope protection
 
-No mower command routing is changed in this release. Genie, M5/M9-family and N8 control paths remain separated; the new M-series map decoding fallback does not widen N8 command handling.
+No mower command routing is changed in this release. Genie, M5/M9-family and N8 control paths remain separated. The raster fallback remains M-series guarded, while the final area-zone-hull rescue is M9/M9 Pro-only and does not alter M5 or N8 control/map routing.
