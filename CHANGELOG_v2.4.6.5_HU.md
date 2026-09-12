@@ -22,6 +22,8 @@ Ez a kiadás a 2.4.6.4 stabil működésére épül, és célzott megbízhatós�
 
 - A `map_manager_<serial>.tar.gz` továbbra is a sorozatszám-alapú aktuális M-series térképforrás.
 - Az `iot_map.bin` meglévő vektoros dekódere mellé bekerült egy második, LZ4 raster fallback a már bizonyított ANTHBOT map-raster dekóderrel.
+- M9/M9 Pro esetén bekerült egy végső, modellhez kötött map-manager mentőút is: ha az aktuális archívum érvényes, de az `iot_map.bin` egyik ismert formátumban sem dekódolható, a használható `area_setting.json` `custom_areas` geometriájából ugyanaz a convex-hull alapú fallback határ készül, amelyet a frontend már korábban is végső megjelenítési tartalékként használt. Így az M9 nem esik tovább a bizonyítottan hiányzó `multi_maps/map_<serial>_0` objektumra.
+- Ez a végső zone-hull mentőút csak M9/M9 Pro modellnél aktiválódik; M5 és N8 nem kerül erre az útvonalra.
 - Ha a map-manager archívum lejön, de az `iot_map.bin` egyik formátumban sem ismerhető fel, a diagnosztika ezt most külön jelzi, ahelyett hogy csak a későbbi legacy `multi_maps` fallback 404 hibája látszana.
 - A diagnosztikában megjelenik a map-manager probe állapota, az archívum neve, az `iot_map.bin` jelenléte/mérete és a dekódolási eredmény. Presigned URL vagy hitelesítési adat nem kerül a riportba.
 - A logikai `map_id` / `area_id` / `plan_id` és a raster map id továbbra is külön protokollazonosítóként kezelendő.
@@ -51,4 +53,4 @@ A javítás a **jövőbeli adatbázis-növekedést** csökkenti. A már meglév�
 
 - A módosítások nem változtatják meg a mower start/pause/resume/stop parancsokat.
 - Genie, M-series és N8 parancs-routing továbbra is elkülönített.
-- Az M-series map fallback csak M5/M9-family modellnél aktiválódik; az N8 saját modellguardja és vezérlési útvonala változatlan marad.
+- Az LZ4 raster map fallback M-series guarded marad, a zone-hull végső mentőút pedig csak M9/M9 Pro; az N8 saját modellguardja és vezérlési útvonala változatlan marad.
