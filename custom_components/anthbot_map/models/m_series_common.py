@@ -17,6 +17,7 @@ from .m_series_status import install_m_series_status_support
 from .m_series_zones import install_m_series_zone_support
 from .performance_diagnostics import install_performance_diagnostics
 from .rain_battery_saver import install_rain_battery_saver_safety
+from .recorder_v2465 import install_recorder_v2465
 from .reliability_v2464 import install_runtime_reliability_fixes
 from .reliability_v2465 import install_v2465_reliability_fixes
 from .report_identity_suffix import install_report_identity_suffix
@@ -68,3 +69,4 @@ def install_m_series_compat() -> None:
     install_runtime_reliability_fixes()
     install_report_identity_suffix()
     install_v2465_reliability_fixes()
+    install_recorder_v2465()
