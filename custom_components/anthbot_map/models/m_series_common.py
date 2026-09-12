@@ -18,6 +18,7 @@ from .m_series_zones import install_m_series_zone_support
 from .performance_diagnostics import install_performance_diagnostics
 from .rain_battery_saver import install_rain_battery_saver_safety
 from .reliability_v2464 import install_runtime_reliability_fixes
+from .report_identity_suffix import install_report_identity_suffix
 from .runtime_optimizations import (
     install_runtime_optimization_diagnostics,
     install_runtime_optimizations,
@@ -60,6 +61,8 @@ def install_m_series_compat() -> None:
     install_runtime_optimizations()
     install_performance_diagnostics()
     install_runtime_optimization_diagnostics()
-    # Install last so it wraps the final coordinator/model behavior instead of
-    # being silently replaced by a later adapter.
+    # Install the reliability layer after all mower/model adapters. The report
+    # identity wrapper below only enriches generated diagnostics metadata and
+    # does not alter coordinator, control, map, path, or model behavior.
     install_runtime_reliability_fixes()
+    install_report_identity_suffix()
