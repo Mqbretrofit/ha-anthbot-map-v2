@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 import secrets
 import uuid
 from typing import Any
@@ -20,6 +18,7 @@ from .const import (
     CONF_DEVELOPER_AGENT_KEY,
     CONF_DEVELOPER_INSTALLATION_ID,
     DOMAIN,
+    INTEGRATION_VERSION,
 )
 
 SERVICE_GET_DEVELOPER_AGENT = "developer_agent_get"
@@ -37,12 +36,8 @@ _UPDATE_SCHEMA = vol.Schema(
 
 
 def _integration_version() -> str:
-    try:
-        payload = json.loads(Path(__file__).with_name("manifest.json").read_text("utf-8"))
-    except (OSError, TypeError, ValueError):
-        return "unknown"
-    value = payload.get("version") if isinstance(payload, dict) else None
-    return str(value or "unknown")
+    """Return the integration version without blocking file I/O."""
+    return INTEGRATION_VERSION
 
 
 def _first_entry(hass: HomeAssistant) -> ConfigEntry | None:

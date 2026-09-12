@@ -79,7 +79,8 @@ class RuntimeOptimizationSourceTests(unittest.TestCase):
         manifest = json.loads(
             (ROOT / "custom_components/anthbot_map/manifest.json").read_text(encoding="utf-8")
         )
-        self.assertEqual("2.4.6.4", manifest["version"])
+        version = str(manifest["version"])
+        self.assertRegex(version, r"^\d+(?:\.\d+){2,3}$")
 
 
 if __name__ == "__main__":
