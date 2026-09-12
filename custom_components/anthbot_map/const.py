@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 DOMAIN = "anthbot_map"
+INTEGRATION_VERSION = "2.4.6.4"
 
 CONF_API_HOST = "api_host"
 CONF_BEARER_TOKEN = "bearer_token"
