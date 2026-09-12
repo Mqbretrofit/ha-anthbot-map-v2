@@ -103,6 +103,7 @@ process.stdout.write(JSON.stringify({longSeconds, explicitMilliseconds, filtered
     def test_release_version_and_frontend_mirrors_are_consistent(self) -> None:
         manifest = json.loads((INTEGRATION / "manifest.json").read_text(encoding="utf-8"))
         init_source = (INTEGRATION / "__init__.py").read_text(encoding="utf-8")
+        const_source = (INTEGRATION / "const.py").read_text(encoding="utf-8")
         popup_backend = (INTEGRATION / "developer_optin.py").read_text(encoding="utf-8")
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 
@@ -113,11 +114,32 @@ process.stdout.write(JSON.stringify({longSeconds, explicitMilliseconds, filtered
         # on its previous cache key; the new popup has its own dynamic version key.
         if "-" not in version:
             self.assertIn(f'?v={version}', init_source)
+        self.assertIn(f'INTEGRATION_VERSION = "{version}"', const_source)
         self.assertIn(
             'resource_url = f"{_POPUP_RESOURCE_PATH}?v={_integration_version()}"',
             popup_backend,
         )
         self.assertIn("Release tag $tag does not match manifest version", workflow)
+        self.assertIn("custom_components/anthbot_map/const.py", workflow)
+        self.assertIn("INTEGRATION_VERSION", workflow)
+
+        # Runtime callbacks run on Home Assistant's event loop. They must never
+        # synchronously reopen manifest.json just to obtain the version string.
+        for filename in (
+            "developer_optin.py",
+            "developer_agent_optin.py",
+            "developer_agent.py",
+            "developer_reporting.py",
+            "firmware_diagnostics.py",
+        ):
+            runtime_source = (INTEGRATION / filename).read_text(encoding="utf-8")
+            self.assertNotIn(
+                'with_name("manifest.json").read_text',
+                runtime_source,
+                filename,
+            )
+            self.assertIn("INTEGRATION_VERSION", runtime_source, filename)
+
         for filename in ("anthbot-map-card.js", "i18n.js", "styles.css", "developer-optin.js"):
             self.assertEqual(
                 (INTEGRATION / "frontend" / filename).read_bytes(),
