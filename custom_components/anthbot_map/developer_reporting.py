@@ -9,13 +9,11 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import datetime, timezone
-import json
 import logging
-from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlparse
 
-from .const import COUNTRY_AREA_CODES
+from .const import COUNTRY_AREA_CODES, INTEGRATION_VERSION
 from .firmware_diagnostics import integration_report_view, manufacturer_report_view
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,15 +32,8 @@ _BLOCKED_REPORTING_HOSTS = {"installer.tmt-automation.com"}
 
 
 def _integration_version() -> str | None:
-    """Read the bundled integration version without importing Home Assistant."""
-    try:
-        manifest = json.loads(
-            Path(__file__).with_name("manifest.json").read_text(encoding="utf-8")
-        )
-    except (OSError, TypeError, ValueError):
-        return None
-    version = manifest.get("version") if isinstance(manifest, dict) else None
-    return str(version) if version is not None else None
+    """Return the bundled integration version without blocking file I/O."""
+    return INTEGRATION_VERSION
 
 
 def country_name_from_area_code(area_code: object) -> str | None:
