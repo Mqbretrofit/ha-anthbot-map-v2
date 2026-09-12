@@ -120,6 +120,7 @@ jobs:
           import sys
 
           version = sys.argv[1]
+
           path = Path('custom_components/anthbot_map/__init__.py')
           source = path.read_text(encoding='utf-8')
           marker = 'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v='
@@ -131,13 +132,31 @@ jobs:
               raise SystemExit('Frontend resource version terminator not found')
           source = source[: start + len(marker)] + version + source[end:]
           path.write_text(source, encoding='utf-8')
+
+          const_path = Path('custom_components/anthbot_map/const.py')
+          const_source = const_path.read_text(encoding='utf-8')
+          const_marker = 'INTEGRATION_VERSION = "'
+          const_start = const_source.find(const_marker)
+          if const_start < 0:
+              raise SystemExit('Integration version constant marker not found')
+          const_end = const_source.find('"', const_start + len(const_marker))
+          if const_end < 0:
+              raise SystemExit('Integration version constant terminator not found')
+          const_source = (
+              const_source[: const_start + len(const_marker)]
+              + version
+              + const_source[const_end:]
+          )
+          const_path.write_text(const_source, encoding='utf-8')
           PY
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add custom_components/anthbot_map/__init__.py
+          git add \
+            custom_components/anthbot_map/__init__.py \
+            custom_components/anthbot_map/const.py
           if ! git diff --cached --quiet; then
-            git commit -m "Set frontend cache key for $tag"
+            git commit -m "Finalize release metadata for $tag"
           fi
           git push origin "HEAD:${GITHUB_REF_NAME}"
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
