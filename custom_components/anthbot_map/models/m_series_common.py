@@ -15,6 +15,7 @@ from .m_series_map import install_m_series_map_support
 from .m_series_path import install_m_series_path_support
 from .m_series_status import install_m_series_status_support
 from .m_series_zones import install_m_series_zone_support
+from .m9_map_rescue_v2465 import install_m9_map_rescue_v2465
 from .performance_diagnostics import install_performance_diagnostics
 from .rain_battery_saver import install_rain_battery_saver_safety
 from .recorder_v2465 import install_recorder_v2465
@@ -69,4 +70,8 @@ def install_m_series_compat() -> None:
     install_runtime_reliability_fixes()
     install_report_identity_suffix()
     install_v2465_reliability_fixes()
+    # M9-only last resort: if the current map-manager archive is valid but the
+    # iot_map payload is an unknown encoding, reuse its area_setting zone hull
+    # instead of requesting the known-missing multi_maps/<serial>_0 object.
+    install_m9_map_rescue_v2465()
     install_recorder_v2465()
