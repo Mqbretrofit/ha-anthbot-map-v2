@@ -18,6 +18,7 @@ from .m_series_zones import install_m_series_zone_support
 from .performance_diagnostics import install_performance_diagnostics
 from .rain_battery_saver import install_rain_battery_saver_safety
 from .reliability_v2464 import install_runtime_reliability_fixes
+from .reliability_v2465 import install_v2465_reliability_fixes
 from .report_identity_suffix import install_report_identity_suffix
 from .runtime_optimizations import (
     install_runtime_optimization_diagnostics,
@@ -61,8 +62,9 @@ def install_m_series_compat() -> None:
     install_runtime_optimizations()
     install_performance_diagnostics()
     install_runtime_optimization_diagnostics()
-    # Install the reliability layer after all mower/model adapters. The report
-    # identity wrapper below only enriches generated diagnostics metadata and
-    # does not alter coordinator, control, map, path, or model behavior.
+    # Reliability layers are deliberately installed after all mower/model
+    # adapters. 2.4.6.5 only changes diagnostics/Recorder behavior and the
+    # M-series map decoder fallback; model control/path routing stays isolated.
     install_runtime_reliability_fixes()
     install_report_identity_suffix()
+    install_v2465_reliability_fixes()
