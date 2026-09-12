@@ -17,6 +17,7 @@ import re
 from typing import Any
 from urllib.parse import parse_qsl, urlparse
 
+from .const import INTEGRATION_VERSION
 from .path_zone_check import no_go_zones
 
 _SCHEMA = "anthbot-firmware-diagnostics-v1"
@@ -40,13 +41,8 @@ _SENSITIVE_KEY_PARTS = (
 
 
 def _integration_version() -> str | None:
-    """Read the bundled manifest version without importing Home Assistant."""
-    try:
-        payload = json.loads(Path(__file__).with_name("manifest.json").read_text("utf-8"))
-    except (OSError, ValueError, TypeError):
-        return None
-    version = payload.get("version") if isinstance(payload, dict) else None
-    return str(version) if version is not None else None
+    """Return the bundled integration version without blocking file I/O."""
+    return INTEGRATION_VERSION
 
 
 def _unwrap_value(value: Any) -> Any:
