@@ -110,6 +110,16 @@ class TestLiveMapStreamArchitecture(unittest.TestCase):
         ):
             self.assertIn(required, signature)
 
+    def test_live_frontend_stops_legacy_map_entity_polling(self):
+        source = ROOT / "www" / "anthbot-map" / "live-map-stream.js"
+        text = source.read_text(encoding="utf-8")
+        self.assertIn("function stopLegacyRefreshTimer", text)
+        self.assertIn("patchedStartRefreshTimer", text)
+        self.assertIn("patchedRefreshEntityIds", text)
+        self.assertIn("patchedRefreshEntities", text)
+        self.assertIn("entityId !== mapEntityId", text)
+        self.assertIn("stopLegacyRefreshTimer(this);", text)
+
     def test_frontend_patch_is_bundled_identically(self):
         source = ROOT / "www" / "anthbot-map" / "live-map-stream.js"
         bundled = INTEGRATION / "frontend" / "live-map-stream.js"
