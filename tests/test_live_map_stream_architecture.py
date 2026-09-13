@@ -15,6 +15,16 @@ class TestLiveMapStreamArchitecture(unittest.TestCase):
             "await async_setup_live_map_stream(hass, entry, coordinators)", source
         )
 
+    def test_existing_map_listener_gets_compact_signature_after_stream_activation(self):
+        source = (INTEGRATION / "lawn_mower.py").read_text(encoding="utf-8")
+        setup_start = source.index("async def async_setup_entry")
+        setup_end = source.index("class AnthbotLawnMowerEntity", setup_start)
+        setup = source[setup_start:setup_end]
+        self.assertIn('live_data.get("frontend_ready")', setup)
+        self.assertIn(
+            "_recorder_v2467._map_live_signature = _compact_write_signature", setup
+        )
+
     def test_websocket_protocol_and_compatibility_gate_exist(self):
         source = (INTEGRATION / "live_map_stream.py").read_text(encoding="utf-8")
         self.assertIn('"anthbot_map/subscribe_live"', source)
