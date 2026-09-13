@@ -38,17 +38,28 @@ def _load_genie_module():
     )
 
 
+class _Hass:
+    async def async_add_executor_job(self, func, *args):
+        return func(*args)
+
+
 class _Coordinator:
-    _genie_no_go_check_signature = None
-    _genie_no_go_check = None
+    def __init__(self) -> None:
+        self.hass = _Hass()
+        self._genie_no_go_check_signature = None
+        self._genie_no_go_input_signature = None
+        self._genie_no_go_check = None
+        self._genie_no_go_path_id = None
+        self._genie_no_go_area_token = None
+        self._genie_no_go_last_monotonic = 0.0
 
 
-class GeniePathDiagnosticsTests(unittest.TestCase):
+class GeniePathDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.module = _load_genie_module()
 
-    def test_decoded_genie_path_gets_same_crossing_metrics(self) -> None:
+    async def test_decoded_genie_path_gets_same_crossing_metrics(self) -> None:
         state = {
             "_path_definition": {
                 "path_id": "genie-live-1",
@@ -76,7 +87,7 @@ class GeniePathDiagnosticsTests(unittest.TestCase):
             },
         }
 
-        check = self.module._update_no_go_check(_Coordinator(), state)
+        check = await self.module._update_no_go_check(_Coordinator(), state)
 
         self.assertEqual(check["source"], "genie_decoded_path")
         self.assertEqual(check["path_id"], "genie-live-1")
@@ -86,7 +97,7 @@ class GeniePathDiagnosticsTests(unittest.TestCase):
         self.assertEqual(check["traversals"], 1)
         self.assertEqual(check["zone_ids"], [4])
 
-    def test_genie_falls_back_to_shared_path_attribute(self) -> None:
+    async def test_genie_falls_back_to_shared_path_attribute(self) -> None:
         state = {
             "path_id": "genie-path-fallback",
             "path": [{"x": 0, "y": 0}, {"x": 500, "y": 0}],
@@ -105,7 +116,7 @@ class GeniePathDiagnosticsTests(unittest.TestCase):
             },
         }
 
-        check = self.module._update_no_go_check(_Coordinator(), state)
+        check = await self.module._update_no_go_check(_Coordinator(), state)
 
         self.assertEqual(check["checked_point_count"], 2)
         self.assertEqual(check["points_inside"], 0)
@@ -120,12 +131,14 @@ class GeniePathDiagnosticsTests(unittest.TestCase):
             common.index("install_genie_live_status_support()"),
         )
 
-    def test_genie_diagnostic_is_read_only(self) -> None:
+    def test_genie_diagnostic_is_read_only_and_offloaded(self) -> None:
         source = (MODELS / "genie_path_diagnostics.py").read_text(encoding="utf-8")
         self.assertNotIn('state["path"] =', source)
         self.assertNotIn('state["mowed_path"] =', source)
         self.assertNotIn('state["cloud_path"] =', source)
         self.assertIn('pending["_no_go_path_check"] = check', source)
+        self.assertIn("async_add_executor_job", source)
+        self.assertNotIn("id(points)", source)
 
 
 if __name__ == "__main__":
