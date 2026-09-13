@@ -22,7 +22,19 @@ aerial or drone photograph of the garden.
 
 ## Current version
 
-Stable version: **2.4.5**
+Stable version: **2.4.7.0**
+
+### Highlights in 2.4.7.0
+
+- Moves high-frequency live map/path/pose delivery out of Home Assistant entity state and into a dedicated WebSocket stream.
+- Sends a full snapshot on connect, then incremental path deltas with sequence/resync protection instead of repeatedly storing the full path in entity attributes.
+- Keeps the Map entity compact while live-stream mode is active: full `path`, `cloud_path`, `mowed_path`, and `pose` geometry are not written into Home Assistant state.
+- Stops legacy card polling of the Map entity in live-stream mode and reduces Recorder churn to approximately one heartbeat per minute when no relevant compact state changes occur.
+- Moves expensive No-Go geometry checks off the Home Assistant event loop for M-series, N8 and Genie diagnostics, with stable revision caching and bounded live evaluation cadence.
+- Preserves model-specific mower command routing; Genie, M5/M9-family and N8 control paths remain separated.
+- Field-tested on a real ANTHBOT M9 Pro during mowing: live WebSocket path updates, Recorder reduction, Home Assistant restart, reconnect and full snapshot restore were verified.
+
+See `RELEASE_NOTES_v2.4.7.0.md` and `CHANGELOG_v2.4.7.0_HU.md` for the complete release details.
 
 ### Highlights in 2.4.5
 
@@ -120,19 +132,22 @@ Stable version: **2.4.5**
 - Experimental M5/M9 shadow and live-path handling has been added.
 
 > [!IMPORTANT]
-> **Map handling is now supported on the ANTHBOT M-series (M5/M9/M9 Pro).**
+> **Map handling is supported on the ANTHBOT M-series (M5/M9/M9 Pro), and N8 has its own dedicated model path/control layer.**
 > Boundary, mowing-path and zone handling have been directly tested and verified
-> on an **M9 Pro**. M5 and M9 use the same model-specific M-series architecture,
-> but those two models have not been directly hardware-tested by this project yet.
+> on an **M9 Pro**. M5 and M9 use the same model-specific M-series architecture.
+> N8-specific path/control handling and regression coverage are included, but the
+> 2.4.7.0 live-stream architecture has not yet been directly field-tested by this
+> project on N8 hardware.
 
 ## Supported models
 
-The integration supports ANTHBOT Genie and the M-series model family.
+The integration supports ANTHBOT Genie, the M-series model family, and N8.
 
-- **ANTHBOT Genie:** supported; existing Genie functionality is preserved.
-- **ANTHBOT M9 Pro:** M-series map/control/status/history path supported and directly hardware-tested.
+- **ANTHBOT Genie:** supported; Genie-specific control and path diagnostics remain separated from other models.
+- **ANTHBOT M9 Pro:** M-series map/control/status/history path supported and directly hardware-tested, including the 2.4.7.0 live-stream/Recorder architecture.
 - **ANTHBOT M9:** supported through the shared M-series implementation; not directly hardware-tested by this project yet.
 - **ANTHBOT M5:** supported through the shared M-series implementation; not directly hardware-tested by this project yet.
+- **ANTHBOT N8:** supported through its dedicated N8 path/control handling; N8-specific regression tests are included, while direct 2.4.7.0 live-stream hardware validation is still pending.
 
 ## Using another ANTHBOT integration
 
@@ -164,6 +179,8 @@ Existing entity-registry entries can cause the new entity IDs to receive an
 - multiple mowers on one ANTHBOT account
 - cloud polling and persistent AWS IoT/MQTT shadow updates
 - automatic MQTT reconnection
+- dedicated WebSocket live-map transport with snapshot, delta and automatic resync handling
+- compact Map entity design that keeps high-frequency live geometry out of Home Assistant state/Recorder while WebSocket mode is active
 - native Home Assistant `lawn_mower` entity
 - full-area, manual-zone, and automatic-zone mowing
 - outer-edge and dock-surroundings mowing
@@ -235,7 +252,7 @@ Resource type: **JavaScript module**. No manual setup is normally required.
 2. Add:
 
    ```text
-   /anthbot-map-v2/anthbot-map-card.js?v=2.4.5
+   /anthbot-map-v2/anthbot-map-card.js?v=2.4.7.0
    ```
 
 3. Select type **JavaScript module**.
@@ -323,6 +340,8 @@ decodedBoundaryCalibration:
   scaleY: 1
   rotation: 0
 ```
+
+`refresh_interval` is kept for backward compatibility and legacy fallback mode. In normal 2.4.7.0 live-stream operation, high-frequency map/path/pose updates arrive through the WebSocket transport rather than periodic Map-entity polling.
 
 ## Default menu layout
 
@@ -484,7 +503,7 @@ When using HACS:
 
 In Lovelace storage mode, the integration updates the resource version
 automatically. In YAML resource mode, update the cache-busting query after an
-upgrade, for example `/anthbot-map-v2/anthbot-map-card.js?v=2.4.5`.
+upgrade, for example `/anthbot-map-v2/anthbot-map-card.js?v=2.4.7.0`.
 
 # Troubleshooting
 
@@ -501,9 +520,9 @@ Then hard-refresh with `Ctrl+Shift+R`.
 
 ## Map is not displayed
 
-Check that the correct map entity is configured, its state is `ready`, and its
-attributes contain `pose` and map data. Also check the Home Assistant log for
-`anthbot_map` errors.
+Check that the correct map entity is configured and its state is `ready`. On 2.4.7.0 in normal live-stream mode, the full live `path`/`pose` geometry is intentionally **not** stored in the Map entity attributes. Instead, the entity should advertise `live_stream_available: true` and `live_stream_transport: websocket`, while the card receives the snapshot and live deltas through Home Assistant WebSocket.
+
+If the map still does not render, hard-refresh the browser, confirm the Anthbot Map frontend resource is loaded only once, and check the Home Assistant log for `anthbot_map` or WebSocket errors.
 
 M-series map handling is supported and has been directly tested on M9 Pro hardware.
 
