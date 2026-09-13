@@ -84,13 +84,22 @@ class DeveloperAgentReadonlyTests(unittest.TestCase):
         self.assertNotIn("expires_at", source)
         self.assertNotIn("ttl", source.lower())
 
+    def test_agent_and_heartbeat_do_not_block_ha_startup(self) -> None:
+        tracker = (PACKAGE / "device_tracker.py").read_text(encoding="utf-8")
+        self.assertIn("entry.async_create_background_task(", tracker)
+        self.assertIn("_agent_loop(hass, entry)", tracker)
+        self.assertIn("anthbot_developer_agent_", tracker)
+        self.assertIn("anthbot_usage_heartbeat_", tracker)
+        self.assertNotIn("await async_register_developer_agent(hass, entry)", tracker)
+        self.assertNotIn("from .developer_agent import async_register_developer_agent", tracker)
+
     def test_agent_consent_is_independent_from_battery_saver(self) -> None:
         optin = (PACKAGE / "developer_agent_optin.py").read_text(encoding="utf-8")
         tracker = (PACKAGE / "device_tracker.py").read_text(encoding="utf-8")
         config_flow = (PACKAGE / "config_flow.py").read_text(encoding="utf-8")
         self.assertIn("CONF_DEVELOPER_AGENT_ENABLED", optin)
         self.assertIn("async_register_developer_agent_optin", tracker)
-        self.assertIn("async_register_developer_agent", tracker)
+        self.assertIn("_agent_loop", tracker)
         self.assertIn("CONF_DEVELOPER_AGENT_ENABLED", config_flow)
         self.assertIn("SERVICE_UPDATE_DEVELOPER_AGENT", config_flow)
         self.assertIn("DEFAULT_DEVELOPER_AGENT_ENABLED", config_flow)
