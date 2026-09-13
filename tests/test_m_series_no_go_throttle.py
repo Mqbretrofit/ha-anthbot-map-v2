@@ -23,10 +23,16 @@ class MSeriesNoGoThrottleSourceTests(unittest.TestCase):
         self.assertIn("_m_series_test4_revision", self.source)
         self.assertNotIn("id(points)", self.source)
 
-    def test_geometry_or_new_path_bypasses_live_throttle(self) -> None:
-        self.assertIn("geometry_unchanged", self.source)
+    def test_heavy_geometry_is_offloaded_from_home_assistant_event_loop(self) -> None:
+        self.assertIn("async_add_executor_job", self.source)
+        self.assertIn("_evaluate_no_go_worker", self.source)
+        self.assertIn("asyncio.Lock()", self.source)
+        self.assertIn("await _update_no_go_check", self.source)
+
+    def test_area_or_new_path_bypasses_live_throttle(self) -> None:
+        self.assertIn("area_unchanged", self.source)
         self.assertIn("path_unchanged", self.source)
-        self.assertIn("_m_series_no_go_geometry_signature", self.source)
+        self.assertIn("_m_series_no_go_area_token", self.source)
         self.assertIn("_m_series_no_go_path_id", self.source)
 
     def test_live_path_and_pose_forwarding_remains_enabled(self) -> None:
