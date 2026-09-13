@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import math
 import time
 from typing import Any
@@ -173,65 +174,117 @@ def _merged(self: AnthbotGenieDataUpdateCoordinator) -> dict[str, Any] | None:
     return definition
 
 
-def _update_no_go_check(
+def _area_revision_token(state: dict[str, Any]) -> tuple[Any, ...]:
+    """Cheap no-go input token; heavy geometry normalization runs in executor."""
+    return (
+        state.get("area_time"),
+        state.get("ridable_area_time"),
+        state.get("_area_definition_error"),
+        state.get("_ridable_area_definition_error"),
+    )
+
+
+def _evaluate_no_go_worker(
+    points: list[dict[str, Any]],
+    state: dict[str, Any],
+    path_id: Any,
+) -> tuple[tuple[Any, ...], dict[str, Any]]:
+    """Run CPU-heavy no-go geometry work outside Home Assistant's event loop."""
+    geometry_signature = no_go_geometry_signature(state)
+    check = evaluate_path_no_go(points, state, path_id=path_id)
+    return geometry_signature, check
+
+
+async def _update_no_go_check(
     self: AnthbotGenieDataUpdateCoordinator,
     definition: dict[str, Any],
     state: dict[str, Any],
     *,
     live: bool = False,
 ) -> dict[str, Any]:
-    """Evaluate no-go geometry with a stable cache and bounded live cadence."""
+    """Evaluate no-go geometry off-loop with stable caching and bounded cadence."""
     points = definition.get("_path_points")
     if not isinstance(points, list):
         points = []
 
-    geometry_signature = no_go_geometry_signature(state)
     path_id = definition.get("path_id")
-    signature = (
+    path_signature = (
         definition.get("_m_series_revision"),
         len(points),
         path_id,
         definition.get("_m_series_first_index"),
         definition.get("_m_series_last_index"),
-        geometry_signature,
     )
+    area_token = _area_revision_token(state)
+    input_signature = (path_signature, area_token)
     cached = getattr(self, "_m_series_no_go_check", None)
+
     if (
-        getattr(self, "_m_series_no_go_check_signature", None) == signature
+        getattr(self, "_m_series_no_go_input_signature", None) == input_signature
         and isinstance(cached, dict)
     ):
         return cached
 
     now = time.monotonic()
     if live and isinstance(cached, dict):
-        geometry_unchanged = (
-            getattr(self, "_m_series_no_go_geometry_signature", None)
-            == geometry_signature
-        )
         path_unchanged = getattr(self, "_m_series_no_go_path_id", None) == path_id
+        area_unchanged = getattr(self, "_m_series_no_go_area_token", None) == area_token
         last_run = float(getattr(self, "_m_series_no_go_last_monotonic", 0.0))
         if (
-            geometry_unchanged
-            and path_unchanged
+            path_unchanged
+            and area_unchanged
             and last_run > 0.0
             and now - last_run < _NO_GO_LIVE_MIN_SECONDS
         ):
             return cached
 
-    check = evaluate_path_no_go(
-        points,
-        state,
-        path_id=path_id,
-    )
-    self._m_series_no_go_check_signature = signature
-    self._m_series_no_go_check = check
-    self._m_series_no_go_geometry_signature = geometry_signature
-    self._m_series_no_go_path_id = path_id
-    self._m_series_no_go_last_monotonic = now
-    return check
+    lock = getattr(self, "_m_series_no_go_lock", None)
+    if lock is None:
+        lock = asyncio.Lock()
+        self._m_series_no_go_lock = lock
+
+    async with lock:
+        cached = getattr(self, "_m_series_no_go_check", None)
+        if (
+            getattr(self, "_m_series_no_go_input_signature", None) == input_signature
+            and isinstance(cached, dict)
+        ):
+            return cached
+
+        now = time.monotonic()
+        if live and isinstance(cached, dict):
+            path_unchanged = getattr(self, "_m_series_no_go_path_id", None) == path_id
+            area_unchanged = getattr(self, "_m_series_no_go_area_token", None) == area_token
+            last_run = float(getattr(self, "_m_series_no_go_last_monotonic", 0.0))
+            if (
+                path_unchanged
+                and area_unchanged
+                and last_run > 0.0
+                and now - last_run < _NO_GO_LIVE_MIN_SECONDS
+            ):
+                return cached
+
+        geometry_signature, check = await self.hass.async_add_executor_job(
+            _evaluate_no_go_worker,
+            points,
+            state,
+            path_id,
+        )
+        signature = (path_signature, geometry_signature)
+        self._m_series_no_go_check_signature = signature
+        self._m_series_no_go_input_signature = input_signature
+        self._m_series_no_go_check = check
+        self._m_series_no_go_geometry_signature = geometry_signature
+        self._m_series_no_go_path_id = path_id
+        self._m_series_no_go_area_token = area_token
+        self._m_series_no_go_last_monotonic = time.monotonic()
+        return check
 
 
-def _attach(self: AnthbotGenieDataUpdateCoordinator, state: dict[str, Any]) -> dict[str, Any]:
+async def _attach(
+    self: AnthbotGenieDataUpdateCoordinator,
+    state: dict[str, Any],
+) -> dict[str, Any]:
     if not _is_m_series(getattr(self.device, "model", None)):
         return state
     _ingest(self, state.get("_path_definition"), live=False)
@@ -240,7 +293,7 @@ def _attach(self: AnthbotGenieDataUpdateCoordinator, state: dict[str, Any]) -> d
         return state
     result = dict(state)
     points = definition["_path_points"]
-    no_go_check = _update_no_go_check(self, definition, state)
+    no_go_check = await _update_no_go_check(self, definition, state)
     self._path_definition = definition
     self._history_path_source = "m_series_curpath"
     result["_path_definition"] = definition
@@ -284,10 +337,13 @@ def install_m_series_path_support() -> None:
             self._m_series_test4_latest_angle_index = -1
             self._m_series_test4_revision = 0
             self._m_series_no_go_check_signature = None
+            self._m_series_no_go_input_signature = None
             self._m_series_no_go_check = None
             self._m_series_no_go_geometry_signature = None
             self._m_series_no_go_path_id = None
+            self._m_series_no_go_area_token = None
             self._m_series_no_go_last_monotonic = 0.0
+            self._m_series_no_go_lock = asyncio.Lock()
 
     async def live_shadow(self, shadow_name: str, reported: dict[str, Any]) -> None:
         if _is_m_series(getattr(self.device, "model", None)) and isinstance(reported, dict):
@@ -304,7 +360,7 @@ def install_m_series_path_support() -> None:
                     points = merged["_path_points"]
                     check_state = dict(getattr(self, "reported_state", {}) or {})
                     check_state.update(reported)
-                    no_go_check = _update_no_go_check(
+                    no_go_check = await _update_no_go_check(
                         self,
                         merged,
                         check_state,
@@ -330,7 +386,7 @@ def install_m_series_path_support() -> None:
 
     async def update_data(self) -> dict[str, Any]:
         state = await previous_update(self)
-        return _attach(self, state)
+        return await _attach(self, state)
 
     AnthbotGenieDataUpdateCoordinator.__init__ = coordinator_init
     AnthbotGenieDataUpdateCoordinator._async_handle_live_shadow = live_shadow
