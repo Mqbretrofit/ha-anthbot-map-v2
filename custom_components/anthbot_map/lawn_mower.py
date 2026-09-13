@@ -20,12 +20,8 @@ from .api import AnthbotGenieApiError
 from .commands import async_prepare_cloud_connection, async_start_mowing
 from .const import DOMAIN
 from .coordinator import AnthbotGenieDataUpdateCoordinator
-from .live_map_stream import (
-    LIVE_DATA_KEY,
-    _compact_write_signature,
-    async_setup_live_map_stream,
-)
-from .models import recorder_v2467 as _recorder_v2467
+from .live_map_entity_semantics import install_live_map_entity_write_semantics
+from .live_map_stream import LIVE_DATA_KEY, async_setup_live_map_stream
 from .mower_status import mower_activity_name, raw_robot_status
 
 _ACTIVITY_BY_NAME = {
@@ -49,14 +45,13 @@ async def async_setup_entry(
     await async_setup_live_map_stream(hass, entry, coordinators)
 
     # The sensor platform is forwarded before lawn_mower. If a Map entity has
-    # already registered its Recorder listener, that listener still resolves
-    # recorder_v2467._map_live_signature dynamically at call time. Switch that
-    # shared classifier as soon as the frontend stream is confirmed available
-    # so existing and future Map entities both stop treating live pose/path
-    # motion as a Home Assistant state change.
+    # already registered its Recorder listener, switch both the old Recorder
+    # wrapper and the new compact live-stream wrapper to the same quiet
+    # signature. Only do this when the frontend stream is actually available;
+    # compatibility mode must retain the legacy full-entity update semantics.
     live_data = hass.data.get(LIVE_DATA_KEY, {})
     if isinstance(live_data, dict) and live_data.get("frontend_ready"):
-        _recorder_v2467._map_live_signature = _compact_write_signature  # noqa: SLF001
+        install_live_map_entity_write_semantics()
 
     async_add_entities(AnthbotLawnMowerEntity(coordinator) for coordinator in coordinators)
 
