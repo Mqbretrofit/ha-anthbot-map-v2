@@ -2,7 +2,7 @@
 
 [English](README.md) | Magyar
 
-[![Kiadás](https://img.shields.io/badge/release-v2.4.6.4-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.6.4)
+[![Kiadás](https://img.shields.io/badge/release-v2.4.7.0-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.7.0)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
 [![Megnyitás HACS-ban](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Mqbretrofit&repository=ha-anthbot-map-v2&category=integration)
 [![Licenc: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -17,20 +17,21 @@ Az Anthbot Map összekapcsolja a Home Assistantot az ANTHBOT felhővel, modellen
 
 ## Aktuális verzió
 
-Stabil verzió: **2.4.6.4**
+Stabil verzió: **2.4.7.0**
 
-Legfrissebb kiadás: [Anthbot Map v2.4.6.4](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.6.4)
+Legfrissebb kiadás: [Anthbot Map v2.4.7.0](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.7.0)
 
-### A 2.4.6.4 legfontosabb változásai
+### A 2.4.7.0 legfontosabb változásai
 
-- Az automatikus diagnosztika esemény-élre működik, így ugyanaz a tartós diagnosztikai állapot nem kerül óránként újra elküldésre.
-- Induláskor a már fennálló diagnosztikai állapot kiindulási állapotként kerül felvételre, ezért egy régi esemény nem generál új riportot pusztán újraindítás miatt.
-- A korábbi cloud task-event hibák megmaradnak előzményként, de friss/elavult jelölést kapnak, és lejárat után önmagukban már nem indítanak automatikus hibariportot.
-- Az AWS IoT live-shadow figyelő váratlan futásidejű vagy transport hibák után sem áll le végleg.
-- Többszöri sikertelen reconnect után a kliens új ideiglenes IoT hitelesítőt kérhet és korlátozott reconnect-kísérletekkel tovább működik.
-- Az M-szériás térképnél külön kezeljük a logikai `map.map_id`, `area_id`, `plan_id` és a `map_manager_<serial>.tar.gz` belsejében található raster `map_id` értékeket.
-- Az eltérő logikai és raster map ID többé nem okoz felesleges map-manager újraletöltést.
-- Az M-szériás térképjavítás M5/M9 családra korlátozott; az N8 vezérlési útvonalát nem bővíti és nem módosítja.
+- A nagy frekvenciájú live map/path/pose adatfolyam levált a Home Assistant entity state mechanizmusáról, és külön WebSocket transporton jut el a kártyához.
+- Első csatlakozáskor teljes snapshot érkezik, utána csak path delták mennek sequence-követéssel, automatikus resync-kel, path-id váltáskezeléssel és hosszú útvonalakhoz gördülő path-ablakkal.
+- Live-stream módban a Map entitás kompakt marad: a teljes `path`, `cloud_path`, `mowed_path` és `pose` geometria nem kerül a Home Assistant state-be vagy a Recorderbe.
+- A kártya régi periodikus Map-entity pollingja live-stream módban leáll; releváns kompakt állapotváltozás nélkül a Recorder-terhelés nagyjából percenként egy heartbeat írásra csökken.
+- A drága No-Go geometriai ellenőrzés kikerült a Home Assistant event loopból az M-szérián, az N8-on és a Genie path diagnosztikánál is; stabil revision cache és korlátozott live ellenőrzési gyakoriság védi a rendszert.
+- A robotvezérlési command routing nem változott: a Genie, az M5/M9 család és az N8 vezérlési útvonalai továbbra is külön maradnak.
+- Valódi ANTHBOT M9 Pro roboton, aktív nyírás közben ellenőrizve lett a WebSocket útvonal, a Recorder-terhelés csökkenése, a Home Assistant restart, a reconnect és a teljes snapshot visszatöltése.
+
+A teljes részletek a `RELEASE_NOTES_v2.4.7.0.md` és `CHANGELOG_v2.4.7.0_HU.md` fájlokban találhatók.
 
 ### 2.4.6.x riportolás és fejlesztői diagnosztika
 
@@ -47,27 +48,30 @@ Az anonim statisztika, az automatikus diagnosztika és a read-only fejlesztői h
 
 ### N8 támogatás
 
-Az N8-specifikus vezérlés, állapotkezelés, térkép-/útvonalkezelés és modellspecifikus entitások bekerültek, és tesztelésre elérhetők.
+Az N8-specifikus vezérlés, állapotkezelés, térkép-/útvonalkezelés és modellspecifikus entitások bekerültek.
 
 - **Code/API validáció:** elkészült külön regressziós és modellszeparációs tesztekkel.
-- **Valós N8 hardveres validáció:** ebben a projektben még nem történt meg.
+- **2.4.7.0 stabilitási védelem:** az N8 is a védett No-Go executor útvonalat használja, külön N8 regressziós tesztekkel.
+- **Valós N8 hardveres validáció:** ebben a projektben még nem történt meg közvetlenül.
 - A Genie és M-szériás modellrouting továbbra is elkülönül az N8-tól.
 
 N8 tulajdonosok tesztjeit és modellspecifikus visszajelzéseit várjuk.
 
 ## Támogatott modellek
 
-- **ANTHBOT Genie:** támogatott és közvetlenül hardveren tesztelt.
-- **ANTHBOT M9 Pro:** M-szériás vezérlés, állapot, térkép, útvonal, zóna és előzménykezelés támogatott és közvetlenül hardveren tesztelt.
+- **ANTHBOT Genie:** támogatott és közvetlenül hardveren tesztelt; a Genie path diagnosztika elkülönül a többi modelltől.
+- **ANTHBOT M9 Pro:** M-szériás vezérlés, állapot, térkép, útvonal, zóna és előzménykezelés támogatott és közvetlenül hardveren tesztelt, beleértve a 2.4.7.0 live-stream/Recorder architektúrát is.
 - **ANTHBOT M9:** támogatott a közös M-szériás implementáción keresztül; közvetlen hardverteszt még nem történt.
 - **ANTHBOT M5:** támogatott a közös M-szériás implementáción keresztül; közvetlen hardverteszt még nem történt.
-- **ANTHBOT N8:** az implementáció bekerült és tesztelhető; code/API szinten ellenőrzött, de valós N8 hardveres validáció még nincs.
+- **ANTHBOT N8:** külön N8 implementációval támogatott; code/API és regressziós szinten ellenőrzött, de közvetlen 2.4.7.0 hardveres terepi validáció még nincs.
 
 ## Fő funkciók
 
 - ANTHBOT felhős bejelentkezés a Home Assistant felületéről
 - több robot egy ANTHBOT-fiókban
 - tartós AWS IoT/MQTT live-shadow kapcsolat reconnect-felügyelettel
+- külön WebSocket live-map transport snapshot, delta, sequence és automatikus resync kezeléssel
+- kompakt Map entitás, amely live-stream módban nem írja a nagy frekvenciájú teljes geometriát a Home Assistant state-be és Recorderbe
 - natív Home Assistant `lawn_mower` entitás
 - teljes terület-, zóna-, külső szegély- és töltőkörüli nyírás, ahol az adott modell támogatja
 - szüneteltetés, folytatás, leállítás és dokkhoz visszatérés
@@ -149,7 +153,7 @@ Típus: **JavaScript module**.
 Ha kézzel kell felvenni, ezt használd:
 
 ```text
-/anthbot-map-v2/anthbot-map-card.js?v=2.4.6.4
+/anthbot-map-v2/anthbot-map-card.js?v=2.4.7.0
 ```
 
 Egyszerre csak egy Anthbot Map Card resource legyen engedélyezve.
@@ -259,7 +263,7 @@ HACS használatakor:
 YAML resource módban a cache-busting verziót is állítsd az aktuális verzióra, például:
 
 ```text
-/anthbot-map-v2/anthbot-map-card.js?v=2.4.6.4
+/anthbot-map-v2/anthbot-map-card.js?v=2.4.7.0
 ```
 
 # Hibakeresés
@@ -277,11 +281,13 @@ Ezután `Ctrl+Shift+R`.
 
 ## Nem jelenik meg a térkép
 
-Ellenőrizd, hogy a megfelelő robot map entitása van kiválasztva, annak állapota ready, és az attribútumokban van aktuális robot-/térképadat. Nézd meg a Home Assistant naplóban az `anthbot_map` hibákat is.
+Ellenőrizd, hogy a megfelelő robot Map entitása van kiválasztva, és annak állapota `ready`. Normál 2.4.7.0 live-stream módban a teljes élő `path`/`pose` geometria szándékosan **nincs** a Map entitás attribútumaiban. Helyette az entitásban `live_stream_available: true` és `live_stream_transport: websocket` várható, a kártya pedig Home Assistant WebSocketen kapja a teljes snapshotot és az élő deltákat.
+
+Ha a térkép továbbra sem jelenik meg, frissítsd keményen a böngészőt, ellenőrizd, hogy csak egy Anthbot Map frontend resource aktív, és nézd meg a Home Assistant naplójában az `anthbot_map` vagy WebSocket hibákat.
 
 ## N8 probléma
 
-Az N8 támogatás jelenleg tesztelésre elérhető, de ebben a projektben még nem történt valós N8 hardveres validáció. N8-specifikus hiba jelentésekor csatolj személyes adatoktól megtisztított diagnosztikát.
+Az N8 támogatás bekerült és code/API szinten ellenőrzött, de a 2.4.7.0 közvetlen N8 hardveres terepi validációja ebben a projektben még nem történt meg. N8-specifikus hiba jelentésekor csatolj személyes adatoktól megtisztított diagnosztikát.
 
 # Hibák jelentése
 
