@@ -48,7 +48,8 @@ class TestLiveMapStreamArchitecture(unittest.TestCase):
         text = source.read_text(encoding="utf-8")
         self.assertIn("subscribeMessage", text)
         self.assertIn("sequence gap", text)
-        self.assertIn("trim_before_index", text)
+        self.assertIn("window_start_index", text)
+        self.assertIn("append_from_index", text)
         self.assertIn("live_stream_available !== true", text)
 
 
