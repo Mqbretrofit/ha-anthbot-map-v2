@@ -21,7 +21,7 @@ class RecorderV2467Tests(unittest.TestCase):
         self.assertIn("_Entity__combined_unrecorded_attributes", source)
         self.assertIn("_entity_component_unrecorded_attributes", source)
 
-    def test_cache_repair_runs_after_performance_diagnostics(self) -> None:
+    def test_v2467_runs_after_diagnostics_and_final_v2465_throttle(self) -> None:
         common = COMMON.read_text(encoding="utf-8")
 
         self.assertIn("from .recorder_v2467 import install_recorder_v2467", common)
@@ -30,8 +30,8 @@ class RecorderV2467Tests(unittest.TestCase):
             common.index("install_recorder_v2467()"),
         )
         self.assertLess(
+            common.index("install_recorder_v2465()"),
             common.index("install_recorder_v2467()"),
-            common.index("install_runtime_optimization_diagnostics()"),
         )
 
     def test_existing_five_second_live_limit_is_preserved(self) -> None:
@@ -72,6 +72,21 @@ class RecorderV2467Tests(unittest.TestCase):
             "def _install_unchanged_map_write_filter", 1
         )[0]
         self.assertNotIn("runtime_performance", signature_body)
+        self.assertNotIn("id(", signature_body)
+        self.assertIn("_map_definition_signature", signature_body)
+        self.assertIn("_area_definition_signature", signature_body)
+        self.assertIn("_sequence_edge_signature", signature_body)
+
+    def test_semantic_helpers_do_not_use_python_object_identity(self) -> None:
+        source = RECORDER_2467.read_text(encoding="utf-8")
+        helpers = source.split("def _stable_small", 1)[1].split(
+            "def _install_unchanged_map_write_filter", 1
+        )[0]
+
+        self.assertNotIn("id(", helpers)
+        self.assertIn("json.dumps", helpers)
+        self.assertIn("len(points)", helpers)
+        self.assertIn("len(runs)", helpers)
 
 
 if __name__ == "__main__":
