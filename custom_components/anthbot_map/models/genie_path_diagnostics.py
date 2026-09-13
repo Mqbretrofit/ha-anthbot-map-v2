@@ -1,6 +1,6 @@
 """Read-only no-go crossing diagnostics for Genie mower paths.
 
-Genie keeps the proven shared coordinator/path decoding untouched.  This layer
+Genie keeps the proven shared coordinator/path decoding untouched. This layer
 only inspects the already decoded path exposed by that coordinator and records
 diagnostics in ``_no_go_path_check`` for the existing problem binary sensor.
 It never filters, rewrites, rejects or otherwise changes mower telemetry.
@@ -8,6 +8,8 @@ It never filters, rewrites, rejects or otherwise changes mower telemetry.
 
 from __future__ import annotations
 
+import asyncio
+import time
 from typing import Any, TYPE_CHECKING
 
 from ..path_zone_check import evaluate_path_no_go, no_go_geometry_signature
@@ -17,6 +19,7 @@ if TYPE_CHECKING:
     from ..coordinator import AnthbotGenieDataUpdateCoordinator
 
 _INSTALLED = False
+_NO_GO_LIVE_MIN_SECONDS = 5.0
 
 
 def _genie_path_definition(state: dict[str, Any]) -> dict[str, Any] | None:
@@ -57,32 +60,107 @@ def _point_token(point: Any) -> tuple[Any, ...] | None:
     )
 
 
-def _update_no_go_check(
+def _genie_area_token(state: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        state.get("area_time"),
+        state.get("ridable_area_time"),
+        state.get("_area_definition_error"),
+        state.get("_ridable_area_definition_error"),
+    )
+
+
+def _evaluate_genie_no_go_worker(
+    points: list[Any],
+    state: dict[str, Any],
+    path_id: Any,
+) -> tuple[tuple[Any, ...], dict[str, Any]]:
+    geometry_signature = no_go_geometry_signature(state)
+    check = evaluate_path_no_go(points, state, path_id=path_id)
+    check["source"] = "genie_decoded_path"
+    return geometry_signature, check
+
+
+async def _update_no_go_check(
     coordinator: Any,
     state: dict[str, Any],
+    *,
+    live: bool = False,
 ) -> dict[str, Any]:
-    """Evaluate a Genie path only when path or no-go geometry changed."""
+    """Evaluate Genie no-go diagnostics off the HA event loop."""
     points = _genie_path_points(state)
     path_id = _genie_path_id(state)
-    signature = (
-        id(points),
+    path_signature = (
         len(points),
         path_id,
         state.get("path_time"),
         _point_token(points[0]) if points else None,
         _point_token(points[-1]) if points else None,
-        no_go_geometry_signature(state),
     )
-    if getattr(coordinator, "_genie_no_go_check_signature", None) == signature:
-        cached = getattr(coordinator, "_genie_no_go_check", None)
-        if isinstance(cached, dict):
+    area_token = _genie_area_token(state)
+    input_signature = (path_signature, area_token)
+    cached = getattr(coordinator, "_genie_no_go_check", None)
+
+    if (
+        getattr(coordinator, "_genie_no_go_input_signature", None) == input_signature
+        and isinstance(cached, dict)
+    ):
+        return cached
+
+    now = time.monotonic()
+    if live and isinstance(cached, dict):
+        same_path = getattr(coordinator, "_genie_no_go_path_id", None) == path_id
+        same_area = getattr(coordinator, "_genie_no_go_area_token", None) == area_token
+        last_run = float(getattr(coordinator, "_genie_no_go_last_monotonic", 0.0))
+        if (
+            same_path
+            and same_area
+            and last_run > 0.0
+            and now - last_run < _NO_GO_LIVE_MIN_SECONDS
+        ):
             return cached
 
-    check = evaluate_path_no_go(points, state, path_id=path_id)
-    check["source"] = "genie_decoded_path"
-    coordinator._genie_no_go_check_signature = signature
-    coordinator._genie_no_go_check = check
-    return check
+    lock = getattr(coordinator, "_genie_no_go_lock", None)
+    if lock is None:
+        lock = asyncio.Lock()
+        coordinator._genie_no_go_lock = lock
+
+    async with lock:
+        cached = getattr(coordinator, "_genie_no_go_check", None)
+        if (
+            getattr(coordinator, "_genie_no_go_input_signature", None) == input_signature
+            and isinstance(cached, dict)
+        ):
+            return cached
+
+        now = time.monotonic()
+        if live and isinstance(cached, dict):
+            same_path = getattr(coordinator, "_genie_no_go_path_id", None) == path_id
+            same_area = getattr(coordinator, "_genie_no_go_area_token", None) == area_token
+            last_run = float(getattr(coordinator, "_genie_no_go_last_monotonic", 0.0))
+            if (
+                same_path
+                and same_area
+                and last_run > 0.0
+                and now - last_run < _NO_GO_LIVE_MIN_SECONDS
+            ):
+                return cached
+
+        geometry_signature, check = await coordinator.hass.async_add_executor_job(
+            _evaluate_genie_no_go_worker,
+            points,
+            state,
+            path_id,
+        )
+        coordinator._genie_no_go_check_signature = (
+            path_signature,
+            geometry_signature,
+        )
+        coordinator._genie_no_go_input_signature = input_signature
+        coordinator._genie_no_go_check = check
+        coordinator._genie_no_go_path_id = path_id
+        coordinator._genie_no_go_area_token = area_token
+        coordinator._genie_no_go_last_monotonic = time.monotonic()
+        return check
 
 
 def _pending_genie_state(coordinator: Any) -> dict[str, Any]:
@@ -122,7 +200,12 @@ def install_genie_path_diagnostics() -> None:
         previous_init(self, *args, **kwargs)
         if model_family(getattr(self.device, "model", None)) == "genie":
             self._genie_no_go_check_signature = None
+            self._genie_no_go_input_signature = None
             self._genie_no_go_check = None
+            self._genie_no_go_path_id = None
+            self._genie_no_go_area_token = None
+            self._genie_no_go_last_monotonic = 0.0
+            self._genie_no_go_lock = asyncio.Lock()
 
     async def live_shadow(
         self: AnthbotGenieDataUpdateCoordinator,
@@ -134,7 +217,7 @@ def install_genie_path_diagnostics() -> None:
             return
 
         state = _pending_genie_state(self)
-        check = _update_no_go_check(self, state)
+        check = await _update_no_go_check(self, state, live=True)
         pending = getattr(self, "_pending_live_property", None)
         if isinstance(pending, dict):
             # Let the normal coordinator flush publish the diagnostic together
@@ -149,7 +232,7 @@ def install_genie_path_diagnostics() -> None:
         ):
             return state
         result = dict(state)
-        result["_no_go_path_check"] = _update_no_go_check(self, result)
+        result["_no_go_path_check"] = await _update_no_go_check(self, result)
         return result
 
     AnthbotGenieDataUpdateCoordinator.__init__ = coordinator_init
