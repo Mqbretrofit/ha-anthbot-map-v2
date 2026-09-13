@@ -56,9 +56,17 @@ class LiveMapHub:
         )
         self._closed = False
 
-    async def async_subscribe(self, connection: Any, msg_id: int) -> Callable[[], None]:
-        """Add a subscriber and deliver an initial complete snapshot."""
+    def subscribe_pending(
+        self,
+        connection: Any,
+        msg_id: int,
+    ) -> tuple[_Subscriber, Callable[[], None]]:
+        """Register a subscriber before the browser can observe WS success."""
         key = (id(connection), msg_id)
+        previous = self._subscribers.pop(key, None)
+        if previous is not None:
+            previous.closed = True
+
         subscriber = _Subscriber(connection=connection, msg_id=msg_id)
         self._subscribers[key] = subscriber
 
@@ -66,6 +74,16 @@ class LiveMapHub:
             current = self._subscribers.pop(key, None)
             if current is not None:
                 current.closed = True
+
+        return subscriber, unsubscribe
+
+    async def async_prepare_snapshot(
+        self,
+        subscriber: _Subscriber,
+    ) -> tuple[dict[str, Any], LiveMapCursor] | None:
+        """Prepare the initial frame without emitting a WebSocket event yet."""
+        if self._closed or subscriber.closed:
+            return None
 
         # Snapshot construction can touch a 20k-point trajectory. Keep that
         # one-time work out of Home Assistant's event loop. Coordinator state
@@ -79,18 +97,26 @@ class LiveMapHub:
             state_snapshot,
         )
         if self._closed or subscriber.closed:
-            return unsubscribe
+            return None
+        return payload, cursor
 
+    def activate_subscriber(
+        self,
+        subscriber: _Subscriber,
+        payload: dict[str, Any],
+        cursor: LiveMapCursor,
+    ) -> None:
+        """Emit snapshot after WS success and close the snapshot/update race."""
+        if self._closed or subscriber.closed:
+            return
         subscriber.cursor = cursor
+        subscriber.sequence = 0
         subscriber.ready = True
         self._send_event(subscriber, payload)
 
-        # Catch a coordinator update that may have arrived while the initial
-        # snapshot was being prepared. This closes the only race where a new
-        # subscriber could otherwise remain one frame behind until the next
-        # cloud message.
+        # A coordinator update may have arrived while the initial snapshot was
+        # built. Emit one continuity-checked catch-up delta immediately.
         self._send_current_delta(subscriber)
-        return unsubscribe
 
     def _send_event(self, subscriber: _Subscriber, payload: dict[str, Any]) -> None:
         try:
@@ -160,9 +186,32 @@ async def _websocket_subscribe_live(
         )
         return
 
-    connection.send_result(msg["id"])
-    unsubscribe = await hub.async_subscribe(connection, msg["id"])
+    # Register the cleanup callback *before* the browser can see a successful
+    # subscription. This avoids leaking a subscriber if the card disconnects
+    # while its initial (potentially large) snapshot is being prepared.
+    subscriber, unsubscribe = hub.subscribe_pending(connection, msg["id"])
     connection.subscriptions[msg["id"]] = unsubscribe
+    try:
+        prepared = await hub.async_prepare_snapshot(subscriber)
+    except Exception as err:  # noqa: BLE001 - keep one card failure isolated.
+        unsubscribe()
+        connection.subscriptions.pop(msg["id"], None)
+        _LOGGER.exception(
+            "Unable to prepare ANTHBOT live map snapshot for %s",
+            msg["serial_number"],
+        )
+        connection.send_error(msg["id"], "snapshot_failed", str(err))
+        return
+
+    if prepared is None:
+        # The connection or hub was closed while executor work was in flight.
+        unsubscribe()
+        connection.subscriptions.pop(msg["id"], None)
+        return
+
+    payload, cursor = prepared
+    connection.send_result(msg["id"])
+    hub.activate_subscriber(subscriber, payload, cursor)
 
 
 async def _async_ensure_frontend_resource(hass: HomeAssistant) -> bool:
