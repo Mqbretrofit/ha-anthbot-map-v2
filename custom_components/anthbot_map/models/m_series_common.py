@@ -64,10 +64,6 @@ def install_m_series_compat() -> None:
     install_shutdown_guard_state_settle()
     install_runtime_optimizations()
     install_performance_diagnostics()
-    # Home Assistant caches the class' combined unrecorded attributes during
-    # class construction. Refresh that cache after runtime diagnostics add the
-    # high-churn runtime_performance attribute, before entities are created.
-    install_recorder_v2467()
     install_runtime_optimization_diagnostics()
     # Reliability layers are deliberately installed after all mower/model
     # adapters. 2.4.6.5 only changes diagnostics/Recorder behavior and the
@@ -80,3 +76,8 @@ def install_m_series_compat() -> None:
     # instead of requesting the known-missing multi_maps/<serial>_0 object.
     install_m9_map_rescue_v2465()
     install_recorder_v2465()
+    # v2.4.6.7 wraps the final v2.4.6.5 Map-state throttle. This order lets the
+    # semantic filter suppress unchanged writes while preserving the proven
+    # five-second limiter for genuine live pose/path/status changes. It also
+    # refreshes Home Assistant's cached unrecorded set after diagnostics exist.
+    install_recorder_v2467()
