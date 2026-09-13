@@ -1,20 +1,22 @@
 """Stable Home Assistant state semantics for the WebSocket live-map transport.
 
-The dedicated WebSocket stream owns live map/path/pose delivery.  The Map
-entity is therefore only a compact status/diagnostic anchor and must not write
-a new Home Assistant state for telemetry that is already delivered through the
+The dedicated WebSocket stream owns live map/path/pose delivery. The Map entity
+is therefore only a compact status/diagnostic anchor and must not write a new
+Home Assistant state for telemetry that is already delivered through the
 stream.
 
 Field testing showed that map archive diagnostics, error-history snapshots,
 task events and other ancillary collections can legitimately rotate every few
-seconds while mowing.  They remain visible on the compact Map entity and are
+seconds while mowing. They remain visible on the compact Map entity and are
 refreshed by its one-minute heartbeat, but they do not trigger Recorder writes.
 """
 
 from __future__ import annotations
 
-from typing import Any
+import logging
+from typing import Any, Iterable
 
+_LOGGER = logging.getLogger(__name__)
 _INSTALLED = False
 
 
@@ -53,24 +55,69 @@ def live_map_entity_write_signature(
     )
 
 
-def install_live_map_entity_write_semantics() -> None:
-    """Apply the compact signature to both old and newly wrapped Map listeners."""
+def _rebind_existing_map_listener(coordinator: Any) -> int:
+    """Rebind already-registered Map callbacks to the compact class handler.
+
+    Home Assistant stores a bound coordinator callback when an entity is added.
+    Changing the entity class method later does not replace that stored bound
+    method. The sensor platform is forwarded before lawn_mower, so the Map
+    entity may already be listening through the old Recorder wrapper when the
+    live stream becomes available.
+
+    Keep the existing listener id/context so Home Assistant's normal removal
+    callback still removes the correct listener; only replace the callback
+    object with the Map entity's now-patched compact handler.
+    """
+    from . import sensor as sensor_module
+
+    listeners = getattr(coordinator, "_listeners", None)
+    if not isinstance(listeners, dict):
+        return 0
+
+    rebound = 0
+    map_entity_type = sensor_module.AnthbotMapSensorEntity
+    for listener_id, listener_entry in list(listeners.items()):
+        if not isinstance(listener_entry, tuple) or len(listener_entry) != 2:
+            continue
+        callback, context = listener_entry
+        entity = getattr(callback, "__self__", None)
+        if not isinstance(entity, map_entity_type):
+            continue
+        listeners[listener_id] = (entity._handle_coordinator_update, context)  # noqa: SLF001
+        rebound += 1
+
+    return rebound
+
+
+def install_live_map_entity_write_semantics(
+    coordinators: Iterable[Any] | None = None,
+) -> int:
+    """Apply compact semantics and rebind any Map listeners already registered."""
     global _INSTALLED
-    if _INSTALLED:
-        return
-    _INSTALLED = True
 
     from . import live_map_stream
     from .models import recorder_v2467
 
-    # The sensor platform is set up before lawn_mower, so an existing Map
-    # entity may already hold the recorder_v2467 wrapper.  That wrapper resolves
-    # recorder_v2467._map_live_signature dynamically on every coordinator
-    # update.  The live_map_stream wrapper likewise resolves its module-global
-    # _compact_write_signature dynamically.  Replacing both functions therefore
-    # updates existing listeners without removing/re-registering HA callbacks.
-    live_map_stream._compact_write_signature = live_map_entity_write_signature  # noqa: SLF001
-    recorder_v2467._map_live_signature = live_map_entity_write_signature  # noqa: SLF001
+    if not _INSTALLED:
+        # Existing Recorder callbacks resolve recorder_v2467._map_live_signature
+        # dynamically. Newly patched compact callbacks likewise resolve the
+        # module-global _compact_write_signature dynamically.
+        live_map_stream._compact_write_signature = live_map_entity_write_signature  # noqa: SLF001
+        recorder_v2467._map_live_signature = live_map_entity_write_signature  # noqa: SLF001
+        _INSTALLED = True
+
+    rebound = 0
+    if coordinators is not None:
+        for coordinator in coordinators:
+            rebound += _rebind_existing_map_listener(coordinator)
+
+    if rebound:
+        _LOGGER.info(
+            "ANTHBOT live map stream: rebound %s existing Map coordinator listener(s) "
+            "to compact state semantics",
+            rebound,
+        )
+    return rebound
 
 
 __all__ = [
