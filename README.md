@@ -2,7 +2,7 @@
 
 [English](README.md) | [Magyar](README_HU.md)
 
-[![Release](https://img.shields.io/badge/release-v2.4.6.4-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.6.4)
+[![Release](https://img.shields.io/badge/release-v2.4.7.0-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.7.0)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
 [![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Mqbretrofit&repository=ha-anthbot-map-v2&category=integration)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -23,20 +23,21 @@ If this integration is useful to you, you can support continued development thro
 
 ## Current version
 
-Stable version: **2.4.6.4**
+Stable version: **2.4.7.0**
 
-Latest release: [Anthbot Map v2.4.6.4](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.6.4)
+Latest release: [Anthbot Map v2.4.7.0](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.7.0)
 
-### Highlights in 2.4.6.4
+### Highlights in 2.4.7.0
 
-- Automatic diagnostics are episode/edge triggered, so an unchanged persistent diagnostic condition is not repeatedly reported every hour.
-- Existing diagnostic conditions are seeded on startup, preventing an old condition from being replayed only because Home Assistant or the integration restarted.
-- Historical cloud task-event errors keep their history but now carry freshness/stale metadata and do not independently trigger automatic error reporting after they expire.
-- AWS IoT live-shadow supervision survives unexpected runtime/transport failures instead of allowing the background listener to die permanently.
-- After repeated reconnect failures, temporary IoT credentials can be rotated and bounded reconnect attempts continue.
-- M-series map identity handling now keeps logical `map.map_id`, `area_id`, `plan_id`, and the raster map id from `map_manager_<serial>.tar.gz` separate.
-- Different logical and raster map IDs no longer cause unnecessary M-series map-manager downloads.
-- The M-series map fix stays scoped to M5/M9-family models and does not widen or change N8 command routing.
+- High-frequency live map/path/pose data is separated from the Home Assistant entity state machine and delivered to the card through a dedicated WebSocket transport.
+- The card receives a full snapshot when it connects, then incremental path deltas with sequence tracking, automatic resync, path-id reset handling, and rolling-window support.
+- In live-stream mode the Map entity stays compact: the full `path`, `cloud_path`, `mowed_path`, and `pose` geometry is not stored in Home Assistant state or Recorder.
+- Legacy periodic Map-entity polling is disabled while the live stream is active, reducing Recorder churn to roughly a one-minute heartbeat when no relevant compact state changes occur.
+- Expensive No-Go geometry evaluation is moved off the Home Assistant event loop for M-series, N8, and Genie path diagnostics, with stable revision caching and bounded live evaluation cadence.
+- Mower command routing is unchanged; Genie, M5/M9-family, and N8 control paths remain separated.
+- Real-device validation on an ANTHBOT M9 Pro confirmed live WebSocket path updates, Recorder reduction, Home Assistant restart, reconnect, and full snapshot restore.
+
+See `RELEASE_NOTES_v2.4.7.0.md` and `CHANGELOG_v2.4.7.0_HU.md` for complete release details.
 
 ### 2.4.6.x reporting and developer diagnostics
 
@@ -53,27 +54,30 @@ Anonymous statistics, automatic diagnostics, and read-only developer access are 
 
 ### N8 support
 
-N8-specific control, status, map/path handling, and model-scoped entities are included and available for testing.
+N8-specific control, status, map/path handling, and model-scoped entities are included.
 
 - **Code/API validation:** completed with dedicated regression and model-isolation tests.
-- **Real N8 hardware validation:** not yet completed by this project.
+- **2.4.7.0 stability coverage:** N8 uses the protected No-Go executor path and dedicated regression tests.
+- **Real N8 hardware validation:** not yet completed directly by this project.
 - Existing Genie and M-series model routing remains separated from N8 routing.
 
 N8 owners are welcome to test and report model-specific behavior.
 
 ## Supported models
 
-- **ANTHBOT Genie:** supported and directly hardware-tested.
-- **ANTHBOT M9 Pro:** M-series control, status, map, path, zone, and history handling supported and directly hardware-tested.
+- **ANTHBOT Genie:** supported and directly hardware-tested; Genie-specific path diagnostics remain separated from other models.
+- **ANTHBOT M9 Pro:** M-series control, status, map, path, zone, and history handling supported and directly hardware-tested, including the 2.4.7.0 live-stream/Recorder architecture.
 - **ANTHBOT M9:** supported through the shared M-series implementation; not directly hardware-tested by this project yet.
 - **ANTHBOT M5:** supported through the shared M-series implementation; not directly hardware-tested by this project yet.
-- **ANTHBOT N8:** implementation included and available for testing; code/API validated, but real N8 hardware validation is still pending.
+- **ANTHBOT N8:** dedicated N8 implementation included; code/API and regression validated, but direct 2.4.7.0 hardware validation is still pending.
 
 ## Features
 
 - ANTHBOT cloud login from the Home Assistant UI
 - multiple mowers on one ANTHBOT account
 - persistent AWS IoT/MQTT live-shadow updates with reconnect supervision
+- dedicated WebSocket live-map transport with snapshot, delta, sequence and automatic resync handling
+- compact Map entity design that keeps high-frequency live geometry out of Home Assistant state/Recorder while live-stream mode is active
 - native Home Assistant `lawn_mower` entity
 - full-area, zone, outer-edge, and dock-surroundings mowing controls where supported
 - pause, resume, stop, and return-to-dock commands
@@ -155,7 +159,7 @@ Resource type: **JavaScript module**.
 If it must be added manually, use:
 
 ```text
-/anthbot-map-v2/anthbot-map-card.js?v=2.4.6.4
+/anthbot-map-v2/anthbot-map-card.js?v=2.4.7.0
 ```
 
 Only one Anthbot Map Card resource should be enabled at a time.
@@ -265,7 +269,7 @@ When using HACS:
 In YAML resource mode, update the cache-busting query to the installed version, for example:
 
 ```text
-/anthbot-map-v2/anthbot-map-card.js?v=2.4.6.4
+/anthbot-map-v2/anthbot-map-card.js?v=2.4.7.0
 ```
 
 # Troubleshooting
@@ -283,11 +287,13 @@ Then hard-refresh with `Ctrl+Shift+R`.
 
 ## Map is not displayed
 
-Check that the correct mower map entity is configured, that its state is ready, and that the entity attributes contain current mower/map data. Also check the Home Assistant log for `anthbot_map` errors.
+Check that the correct mower map entity is configured and that its state is `ready`. In normal 2.4.7.0 live-stream mode, full live `path`/`pose` geometry is intentionally **not** stored in Map entity attributes. Instead, the Map entity should advertise `live_stream_available: true` and `live_stream_transport: websocket`, while the card receives the full snapshot and live deltas through Home Assistant WebSocket.
+
+If the map still does not render, hard-refresh the browser, verify that only one Anthbot Map frontend resource is active, and check the Home Assistant log for `anthbot_map` or WebSocket errors.
 
 ## N8 issue
 
-N8 support is currently available for testing but has not yet been validated on real N8 hardware by this project. Please attach privacy-cleaned diagnostics when reporting N8-specific behavior.
+N8 support is included and code/API validated, but direct 2.4.7.0 hardware validation has not yet been completed by this project. Please attach privacy-cleaned diagnostics when reporting N8-specific behavior.
 
 # Reporting problems
 
