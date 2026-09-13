@@ -258,12 +258,16 @@ def install_m_series_path_support() -> None:
                     # the short chunk and replacing the test4 assembled trail.
                     forwarded.pop("curpath", None)
                     points = merged["_path_points"]
-                    check_state = dict(getattr(self, "reported_state", {}) or {})
-                    check_state.update(reported)
-                    no_go_check = _update_no_go_check(self, merged, check_state)
+                    # Isolation test: do not run the full no-go polygon scan on
+                    # every live curpath fragment. Reuse the most recent cached
+                    # result when one exists; periodic refreshes still calculate
+                    # diagnostics through _attach(). This keeps map/path/pose
+                    # behavior unchanged while removing the suspected CPU hot path.
+                    cached_no_go = getattr(self, "_m_series_no_go_check", None)
                     forwarded["_path_definition"] = merged
                     forwarded["_history_path_source"] = "m_series_curpath"
-                    forwarded["_no_go_path_check"] = no_go_check
+                    if isinstance(cached_no_go, dict):
+                        forwarded["_no_go_path_check"] = cached_no_go
                     forwarded["path"] = points
                     forwarded["mowed_path"] = points
                     forwarded["cloud_path"] = points
