@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 import math
+import time
 from typing import Any
 
 from ..coordinator import AnthbotGenieDataUpdateCoordinator
 from ..path_zone_check import evaluate_path_no_go, no_go_geometry_signature
 from . import m_series_legacy as _legacy
 
+_LOGGER = logging.getLogger(__name__)
 _INSTALLED = False
 _MAX_POINTS = 20000
+_PERF_LOG_INTERVAL_SECONDS = 15.0
 
 
 def _is_m_series(model: object) -> bool:
@@ -223,6 +227,58 @@ def _attach(self: AnthbotGenieDataUpdateCoordinator, state: dict[str, Any]) -> d
     return result
 
 
+def _log_live_performance_probe(
+    self: AnthbotGenieDataUpdateCoordinator,
+    *,
+    decode_ms: float,
+    assemble_ms: float,
+    no_go_ms: float,
+    downstream_ms: float,
+    total_ms: float,
+    point_count: int,
+    zone_count: int,
+) -> None:
+    """Emit a throttled performance sample without changing coordinator state."""
+    samples = int(getattr(self, "_m_series_perf_samples", 0)) + 1
+    self._m_series_perf_samples = samples
+    self._m_series_perf_max_no_go_ms = max(
+        float(getattr(self, "_m_series_perf_max_no_go_ms", 0.0)), no_go_ms
+    )
+    self._m_series_perf_max_total_ms = max(
+        float(getattr(self, "_m_series_perf_max_total_ms", 0.0)), total_ms
+    )
+
+    now = time.monotonic()
+    last_log = float(getattr(self, "_m_series_perf_last_log_monotonic", 0.0))
+    if last_log and now - last_log < _PERF_LOG_INTERVAL_SECONDS:
+        return
+
+    indexed = getattr(self, "_m_series_test4_points", {})
+    indexed_count = len(indexed) if isinstance(indexed, dict) else 0
+    _LOGGER.warning(
+        "M-SERIES PERF PROBE serial=%s model=%s samples=%d "
+        "decode=%.2fms assemble=%.2fms no_go=%.2fms downstream=%.2fms "
+        "total=%.2fms max_no_go=%.2fms max_total=%.2fms points=%d indexed=%d zones=%d",
+        getattr(self.client, "serial_number", "unknown"),
+        getattr(self.device, "model", "unknown"),
+        samples,
+        decode_ms,
+        assemble_ms,
+        no_go_ms,
+        downstream_ms,
+        total_ms,
+        self._m_series_perf_max_no_go_ms,
+        self._m_series_perf_max_total_ms,
+        point_count,
+        indexed_count,
+        zone_count,
+    )
+    self._m_series_perf_last_log_monotonic = now
+    self._m_series_perf_samples = 0
+    self._m_series_perf_max_no_go_ms = 0.0
+    self._m_series_perf_max_total_ms = 0.0
+
+
 def install_m_series_path_support() -> None:
     """Install test4 path.bin + curpath absolute-index assembly for M-series only."""
     global _INSTALLED
@@ -244,23 +300,47 @@ def install_m_series_path_support() -> None:
             self._m_series_test4_latest_angle_index = -1
             self._m_series_no_go_check_signature = None
             self._m_series_no_go_check = None
+            self._m_series_perf_last_log_monotonic = 0.0
+            self._m_series_perf_samples = 0
+            self._m_series_perf_max_no_go_ms = 0.0
+            self._m_series_perf_max_total_ms = 0.0
 
     async def live_shadow(self, shadow_name: str, reported: dict[str, Any]) -> None:
+        perf_total_started = time.perf_counter()
+        decoded_for_probe = False
+        decode_ms = 0.0
+        assemble_ms = 0.0
+        no_go_ms = 0.0
+        point_count = 0
+        zone_count = 0
+
         if _is_m_series(getattr(self.device, "model", None)) and isinstance(reported, dict):
+            decode_started = time.perf_counter()
             decoded = _legacy._decode_live_curpath(reported.get("curpath"))
+            decode_ms = (time.perf_counter() - decode_started) * 1000.0
             if isinstance(decoded, dict):
+                decoded_for_probe = True
+                assemble_started = time.perf_counter()
                 _ingest(self, getattr(self, "_path_definition", None), live=False)
                 _ingest(self, decoded, live=True)
                 merged = _merged(self)
+                assemble_ms = (time.perf_counter() - assemble_started) * 1000.0
                 if merged is not None:
                     forwarded = dict(reported)
                     # Prevent the older compatibility layer from re-decoding
                     # the short chunk and replacing the test4 assembled trail.
                     forwarded.pop("curpath", None)
                     points = merged["_path_points"]
+                    point_count = len(points)
                     check_state = dict(getattr(self, "reported_state", {}) or {})
                     check_state.update(reported)
+                    no_go_started = time.perf_counter()
                     no_go_check = _update_no_go_check(self, merged, check_state)
+                    no_go_ms = (time.perf_counter() - no_go_started) * 1000.0
+                    try:
+                        zone_count = int(no_go_check.get("no_go_zone_count", 0) or 0)
+                    except (TypeError, ValueError):
+                        zone_count = 0
                     forwarded["_path_definition"] = merged
                     forwarded["_history_path_source"] = "m_series_curpath"
                     forwarded["_no_go_path_check"] = no_go_check
@@ -277,7 +357,23 @@ def install_m_series_path_support() -> None:
                     forwarded["pose"] = pose
                     forwarded["cur_pose"] = pose
                     reported = forwarded
+
+        downstream_started = time.perf_counter()
         await previous_live(self, shadow_name, reported)
+        downstream_ms = (time.perf_counter() - downstream_started) * 1000.0
+
+        if decoded_for_probe:
+            total_ms = (time.perf_counter() - perf_total_started) * 1000.0
+            _log_live_performance_probe(
+                self,
+                decode_ms=decode_ms,
+                assemble_ms=assemble_ms,
+                no_go_ms=no_go_ms,
+                downstream_ms=downstream_ms,
+                total_ms=total_ms,
+                point_count=point_count,
+                zone_count=zone_count,
+            )
 
     async def update_data(self) -> dict[str, Any]:
         state = await previous_update(self)
