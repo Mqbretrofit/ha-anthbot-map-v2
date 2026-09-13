@@ -14,16 +14,15 @@ class TestLiveMapStreamArchitecture(unittest.TestCase):
         self.assertIn(
             "await async_setup_live_map_stream(hass, entry, coordinators)", source
         )
+        self.assertIn("install_live_map_entity_write_semantics", source)
 
-    def test_existing_map_listener_gets_compact_signature_after_stream_activation(self):
+    def test_existing_map_listener_gets_quiet_signature_after_stream_activation(self):
         source = (INTEGRATION / "lawn_mower.py").read_text(encoding="utf-8")
         setup_start = source.index("async def async_setup_entry")
         setup_end = source.index("class AnthbotLawnMowerEntity", setup_start)
         setup = source[setup_start:setup_end]
         self.assertIn('live_data.get("frontend_ready")', setup)
-        self.assertIn(
-            "_recorder_v2467._map_live_signature = _compact_write_signature", setup
-        )
+        self.assertIn("install_live_map_entity_write_semantics()", setup)
 
     def test_websocket_protocol_and_compatibility_gate_exist(self):
         source = (INTEGRATION / "live_map_stream.py").read_text(encoding="utf-8")
@@ -63,6 +62,41 @@ class TestLiveMapStreamArchitecture(unittest.TestCase):
             '"path_binary_paths":',
         ):
             self.assertNotIn(forbidden, compact)
+
+    def test_live_map_write_signature_ignores_stream_and_diagnostic_churn(self):
+        source = (INTEGRATION / "live_map_entity_semantics.py").read_text(
+            encoding="utf-8"
+        )
+        start = source.index("def live_map_entity_write_signature")
+        end = source.index("def install_live_map_entity_write_semantics", start)
+        signature = source[start:end]
+
+        for forbidden in (
+            'state.get("pose")',
+            'state.get("path")',
+            'state.get("_map_archive_selection")',
+            'state.get("_error_history")',
+            'state.get("_task_events")',
+            'state.get("_mowing_records")',
+            'state.get("_area_definition")',
+            'state.get("_ridable_area_definition")',
+        ):
+            self.assertNotIn(forbidden, signature)
+
+        for required in (
+            "_general_mower_status",
+            "_raw_robot_status",
+            'state.get("_cloud_connected")',
+            'state.get("_robot_online")',
+            'state.get("_live_shadow_connected", False)',
+            'state.get("_cloud_error")',
+            'state.get("_live_shadow_error")',
+            'state.get("_map_definition_error")',
+            'state.get("_path_definition_error")',
+            "coordinator.last_mowing_task",
+            "coordinator.custom_button_actions",
+        ):
+            self.assertIn(required, signature)
 
     def test_frontend_patch_is_bundled_identically(self):
         source = ROOT / "www" / "anthbot-map" / "live-map-stream.js"
