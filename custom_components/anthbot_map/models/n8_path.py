@@ -70,8 +70,12 @@ def install_n8_path_support() -> None:
             self._m_series_test4_live_path_id = None
             self._m_series_test4_latest_angle = None
             self._m_series_test4_latest_angle_index = -1
+            self._m_series_test4_revision = 0
             self._m_series_no_go_check_signature = None
             self._m_series_no_go_check = None
+            self._m_series_no_go_geometry_signature = None
+            self._m_series_no_go_path_id = None
+            self._m_series_no_go_last_monotonic = 0.0
 
     async def live_shadow(self, shadow_name: str, reported: dict[str, Any]) -> None:
         if is_n8_model(getattr(self.device, "model", None)) and isinstance(reported, dict):
@@ -90,6 +94,7 @@ def install_n8_path_support() -> None:
                         self,
                         merged,
                         check_state,
+                        live=True,
                     )
                     forwarded["_path_definition"] = merged
                     forwarded["_history_path_source"] = "n8_curpath"
