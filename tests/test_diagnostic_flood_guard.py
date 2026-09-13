@@ -19,12 +19,8 @@ _PURE_NAMES = {
     "_URL_RE",
     "_REQUEST_ID_RE",
     "_HOST_ID_RE",
-    "_ERROR_KEYS",
     "_stable_error_text",
     "_stable_error_signature",
-    "_state_has_usable_map_fallback",
-    "_is_expected_optional_map_miss",
-    "_guard_detected_trigger",
 }
 
 
@@ -84,7 +80,7 @@ def _n8_missing_multi_maps(request_id: str, host_id: str) -> str:
 
 
 class DiagnosticFloodGuardTests(unittest.TestCase):
-    def test_truncated_aws_ids_do_not_change_signature(self) -> None:
+    def test_m9_truncated_aws_ids_do_not_change_signature(self) -> None:
         first = _m9_missing_multi_maps("A7C5MKCC82NTWXSA", "HOST-ONE-TRUNCATED")
         second = _m9_missing_multi_maps("DIFFERENT-REQUEST", "HOST-TWO-TRUNCATED")
 
@@ -98,6 +94,15 @@ class DiagnosticFloodGuardTests(unittest.TestCase):
         )
         self.assertNotIn("A7C5MKCC82NTWXSA", normalize(first))
         self.assertNotIn("HOST-ONE-TRUNCATED", normalize(first))
+
+    def test_n8_truncated_aws_ids_do_not_change_signature(self) -> None:
+        first = _n8_missing_multi_maps("REQ-N8-A", "HOST-N8-A")
+        second = _n8_missing_multi_maps("REQ-N8-B", "HOST-N8-B")
+        signature = NS["_stable_error_signature"]
+        self.assertEqual(
+            signature("map_definition_error", first),
+            signature("map_definition_error", second),
+        )
 
     def test_complete_aws_ids_do_not_change_signature(self) -> None:
         first = (
@@ -114,83 +119,26 @@ class DiagnosticFloodGuardTests(unittest.TestCase):
             signature("map_definition_error", second),
         )
 
-    def test_m9_optional_multi_maps_miss_is_suppressed_with_live_path(self) -> None:
-        state = {
-            "_map_definition_error": _m9_missing_multi_maps("REQ-1", "HOST-1"),
-            "map_time": 1789310369646,
-            "_path_definition": {"_path_points": [{"x": -40, "y": -110}]},
-            "_history_path_source": "m_series_curpath",
-        }
-        result = NS["_guard_detected_trigger"](
-            state,
-            ("map_definition_error", "legacy-unstable-signature"),
+    def test_real_error_content_still_changes_signature(self) -> None:
+        signature = NS["_stable_error_signature"]
+        missing = _m9_missing_multi_maps("REQ-A", "HOST-A")
+        decode = "map_manager downloaded but iot_map.bin was not recognized"
+        self.assertNotEqual(
+            signature("map_definition_error", missing),
+            signature("map_definition_error", decode),
         )
-        self.assertIsNone(result)
 
-    def test_n8_optional_multi_maps_miss_is_suppressed_with_curpath(self) -> None:
-        state = {
-            "_map_definition_error": _n8_missing_multi_maps("REQ-2", "HOST-2"),
-            "_history_path_source": "n8_curpath",
-        }
-        result = NS["_guard_detected_trigger"](
-            state,
-            ("map_definition_error", "legacy-unstable-signature"),
+    def test_path_errors_are_stabilized_without_being_reclassified(self) -> None:
+        signature = NS["_stable_error_signature"]
+        first = (
+            "path download failed <RequestId>REQ-A</RequestId><HostId>HOST-A"
         )
-        self.assertIsNone(result)
-
-    def test_missing_multi_maps_without_fallback_still_reports(self) -> None:
-        state = {
-            "_map_definition_error": _m9_missing_multi_maps("REQ-3", "HOST-3")
-        }
-        result = NS["_guard_detected_trigger"](
-            state,
-            ("map_definition_error", "legacy-unstable-signature"),
+        second = (
+            "path download failed <RequestId>REQ-B</RequestId><HostId>HOST-B"
         )
-        self.assertIsNotNone(result)
-        assert result is not None
-        self.assertEqual(result[0], "map_definition_error")
-        self.assertTrue(result[1].startswith("map_definition_error:"))
-
-    def test_real_map_decode_failure_is_not_suppressed(self) -> None:
-        state = {
-            "_map_definition_error": (
-                "map_manager downloaded but iot_map.bin was not recognized"
-            ),
-            "_history_path_source": "m_series_curpath",
-        }
-        result = NS["_guard_detected_trigger"](
-            state,
-            ("map_definition_error", "legacy-signature"),
-        )
-        self.assertIsNotNone(result)
-        assert result is not None
-        self.assertEqual(result[0], "map_definition_error")
-
-    def test_path_error_remains_reportable_but_request_ids_are_stable(self) -> None:
-        first_state = {
-            "_path_definition_error": (
-                "path download failed <RequestId>REQ-A</RequestId><HostId>HOST-A"
-            )
-        }
-        second_state = {
-            "_path_definition_error": (
-                "path download failed <RequestId>REQ-B</RequestId><HostId>HOST-B"
-            )
-        }
-        first = NS["_guard_detected_trigger"](
-            first_state,
-            ("path_definition_error", "old-a"),
-        )
-        second = NS["_guard_detected_trigger"](
-            second_state,
-            ("path_definition_error", "old-b"),
-        )
-        self.assertEqual(first, second)
-        self.assertIsNotNone(first)
-
-    def test_non_error_triggers_are_preserved(self) -> None:
-        detected = ("no_go_path_crossing", "no-go:7:301")
-        self.assertEqual(NS["_guard_detected_trigger"]({}, detected), detected)
+        result = signature("path_definition_error", first)
+        self.assertEqual(result, signature("path_definition_error", second))
+        self.assertTrue(result.startswith("path_definition_error:"))
 
     def test_guard_is_installed_after_v2465_reliability(self) -> None:
         source = COMMON.read_text(encoding="utf-8")
@@ -200,13 +148,18 @@ class DiagnosticFloodGuardTests(unittest.TestCase):
         self.assertLess(v2465, guard)
         self.assertLess(guard, rescue)
 
-    def test_guard_replaces_report_installer_and_keeps_single_listener(self) -> None:
+    def test_guard_reuses_existing_reporter_instead_of_stacking_listener(self) -> None:
         source = GUARD.read_text(encoding="utf-8")
-        self.assertIn("_install_automatic_diagnostics_reporting", source)
-        self.assertIn("_anthbot_auto_diag_listener_remove", source)
-        self.assertIn("_anthbot_auto_diag_active_signature", source)
-        self.assertIn("_DIAGNOSTIC_HARD_REPEAT_SECONDS", source)
-        self.assertIn('trigger == "mower_error_code"', source)
+        self.assertIn(
+            "reliability_v2465._stable_error_signature = _stable_error_signature",
+            source,
+        )
+        self.assertIn(
+            "reliability_v2465._stable_error_text = _stable_error_text",
+            source,
+        )
+        self.assertNotIn("_install_automatic_diagnostics_reporting =", source)
+        self.assertNotIn("async_add_listener", source)
 
 
 if __name__ == "__main__":
