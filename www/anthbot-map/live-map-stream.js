@@ -9,9 +9,21 @@
 const ANTHBOT_LIVE_PROTOCOL = 2;
 const ANTHBOT_LIVE_TYPE = "anthbot_map/subscribe_live";
 
+function baseMapEntity(card) {
+  const entityId = card._activeEntityId || card.resolveMapEntityId?.() || card.config?.entity;
+  return entityId && card._hass?.states ? card._hass.states[entityId] : null;
+}
+
+function liveStreamAvailable(card) {
+  return baseMapEntity(card)?.attributes?.live_stream_available === true;
+}
+
+function stopLegacyRefreshTimer(card) {
+  if (liveStreamAvailable(card)) card.stopRefreshTimer?.();
+}
+
 function cloneEntityWithLiveOverlay(card) {
-  const entityId = card._activeEntityId || card.resolveMapEntityId?.();
-  const base = entityId && card._hass?.states ? card._hass.states[entityId] : card.entity;
+  const base = baseMapEntity(card) || card.entity;
   if (!base) return null;
   const overlay = card._anthbotLiveOverlay;
   if (!overlay || typeof overlay !== "object") {
@@ -164,6 +176,7 @@ function applyLiveMessage(card, message) {
   }
 
   if (kind === "snapshot") {
+    stopLegacyRefreshTimer(card);
     card._anthbotLiveOverlay = { ...(message.attributes || {}) };
     card._anthbotLiveSequence = sequence;
     if (!applyPathMessage(card, message.path)) {
@@ -211,8 +224,7 @@ function applyLiveMessage(card, message) {
 
 function ensureLiveSubscription(card) {
   const hass = card._hass;
-  const entityId = card._activeEntityId || card.resolveMapEntityId?.();
-  const base = entityId && hass?.states ? hass.states[entityId] : null;
+  const base = baseMapEntity(card);
   const attributes = base?.attributes || {};
 
   // Critical downgrade/compatibility guard: a stale Lovelace resource must
@@ -226,6 +238,7 @@ function ensureLiveSubscription(card) {
     return;
   }
 
+  stopLegacyRefreshTimer(card);
   const serial = attributes.serial_number;
   if (!serial || !hass?.connection?.subscribeMessage) return;
   if (
@@ -270,6 +283,38 @@ customElements.whenDefined("anthbot-map-card").then(() => {
   const proto = Card.prototype;
   Object.defineProperty(proto, "__anthbotLiveMapStreamV2", { value: true });
 
+  const originalStartRefreshTimer = proto.startRefreshTimer;
+  if (typeof originalStartRefreshTimer === "function") {
+    proto.startRefreshTimer = function patchedStartRefreshTimer(...args) {
+      if (liveStreamAvailable(this)) {
+        this.stopRefreshTimer?.();
+        return undefined;
+      }
+      return originalStartRefreshTimer.apply(this, args);
+    };
+  }
+
+  const originalRefreshEntityIds = proto.refreshEntityIds;
+  if (typeof originalRefreshEntityIds === "function") {
+    proto.refreshEntityIds = function patchedRefreshEntityIds(...args) {
+      const ids = originalRefreshEntityIds.apply(this, args) || [];
+      if (!liveStreamAvailable(this)) return ids;
+      const mapEntityId = this._activeEntityId || this.resolveMapEntityId?.() || this.config?.entity;
+      return ids.filter((entityId) => entityId && entityId !== mapEntityId);
+    };
+  }
+
+  const originalRefreshEntities = proto.refreshEntities;
+  if (typeof originalRefreshEntities === "function") {
+    proto.refreshEntities = function patchedRefreshEntities(...args) {
+      if (liveStreamAvailable(this) && this.refreshEntityIds?.().length === 0) {
+        this.syncEntityAndRenderer?.();
+        return Promise.resolve();
+      }
+      return originalRefreshEntities.apply(this, args);
+    };
+  }
+
   const hassDescriptor = Object.getOwnPropertyDescriptor(proto, "hass");
   const originalHassSetter = hassDescriptor?.set;
   if (typeof originalHassSetter === "function") {
@@ -278,6 +323,7 @@ customElements.whenDefined("anthbot-map-card").then(() => {
       enumerable: hassDescriptor.enumerable,
       set(hass) {
         originalHassSetter.call(this, hass);
+        stopLegacyRefreshTimer(this);
         cloneEntityWithLiveOverlay(this);
         ensureLiveSubscription(this);
       },
@@ -292,7 +338,9 @@ customElements.whenDefined("anthbot-map-card").then(() => {
         stopLiveSubscription(this);
         resetLiveState(this);
       }
-      return originalSetConfig.call(this, config);
+      const result = originalSetConfig.call(this, config);
+      stopLegacyRefreshTimer(this);
+      return result;
     };
   }
 
