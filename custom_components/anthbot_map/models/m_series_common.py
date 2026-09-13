@@ -19,6 +19,7 @@ from .m9_map_rescue_v2465 import install_m9_map_rescue_v2465
 from .performance_diagnostics import install_performance_diagnostics
 from .rain_battery_saver import install_rain_battery_saver_safety
 from .recorder_v2465 import install_recorder_v2465
+from .recorder_v2467 import install_recorder_v2467
 from .reliability_v2464 import install_runtime_reliability_fixes
 from .reliability_v2465 import install_v2465_reliability_fixes
 from .report_identity_suffix import install_report_identity_suffix
@@ -63,6 +64,10 @@ def install_m_series_compat() -> None:
     install_shutdown_guard_state_settle()
     install_runtime_optimizations()
     install_performance_diagnostics()
+    # Home Assistant caches the class' combined unrecorded attributes during
+    # class construction. Refresh that cache after runtime diagnostics add the
+    # high-churn runtime_performance attribute, before entities are created.
+    install_recorder_v2467()
     install_runtime_optimization_diagnostics()
     # Reliability layers are deliberately installed after all mower/model
     # adapters. 2.4.6.5 only changes diagnostics/Recorder behavior and the
