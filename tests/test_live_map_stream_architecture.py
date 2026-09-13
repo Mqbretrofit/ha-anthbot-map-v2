@@ -23,6 +23,19 @@ class TestLiveMapStreamArchitecture(unittest.TestCase):
         self.assertIn("_install_compact_map_entity", source)
         self.assertIn("frontend_ready", source)
 
+    def test_websocket_cleanup_is_registered_before_success_is_visible(self):
+        source = (INTEGRATION / "live_map_stream.py").read_text(encoding="utf-8")
+        handler_start = source.index("async def _websocket_subscribe_live")
+        handler_end = source.index("async def _async_ensure_frontend_resource", handler_start)
+        handler = source[handler_start:handler_end]
+        register_pos = handler.index('connection.subscriptions[msg["id"]] = unsubscribe')
+        result_pos = handler.index('connection.send_result(msg["id"])')
+        activate_pos = handler.index("hub.activate_subscriber")
+        self.assertLess(register_pos, result_pos)
+        self.assertLess(result_pos, activate_pos)
+        self.assertIn("subscribe_pending", handler)
+        self.assertIn("async_prepare_snapshot", handler)
+
     def test_compact_entity_does_not_embed_live_geometry(self):
         source = (INTEGRATION / "live_map_stream.py").read_text(encoding="utf-8")
         start = source.index("def _compact_extra_state_attributes")
