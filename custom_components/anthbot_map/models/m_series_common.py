@@ -20,6 +20,7 @@ from .performance_diagnostics import install_performance_diagnostics
 from .rain_battery_saver import install_rain_battery_saver_safety
 from .recorder_v2465 import install_recorder_v2465
 from .recorder_v2467 import install_recorder_v2467
+from .recorder_idle_semantics_v2467 import install_recorder_idle_semantics_v2467
 from .reliability_v2464 import install_runtime_reliability_fixes
 from .reliability_v2465 import install_v2465_reliability_fixes
 from .report_identity_suffix import install_report_identity_suffix
@@ -81,3 +82,7 @@ def install_m_series_compat() -> None:
     # five-second limiter for genuine live pose/path/status changes. It also
     # refreshes Home Assistant's cached unrecorded set after diagnostics exist.
     install_recorder_v2467()
+    # Field probe: map_time and its derived archive diagnostics rotate while
+    # idle, and event-only history can also churn. Refine only the semantic
+    # write classifier after the v2.4.6.7 filter itself is installed.
+    install_recorder_idle_semantics_v2467()
