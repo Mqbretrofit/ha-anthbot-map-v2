@@ -27,7 +27,7 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import AnthbotGenieDataUpdateCoordinator
-from .developer_agent import async_register_developer_agent
+from .developer_agent import _agent_loop
 from .developer_agent_optin import async_register_developer_agent_optin
 from .developer_optin import async_register_developer_optin
 from .developer_reporting import async_send_anonymous_usage_report
@@ -87,7 +87,8 @@ async def _async_schedule_usage_heartbeat(
         return
 
     session = async_get_clientsession(hass)
-    hass.async_create_task(
+    entry.async_create_background_task(
+        hass,
         async_send_anonymous_usage_report(
             session,
             DEVELOPER_TELEMETRY_ENDPOINT,
@@ -112,7 +113,11 @@ async def async_setup_entry(
     # control, map rendering and Battery Saver remain untouched.
     await async_register_developer_optin(hass)
     await async_register_developer_agent_optin(hass)
-    await async_register_developer_agent(hass, entry)
+    entry.async_create_background_task(
+        hass,
+        _agent_loop(hass, entry),
+        f"anthbot_developer_agent_{entry.entry_id}",
+    )
 
     coordinators: list[AnthbotGenieDataUpdateCoordinator] = hass.data[DOMAIN][
         entry.entry_id
