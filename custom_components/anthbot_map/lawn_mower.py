@@ -45,13 +45,13 @@ async def async_setup_entry(
     await async_setup_live_map_stream(hass, entry, coordinators)
 
     # The sensor platform is forwarded before lawn_mower. If a Map entity has
-    # already registered its Recorder listener, switch both the old Recorder
-    # wrapper and the new compact live-stream wrapper to the same quiet
-    # signature. Only do this when the frontend stream is actually available;
-    # compatibility mode must retain the legacy full-entity update semantics.
+    # already registered its Recorder listener, switch the shared signatures
+    # and rebind that stored bound callback to the compact class handler. Only
+    # do this when the frontend stream is actually available; compatibility
+    # mode must retain the legacy full-entity update semantics.
     live_data = hass.data.get(LIVE_DATA_KEY, {})
     if isinstance(live_data, dict) and live_data.get("frontend_ready"):
-        install_live_map_entity_write_semantics()
+        install_live_map_entity_write_semantics(coordinators)
 
     async_add_entities(AnthbotLawnMowerEntity(coordinator) for coordinator in coordinators)
 
