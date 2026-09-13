@@ -20,6 +20,7 @@ from .performance_diagnostics import install_performance_diagnostics
 from .rain_battery_saver import install_rain_battery_saver_safety
 from .recorder_v2465 import install_recorder_v2465
 from .recorder_v2467 import install_recorder_v2467
+from .recorder_probe_v2467 import install_recorder_probe_v2467
 from .reliability_v2464 import install_runtime_reliability_fixes
 from .reliability_v2465 import install_v2465_reliability_fixes
 from .report_identity_suffix import install_report_identity_suffix
@@ -81,3 +82,7 @@ def install_m_series_compat() -> None:
     # five-second limiter for genuine live pose/path/status changes. It also
     # refreshes Home Assistant's cached unrecorded set after diagnostics exist.
     install_recorder_v2467()
+    # Temporary field-only probe for the test branch. It observes accepted Map
+    # writes and logs which semantic signature components changed; it does not
+    # alter the write decision or mower behavior.
+    install_recorder_probe_v2467()
