@@ -1,5 +1,6 @@
 """Model compatibility entry point for the clean rebuild."""
 
+from .diagnostic_flood_guard import install_diagnostic_flood_guard
 from .entity_identity import install_setting_entity_identity
 from .genie_path_diagnostics import install_genie_path_diagnostics
 from .genie_status import install_genie_live_status_support
@@ -75,6 +76,9 @@ def install_m_series_compat() -> None:
     install_runtime_reliability_fixes()
     install_report_identity_suffix()
     install_v2465_reliability_fixes()
+    # Keep the proven episode-aware reporter, but normalize even truncated AWS
+    # RequestId/HostId fields so one real error remains one reporting episode.
+    install_diagnostic_flood_guard()
     # M9-only last resort: if the current map-manager archive is valid but the
     # iot_map payload is an unknown encoding, reuse its area_setting zone hull
     # instead of requesting the known-missing multi_maps/<serial>_0 object.
