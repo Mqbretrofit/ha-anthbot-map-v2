@@ -22,7 +22,19 @@ class TestLiveMapStreamArchitecture(unittest.TestCase):
         setup_end = source.index("class AnthbotLawnMowerEntity", setup_start)
         setup = source[setup_start:setup_end]
         self.assertIn('live_data.get("frontend_ready")', setup)
-        self.assertIn("install_live_map_entity_write_semantics()", setup)
+        self.assertIn("install_live_map_entity_write_semantics(coordinators)", setup)
+
+    def test_existing_bound_map_listener_is_rebound_to_compact_handler(self):
+        source = (INTEGRATION / "live_map_entity_semantics.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('getattr(coordinator, "_listeners", None)', source)
+        self.assertIn('getattr(callback, "__self__", None)', source)
+        self.assertIn("AnthbotMapSensorEntity", source)
+        self.assertIn(
+            "listeners[listener_id] = (entity._handle_coordinator_update, context)",
+            source,
+        )
 
     def test_websocket_protocol_and_compatibility_gate_exist(self):
         source = (INTEGRATION / "live_map_stream.py").read_text(encoding="utf-8")
@@ -68,7 +80,7 @@ class TestLiveMapStreamArchitecture(unittest.TestCase):
             encoding="utf-8"
         )
         start = source.index("def live_map_entity_write_signature")
-        end = source.index("def install_live_map_entity_write_semantics", start)
+        end = source.index("def _rebind_existing_map_listener", start)
         signature = source[start:end]
 
         for forbidden in (
