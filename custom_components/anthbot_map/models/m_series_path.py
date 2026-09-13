@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import time
 from typing import Any
 
 from ..coordinator import AnthbotGenieDataUpdateCoordinator
@@ -11,6 +12,7 @@ from . import m_series_legacy as _legacy
 
 _INSTALLED = False
 _MAX_POINTS = 20000
+_NO_GO_LIVE_MIN_SECONDS = 5.0
 
 
 def _is_m_series(model: object) -> bool:
@@ -91,6 +93,7 @@ def _ingest(self: AnthbotGenieDataUpdateCoordinator, definition: Any, *, live: b
 
     indexed = getattr(self, "_m_series_test4_points", {})
     path_changed = previous_path_id is not None and path_id is not None and previous_path_id != path_id
+    changed = path_changed or not isinstance(indexed, dict)
     if not isinstance(indexed, dict) or path_changed:
         indexed = {}
         self._m_series_test4_latest_angle = None
@@ -100,12 +103,21 @@ def _ingest(self: AnthbotGenieDataUpdateCoordinator, definition: Any, *, live: b
     for offset, point in enumerate(path_points):
         # Same behavior as test4: fill missing absolute slots, do not overwrite
         # an already assembled valid point.
-        indexed.setdefault(start + offset, point)
+        index = start + offset
+        if index not in indexed:
+            indexed[index] = point
+            changed = True
 
     if len(indexed) > _MAX_POINTS:
         keep = sorted(indexed)[-_MAX_POINTS:]
         indexed = {index: indexed[index] for index in keep}
+        changed = True
     self._m_series_test4_points = indexed
+
+    if changed:
+        self._m_series_test4_revision = int(
+            getattr(self, "_m_series_test4_revision", 0)
+        ) + 1
 
     if path_id is not None:
         self._m_series_test4_path_id = path_id
@@ -151,6 +163,9 @@ def _merged(self: AnthbotGenieDataUpdateCoordinator) -> dict[str, Any] | None:
     definition["_m_series_test4_merged"] = True
     definition["_m_series_first_index"] = indices[0]
     definition["_m_series_last_index"] = indices[-1]
+    definition["_m_series_revision"] = int(
+        getattr(self, "_m_series_test4_revision", 0)
+    )
     angle = getattr(self, "_m_series_test4_latest_angle", None)
     if angle is not None:
         definition["angle"] = angle
@@ -162,32 +177,57 @@ def _update_no_go_check(
     self: AnthbotGenieDataUpdateCoordinator,
     definition: dict[str, Any],
     state: dict[str, Any],
+    *,
+    live: bool = False,
 ) -> dict[str, Any]:
-    """Evaluate the merged path only when path or no-go geometry changed."""
+    """Evaluate no-go geometry with a stable cache and bounded live cadence."""
     points = definition.get("_path_points")
     if not isinstance(points, list):
         points = []
+
     geometry_signature = no_go_geometry_signature(state)
+    path_id = definition.get("path_id")
     signature = (
-        id(points),
+        definition.get("_m_series_revision"),
         len(points),
-        definition.get("path_id"),
+        path_id,
         definition.get("_m_series_first_index"),
         definition.get("_m_series_last_index"),
         geometry_signature,
     )
-    if getattr(self, "_m_series_no_go_check_signature", None) == signature:
-        cached = getattr(self, "_m_series_no_go_check", None)
-        if isinstance(cached, dict):
+    cached = getattr(self, "_m_series_no_go_check", None)
+    if (
+        getattr(self, "_m_series_no_go_check_signature", None) == signature
+        and isinstance(cached, dict)
+    ):
+        return cached
+
+    now = time.monotonic()
+    if live and isinstance(cached, dict):
+        geometry_unchanged = (
+            getattr(self, "_m_series_no_go_geometry_signature", None)
+            == geometry_signature
+        )
+        path_unchanged = getattr(self, "_m_series_no_go_path_id", None) == path_id
+        last_run = float(getattr(self, "_m_series_no_go_last_monotonic", 0.0))
+        if (
+            geometry_unchanged
+            and path_unchanged
+            and last_run > 0.0
+            and now - last_run < _NO_GO_LIVE_MIN_SECONDS
+        ):
             return cached
 
     check = evaluate_path_no_go(
         points,
         state,
-        path_id=definition.get("path_id"),
+        path_id=path_id,
     )
     self._m_series_no_go_check_signature = signature
     self._m_series_no_go_check = check
+    self._m_series_no_go_geometry_signature = geometry_signature
+    self._m_series_no_go_path_id = path_id
+    self._m_series_no_go_last_monotonic = now
     return check
 
 
@@ -242,8 +282,12 @@ def install_m_series_path_support() -> None:
             self._m_series_test4_live_path_id = None
             self._m_series_test4_latest_angle = None
             self._m_series_test4_latest_angle_index = -1
+            self._m_series_test4_revision = 0
             self._m_series_no_go_check_signature = None
             self._m_series_no_go_check = None
+            self._m_series_no_go_geometry_signature = None
+            self._m_series_no_go_path_id = None
+            self._m_series_no_go_last_monotonic = 0.0
 
     async def live_shadow(self, shadow_name: str, reported: dict[str, Any]) -> None:
         if _is_m_series(getattr(self.device, "model", None)) and isinstance(reported, dict):
@@ -260,7 +304,12 @@ def install_m_series_path_support() -> None:
                     points = merged["_path_points"]
                     check_state = dict(getattr(self, "reported_state", {}) or {})
                     check_state.update(reported)
-                    no_go_check = _update_no_go_check(self, merged, check_state)
+                    no_go_check = _update_no_go_check(
+                        self,
+                        merged,
+                        check_state,
+                        live=True,
+                    )
                     forwarded["_path_definition"] = merged
                     forwarded["_history_path_source"] = "m_series_curpath"
                     forwarded["_no_go_path_check"] = no_go_check
