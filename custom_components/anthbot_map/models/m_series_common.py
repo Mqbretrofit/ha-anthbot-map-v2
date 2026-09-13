@@ -19,6 +19,7 @@ from .m9_map_rescue_v2465 import install_m9_map_rescue_v2465
 from .performance_diagnostics import install_performance_diagnostics
 from .rain_battery_saver import install_rain_battery_saver_safety
 from .recorder_v2465 import install_recorder_v2465
+from .recorder_v2467 import install_recorder_v2467
 from .reliability_v2464 import install_runtime_reliability_fixes
 from .reliability_v2465 import install_v2465_reliability_fixes
 from .report_identity_suffix import install_report_identity_suffix
@@ -75,3 +76,8 @@ def install_m_series_compat() -> None:
     # instead of requesting the known-missing multi_maps/<serial>_0 object.
     install_m9_map_rescue_v2465()
     install_recorder_v2465()
+    # v2.4.6.7 wraps the final v2.4.6.5 Map-state throttle. This order lets the
+    # semantic filter suppress unchanged writes while preserving the proven
+    # five-second limiter for genuine live pose/path/status changes. It also
+    # refreshes Home Assistant's cached unrecorded set after diagnostics exist.
+    install_recorder_v2467()
