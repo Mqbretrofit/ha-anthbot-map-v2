@@ -1,8 +1,8 @@
 """Guard automatic diagnostics against duplicate cloud-error floods.
 
 Field reports from M9 and N8 show AWS XML errors may be truncated in the
-middle of RequestId/HostId values.  Those values are request-specific, so they
-must never participate in the automatic diagnostics signature.  In addition,
+middle of RequestId/HostId values. Those values are request-specific, so they
+must never participate in the automatic diagnostics signature. In addition,
 a missing optional multi_maps object is not an actionable map failure while a
 usable live/path fallback is already present.
 """
@@ -23,7 +23,7 @@ _DIAGNOSTIC_HARD_REPEAT_SECONDS = 60.0 * 60.0
 
 _URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 # AWS/XML bodies in field diagnostics are sometimes truncated before the
-# closing tag.  Match both complete and cut-off forms without consuming the
+# closing tag. Match both complete and cut-off forms without consuming the
 # next XML element when a closing tag is present.
 _REQUEST_ID_RE = re.compile(
     r"<RequestId>[^<]*(?:</RequestId>)?",
@@ -101,6 +101,28 @@ def _is_expected_optional_map_miss(
     return _state_has_usable_map_fallback(state)
 
 
+def _guard_detected_trigger(
+    state: dict[str, Any],
+    detected: tuple[str, str] | None,
+) -> tuple[str, str] | None:
+    """Normalize one detected trigger and suppress only proven optional misses."""
+    if detected is None:
+        return None
+
+    trigger, signature = detected
+    error_key = _ERROR_KEYS.get(trigger)
+    if error_key is None:
+        return trigger, signature
+
+    value = state.get(error_key)
+    if trigger == "map_definition_error" and _is_expected_optional_map_miss(
+        state, value
+    ):
+        return None
+
+    return trigger, _stable_error_signature(trigger, value)
+
+
 def _patch_platform_modules() -> None:
     """Install stable trigger signatures and the episode-aware report listener."""
     global _PLATFORM_PATCHED
@@ -115,22 +137,7 @@ def _patch_platform_modules() -> None:
     def guarded_automatic_diagnostics_trigger(
         state: dict[str, Any],
     ) -> tuple[str, str] | None:
-        detected = previous_trigger(state)
-        if detected is None:
-            return None
-
-        trigger, signature = detected
-        error_key = _ERROR_KEYS.get(trigger)
-        if error_key is None:
-            return trigger, signature
-
-        value = state.get(error_key)
-        if trigger == "map_definition_error" and _is_expected_optional_map_miss(
-            state, value
-        ):
-            return None
-
-        return trigger, _stable_error_signature(trigger, value)
+        return _guard_detected_trigger(state, previous_trigger(state))
 
     button_module._automatic_diagnostics_trigger = (  # noqa: SLF001
         guarded_automatic_diagnostics_trigger
