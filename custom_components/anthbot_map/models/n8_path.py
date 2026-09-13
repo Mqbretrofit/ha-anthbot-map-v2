@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from ..coordinator import AnthbotGenieDataUpdateCoordinator
@@ -12,7 +13,7 @@ from .n8_control import is_n8_model
 _INSTALLED = False
 
 
-def _attach_n8(
+async def _attach_n8(
     self: AnthbotGenieDataUpdateCoordinator,
     state: dict[str, Any],
 ) -> dict[str, Any]:
@@ -26,7 +27,11 @@ def _attach_n8(
 
     result = dict(state)
     points = definition["_path_points"]
-    no_go_check = _path._update_no_go_check(self, definition, state)  # noqa: SLF001
+    no_go_check = await _path._update_no_go_check(  # noqa: SLF001
+        self,
+        definition,
+        state,
+    )
     self._path_definition = definition  # noqa: SLF001
     self._history_path_source = "n8_curpath"  # noqa: SLF001
     result["_path_definition"] = definition
@@ -72,10 +77,13 @@ def install_n8_path_support() -> None:
             self._m_series_test4_latest_angle_index = -1
             self._m_series_test4_revision = 0
             self._m_series_no_go_check_signature = None
+            self._m_series_no_go_input_signature = None
             self._m_series_no_go_check = None
             self._m_series_no_go_geometry_signature = None
             self._m_series_no_go_path_id = None
+            self._m_series_no_go_area_token = None
             self._m_series_no_go_last_monotonic = 0.0
+            self._m_series_no_go_lock = asyncio.Lock()
 
     async def live_shadow(self, shadow_name: str, reported: dict[str, Any]) -> None:
         if is_n8_model(getattr(self.device, "model", None)) and isinstance(reported, dict):
@@ -90,7 +98,7 @@ def install_n8_path_support() -> None:
                     points = merged["_path_points"]
                     check_state = dict(getattr(self, "reported_state", {}) or {})
                     check_state.update(reported)
-                    no_go_check = _path._update_no_go_check(  # noqa: SLF001
+                    no_go_check = await _path._update_no_go_check(  # noqa: SLF001
                         self,
                         merged,
                         check_state,
@@ -122,7 +130,7 @@ def install_n8_path_support() -> None:
 
     async def update_data(self) -> dict[str, Any]:
         state = await previous_update(self)
-        return _attach_n8(self, state)
+        return await _attach_n8(self, state)
 
     AnthbotGenieDataUpdateCoordinator.__init__ = coordinator_init
     AnthbotGenieDataUpdateCoordinator._async_handle_live_shadow = live_shadow
