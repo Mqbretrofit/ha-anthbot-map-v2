@@ -944,7 +944,8 @@ async def async_register_developer_agent(
     if existing is not None and not existing.done():
         return
 
-    task = hass.async_create_task(
+    task = entry.async_create_background_task(
+        hass,
         _agent_loop(hass, entry),
         f"anthbot_developer_agent_{entry.entry_id}",
     )
