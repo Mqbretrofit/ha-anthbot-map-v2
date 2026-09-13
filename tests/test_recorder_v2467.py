@@ -1,4 +1,4 @@
-"""Regression coverage for the v2.4.6.7 Recorder cache repair."""
+"""Regression coverage for the v2.4.6.7 Recorder repairs."""
 
 from __future__ import annotations
 
@@ -34,13 +34,44 @@ class RecorderV2467Tests(unittest.TestCase):
             common.index("install_runtime_optimization_diagnostics()"),
         )
 
-    def test_live_map_throttle_is_not_relaxed_by_this_fix(self) -> None:
+    def test_existing_five_second_live_limit_is_preserved(self) -> None:
         source = RECORDER_2465.read_text(encoding="utf-8")
         repair = RECORDER_2467.read_text(encoding="utf-8")
 
         self.assertIn("_MAP_STATE_MIN_SECONDS = 5.0", source)
-        self.assertNotIn("_MAP_STATE_MIN_SECONDS", repair)
-        self.assertNotIn("_handle_coordinator_update", repair)
+        self.assertNotIn("_MAP_STATE_MIN_SECONDS =", repair)
+        self.assertIn("previous_update = map_entity._handle_coordinator_update", repair)
+        self.assertIn("previous_update(self)", repair)
+        self.assertIn("_anthbot_last_map_state_write", repair)
+
+    def test_unchanged_map_writes_are_suppressed_with_idle_heartbeat(self) -> None:
+        source = RECORDER_2467.read_text(encoding="utf-8")
+
+        self.assertIn("_MAP_UNCHANGED_HEARTBEAT_SECONDS = 60.0", source)
+        self.assertIn("signature != previous_signature", source)
+        self.assertIn("if not changed and not heartbeat_due", source)
+        self.assertIn("_anthbot_v2467_map_signature", source)
+        self.assertIn("if after_write != before_write", source)
+
+    def test_map_signature_tracks_live_ui_sources_not_runtime_diagnostics(self) -> None:
+        source = RECORDER_2467.read_text(encoding="utf-8")
+
+        for key in (
+            'state.get("pose")',
+            'state.get("curPose")',
+            'state.get("mapScanPose")',
+            'state.get("_path_definition")',
+            'state.get("_map_definition")',
+            'state.get("_area_definition")',
+            'state.get("_mowing_records")',
+            'state.get("_task_events")',
+        ):
+            self.assertIn(key, source)
+
+        signature_body = source.split("def _map_live_signature", 1)[1].split(
+            "def _install_unchanged_map_write_filter", 1
+        )[0]
+        self.assertNotIn("runtime_performance", signature_body)
 
 
 if __name__ == "__main__":
