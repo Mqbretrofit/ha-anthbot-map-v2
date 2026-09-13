@@ -76,9 +76,8 @@ def install_m_series_compat() -> None:
     install_runtime_reliability_fixes()
     install_report_identity_suffix()
     install_v2465_reliability_fixes()
-    # Final diagnostics layer: normalize truncated AWS request metadata and
-    # suppress optional multi_maps NoSuchKey reports only while a live/path
-    # fallback is demonstrably usable.
+    # Keep the proven episode-aware reporter, but normalize even truncated AWS
+    # RequestId/HostId fields so one real error remains one reporting episode.
     install_diagnostic_flood_guard()
     # M9-only last resort: if the current map-manager archive is valid but the
     # iot_map payload is an unknown encoding, reuse its area_setting zone hull
