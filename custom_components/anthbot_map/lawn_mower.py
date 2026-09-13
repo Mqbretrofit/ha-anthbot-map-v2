@@ -20,6 +20,7 @@ from .api import AnthbotGenieApiError
 from .commands import async_prepare_cloud_connection, async_start_mowing
 from .const import DOMAIN
 from .coordinator import AnthbotGenieDataUpdateCoordinator
+from .live_map_stream import async_setup_live_map_stream
 from .mower_status import mower_activity_name, raw_robot_status
 
 _ACTIVITY_BY_NAME = {
@@ -40,6 +41,7 @@ async def async_setup_entry(
     coordinators: list[AnthbotGenieDataUpdateCoordinator] = hass.data[DOMAIN][
         entry.entry_id
     ]
+    await async_setup_live_map_stream(hass, entry, coordinators)
     async_add_entities(AnthbotLawnMowerEntity(coordinator) for coordinator in coordinators)
 
 
