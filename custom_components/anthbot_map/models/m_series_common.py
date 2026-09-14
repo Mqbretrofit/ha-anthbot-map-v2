@@ -2,6 +2,7 @@
 
 from .cloud_api_resilience import install_cloud_api_resilience
 from .entity_identity import install_setting_entity_identity
+from .genie_live_path_refresh import install_genie_live_path_refresh
 from .genie_path_diagnostics import install_genie_path_diagnostics
 from .genie_status import install_genie_live_status_support
 from .live_task_events import install_live_task_event_refresh
@@ -64,6 +65,10 @@ def install_m_series_compat() -> None:
     install_m_series_history_support()
     install_genie_live_status_support()
     install_genie_path_diagnostics()
+    # Genie path files are uploaded on demand. Keep their high-frequency path
+    # refresh isolated from the five-minute ancillary coordinator cadence and
+    # from every M-series/N8 absolute-index assembler.
+    install_genie_live_path_refresh()
     install_live_task_event_refresh()
     install_rain_battery_saver_safety()
     install_shutdown_guard_state_settle()
