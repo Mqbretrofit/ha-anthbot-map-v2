@@ -71,17 +71,22 @@ jobs:
           manifest_path = Path('custom_components/anthbot_map/manifest.json')
           manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
           manifest['version'] = version
-          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-
-          init_path = Path('custom_components/anthbot_map/__init__.py')
-          init_source = init_path.read_text(encoding='utf-8')
-          init_source = re.sub(
-              r'(FRONTEND_RESOURCE_URL = f"\{FRONTEND_RESOURCE_PATH\}\?v=)[^"]+(" )?'.replace('(" )?', '(")'),
-              lambda m: f'{m.group(1)}{version}{m.group(2)}',
-              init_source,
-              count=1,
+          manifest_path.write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8',
           )
-          init_path.write_text(init_source, encoding='utf-8')
+
+          path = Path('custom_components/anthbot_map/__init__.py')
+          source = path.read_text(encoding='utf-8')
+          marker = 'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v='
+          start = source.find(marker)
+          if start < 0:
+              raise SystemExit('Frontend resource version marker not found')
+          end = source.find('"', start + len(marker))
+          if end < 0:
+              raise SystemExit('Frontend resource version terminator not found')
+          source = source[: start + len(marker)] + version + source[end:]
+          path.write_text(source, encoding='utf-8')
 
           const_path = Path('custom_components/anthbot_map/const.py')
           const_source = const_path.read_text(encoding='utf-8')
@@ -99,22 +104,46 @@ jobs:
           ):
               path = Path(name)
               text = path.read_text(encoding='utf-8')
-              text = re.sub(r'release-v[0-9A-Za-z.\-]+-blue', f'release-v{version}-blue', text, count=1)
-              text = re.sub(r'/releases/tag/v[0-9A-Za-z.\-]+', f'/releases/tag/v{version}', text, count=1)
-              text = re.sub(rf'{re.escape(stable_label)}: \*\*[^*]+\*\*', f'{stable_label}: **{version}**', text, count=1)
+              text = re.sub(
+                  r'release-v[0-9A-Za-z.\-]+-blue',
+                  f'release-v{version}-blue',
+                  text,
+                  count=1,
+              )
+              text = re.sub(
+                  r'/releases/tag/v[0-9A-Za-z.\-]+',
+                  f'/releases/tag/v{version}',
+                  text,
+                  count=1,
+              )
+              text = re.sub(
+                  rf'{re.escape(stable_label)}: \*\*[^*]+\*\*',
+                  f'{stable_label}: **{version}**',
+                  text,
+                  count=1,
+              )
               text = re.sub(
                   rf'{re.escape(latest_label)}: \[Anthbot Map v[^\]]+\]\([^\)]+\)',
                   f'{latest_label}: [Anthbot Map v{version}](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v{version})',
                   text,
                   count=1,
               )
-              lines = [line for line in text.splitlines() if 'RELEASE_NOTES_v' not in line and 'CHANGELOG_v' not in line]
+              lines = [
+                  line
+                  for line in text.splitlines()
+                  if 'RELEASE_NOTES_v' not in line and 'CHANGELOG_v' not in line
+              ]
               path.write_text('\n'.join(lines).rstrip() + '\n', encoding='utf-8')
           PY
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add custom_components/anthbot_map/manifest.json custom_components/anthbot_map/__init__.py custom_components/anthbot_map/const.py README.md README_HU.md
+          git add \
+            custom_components/anthbot_map/manifest.json \
+            custom_components/anthbot_map/__init__.py \
+            custom_components/anthbot_map/const.py \
+            README.md \
+            README_HU.md
           if ! git diff --cached --quiet; then
             git commit -m "Finalize release metadata for $tag"
             git push origin "HEAD:${GITHUB_REF_NAME}"
@@ -129,7 +158,10 @@ jobs:
           set -euo pipefail
           tag="${{ steps.release.outputs.tag }}"
           manifest_version="$(python -c 'import json; print(json.load(open("custom_components/anthbot_map/manifest.json"))["version"])')"
-          test "v${manifest_version}" = "$tag"
+          if [ "v${manifest_version}" != "$tag" ]; then
+            echo "Release tag $tag does not match manifest version v${manifest_version}."
+            exit 1
+          fi
           python -m unittest discover -s tests -v
           python -m json.tool custom_components/anthbot_map/manifest.json >/dev/null
           find custom_components www -type f -name '*.js' -print0 | xargs -0 -n1 node --check
@@ -168,11 +200,17 @@ jobs:
 
           version = sys.argv[1]
           lines = Path('CHANGELOG.md').read_text(encoding='utf-8').splitlines()
-          start = next((i for i, line in enumerate(lines) if line.startswith(f'## {version} ')), None)
+          start = next(
+              (i for i, line in enumerate(lines) if line.startswith(f'## {version} ')),
+              None,
+          )
           if start is None:
               print(f'# Anthbot Map v{version}\n\nSee CHANGELOG.md for details.')
               raise SystemExit
-          end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith('## ')), len(lines))
+          end = next(
+              (i for i in range(start + 1, len(lines)) if lines[i].startswith('## ')),
+              len(lines),
+          )
           print(f'# Anthbot Map v{version}\n')
           print('\n'.join(lines[start + 1:end]).strip())
           PY
@@ -192,10 +230,24 @@ jobs:
           else
             release_flags+=(--latest)
           fi
+
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}" -f sha="${RELEASE_SHA}" -F force=true
-            gh release edit "$tag" --title "Anthbot Map $tag" "${release_flags[@]}" --notes-file /tmp/release-notes.md
-            gh release upload "$tag" "anthbot-map-${tag}.zip" --clobber
+            gh api --method PATCH \
+              "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}" \
+              -f sha="${RELEASE_SHA}" \
+              -F force=true
+            gh release edit "$tag" \
+              --title "Anthbot Map $tag" \
+              "${release_flags[@]}" \
+              --notes-file /tmp/release-notes.md
+            gh release upload "$tag" \
+              "anthbot-map-${tag}.zip" \
+              --clobber
           else
-            gh release create "$tag" "anthbot-map-${tag}.zip" --target "${RELEASE_SHA}" --title "Anthbot Map $tag" "${release_flags[@]}" --notes-file /tmp/release-notes.md
+            gh release create "$tag" \
+              "anthbot-map-${tag}.zip" \
+              --target "${RELEASE_SHA}" \
+              --title "Anthbot Map $tag" \
+              "${release_flags[@]}" \
+              --notes-file /tmp/release-notes.md
           fi
