@@ -1,14 +1,13 @@
-"""Genie-only live mowing-path session refresh.
+"""Genie-only live mowing-path refresh with M-series-like presentation.
 
-The shared coordinator keeps ancillary REST reconciliation on a five-minute
-cadence while MQTT is connected.  Genie path files are different: the mower
-only uploads a fresh complete trajectory after ``req_all_path`` and the live
-map must request that file repeatedly while a task is active.
+M9/M9 Pro receive live ``curpath`` chunks and replace an old task trajectory
+atomically when the first chunk of the next task arrives. Genie uses a different
+protocol: it uploads a complete trajectory after ``req_all_path``. This layer
+keeps that proven Genie transport, but presents it with the same visual
+semantics as M-series: no empty-path flash, atomic old->new task replacement,
+and append-only deltas while the same task grows.
 
-This layer is intentionally isolated to the Genie family.  It clears the
-previous visible trajectory when Home Assistant starts a *new* task, prevents
-a slow/stale cloud response from putting that old trajectory back, and runs a
-small dedicated path refresh loop while Genie is mowing.  M5/M9/N8 path
+The implementation is deliberately isolated to the Genie family. M5/M9/N8
 assemblers and command routes are not touched.
 """
 
@@ -28,14 +27,17 @@ _LOGGER = logging.getLogger(__name__)
 _INSTALLED = False
 
 # The coordinator's req_all_path helper already enforces a 10-second command
-# throttle.  A five-second loop therefore reacts quickly to an already changed
-# path_time without increasing command frequency.
+# throttle. A five-second loop reacts immediately to an already changed
+# path_time without increasing the command frequency.
 _LIVE_PATH_TICK_SECONDS = 5.0
 _NEW_TASK_STARTUP_GRACE_SECONDS = 60.0
 
 
 def _is_genie(coordinator: Any) -> bool:
-    return model_family(getattr(getattr(coordinator, "device", None), "model", None)) == "genie"
+    return (
+        model_family(getattr(getattr(coordinator, "device", None), "model", None))
+        == "genie"
+    )
 
 
 def _path_time(state: Any) -> str | None:
@@ -45,58 +47,127 @@ def _path_time(state: Any) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def _blank_path_definition() -> dict[str, list[Any]]:
-    """Return an explicit empty path that cannot fall back to a stale path list."""
-    return {"_path_points": []}
+def _definition_points(value: Any) -> list[Any] | None:
+    if not isinstance(value, dict):
+        return None
+    points = value.get("_path_points")
+    return points if isinstance(points, list) else None
 
 
 def _definition_has_payload(value: Any) -> bool:
     if not isinstance(value, dict):
         return False
-    points = value.get("_path_points")
-    if isinstance(points, list):
+    points = _definition_points(value)
+    if points is not None:
         return bool(points) or len(value) > 1
     return bool(value)
 
 
-def _publish_empty_new_task_path(coordinator: Any) -> None:
-    """Immediately remove the previous Genie trajectory for a new HA task."""
+def _point_signature(point: Any) -> Any:
+    if not isinstance(point, dict):
+        return point
+    return tuple(
+        (key, point.get(key))
+        for key in ("x", "y", "z", "yaw", "heading", "angle", "type")
+        if key in point
+    )
+
+
+def _definition_continues(previous: Any, current: Any) -> bool:
+    """Return whether a complete Genie snapshot is an extension of the old one."""
+    previous_points = _definition_points(previous)
+    current_points = _definition_points(current)
+    if previous_points is None or current_points is None:
+        return True
+    if not previous_points:
+        return True
+    if len(current_points) < len(previous_points):
+        return False
+    anchor = len(previous_points) - 1
+    return _point_signature(current_points[anchor]) == _point_signature(
+        previous_points[anchor]
+    )
+
+
+def _copy_mapping(value: Any) -> Any:
+    return dict(value) if isinstance(value, dict) else value
+
+
+def _remember_visible_path(coordinator: Any, state: dict[str, Any]) -> None:
+    """Remember the currently visible path so stale REST work cannot flash over it."""
+    definition = state.get("_path_definition")
+    if not isinstance(definition, dict):
+        definition = getattr(coordinator, "_path_definition", None)
+    coordinator._genie_path_visible_definition = _copy_mapping(definition)
+
+    history_info = state.get("_history_path_info")
+    if history_info is None:
+        history_info = getattr(coordinator, "_history_path_info", None)
+    coordinator._genie_path_visible_history_info = _copy_mapping(history_info)
+
+    history_source = state.get("_history_path_source")
+    if history_source is None:
+        history_source = getattr(coordinator, "_history_path_source", None)
+    coordinator._genie_path_visible_history_source = history_source
+    coordinator._genie_path_visible_error = state.get("_path_definition_error")
+
+    legacy: dict[str, Any] = {}
+    for key in ("path", "mowed_path", "cloud_path"):
+        value = state.get(key)
+        if isinstance(value, list):
+            legacy[key] = value
+    coordinator._genie_path_visible_legacy_paths = legacy
+
+
+def _sessionize_definition(coordinator: Any, definition: Any) -> Any:
+    """Give path-id-less Genie snapshots a stable task identity like M-series."""
+    if not isinstance(definition, dict):
+        return definition
+    result = dict(definition)
+    if result.get("path_id") not in (None, ""):
+        return result
+    serial = getattr(getattr(coordinator, "client", None), "serial_number", "genie")
+    session = int(getattr(coordinator, "_genie_path_render_session", 0))
+    result["path_id"] = f"genie-live:{serial}:{session}"
+    return result
+
+
+def _apply_definition_paths(state: dict[str, Any], definition: Any) -> None:
+    """Expose the same shared path aliases used by the M9/M9 Pro layer."""
+    points = _definition_points(definition)
+    if points is None:
+        return
+    state["path"] = points
+    state["mowed_path"] = points
+    state["cloud_path"] = points
+
+
+def _begin_new_task_path_session(coordinator: Any) -> None:
+    """Mark a new Genie task without flashing an empty trajectory first."""
     state = getattr(coordinator, "reported_state", {})
     state = dict(state) if isinstance(state, dict) else {}
     baseline = _path_time(state)
 
+    _remember_visible_path(coordinator, state)
     coordinator._genie_path_session_generation = int(
         getattr(coordinator, "_genie_path_session_generation", 0)
+    ) + 1
+    coordinator._genie_path_render_session = int(
+        getattr(coordinator, "_genie_path_render_session", 0)
     ) + 1
     coordinator._genie_path_session_baseline_time = baseline
     coordinator._genie_path_waiting_for_new_time = True
     coordinator._genie_path_session_started_monotonic = time.monotonic()
 
-    # Reset every cached source used by live_map_stream_core path identity.
-    blank = _blank_path_definition()
-    coordinator._path_definition = blank
-    coordinator._history_path_info = None
-    coordinator._history_path_source = None
-    coordinator._path_definition_error = None
-    coordinator._last_path_time = baseline
-    coordinator._last_path_download_monotonic = 0.0
-
     # Permit the new task to issue req_all_path immediately even when the old
-    # task requested one less than ten seconds ago.
+    # task requested one less than ten seconds ago. The helper resumes its
+    # normal 10-second throttle after this one boundary request.
     coordinator._last_history_path_request = None
     coordinator._last_history_path_request_monotonic = 0.0
 
-    state["_path_definition"] = blank
-    state["_history_path_info"] = None
-    state["_history_path_source"] = None
-    state["_path_definition_error"] = None
-    state["_history_path_live_refresh"] = True
-    state["_history_path_last_download_monotonic"] = 0.0
-    coordinator.async_set_updated_data(state)
 
-
-def _mask_stale_path_while_waiting(coordinator: Any, state: Any) -> Any:
-    """Keep the old task path hidden until the new task publishes a new path_time."""
+def _accept_waiting_state_if_fresh(coordinator: Any, state: Any) -> Any:
+    """Atomically swap old->new path once a fresh task snapshot is complete."""
     if not isinstance(state, dict):
         return state
     if not bool(getattr(coordinator, "_genie_path_waiting_for_new_time", False)):
@@ -106,27 +177,52 @@ def _mask_stale_path_while_waiting(coordinator: Any, state: Any) -> Any:
     current_time = _path_time(state)
     definition = state.get("_path_definition")
 
-    # A changed non-empty path_time plus an actual decoded payload is the point
-    # at which the new session is safe to expose.  Until then a periodic
-    # coordinator refresh may have re-downloaded the previous cloud object.
     if (
         current_time is not None
         and current_time != baseline
         and _definition_has_payload(definition)
     ):
+        prepared = _sessionize_definition(coordinator, definition)
+        result = dict(state)
+        result["_path_definition"] = prepared
+        _apply_definition_paths(result, prepared)
+        coordinator._path_definition = prepared
+        coordinator._history_path_info = result.get("_history_path_info")
+        coordinator._history_path_source = result.get("_history_path_source")
         coordinator._genie_path_waiting_for_new_time = False
         coordinator._genie_path_session_baseline_time = current_time
-        return state
+        _remember_visible_path(coordinator, result)
+        return result
 
-    blank = _blank_path_definition()
-    coordinator._path_definition = blank
-    coordinator._history_path_info = None
-    coordinator._history_path_source = None
+    # A periodic full coordinator refresh may still finish with the previous
+    # cloud object while the new task is starting. Keep the already visible old
+    # path in place instead of showing either that stale response or an empty
+    # intermediate frame. This is the M9/M9 Pro visual behavior we want.
+    visible_definition = getattr(coordinator, "_genie_path_visible_definition", None)
+    visible_info = getattr(coordinator, "_genie_path_visible_history_info", None)
+    visible_source = getattr(coordinator, "_genie_path_visible_history_source", None)
+    visible_error = getattr(coordinator, "_genie_path_visible_error", None)
+    visible_legacy = getattr(coordinator, "_genie_path_visible_legacy_paths", {})
+
+    coordinator._path_definition = visible_definition
+    coordinator._history_path_info = visible_info
+    coordinator._history_path_source = visible_source
+    coordinator._last_path_time = baseline
 
     result = dict(state)
-    result["_path_definition"] = blank
-    result["_history_path_info"] = None
-    result["_history_path_source"] = None
+    if isinstance(visible_definition, dict):
+        result["_path_definition"] = visible_definition
+    else:
+        result.pop("_path_definition", None)
+    result["_history_path_info"] = visible_info
+    result["_history_path_source"] = visible_source
+    result["_path_definition_error"] = visible_error
+    if baseline is not None:
+        result["path_time"] = baseline
+    if isinstance(visible_legacy, dict):
+        for key, value in visible_legacy.items():
+            result[key] = value
+    _apply_definition_paths(result, visible_definition)
     return result
 
 
@@ -141,7 +237,7 @@ def _pending_state(coordinator: Any) -> dict[str, Any]:
 
 
 def _is_live_state(state: dict[str, Any]) -> bool:
-    # Imported lazily so the pure session helpers above remain testable without
+    # Imported lazily so the pure session helpers remain unit-testable without
     # importing Home Assistant.
     from ..coordinator import _is_live_position_state
 
@@ -165,7 +261,7 @@ async def _async_download_current_path(
     *,
     generation: int,
 ) -> bool:
-    """Request/download one fresh Genie path without running ancillary REST work."""
+    """Request/download one fresh Genie path without ancillary REST polling."""
     from ..coordinator import _find_history_info, _find_history_path_url
 
     lock = getattr(coordinator, "_genie_live_path_lock", None)
@@ -187,7 +283,7 @@ async def _async_download_current_path(
         candidate_state = snapshot
         candidate_time = current_time
 
-        # If MQTT has already announced a new path_time, download immediately.
+        # If MQTT already announced a new path_time, download immediately.
         # Otherwise ask the mower to upload its current complete path and let the
         # proven coordinator helper wait for the corresponding shadow change.
         need_request = (
@@ -207,12 +303,10 @@ async def _async_download_current_path(
         if generation != getattr(coordinator, "_genie_path_session_generation", 0):
             return False
 
-        # During a new-task boundary never accept the old task's timestamp.
+        # During a known new-task boundary never expose the old task timestamp.
         if waiting and (candidate_time is None or candidate_time == baseline):
             return False
 
-        # A timeout with the same already-decoded path means there is nothing
-        # new to download.  Errors are allowed to retry the same timestamp.
         if (
             not waiting
             and candidate_time == last_time
@@ -247,7 +341,7 @@ async def _async_download_current_path(
             error_state = dict(getattr(coordinator, "reported_state", {}) or {})
             error_state["_path_definition_error"] = str(err)
             if waiting:
-                error_state["_path_definition"] = _blank_path_definition()
+                error_state = _accept_waiting_state_if_fresh(coordinator, error_state)
             coordinator.async_set_updated_data(error_state)
             _LOGGER.debug(
                 "Genie live path refresh failed for %s: %s",
@@ -259,7 +353,17 @@ async def _async_download_current_path(
         if generation != getattr(coordinator, "_genie_path_session_generation", 0):
             return False
 
-        coordinator._path_definition = definition
+        previous_definition = getattr(coordinator, "_path_definition", None)
+        if not waiting and not _definition_continues(previous_definition, definition):
+            # App-originated tasks do not call remember_mowing_task(). Detect
+            # their first discontinuous complete path just like M9 detects a
+            # changed curpath stream, so path-id-less Genie data still resets.
+            coordinator._genie_path_render_session = int(
+                getattr(coordinator, "_genie_path_render_session", 0)
+            ) + 1
+
+        prepared = _sessionize_definition(coordinator, definition)
+        coordinator._path_definition = prepared
         coordinator._history_path_info = history_info
         coordinator._history_path_source = source
         coordinator._path_definition_error = None
@@ -272,7 +376,7 @@ async def _async_download_current_path(
         published = dict(getattr(coordinator, "reported_state", {}) or {})
         if candidate_time is not None:
             published["path_time"] = candidate_time
-        published["_path_definition"] = definition
+        published["_path_definition"] = prepared
         published["_history_path_info"] = history_info
         published["_history_path_source"] = source
         published["_history_path_live_refresh"] = True
@@ -280,6 +384,8 @@ async def _async_download_current_path(
             coordinator._last_path_download_monotonic
         )
         published["_path_definition_error"] = None
+        _apply_definition_paths(published, prepared)
+        _remember_visible_path(coordinator, published)
         coordinator.async_set_updated_data(published)
         return True
 
@@ -324,7 +430,7 @@ async def _async_live_path_loop(coordinator: Any) -> None:
 
 
 def install_genie_live_path_refresh() -> None:
-    """Attach Genie-only task reset and dedicated live path refresh behavior."""
+    """Attach Genie-only M-series-like live path presentation."""
     global _INSTALLED
     if _INSTALLED:
         return
@@ -345,15 +451,21 @@ def install_genie_live_path_refresh() -> None:
         self._genie_live_path_task = None
         self._genie_live_path_lock = asyncio.Lock()
         self._genie_path_session_generation = 0
+        self._genie_path_render_session = 0
         self._genie_path_session_baseline_time = None
         self._genie_path_waiting_for_new_time = False
         self._genie_path_session_started_monotonic = 0.0
+        self._genie_path_visible_definition = None
+        self._genie_path_visible_history_info = None
+        self._genie_path_visible_history_source = None
+        self._genie_path_visible_error = None
+        self._genie_path_visible_legacy_paths = {}
 
     def remember_mowing_task(self, task_type: str, data: Any = None) -> None:
         previous_remember(self, task_type, data)
         if not _is_genie(self):
             return
-        _publish_empty_new_task_path(self)
+        _begin_new_task_path_session(self)
         _ensure_live_path_task(self)
 
     async def live_shadow(
@@ -371,7 +483,7 @@ def install_genie_live_path_refresh() -> None:
         state = await previous_update(self)
         if not _is_genie(self):
             return state
-        result = _mask_stale_path_while_waiting(self, state)
+        result = _accept_waiting_state_if_fresh(self, state)
         if isinstance(result, dict) and _is_live_state(result):
             _ensure_live_path_task(self)
         return result
