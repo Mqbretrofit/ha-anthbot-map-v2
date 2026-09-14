@@ -120,6 +120,15 @@ class TestLiveMapStreamArchitecture(unittest.TestCase):
         self.assertIn("entityId !== mapEntityId", text)
         self.assertIn("stopLegacyRefreshTimer(this);", text)
 
+    def test_live_frontend_retries_failed_subscription_without_page_reload(self):
+        source = ROOT / "www" / "anthbot-map" / "live-map-stream.js"
+        text = source.read_text(encoding="utf-8")
+        self.assertIn("function scheduleSubscriptionRetry", text)
+        self.assertIn('scheduleSubscriptionRetry(card, "subscription failed")', text)
+        self.assertIn("ANTHBOT_LIVE_RETRY_MAX_MS", text)
+        backend = (INTEGRATION / "live_map_stream.py").read_text(encoding="utf-8")
+        self.assertIn("?v=247-live2-2", backend)
+
     def test_frontend_patch_is_bundled_identically(self):
         source = ROOT / "www" / "anthbot-map" / "live-map-stream.js"
         bundled = INTEGRATION / "frontend" / "live-map-stream.js"
