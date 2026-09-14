@@ -5,9 +5,15 @@
 // Home Assistant WebSocket subscription onto the compact Map entity metadata.
 // If the backend marker is absent (for example after a downgrade), this file
 // becomes a no-op and the legacy full-entity card path keeps working.
+//
+// Mowing target/progress presentation intentionally remains owned by the
+// existing card/calibration layer, matching v2.4.6.4 semantics. This transport
+// must never cache, infer, or overwrite "Full area / Zone N" labels.
 
 const ANTHBOT_LIVE_PROTOCOL = 2;
 const ANTHBOT_LIVE_TYPE = "anthbot_map/subscribe_live";
+const ANTHBOT_LIVE_RETRY_MIN_MS = 750;
+const ANTHBOT_LIVE_RETRY_MAX_MS = 10000;
 
 function baseMapEntity(card) {
   const entityId = card._activeEntityId || card.resolveMapEntityId?.() || card.config?.entity;
@@ -16,10 +22,6 @@ function baseMapEntity(card) {
 
 function liveStreamAvailable(card) {
   return baseMapEntity(card)?.attributes?.live_stream_available === true;
-}
-
-function stopLegacyRefreshTimer(card) {
-  if (liveStreamAvailable(card)) card.stopRefreshTimer?.();
 }
 
 function cloneEntityWithLiveOverlay(card) {
@@ -41,10 +43,24 @@ function cloneEntityWithLiveOverlay(card) {
   return merged;
 }
 
+function syncLiveCardFromHass(card) {
+  const base = baseMapEntity(card);
+  if (base) card.entity = base;
+  cloneEntityWithLiveOverlay(card);
+  card.updateRenderer?.();
+}
+
 function resetLiveState(card) {
   card._anthbotLiveOverlay = null;
   card._anthbotLivePath = null;
   card._anthbotLiveSequence = null;
+}
+
+function clearSubscriptionRetry(card) {
+  if (card._anthbotLiveRetryTimer) {
+    window.clearTimeout(card._anthbotLiveRetryTimer);
+    card._anthbotLiveRetryTimer = null;
+  }
 }
 
 function stopLiveSubscription(card) {
@@ -162,6 +178,30 @@ function scheduleResubscribe(card, reason) {
   }
 }
 
+function scheduleSubscriptionRetry(card, reason) {
+  if (!card.isConnected) return;
+  clearSubscriptionRetry(card);
+  const previous = Number(card._anthbotLiveRetryDelayMs);
+  const delay = Number.isFinite(previous)
+    ? Math.min(Math.max(previous, ANTHBOT_LIVE_RETRY_MIN_MS), ANTHBOT_LIVE_RETRY_MAX_MS)
+    : ANTHBOT_LIVE_RETRY_MIN_MS;
+  card._anthbotLiveRetryDelayMs = Math.min(delay * 2, ANTHBOT_LIVE_RETRY_MAX_MS);
+  card._anthbotLiveRetryTimer = window.setTimeout(() => {
+    card._anthbotLiveRetryTimer = null;
+    if (!card.isConnected) return;
+    ensureLiveSubscription(card);
+  }, delay);
+  if (reason && card._anthbotLiveLastRetryReason !== reason) {
+    card._anthbotLiveLastRetryReason = reason;
+    console.debug(`[ANTHBOT live-map] retry in ${delay} ms: ${reason}`);
+  }
+}
+
+function markSubscriptionHealthy(card) {
+  clearSubscriptionRetry(card);
+  card._anthbotLiveRetryDelayMs = ANTHBOT_LIVE_RETRY_MIN_MS;
+}
+
 function applyLiveMessage(card, message) {
   if (!message || Number(message.protocol) !== ANTHBOT_LIVE_PROTOCOL) {
     scheduleResubscribe(card, "protocol mismatch");
@@ -175,8 +215,9 @@ function applyLiveMessage(card, message) {
     return;
   }
 
+  markSubscriptionHealthy(card);
+
   if (kind === "snapshot") {
-    stopLegacyRefreshTimer(card);
     card._anthbotLiveOverlay = { ...(message.attributes || {}) };
     card._anthbotLiveSequence = sequence;
     if (!applyPathMessage(card, message.path)) {
@@ -231,6 +272,7 @@ function ensureLiveSubscription(card) {
   // never take over an integration version that still serves full map data
   // through the entity state.
   if (attributes.live_stream_available !== true) {
+    clearSubscriptionRetry(card);
     if (card._anthbotLiveSerial || card._anthbotLiveUnsubscribe) {
       stopLiveSubscription(card);
       resetLiveState(card);
@@ -238,7 +280,6 @@ function ensureLiveSubscription(card) {
     return;
   }
 
-  stopLegacyRefreshTimer(card);
   const serial = attributes.serial_number;
   if (!serial || !hass?.connection?.subscribeMessage) return;
   if (
@@ -268,12 +309,14 @@ function ensureLiveSubscription(card) {
       }
       card._anthbotLiveUnsubscribe = unsubscribe;
       card._anthbotLiveSubscribePromise = null;
+      markSubscriptionHealthy(card);
     })
     .catch((error) => {
       if (card._anthbotLiveGeneration !== generation) return;
       card._anthbotLiveSubscribePromise = null;
       card._anthbotLiveUnsubscribe = null;
       console.warn("[ANTHBOT live-map] subscription failed", error);
+      scheduleSubscriptionRetry(card, "subscription failed");
     });
 }
 
@@ -286,10 +329,9 @@ customElements.whenDefined("anthbot-map-card").then(() => {
   const originalStartRefreshTimer = proto.startRefreshTimer;
   if (typeof originalStartRefreshTimer === "function") {
     proto.startRefreshTimer = function patchedStartRefreshTimer(...args) {
-      if (liveStreamAvailable(this)) {
-        this.stopRefreshTimer?.();
-        return undefined;
-      }
+      // Keep the proven lightweight presentation cadence alive. The patched
+      // refreshEntities below turns live-mode ticks into local HA-state redraws
+      // instead of homeassistant.update_entity calls.
       return originalStartRefreshTimer.apply(this, args);
     };
   }
@@ -307,8 +349,11 @@ customElements.whenDefined("anthbot-map-card").then(() => {
   const originalRefreshEntities = proto.refreshEntities;
   if (typeof originalRefreshEntities === "function") {
     proto.refreshEntities = function patchedRefreshEntities(...args) {
-      if (liveStreamAvailable(this) && this.refreshEntityIds?.().length === 0) {
-        this.syncEntityAndRenderer?.();
+      if (liveStreamAvailable(this)) {
+        // Never turn the presentation timer back into cloud/coordinator I/O.
+        // HA already pushes the related sensor states; simply re-read them and
+        // redraw the card while the map/path/pose continue over WebSocket.
+        syncLiveCardFromHass(this);
         return Promise.resolve();
       }
       return originalRefreshEntities.apply(this, args);
@@ -323,8 +368,10 @@ customElements.whenDefined("anthbot-map-card").then(() => {
       enumerable: hassDescriptor.enumerable,
       set(hass) {
         originalHassSetter.call(this, hass);
-        stopLegacyRefreshTimer(this);
         cloneEntityWithLiveOverlay(this);
+        // v2.4.6.4 owns the mowing progress/target presentation in the normal
+        // card/calibration path. We only trigger its existing updater here.
+        this.updateMowingProgressStatus?.();
         ensureLiveSubscription(this);
       },
     });
@@ -335,12 +382,11 @@ customElements.whenDefined("anthbot-map-card").then(() => {
     proto.setConfig = function patchedSetConfig(config) {
       const previousEntity = this.config?.entity;
       if (previousEntity && previousEntity !== config?.entity) {
+        clearSubscriptionRetry(this);
         stopLiveSubscription(this);
         resetLiveState(this);
       }
-      const result = originalSetConfig.call(this, config);
-      stopLegacyRefreshTimer(this);
-      return result;
+      return originalSetConfig.call(this, config);
     };
   }
 
@@ -364,6 +410,7 @@ customElements.whenDefined("anthbot-map-card").then(() => {
   proto.disconnectedCallback = function patchedDisconnected(...args) {
     this._anthbotLiveResyncTimer && window.clearTimeout(this._anthbotLiveResyncTimer);
     this._anthbotLiveResyncTimer = null;
+    clearSubscriptionRetry(this);
     stopLiveSubscription(this);
     resetLiveState(this);
     if (typeof originalDisconnected === "function") {

@@ -9,43 +9,16 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
-      action:
-        description: "Action"
-        required: true
-        type: choice
-        options:
-          - publish
-          - delete-v2.4.1-test
-        default: publish
       tag:
         description: "Release tag"
         required: true
-        default: "v2.4.1"
+        default: "v2.4.7.3"
 
 permissions:
   contents: write
 
 jobs:
-  delete-old-test:
-    if: github.event_name == 'workflow_dispatch' && inputs.action == 'delete-v2.4.1-test'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Delete v2.4.1-test release and tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if gh release view v2.4.1-test --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release delete v2.4.1-test --repo "$GITHUB_REPOSITORY" --yes
-          fi
-          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v2.4.1-test" >/dev/null 2>&1; then
-            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/v2.4.1-test"
-          fi
-          echo "v2.4.1-test release and tag removed."
-
   release:
-    if: github.event_name != 'workflow_dispatch' || inputs.action == 'publish'
     runs-on: ubuntu-latest
     env:
       RELEASE_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
@@ -79,34 +52,6 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
-      - name: Restore charger before disabling battery saver
-        if: steps.release.outputs.skip != 'true' && steps.release.outputs.tag == 'v2.4.1-beta.4'
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-
-          path = Path('custom_components/anthbot_map/coordinator.py')
-          source = path.read_text(encoding='utf-8')
-          marker = '        was_enabled = self._battery_saver_enabled\n'
-          if marker not in source:
-              old = '''    async def async_set_battery_saver_enabled(self, enabled: bool) -> None:\n        """Persist the local battery-saver switch without changing mower settings."""\n        self._battery_saver_enabled = enabled\n        if enabled:\n'''
-              new = '''    async def async_set_battery_saver_enabled(self, enabled: bool) -> None:\n        """Persist the local battery-saver switch without changing mower settings."""\n        was_enabled = self._battery_saver_enabled\n        if not enabled and was_enabled:\n            # Restore normal charger operation before disabling the guard.\n            # _async_set_charger intentionally ignores calls after the mode is\n            # disabled, so the plug must be energised first.\n            await self._async_set_charger(True)\n        self._battery_saver_enabled = enabled\n        if enabled:\n'''
-              if old not in source:
-                  raise SystemExit('Battery saver enable/disable block not found')
-              source = source.replace(old, new, 1)
-              path.write_text(source, encoding='utf-8')
-          PY
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add custom_components/anthbot_map/coordinator.py
-          if ! git diff --cached --quiet; then
-            git commit -m "Restore charger before disabling battery saver"
-            git push origin "HEAD:${GITHUB_REF_NAME}"
-          fi
-
       - name: Finalize release metadata
         if: steps.release.outputs.skip != 'true'
         id: finalize
@@ -117,48 +62,63 @@ jobs:
           version="${tag#v}"
           python - "$version" <<'PY'
           from pathlib import Path
+          import json
+          import re
           import sys
 
           version = sys.argv[1]
 
-          path = Path('custom_components/anthbot_map/__init__.py')
-          source = path.read_text(encoding='utf-8')
-          marker = 'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v='
-          start = source.find(marker)
-          if start < 0:
-              raise SystemExit('Frontend resource version marker not found')
-          end = source.find('"', start + len(marker))
-          if end < 0:
-              raise SystemExit('Frontend resource version terminator not found')
-          source = source[: start + len(marker)] + version + source[end:]
-          path.write_text(source, encoding='utf-8')
+          manifest_path = Path('custom_components/anthbot_map/manifest.json')
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          manifest['version'] = version
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          init_path = Path('custom_components/anthbot_map/__init__.py')
+          init_source = init_path.read_text(encoding='utf-8')
+          init_source = re.sub(
+              r'(FRONTEND_RESOURCE_URL = f"\{FRONTEND_RESOURCE_PATH\}\?v=)[^"]+(" )?'.replace('(" )?', '(")'),
+              lambda m: f'{m.group(1)}{version}{m.group(2)}',
+              init_source,
+              count=1,
+          )
+          init_path.write_text(init_source, encoding='utf-8')
 
           const_path = Path('custom_components/anthbot_map/const.py')
           const_source = const_path.read_text(encoding='utf-8')
-          const_marker = 'INTEGRATION_VERSION = "'
-          const_start = const_source.find(const_marker)
-          if const_start < 0:
-              raise SystemExit('Integration version constant marker not found')
-          const_end = const_source.find('"', const_start + len(const_marker))
-          if const_end < 0:
-              raise SystemExit('Integration version constant terminator not found')
-          const_source = (
-              const_source[: const_start + len(const_marker)]
-              + version
-              + const_source[const_end:]
+          const_source = re.sub(
+              r'INTEGRATION_VERSION = "[^"]+"',
+              f'INTEGRATION_VERSION = "{version}"',
+              const_source,
+              count=1,
           )
           const_path.write_text(const_source, encoding='utf-8')
+
+          for name, stable_label, latest_label in (
+              ('README.md', 'Stable version', 'Latest release'),
+              ('README_HU.md', 'Stabil verzió', 'Legfrissebb kiadás'),
+          ):
+              path = Path(name)
+              text = path.read_text(encoding='utf-8')
+              text = re.sub(r'release-v[0-9A-Za-z.\-]+-blue', f'release-v{version}-blue', text, count=1)
+              text = re.sub(r'/releases/tag/v[0-9A-Za-z.\-]+', f'/releases/tag/v{version}', text, count=1)
+              text = re.sub(rf'{re.escape(stable_label)}: \*\*[^*]+\*\*', f'{stable_label}: **{version}**', text, count=1)
+              text = re.sub(
+                  rf'{re.escape(latest_label)}: \[Anthbot Map v[^\]]+\]\([^\)]+\)',
+                  f'{latest_label}: [Anthbot Map v{version}](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v{version})',
+                  text,
+                  count=1,
+              )
+              lines = [line for line in text.splitlines() if 'RELEASE_NOTES_v' not in line and 'CHANGELOG_v' not in line]
+              path.write_text('\n'.join(lines).rstrip() + '\n', encoding='utf-8')
           PY
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            custom_components/anthbot_map/__init__.py \
-            custom_components/anthbot_map/const.py
+          git add custom_components/anthbot_map/manifest.json custom_components/anthbot_map/__init__.py custom_components/anthbot_map/const.py README.md README_HU.md
           if ! git diff --cached --quiet; then
             git commit -m "Finalize release metadata for $tag"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
           fi
-          git push origin "HEAD:${GITHUB_REF_NAME}"
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Verify release source
@@ -166,12 +126,10 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
+          set -euo pipefail
           tag="${{ steps.release.outputs.tag }}"
           manifest_version="$(python -c 'import json; print(json.load(open("custom_components/anthbot_map/manifest.json"))["version"])')"
-          if [ "v${manifest_version}" != "$tag" ]; then
-            echo "Release tag $tag does not match manifest version v${manifest_version}."
-            exit 1
-          fi
+          test "v${manifest_version}" = "$tag"
           python -m unittest discover -s tests -v
           python -m json.tool custom_components/anthbot_map/manifest.json >/dev/null
           find custom_components www -type f -name '*.js' -print0 | xargs -0 -n1 node --check
@@ -179,18 +137,7 @@ jobs:
           cmp custom_components/anthbot_map/frontend/i18n.js www/anthbot-map/i18n.js
           cmp custom_components/anthbot_map/frontend/renderer.js www/anthbot-map/renderer.js
           cmp custom_components/anthbot_map/frontend/styles.css www/anthbot-map/styles.css
-          test ! -e custom_components/anthbot_map/frontend/anthbot-map-card-core.js
-          test ! -e www/anthbot-map/anthbot-map-card-core.js
-          grep -q 'if (!customElements.get("anthbot-map-card"))' custom_components/anthbot_map/frontend/anthbot-map-card.js
-          grep -q 'data-role="battery-saver-enabled"' custom_components/anthbot_map/frontend/anthbot-map-card.js
-          python - <<'PY'
-          from pathlib import Path
-          source = Path('custom_components/anthbot_map/coordinator.py').read_text(encoding='utf-8')
-          block = source.split('async def async_set_battery_saver_enabled', 1)[1].split('def start_battery_saver_monitor', 1)[0]
-          assert 'was_enabled = self._battery_saver_enabled' in block
-          assert 'if not enabled and was_enabled:' in block
-          assert block.index('await self._async_set_charger(True)') < block.index('self._battery_saver_enabled = enabled')
-          PY
+          cmp custom_components/anthbot_map/frontend/live-map-stream.js www/anthbot-map/live-map-stream.js
           test -z "$(find custom_components -type f \( -name '*.pyc' -o -name '*.gz' \) -print -quit)"
 
       - name: Build complete installer
@@ -203,11 +150,32 @@ jobs:
             README.md \
             README_HU.md \
             CHANGELOG.md \
-            CHANGELOG*.md \
-            RELEASE_NOTES*.md \
+            SUPPORT.md \
+            PRIVACY.md \
             LICENSE \
             NOTICE.md \
             hacs.json
+
+      - name: Build release notes from changelog
+        if: steps.release.outputs.skip != 'true'
+        shell: bash
+        run: |
+          version="${{ steps.release.outputs.tag }}"
+          version="${version#v}"
+          python - "$version" > /tmp/release-notes.md <<'PY'
+          from pathlib import Path
+          import sys
+
+          version = sys.argv[1]
+          lines = Path('CHANGELOG.md').read_text(encoding='utf-8').splitlines()
+          start = next((i for i, line in enumerate(lines) if line.startswith(f'## {version} ')), None)
+          if start is None:
+              print(f'# Anthbot Map v{version}\n\nSee CHANGELOG.md for details.')
+              raise SystemExit
+          end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith('## ')), len(lines))
+          print(f'# Anthbot Map v{version}\n')
+          print('\n'.join(lines[start + 1:end]).strip())
+          PY
 
       - name: Publish GitHub release
         if: steps.release.outputs.skip != 'true'
@@ -218,42 +186,16 @@ jobs:
         run: |
           set -euo pipefail
           tag="${{ steps.release.outputs.tag }}"
-          version="${tag#v}"
-          : > /tmp/release-notes.md
-          for notes_file in "RELEASE_NOTES_v${version}.md" "CHANGELOG_v${version}_HU.md"; do
-            if [ -f "$notes_file" ]; then
-              cat "$notes_file" >> /tmp/release-notes.md
-              printf '\n' >> /tmp/release-notes.md
-            fi
-          done
-          if [ ! -s /tmp/release-notes.md ]; then
-            printf '# Anthbot Map %s\n\nSee CHANGELOG.md for details.\n' "$tag" > /tmp/release-notes.md
-          fi
-
           release_flags=()
           if [[ "$tag" == *-* ]]; then
             release_flags+=(--prerelease)
           else
             release_flags+=(--latest)
           fi
-
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh api --method PATCH \
-              "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}" \
-              -f sha="${RELEASE_SHA}" \
-              -F force=true
-            gh release edit "$tag" \
-              --title "Anthbot Map $tag" \
-              "${release_flags[@]}" \
-              --notes-file /tmp/release-notes.md
-            gh release upload "$tag" \
-              "anthbot-map-${tag}.zip" \
-              --clobber
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}" -f sha="${RELEASE_SHA}" -F force=true
+            gh release edit "$tag" --title "Anthbot Map $tag" "${release_flags[@]}" --notes-file /tmp/release-notes.md
+            gh release upload "$tag" "anthbot-map-${tag}.zip" --clobber
           else
-            gh release create "$tag" \
-              "anthbot-map-${tag}.zip" \
-              --target "${RELEASE_SHA}" \
-              --title "Anthbot Map $tag" \
-              "${release_flags[@]}" \
-              --notes-file /tmp/release-notes.md
+            gh release create "$tag" "anthbot-map-${tag}.zip" --target "${RELEASE_SHA}" --title "Anthbot Map $tag" "${release_flags[@]}" --notes-file /tmp/release-notes.md
           fi

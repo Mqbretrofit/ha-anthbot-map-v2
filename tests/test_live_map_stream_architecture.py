@@ -110,15 +110,54 @@ class TestLiveMapStreamArchitecture(unittest.TestCase):
         ):
             self.assertIn(required, signature)
 
-    def test_live_frontend_stops_legacy_map_entity_polling(self):
+    def test_live_frontend_keeps_lightweight_status_refresh_without_polling_map(self):
         source = ROOT / "www" / "anthbot-map" / "live-map-stream.js"
         text = source.read_text(encoding="utf-8")
-        self.assertIn("function stopLegacyRefreshTimer", text)
+        self.assertIn("function syncLiveCardFromHass", text)
         self.assertIn("patchedStartRefreshTimer", text)
         self.assertIn("patchedRefreshEntityIds", text)
         self.assertIn("patchedRefreshEntities", text)
         self.assertIn("entityId !== mapEntityId", text)
-        self.assertIn("stopLegacyRefreshTimer(this);", text)
+        self.assertIn("syncLiveCardFromHass(this);", text)
+        self.assertIn("return originalStartRefreshTimer.apply(this, args);", text)
+        self.assertIn("this.updateMowingProgressStatus?.();", text)
+
+        refresh_start = text.index("proto.refreshEntities = function patchedRefreshEntities")
+        refresh_end = text.index("const hassDescriptor", refresh_start)
+        live_refresh = text[refresh_start:refresh_end]
+        self.assertIn("if (liveStreamAvailable(this))", live_refresh)
+        self.assertIn("return Promise.resolve();", live_refresh)
+        self.assertNotIn('callService("homeassistant"', live_refresh)
+
+    def test_live_frontend_does_not_override_v2464_mowing_presentation(self):
+        source = ROOT / "www" / "anthbot-map" / "live-map-stream.js"
+        text = source.read_text(encoding="utf-8")
+        self.assertNotIn("lastMowingProgressStorageKey", text)
+        self.assertNotIn("preserveStoppedMowingProgress", text)
+        self.assertNotIn("patchedUpdateMowingProgressStatus", text)
+        self.assertNotIn("armSelectedMowingTarget", text)
+        self.assertIn("this.updateMowingProgressStatus?.();", text)
+
+    def test_v2464_calibration_keeps_exact_stopped_target_visible(self):
+        text = (ROOT / "www" / "anthbot-map" / "calibration.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("const resolveProgressTarget", text)
+        self.assertIn("last_mowing_task", text)
+        self.assertIn("active_zone_ids", text)
+        self.assertIn("learned_zone_mowing_key", text)
+        self.assertIn('source.startsWith("full_map_area")', text)
+        self.assertIn('return card.t("fullArea")', text)
+        self.assertIn("line.hidden = false;", text)
+
+    def test_live_frontend_retries_failed_subscription_without_page_reload(self):
+        source = ROOT / "www" / "anthbot-map" / "live-map-stream.js"
+        text = source.read_text(encoding="utf-8")
+        self.assertIn("function scheduleSubscriptionRetry", text)
+        self.assertIn('scheduleSubscriptionRetry(card, "subscription failed")', text)
+        self.assertIn("ANTHBOT_LIVE_RETRY_MAX_MS", text)
+        backend = (INTEGRATION / "live_map_stream.py").read_text(encoding="utf-8")
+        self.assertIn("?v=247-live2-3", backend)
 
     def test_frontend_patch_is_bundled_identically(self):
         source = ROOT / "www" / "anthbot-map" / "live-map-stream.js"

@@ -23,5 +23,12 @@ sys.modules.setdefault(f"{__name__}.definition_refresh", _definition_refresh)
 sys.modules.setdefault(f"{__name__}.mqtt_live", _mqtt_live)
 
 from .base import model_family
+from ..live_map_hardening import install_live_map_hardening
+from ..live_map_stationary_position import install_stationary_position_semantics
+
+# Add presentation-only map/pose validation and snapshot coalescing without
+# changing any model-specific decoder, command route or coordinator payload.
+install_live_map_hardening()
+install_stationary_position_semantics()
 
 __all__ = ["model_family"]

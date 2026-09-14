@@ -22,15 +22,35 @@ from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 from .live_map_stream_core import PROTOCOL_VERSION, LiveMapCursor, build_delta, build_snapshot
+from .live_map_stream_runtime import LatestOnlyCoalescer, freeze_live_state
 from .task_events import task_event_items
 
 _LOGGER = logging.getLogger(__name__)
 
 LIVE_DATA_KEY = f"{DOMAIN}_live_map_stream"
 LIVE_RESOURCE_PATH = "/anthbot-map-v2/live-map-stream.js"
-LIVE_RESOURCE_URL = f"{LIVE_RESOURCE_PATH}?v=247-live2-1"
+LIVE_RESOURCE_URL = f"{LIVE_RESOURCE_PATH}?v=247-live2-3"
 _COMPACT_HEARTBEAT_SECONDS = 60.0
 _COMPACTION_INSTALLED = False
+
+
+def _build_snapshot_frozen(
+    serial_number: str,
+    sequence: int,
+    state: dict[str, Any],
+) -> tuple[dict[str, Any], LiveMapCursor]:
+    """Freeze mutable path state and build one full frame in an executor."""
+    return build_snapshot(serial_number, sequence, freeze_live_state(state))
+
+
+def _build_delta_frozen(
+    serial_number: str,
+    sequence: int,
+    cursor: LiveMapCursor,
+    state: dict[str, Any],
+) -> tuple[dict[str, Any] | None, LiveMapCursor]:
+    """Freeze mutable path state and build one incremental frame in an executor."""
+    return build_delta(serial_number, sequence, cursor, freeze_live_state(state))
 
 
 @dataclass
@@ -41,6 +61,7 @@ class _Subscriber:
     sequence: int = 0
     ready: bool = False
     closed: bool = False
+    delta_coalescer: LatestOnlyCoalescer | None = None
 
 
 class LiveMapHub:
@@ -66,14 +87,22 @@ class LiveMapHub:
         previous = self._subscribers.pop(key, None)
         if previous is not None:
             previous.closed = True
+            if previous.delta_coalescer is not None:
+                previous.delta_coalescer.close()
 
         subscriber = _Subscriber(connection=connection, msg_id=msg_id)
+        subscriber.delta_coalescer = LatestOnlyCoalescer(
+            lambda: self._async_send_current_delta(subscriber),
+            task_factory=self.hass.async_create_task,
+        )
         self._subscribers[key] = subscriber
 
         def unsubscribe() -> None:
             current = self._subscribers.pop(key, None)
             if current is not None:
                 current.closed = True
+                if current.delta_coalescer is not None:
+                    current.delta_coalescer.close()
 
         return subscriber, unsubscribe
 
@@ -85,16 +114,15 @@ class LiveMapHub:
         if self._closed or subscriber.closed:
             return None
 
-        # Snapshot construction can touch a 20k-point trajectory. Keep that
-        # one-time work out of Home Assistant's event loop. Coordinator state
-        # objects are replaced on update; a shallow top-level snapshot keeps
-        # the reference set coherent for this short executor job.
-        state_snapshot = dict(self.coordinator.reported_state)
+        # Copying a 20k-point trajectory and building the full snapshot both
+        # happen in the executor. The path-list freeze prevents a growing
+        # coordinator path from producing a torn first frame.
+        state_ref = self.coordinator.reported_state
         payload, cursor = await self.hass.async_add_executor_job(
-            build_snapshot,
+            _build_snapshot_frozen,
             self.serial_number,
             0,
-            state_snapshot,
+            state_ref,
         )
         if self._closed or subscriber.closed:
             return None
@@ -115,8 +143,11 @@ class LiveMapHub:
         self._send_event(subscriber, payload)
 
         # A coordinator update may have arrived while the initial snapshot was
-        # built. Emit one continuity-checked catch-up delta immediately.
-        self._send_current_delta(subscriber)
+        # built. Schedule one continuity-checked catch-up delta. The same
+        # coalescer handles later shadow bursts without building overlapping
+        # deltas for this subscriber.
+        if subscriber.delta_coalescer is not None:
+            subscriber.delta_coalescer.trigger()
 
     def _send_event(self, subscriber: _Subscriber, payload: dict[str, Any]) -> None:
         try:
@@ -128,17 +159,36 @@ class LiveMapHub:
                 exc_info=True,
             )
 
-    def _send_current_delta(self, subscriber: _Subscriber) -> None:
-        if not subscriber.ready or subscriber.closed or subscriber.cursor is None:
+    async def _async_send_current_delta(self, subscriber: _Subscriber) -> None:
+        """Build the latest delta off-loop and emit it if it still applies."""
+        if (
+            self._closed
+            or not subscriber.ready
+            or subscriber.closed
+            or subscriber.cursor is None
+        ):
             return
+
         next_sequence = subscriber.sequence + 1
-        payload, cursor = build_delta(
+        cursor = subscriber.cursor
+        state_ref = self.coordinator.reported_state
+        payload, new_cursor = await self.hass.async_add_executor_job(
+            _build_delta_frozen,
             self.serial_number,
             next_sequence,
-            subscriber.cursor,
-            self.coordinator.reported_state,
+            cursor,
+            state_ref,
         )
-        subscriber.cursor = cursor
+
+        if (
+            self._closed
+            or subscriber.closed
+            or not subscriber.ready
+            or subscriber.cursor is not cursor
+        ):
+            return
+
+        subscriber.cursor = new_cursor
         if payload is None:
             return
         subscriber.sequence = next_sequence
@@ -148,7 +198,8 @@ class LiveMapHub:
         if self._closed or not self._subscribers:
             return
         for subscriber in tuple(self._subscribers.values()):
-            self._send_current_delta(subscriber)
+            if subscriber.delta_coalescer is not None:
+                subscriber.delta_coalescer.trigger()
 
     def close(self) -> None:
         if self._closed:
@@ -159,6 +210,8 @@ class LiveMapHub:
             self._remove_listener = None
         for subscriber in self._subscribers.values():
             subscriber.closed = True
+            if subscriber.delta_coalescer is not None:
+                subscriber.delta_coalescer.close()
         self._subscribers.clear()
 
 

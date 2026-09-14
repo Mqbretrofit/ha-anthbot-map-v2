@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 try:
@@ -32,6 +33,7 @@ from .developer_agent import async_register_developer_agent
 from .developer_agent_optin import async_register_developer_agent_optin
 from .developer_optin import async_register_developer_optin
 from .developer_reporting import async_send_anonymous_usage_report
+from .location_recorder import location_snapshot, should_write_location_state
 from .robot_error_reporting import async_register_robot_error_reporting
 
 
@@ -181,3 +183,33 @@ class AnthbotLocationTracker(
             "pose_yaw": pose.get("yaw"),
             "pose_type": _safe_get(state, "anti_loss_pose", "pose_type"),
         }
+
+    def _handle_coordinator_update(self) -> None:
+        """Publish meaningful GPS changes without recording stationary jitter."""
+        state = self.coordinator.reported_state
+        now = time.monotonic()
+        current = location_snapshot(
+            latitude=self.latitude,
+            longitude=self.longitude,
+            pose_type=_safe_get(state, "anti_loss_pose", "pose_type"),
+            available=self.available,
+        )
+        previous = getattr(self, "_anthbot_location_recorder_snapshot", None)
+        last_write = float(
+            getattr(self, "_anthbot_location_recorder_write", 0.0) or 0.0
+        )
+
+        if not should_write_location_state(
+            previous,
+            current,
+            last_write=last_write,
+            now=now,
+        ):
+            return
+
+        # Remember only states that were actually handed to Home Assistant. If a
+        # moving update is rate-limited, the distance keeps accumulating from
+        # the last published point and is retried on the next coordinator tick.
+        self._anthbot_location_recorder_snapshot = current
+        self._anthbot_location_recorder_write = now
+        super()._handle_coordinator_update()

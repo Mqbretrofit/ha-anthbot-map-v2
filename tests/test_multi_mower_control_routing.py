@@ -28,7 +28,7 @@ def test_control_resolver_is_serial_scoped_with_safe_legacy_fallback() -> None:
     """Legacy settings may fall back only to this mower's exact HA ordinal."""
     source = _read(RUNTIME_FRONTEND / "serial-entity-resolver.js")
 
-    assert 'ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-04-control-v7"' in source
+    assert 'ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-05-control-v12"' in source
     assert "serialOf(state) === identity.serial" in source
     assert 'return String(this.config?.entity || "")' in source
     assert "const exactOrdinalEntity = (card, domain, suffix) =>" in source
@@ -66,7 +66,8 @@ def test_native_buttons_expose_serial_number() -> None:
     """Native entities remain uniquely attributable to a mower."""
     source = _read(INTEGRATION / "button.py")
     assert "def extra_state_attributes" in source
-    assert 'return {"serial_number": self.coordinator.client.serial_number}' in source
+    assert '"serial_number": self.coordinator.client.serial_number' in source
+    assert "return attrs" in source
     assert "active_manual_zone_ids" in source
 
 
@@ -83,14 +84,15 @@ def test_m_series_native_control_layer_installs_after_legacy_wrapper() -> None:
         "mow_start",
         "mow_pause",
         "mow_continue",
-        "mow_stop",
+        "stop_all_tasks",
         "ridable_mow_start",
         "nest_mow_start",
         "charge_start",
     ):
         assert f'"{command}"' in control
 
-    assert '"stop_all_tasks": "mow_stop"' in control
+    assert 'if cmd == "stop_all_tasks":' in control
+    assert "data = 1" in control
     assert 'body = {"state": {"desired": {"cmd": cmd, "data": data}}}' in control
     assert 'if not _is_m_series_client(self):' in control
     assert 'await previous_publish(self, cmd=cmd, data=data)' in control

@@ -2,7 +2,11 @@
 
 from .cloud_api_resilience import install_cloud_api_resilience
 from .entity_identity import install_setting_entity_identity
+from .genie_live_motion import install_genie_live_motion_support
+from .genie_live_path_refresh import install_genie_live_path_refresh
 from .genie_path_diagnostics import install_genie_path_diagnostics
+from .genie_progress_posttrim import install_genie_progress_posttrim
+from .genie_progress_presentation import install_genie_progress_presentation
 from .genie_status import install_genie_live_status_support
 from .live_task_events import install_live_task_event_refresh
 from .m_series_legacy import install_m_series_compat as _install_legacy
@@ -17,6 +21,7 @@ from .m_series_path import install_m_series_path_support
 from .m_series_status import install_m_series_status_support
 from .m_series_zones import install_m_series_zone_support
 from .m9_map_rescue_v2465 import install_m9_map_rescue_v2465
+from .m9_progress_posttrim import install_m9_progress_posttrim
 from .performance_diagnostics import install_performance_diagnostics
 from .rain_battery_saver import install_rain_battery_saver_safety
 from .recorder_v2465 import install_recorder_v2465
@@ -64,6 +69,14 @@ def install_m_series_compat() -> None:
     install_m_series_history_support()
     install_genie_live_status_support()
     install_genie_path_diagnostics()
+    # Genie path files are uploaded on demand. Keep their high-frequency path
+    # refresh isolated from the five-minute ancillary coordinator cadence and
+    # from every M-series/N8 absolute-index assembler.
+    install_genie_live_path_refresh()
+    # Match M9/M9 Pro presentation semantics through the whole motion cycle:
+    # keep requesting/publishing the Genie path while returning to the dock and
+    # promote camelCase live pose aliases without widening shared model guards.
+    install_genie_live_motion_support()
     install_live_task_event_refresh()
     install_rain_battery_saver_safety()
     install_shutdown_guard_state_settle()
@@ -90,3 +103,12 @@ def install_m_series_compat() -> None:
     # idle, and event-only history can also churn. Refine only the semantic
     # write classifier after the v2.4.6.7 filter itself is installed.
     install_recorder_idle_semantics_v2467()
+    # v2.4.6.4 exposed the small target-identifying progress attributes that
+    # let the card keep "Full area / Zone N" after a task. Later reliability
+    # trimming removed them. Genie additionally resets its raw percentage in
+    # standby, so keep its session latch; M9/M9 Pro only need target metadata.
+    # Both post-trim wrappers are scheduled around coordinator __init__ so they
+    # run after reliability_v2465 installs its deferred sensor filter.
+    install_genie_progress_presentation()
+    install_genie_progress_posttrim()
+    install_m9_progress_posttrim()
