@@ -5,6 +5,7 @@ from .entity_identity import install_setting_entity_identity
 from .genie_live_motion import install_genie_live_motion_support
 from .genie_live_path_refresh import install_genie_live_path_refresh
 from .genie_path_diagnostics import install_genie_path_diagnostics
+from .genie_progress_presentation import install_genie_progress_presentation
 from .genie_status import install_genie_live_status_support
 from .live_task_events import install_live_task_event_refresh
 from .m_series_legacy import install_m_series_compat as _install_legacy
@@ -100,3 +101,9 @@ def install_m_series_compat() -> None:
     # idle, and event-only history can also churn. Refine only the semantic
     # write classifier after the v2.4.6.7 filter itself is installed.
     install_recorder_idle_semantics_v2467()
+    # v2.4.6.4 exposed the small target-identifying progress attributes that
+    # let the card keep "Full area / Zone N" after a task. Later reliability
+    # trimming removed them and Genie resets raw progress to 0 in standby.
+    # Install this Genie-only presentation latch last so it sees the final
+    # trimmed sensor surface and restores only those tiny semantics.
+    install_genie_progress_presentation()
