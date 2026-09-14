@@ -265,11 +265,7 @@ function armSelectedMowingTarget(card) {
   const target = specificMowingTarget(card, selectedMowingTarget(card));
   if (!target) return;
   card._anthbotLiveCurrentTaskTarget = target;
-  const saved = readLastMowingProgress(card);
-  writeLastMowingProgress(card, {
-    target,
-    progress: Number.isFinite(Number(saved?.progress)) ? Number(saved.progress) : 0,
-  });
+  writeLastMowingProgress(card, { target, progress: 0 });
 }
 
 function canonicalMowingIsActive(card) {
