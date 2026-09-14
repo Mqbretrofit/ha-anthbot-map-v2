@@ -126,6 +126,63 @@ class TestLiveMapHardening(unittest.TestCase):
             hardening.pose_revision_token(changed),
         )
 
+    def test_position_status_current_stale_and_map_mismatch(self) -> None:
+        current_state = state()
+        fingerprint = hardening.map_geometry_fingerprint(current_state)
+        hub = types.SimpleNamespace(
+            _anthbot_geometry_fingerprint=fingerprint,
+            _anthbot_pose_observed_at=1000.0,
+            _anthbot_pose_geometry=fingerprint,
+            _anthbot_last_known_pose=None,
+            _anthbot_known_dock_pose=None,
+        )
+
+        current = hardening._position_attributes(hub, current_state, now=1001.0)
+        self.assertEqual(current["position_status"], "current")
+        self.assertNotIn("pose", current)
+
+        stale = hardening._position_attributes(
+            hub,
+            current_state,
+            now=1000.0 + hardening.POSITION_MAX_AGE_SECONDS + 1.0,
+        )
+        self.assertEqual(stale["position_status"], "stale")
+        self.assertIsNone(stale["pose"])
+
+        hub._anthbot_pose_geometry = "0" * 64
+        mismatch = hardening._position_attributes(hub, current_state, now=1001.0)
+        self.assertEqual(mismatch["position_status"], "map_mismatch")
+        self.assertIsNone(mismatch["pose"])
+
+    def test_dock_location_requires_new_pose_while_docked(self) -> None:
+        docked = state(status="charge")
+        fingerprint = hardening.map_geometry_fingerprint(docked)
+        hub = types.SimpleNamespace(
+            _anthbot_geometry_object_token=hardening.geometry_object_token(docked),
+            _anthbot_geometry_fingerprint=fingerprint,
+            _anthbot_pose_token=hardening.pose_revision_token(docked),
+            _anthbot_pose_observed_at=1000.0,
+            _anthbot_pose_geometry=fingerprint,
+            _anthbot_last_known_pose=None,
+            _anthbot_known_dock_pose=None,
+        )
+
+        # A charging state by itself must never manufacture dock coordinates.
+        hardening._refresh_hub_observation(hub, docked)
+        self.assertIsNone(hub._anthbot_known_dock_pose)
+
+        # A later, genuinely changed pose while already docked is valid evidence.
+        docked["pose"] = {"x": 6.0, "y": 5.0, "heading": 90.0}
+        hardening._refresh_hub_observation(hub, docked)
+        self.assertIsNotNone(hub._anthbot_known_dock_pose)
+        self.assertEqual(
+            hub._anthbot_known_dock_pose["position_status"], "known_dock"
+        )
+        capabilities = hardening.feature_capabilities(
+            docked, known_dock_pose=hub._anthbot_known_dock_pose
+        )
+        self.assertEqual(capabilities["known_dock_position"]["state"], "supported")
+
     def test_capabilities_are_sparse_and_never_guess_unsupported(self) -> None:
         capabilities = hardening.feature_capabilities(state())
         self.assertEqual(capabilities["live_map_stream"]["state"], "supported")
