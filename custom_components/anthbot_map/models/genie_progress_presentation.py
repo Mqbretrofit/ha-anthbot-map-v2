@@ -1,15 +1,16 @@
-"""Keep Genie mowing progress/target presentation stable after a task stops.
+"""Restore the v2.4.6.4 Genie mowing-progress presentation semantics.
 
-The live-map transport deliberately keeps Home Assistant state small.  The
-v2.4.6.5 reliability layer also trims expensive progress-sensor diagnostics.
-For Genie that removed the small target-identifying fields the card used in
-v2.4.6.4 (active zone ids / learned target), while the raw progress value can
-fall back to 0 as soon as the mower enters standby.
+v2.4.6.4 let the card resolve the mowing target from Home Assistant state:
+``last_mowing_task`` first, then ``active_zone_ids``, then the learned target
+key / progress source.  The v2.4.6.5 reliability layer intentionally trimmed
+most progress diagnostics, so later frontend code started guessing/caching the
+label locally.  Keep the live-map transport out of presentation instead and
+restore the small v2.4.6.4 target fields at the sensor boundary.
 
-This layer restores only those presentation semantics for the Genie family:
-while mowing it remembers the monotonic progress value and exact target, and
-while stopped/returning/charging it exposes that last value until a new mowing
-session starts.  M5/M9/N8 behaviour is untouched.
+Genie can also reset its raw session area as soon as it stops.  Preserve the
+last monotonic percentage for the just-finished Genie task, but leave target
+resolution to the proven v2.4.6.4 card/calibration code.  Other mower families
+are untouched.
 """
 
 from __future__ import annotations
@@ -22,6 +23,16 @@ from .base import model_family
 
 _INSTALLED = False
 _CACHE_ATTR = "_genie_progress_presentation"
+_MOWING_RAW_STATES = {
+    "globalmowing",
+    "zonemowing",
+    "pointmowing",
+    "bordermowing",
+    "edgemowing",
+    "regionmowing",
+    "nestmowing",
+    "spotmowing",
+}
 
 
 def _is_genie_progress_entity(entity: Any) -> bool:
@@ -82,37 +93,58 @@ def _learned_task(learned_key: Any) -> dict[str, Any] | None:
     return _manual_task(ids)
 
 
-def _infer_task(sensor_module: Any, state: dict[str, Any], coordinator: Any) -> dict[str, Any] | None:
-    remembered = _copy_task(getattr(coordinator, "last_mowing_task", None))
-    if remembered is not None:
-        return remembered
+def _is_active(sensor_module: Any, state: dict[str, Any]) -> bool:
+    if sensor_module._general_mower_status(state) == "mowing":  # noqa: SLF001
+        return True
+    raw = str(sensor_module._raw_robot_status(state) or "").strip().lower()  # noqa: SLF001
+    return raw in _MOWING_RAW_STATES
 
-    # Zone ids are the strongest fallback for tasks started outside HA.
+
+def _current_target_data(
+    sensor_module: Any,
+    state: dict[str, Any],
+    coordinator: Any,
+) -> tuple[list[int], str | None, str | None, dict[str, Any] | None]:
+    """Return the same small target evidence the v2.4.6.4 card consumed."""
     try:
         active_ids = list(sensor_module.active_manual_zone_ids(state))
-    except Exception:  # noqa: BLE001 - presentation fallback must never break sensors.
+    except Exception:  # noqa: BLE001 - presentation evidence must be fail-safe.
         active_ids = []
-    manual = _manual_task(active_ids)
-    if manual is not None:
-        return manual
-
-    raw = sensor_module._raw_robot_status(state)  # noqa: SLF001
-    if raw == "globalmowing":
-        return {"type": "full", "data": None}
-    if raw in {"bordermowing", "edgemowing"}:
-        return {"type": "edge", "data": None}
-    if raw == "nestmowing":
-        return {"type": "dock_edge", "data": None}
 
     try:
         learning = sensor_module._progress_learning_debug(state)  # noqa: SLF001
     except Exception:  # noqa: BLE001
         learning = {}
-    return _learned_task(learning.get("learned_zone_mowing_key"))
+    learned_key = learning.get("learned_zone_mowing_key")
+    learned_key = str(learned_key).strip() if learned_key not in (None, "") else None
+
+    try:
+        _target, progress_source = sensor_module._progress_target_area(state)  # noqa: SLF001
+    except Exception:  # noqa: BLE001
+        progress_source = None
+    progress_source = (
+        str(progress_source).strip() if progress_source not in (None, "") else None
+    )
+
+    task = _copy_task(getattr(coordinator, "last_mowing_task", None))
+    if task is None:
+        task = _manual_task(active_ids)
+    if task is None:
+        raw = str(sensor_module._raw_robot_status(state) or "").strip().lower()  # noqa: SLF001
+        if raw == "globalmowing":
+            task = {"type": "full", "data": None}
+        elif raw in {"bordermowing", "edgemowing"}:
+            task = {"type": "edge", "data": None}
+        elif raw == "nestmowing":
+            task = {"type": "dock_edge", "data": None}
+    if task is None:
+        task = _learned_task(learned_key)
+
+    return active_ids, learned_key, progress_source, task
 
 
 def install_genie_progress_presentation() -> None:
-    """Install the Genie-only stopped-progress presentation latch."""
+    """Install the Genie-only v2.4.6.4 progress/target compatibility layer."""
     global _INSTALLED
     if _INSTALLED:
         return
@@ -136,33 +168,35 @@ def install_genie_progress_presentation() -> None:
             return value
 
         cache = _cache(coordinator)
-        active = sensor_module._general_mower_status(state) == "mowing"  # noqa: SLF001
+        active = _is_active(sensor_module, state)
         was_active = bool(cache.get("active"))
         numeric = _number(value)
 
         if active:
             if not was_active:
-                # A real idle/return -> mowing transition starts a new session.
-                # Reset the old percentage even when the fresh sensor begins at 0.
+                # A real new mowing session replaces the previous session.
                 cache.clear()
                 cache["active"] = True
-                if numeric is not None:
-                    cache["progress"] = max(0.0, min(100.0, numeric))
-            else:
-                previous = _number(cache.get("progress"))
-                # Progress is monotonic inside one task. Ignore a transient
-                # zero/reset packet that can arrive just before standby status.
-                if numeric is not None and (previous is None or numeric >= previous):
-                    cache["progress"] = max(0.0, min(100.0, numeric))
-            task = _infer_task(sensor_module, state, coordinator)
+            previous = _number(cache.get("progress"))
+            if numeric is not None and (previous is None or numeric >= previous):
+                cache["progress"] = max(0.0, min(100.0, numeric))
+
+            active_ids, learned_key, progress_source, task = _current_target_data(
+                sensor_module, state, coordinator
+            )
+            cache["active_zone_ids"] = active_ids
+            if learned_key:
+                cache["learned_zone_mowing_key"] = learned_key
+            if progress_source:
+                cache["progress_source"] = progress_source
             if task is not None:
                 cache["task"] = task
-        else:
-            cache["active"] = False
-            latched = _number(cache.get("progress"))
-            if latched is not None:
-                return latched
+            return value
 
+        cache["active"] = False
+        latched = _number(cache.get("progress"))
+        if latched is not None:
+            return latched
         return value
 
     def extra_state_attributes(self: Any) -> dict[str, Any]:
@@ -176,47 +210,45 @@ def install_genie_progress_presentation() -> None:
             return attributes
 
         cache = _cache(coordinator)
-        active = sensor_module._general_mower_status(state) == "mowing"  # noqa: SLF001
+        active = _is_active(sensor_module, state)
+        active_ids, learned_key, progress_source, task = _current_target_data(
+            sensor_module, state, coordinator
+        )
 
         if active:
-            task = _infer_task(sensor_module, state, coordinator)
-            if task is not None:
-                cache["task"] = task
-
-            try:
-                active_ids = list(sensor_module.active_manual_zone_ids(state))
-            except Exception:  # noqa: BLE001
-                active_ids = []
+            cache["active"] = True
             cache["active_zone_ids"] = active_ids
-
-            try:
-                learning = sensor_module._progress_learning_debug(state)  # noqa: SLF001
-            except Exception:  # noqa: BLE001
-                learning = {}
-            learned_key = learning.get("learned_zone_mowing_key")
             if learned_key:
                 cache["learned_zone_mowing_key"] = learned_key
-
-            source = attributes.get("progress_source")
-            if source:
-                cache["progress_source"] = source
+            if progress_source:
+                cache["progress_source"] = progress_source
+            if task is not None:
+                cache["task"] = task
         else:
             cache["active"] = False
 
-        # Reliability trimming intentionally removes large diagnostics. Re-add
-        # only the tiny fields required to render the exact mowing target.
-        task = _copy_task(cache.get("task")) or _copy_task(
-            getattr(coordinator, "last_mowing_task", None)
-        )
-        if task is not None:
-            attributes["last_mowing_task"] = task
+        # Restore the exact tiny v2.4.6.4 target evidence after the v2.4.6.5
+        # Recorder/reliability trimming. During a finished task, prefer the
+        # values captured while it was actually mowing over a generic idle
+        # fallback such as learned_key == "full".
+        if active:
+            exposed_ids = active_ids
+            exposed_learned = learned_key
+            exposed_source = progress_source
+            exposed_task = task
+        else:
+            exposed_ids = list(cache.get("active_zone_ids") or active_ids)
+            exposed_learned = cache.get("learned_zone_mowing_key") or learned_key
+            exposed_source = cache.get("progress_source") or progress_source
+            exposed_task = _copy_task(cache.get("task")) or task
 
-        if "active_zone_ids" in cache:
-            attributes["active_zone_ids"] = list(cache.get("active_zone_ids") or [])
-        if cache.get("learned_zone_mowing_key"):
-            attributes["learned_zone_mowing_key"] = cache["learned_zone_mowing_key"]
-        if not active and cache.get("progress_source"):
-            attributes["progress_source"] = cache["progress_source"]
+        attributes["active_zone_ids"] = exposed_ids
+        if exposed_learned:
+            attributes["learned_zone_mowing_key"] = exposed_learned
+        if exposed_source:
+            attributes["progress_source"] = exposed_source
+        if exposed_task is not None:
+            attributes["last_mowing_task"] = exposed_task
 
         attributes["progress_presentation_latched"] = (
             not active and _number(cache.get("progress")) is not None
