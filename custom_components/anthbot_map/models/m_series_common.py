@@ -5,6 +5,7 @@ from .entity_identity import install_setting_entity_identity
 from .genie_live_motion import install_genie_live_motion_support
 from .genie_live_path_refresh import install_genie_live_path_refresh
 from .genie_path_diagnostics import install_genie_path_diagnostics
+from .genie_progress_posttrim import install_genie_progress_posttrim
 from .genie_progress_presentation import install_genie_progress_presentation
 from .genie_status import install_genie_live_status_support
 from .live_task_events import install_live_task_event_refresh
@@ -104,6 +105,8 @@ def install_m_series_compat() -> None:
     # v2.4.6.4 exposed the small target-identifying progress attributes that
     # let the card keep "Full area / Zone N" after a task. Later reliability
     # trimming removed them and Genie resets raw progress to 0 in standby.
-    # Install this Genie-only presentation latch last so it sees the final
-    # trimmed sensor surface and restores only those tiny semantics.
+    # Install the session latch first, then schedule a final post-trim wrapper:
+    # reliability_v2465 applies its sensor filter lazily from coordinator
+    # __init__, so a normal installer-order fix alone cannot restore the fields.
     install_genie_progress_presentation()
+    install_genie_progress_posttrim()
