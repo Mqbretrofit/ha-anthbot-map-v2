@@ -19,6 +19,7 @@ Startup-regression and cloud-resilience hotfix rebuilt from the stable v2.4.7.0 
 - v2.4.7.2 is based directly on v2.4.7.0 rather than the diverged v2.4.7.1 branch.
 - Live-map/WebSocket transport, Recorder optimizations, mower command routing, Battery Saver logic, and model-specific M-series/N8/Genie handling are retained from v2.4.7.0 and are not replaced by older code.
 - Automated tests explicitly verify that the developer agent, usage heartbeat, and cloud-error reporting cannot become Home Assistant startup-tracked tasks.
+- Pre-release validation passed the complete unit-test suite, HACS validation, and Home Assistant hassfest validation.
 
 ## Upgrade note
 
@@ -33,5 +34,6 @@ A v2.4.7.1-ben visszakerült indítási regresszió javítása, a stabil v2.4.7.
 - Az anonim usage heartbeat és az automatikus cloud-hibariport is háttérfeladatként fut, így az opcionális riportolás nem kerülhet a startup várólistára.
 - A v2.4.7.1 hasznos cloud/API stabilitási javításai megmaradnak: JSON `code=5xx` felismerés, kontrollált retry/backoff, IoT STS hibák helyes besorolása, warning ritkítás és privacy-safe `cloud_api_error` riport.
 - A v2.4.7.0 live-map/WebSocket, Recorder, vezérlési, Battery Saver és modell-specifikus működése változatlan alapként marad meg.
+- A kiadás előtti teljes unit-test csomag, HACS validáció és hassfest ellenőrzés sikeresen lefutott.
 
 A v2.4.7.1 használóinak javasolt a v2.4.7.2-re frissítés.
