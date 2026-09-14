@@ -22,19 +22,27 @@ class TestLiveMowingTargetCache(unittest.TestCase):
         self.assertIn('String(card.translateStatus?.("mowing") || "")', self.frontend)
         self.assertIn("return generic.includes(normalized) ? \"\" : text;", self.frontend)
 
-    def test_current_exact_target_beats_stale_local_storage(self) -> None:
+    def test_selected_target_is_captured_before_start(self) -> None:
+        self.assertIn("function selectedMowingTarget(card)", self.frontend)
+        self.assertIn("function armSelectedMowingTarget(card)", self.frontend)
+        self.assertIn("card._anthbotLiveCurrentTaskTarget = target;", self.frontend)
+        self.assertIn("writeLastMowingProgress(card, { target, progress: 0 });", self.frontend)
+        self.assertIn("armSelectedMowingTarget(this);", self.frontend)
+
+    def test_exact_command_target_beats_generic_rendered_status(self) -> None:
         self.assertIn(
-            "rememberedTarget || currentSpecific || savedSpecific || currentTarget",
+            "rememberedTarget || commandTarget || currentSpecific || currentTarget",
+            self.frontend,
+        )
+        self.assertIn(
+            "rememberedTarget || commandTarget || currentSpecific || savedSpecific || currentTarget",
             self.frontend,
         )
 
-    def test_active_task_never_reuses_previous_target(self) -> None:
+    def test_hidden_active_line_can_start_at_zero_for_exact_command_target(self) -> None:
+        self.assertIn("if (activeMowing && !commandTarget) return;", self.frontend)
         self.assertIn(
-            "rememberedTarget || currentSpecific || currentTarget",
-            self.frontend,
-        )
-        self.assertIn(
-            "Starting a genuinely new task must never resurrect the previous task's",
+            "rememberedTarget || commandTarget || specificMowingTarget(card, saved?.target)",
             self.frontend,
         )
 
