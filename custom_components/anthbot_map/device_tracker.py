@@ -19,6 +19,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .cloud_error_reporting import async_register_cloud_error_reporting
 from .const import (
     CONF_AREA_CODE,
     CONF_DEVELOPER_INSTALLATION_ID,
@@ -87,7 +88,8 @@ async def _async_schedule_usage_heartbeat(
         return
 
     session = async_get_clientsession(hass)
-    hass.async_create_task(
+    entry.async_create_background_task(
+        hass,
         async_send_anonymous_usage_report(
             session,
             DEVELOPER_TELEMETRY_ENDPOINT,
@@ -119,6 +121,7 @@ async def async_setup_entry(
     ]
     await _async_schedule_usage_heartbeat(hass, entry, coordinators)
     await async_register_robot_error_reporting(hass, entry, coordinators)
+    await async_register_cloud_error_reporting(hass, entry, coordinators)
 
     async_add_entities(
         AnthbotLocationTracker(coordinator) for coordinator in coordinators
