@@ -21,6 +21,7 @@ from .m_series_path import install_m_series_path_support
 from .m_series_status import install_m_series_status_support
 from .m_series_zones import install_m_series_zone_support
 from .m9_map_rescue_v2465 import install_m9_map_rescue_v2465
+from .m9_progress_posttrim import install_m9_progress_posttrim
 from .performance_diagnostics import install_performance_diagnostics
 from .rain_battery_saver import install_rain_battery_saver_safety
 from .recorder_v2465 import install_recorder_v2465
@@ -104,9 +105,10 @@ def install_m_series_compat() -> None:
     install_recorder_idle_semantics_v2467()
     # v2.4.6.4 exposed the small target-identifying progress attributes that
     # let the card keep "Full area / Zone N" after a task. Later reliability
-    # trimming removed them and Genie resets raw progress to 0 in standby.
-    # Install the session latch first, then schedule a final post-trim wrapper:
-    # reliability_v2465 applies its sensor filter lazily from coordinator
-    # __init__, so a normal installer-order fix alone cannot restore the fields.
+    # trimming removed them. Genie additionally resets its raw percentage in
+    # standby, so keep its session latch; M9/M9 Pro only need target metadata.
+    # Both post-trim wrappers are scheduled around coordinator __init__ so they
+    # run after reliability_v2465 installs its deferred sensor filter.
     install_genie_progress_presentation()
     install_genie_progress_posttrim()
+    install_m9_progress_posttrim()
