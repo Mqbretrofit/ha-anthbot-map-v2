@@ -232,6 +232,46 @@ function specificMowingTarget(card, value) {
   return generic.includes(normalized) ? "" : text;
 }
 
+function mowingZoneTarget(card, rawIds) {
+  const ids = (Array.isArray(rawIds) ? rawIds : []).map(String).filter(Boolean);
+  if (!ids.length) return "";
+  const names = new Map((typeof card.currentZones === "function" ? card.currentZones() : [])
+    .filter((zone) => zone && zone.id !== undefined && zone.id !== null)
+    .map((zone) => [String(zone.id), String(zone.name || `${card.t?.("zone") || "Zone"} ${zone.id}`).trim()]));
+  const zoneLabel = String(card.t?.("zone") || "Zone").trim();
+  return ids.map((id) => names.get(id) || `${zoneLabel} ${id}`).join(" + ");
+}
+
+function selectedMowingTarget(card) {
+  const selected = card.selectedMowingTarget;
+  if (!selected || typeof selected !== "object") return "";
+  const type = String(selected.type || "").trim().toLowerCase();
+  if (type === "full") return String(card.t?.("fullArea") || "Full area").trim();
+  if (type === "edge") return String(card.t?.("commandOuterEdge") || "Outer edge").trim();
+  if (type === "dock-edge") return String(card.t?.("dockEdgeLabel") || "Dock edge").trim();
+  if (type === "zone-set" || type === "auto-zone-set") {
+    const zones = Array.isArray(selected.zones) ? selected.zones : [];
+    const direct = zones
+      .map((zone) => String(zone?.name || "").trim())
+      .filter(Boolean);
+    if (direct.length === zones.length && direct.length) return direct.join(" + ");
+    const ids = zones.map((zone) => zone?.id).filter((id) => id !== undefined && id !== null);
+    return mowingZoneTarget(card, ids);
+  }
+  return "";
+}
+
+function armSelectedMowingTarget(card) {
+  const target = specificMowingTarget(card, selectedMowingTarget(card));
+  if (!target) return;
+  card._anthbotLiveCurrentTaskTarget = target;
+  const saved = readLastMowingProgress(card);
+  writeLastMowingProgress(card, {
+    target,
+    progress: Number.isFinite(Number(saved?.progress)) ? Number(saved.progress) : 0,
+  });
+}
+
 function canonicalMowingIsActive(card) {
   const statusEntity = card.getRelatedEntity?.("status");
   const canonical = String(statusEntity?.state || "")
@@ -248,16 +288,6 @@ function canonicalMowingIsActive(card) {
     "mowing", "zonemowing", "regionmowing", "globalmowing", "nestmowing",
     "edgemowing", "bordermowing", "pointmowing", "spotmowing",
   ].some((value) => raw.includes(value));
-}
-
-function mowingZoneTarget(card, rawIds) {
-  const ids = (Array.isArray(rawIds) ? rawIds : []).map(String).filter(Boolean);
-  if (!ids.length) return "";
-  const names = new Map((typeof card.currentZones === "function" ? card.currentZones() : [])
-    .filter((zone) => zone && zone.id !== undefined && zone.id !== null)
-    .map((zone) => [String(zone.id), String(zone.name || `${card.t?.("zone") || "Zone"} ${zone.id}`).trim()]));
-  const zoneLabel = String(card.t?.("zone") || "Zone").trim();
-  return ids.map((id) => names.get(id) || `${zoneLabel} ${id}`).join(" + ");
 }
 
 function rememberedMowingTarget(card, progressEntity) {
@@ -315,6 +345,7 @@ function preserveStoppedMowingProgress(card) {
     card,
     rememberedMowingTarget(card, progressEntity),
   );
+  const commandTarget = specificMowingTarget(card, card._anthbotLiveCurrentTaskTarget);
 
   if (visible) {
     const targetNode = visible.querySelector('[data-role="mowing-live-target"]');
@@ -323,13 +354,13 @@ function preserveStoppedMowingProgress(card) {
     const currentSpecific = specificMowingTarget(card, currentTarget);
     const savedSpecific = specificMowingTarget(card, saved?.target);
     const displayTarget = activeMowing
-      ? String(rememberedTarget || currentSpecific || currentTarget).trim()
-      : String(rememberedTarget || currentSpecific || savedSpecific || currentTarget).trim();
+      ? String(rememberedTarget || commandTarget || currentSpecific || currentTarget).trim()
+      : String(rememberedTarget || commandTarget || currentSpecific || savedSpecific || currentTarget).trim();
     const displayedProgress = Number(String(progressNode?.textContent || "").replace("%", ""));
     if (targetNode && displayTarget) targetNode.textContent = displayTarget;
     if (Number.isFinite(displayedProgress)) {
       writeLastMowingProgress(card, {
-        target: specificMowingTarget(card, displayTarget),
+        target: specificMowingTarget(card, displayTarget) || commandTarget,
         progress: displayedProgress,
       });
     }
@@ -338,7 +369,7 @@ function preserveStoppedMowingProgress(card) {
 
   // Starting a genuinely new task must never resurrect the previous task's
   // percentage or target while the new progress sensor is still warming up.
-  if (activeMowing) return;
+  if (activeMowing && !commandTarget) return;
 
   const currentProgress = Number.isFinite(progress) && progress > 0
     ? Math.max(0, Math.min(100, progress))
@@ -350,7 +381,7 @@ function preserveStoppedMowingProgress(card) {
   if (!Number.isFinite(displayProgress)) return;
 
   const target = String(
-    rememberedTarget || specificMowingTarget(card, saved?.target) || "",
+    rememberedTarget || commandTarget || specificMowingTarget(card, saved?.target) || "",
   ).trim();
   if (!target) return;
 
@@ -545,8 +576,19 @@ customElements.whenDefined("anthbot-map-card").then(() => {
         clearSubscriptionRetry(this);
         stopLiveSubscription(this);
         resetLiveState(this);
+        this._anthbotLiveCurrentTaskTarget = null;
       }
       return originalSetConfig.call(this, config);
+    };
+  }
+
+  const originalHandlePrimaryMowingAction = proto.handlePrimaryMowingAction;
+  if (typeof originalHandlePrimaryMowingAction === "function") {
+    proto.handlePrimaryMowingAction = function patchedHandlePrimaryMowingAction(action, ...args) {
+      if (action !== "pause" && action !== "resume") {
+        armSelectedMowingTarget(this);
+      }
+      return originalHandlePrimaryMowingAction.call(this, action, ...args);
     };
   }
 
