@@ -79,7 +79,11 @@ class RuntimeOptimizationSourceTests(unittest.TestCase):
         manifest = json.loads(
             (ROOT / "custom_components/anthbot_map/manifest.json").read_text(encoding="utf-8")
         )
-        self.assertEqual("2.4.6", manifest["version"])
+        version = manifest["version"]
+        # Stable releases may use patch-hotfix components (for example
+        # 2.4.7.1); this test must validate stability, not pin an old release.
+        self.assertRegex(version, r"^\d+(?:\.\d+){2,}$")
+        self.assertNotIn("-", version)
 
 
 if __name__ == "__main__":
