@@ -22,19 +22,21 @@ aerial or drone photograph of the garden.
 
 ## Current version
 
-Stable version: **2.4.7.0**
+Stable version: **2.4.7.2**
 
-### Highlights in 2.4.7.0
+### Highlights in 2.4.7.2
 
 - Moves high-frequency live map/path/pose delivery out of Home Assistant entity state and into a dedicated WebSocket stream.
 - Sends a full snapshot on connect, then incremental path deltas with sequence/resync protection instead of repeatedly storing the full path in entity attributes.
 - Keeps the Map entity compact while live-stream mode is active: full `path`, `cloud_path`, `mowed_path`, and `pose` geometry are not written into Home Assistant state.
 - Stops legacy card polling of the Map entity in live-stream mode and reduces Recorder churn to approximately one heartbeat per minute when no relevant compact state changes occur.
+- Coalesces bursty live-map coordinator updates and builds path deltas in an executor instead of on Home Assistant's event loop.
+- Freezes the mutable path list before snapshot/delta construction so a growing trajectory cannot produce a torn frame.
 - Moves expensive No-Go geometry checks off the Home Assistant event loop for M-series, N8 and Genie diagnostics, with stable revision caching and bounded live evaluation cadence.
 - Preserves model-specific mower command routing; Genie, M5/M9-family and N8 control paths remain separated.
-- Field-tested on a real ANTHBOT M9 Pro during mowing: live WebSocket path updates, Recorder reduction, Home Assistant restart, reconnect and full snapshot restore were verified.
+- Field-tested on real ANTHBOT Genie 1000 and M9 Pro hardware during live-map and mowing-progress development.
 
-See `RELEASE_NOTES_v2.4.7.0.md` and `CHANGELOG_v2.4.7.0_HU.md` for the complete release details.
+The original 2.4.7.0 live-map release details remain documented in `RELEASE_NOTES_v2.4.7.0.md` and `CHANGELOG_v2.4.7.0_HU.md`; 2.4.7.2 contains follow-up live-map, reconnect, progress-presentation and stability hardening.
 
 ### Highlights in 2.4.5
 
@@ -136,7 +138,7 @@ See `RELEASE_NOTES_v2.4.7.0.md` and `CHANGELOG_v2.4.7.0_HU.md` for the complete 
 > Boundary, mowing-path and zone handling have been directly tested and verified
 > on an **M9 Pro**. M5 and M9 use the same model-specific M-series architecture.
 > N8-specific path/control handling and regression coverage are included, but the
-> 2.4.7.0 live-stream architecture has not yet been directly field-tested by this
+> 2.4.7.2 live-stream architecture has not yet been directly field-tested by this
 > project on N8 hardware.
 
 ## Supported models
@@ -144,10 +146,10 @@ See `RELEASE_NOTES_v2.4.7.0.md` and `CHANGELOG_v2.4.7.0_HU.md` for the complete 
 The integration supports ANTHBOT Genie, the M-series model family, and N8.
 
 - **ANTHBOT Genie:** supported; Genie-specific control and path diagnostics remain separated from other models.
-- **ANTHBOT M9 Pro:** M-series map/control/status/history path supported and directly hardware-tested, including the 2.4.7.0 live-stream/Recorder architecture.
+- **ANTHBOT M9 Pro:** M-series map/control/status/history path supported and directly hardware-tested, including the 2.4.7.2 live-stream/Recorder architecture.
 - **ANTHBOT M9:** supported through the shared M-series implementation; not directly hardware-tested by this project yet.
 - **ANTHBOT M5:** supported through the shared M-series implementation; not directly hardware-tested by this project yet.
-- **ANTHBOT N8:** supported through its dedicated N8 path/control handling; N8-specific regression tests are included, while direct 2.4.7.0 live-stream hardware validation is still pending.
+- **ANTHBOT N8:** supported through its dedicated N8 path/control handling; N8-specific regression tests are included, while direct 2.4.7.2 live-stream hardware validation is still pending.
 
 ## Using another ANTHBOT integration
 
@@ -252,7 +254,7 @@ Resource type: **JavaScript module**. No manual setup is normally required.
 2. Add:
 
    ```text
-   /anthbot-map-v2/anthbot-map-card.js?v=2.4.7.0
+   /anthbot-map-v2/anthbot-map-card.js?v=2.4.7.2
    ```
 
 3. Select type **JavaScript module**.
@@ -341,7 +343,7 @@ decodedBoundaryCalibration:
   rotation: 0
 ```
 
-`refresh_interval` is kept for backward compatibility and legacy fallback mode. In normal 2.4.7.0 live-stream operation, high-frequency map/path/pose updates arrive through the WebSocket transport rather than periodic Map-entity polling.
+`refresh_interval` is kept for backward compatibility and legacy fallback mode. In normal 2.4.7.2 live-stream operation, high-frequency map/path/pose updates arrive through the WebSocket transport rather than periodic Map-entity polling.
 
 ## Default menu layout
 
@@ -503,7 +505,7 @@ When using HACS:
 
 In Lovelace storage mode, the integration updates the resource version
 automatically. In YAML resource mode, update the cache-busting query after an
-upgrade, for example `/anthbot-map-v2/anthbot-map-card.js?v=2.4.7.0`.
+upgrade, for example `/anthbot-map-v2/anthbot-map-card.js?v=2.4.7.2`.
 
 # Troubleshooting
 
@@ -520,7 +522,7 @@ Then hard-refresh with `Ctrl+Shift+R`.
 
 ## Map is not displayed
 
-Check that the correct map entity is configured and its state is `ready`. On 2.4.7.0 in normal live-stream mode, the full live `path`/`pose` geometry is intentionally **not** stored in the Map entity attributes. Instead, the entity should advertise `live_stream_available: true` and `live_stream_transport: websocket`, while the card receives the snapshot and live deltas through Home Assistant WebSocket.
+Check that the correct map entity is configured and its state is `ready`. On 2.4.7.2 in normal live-stream mode, the full live `path`/`pose` geometry is intentionally **not** stored in the Map entity attributes. Instead, the entity should advertise `live_stream_available: true` and `live_stream_transport: websocket`, while the card receives the snapshot and live deltas through Home Assistant WebSocket.
 
 If the map still does not render, hard-refresh the browser, confirm the Anthbot Map frontend resource is loaded only once, and check the Home Assistant log for `anthbot_map` or WebSocket errors.
 
