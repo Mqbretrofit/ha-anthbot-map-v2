@@ -2,6 +2,7 @@
 
 from .cloud_api_resilience import install_cloud_api_resilience
 from .entity_identity import install_setting_entity_identity
+from .genie_live_motion import install_genie_live_motion_support
 from .genie_live_path_refresh import install_genie_live_path_refresh
 from .genie_path_diagnostics import install_genie_path_diagnostics
 from .genie_status import install_genie_live_status_support
@@ -69,6 +70,10 @@ def install_m_series_compat() -> None:
     # refresh isolated from the five-minute ancillary coordinator cadence and
     # from every M-series/N8 absolute-index assembler.
     install_genie_live_path_refresh()
+    # Match M9/M9 Pro presentation semantics through the whole motion cycle:
+    # keep requesting/publishing the Genie path while returning to the dock and
+    # promote camelCase live pose aliases without widening shared model guards.
+    install_genie_live_motion_support()
     install_live_task_event_refresh()
     install_rain_battery_saver_safety()
     install_shutdown_guard_state_settle()
