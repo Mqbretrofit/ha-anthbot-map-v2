@@ -21,6 +21,17 @@ Stabil verzió: **2.4.7.3**
 
 Legfrissebb kiadás: [Anthbot Map v2.4.7.3](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.7.3)
 
+### A 2.4.7.3 legfontosabb változásai
+
+- Javult az élő térkép teljesítménye: a rövid időn belül érkező coordinator frissítések a WebSocket publikálás előtt összevonódnak.
+- A live-map snapshot és delta felépítése kikerült a Home Assistant event loopból; a módosítható path adatok frame-készítés előtt külön másolatot kapnak, így a közben növekvő útvonal nem tud hibás, szétszakadt frissítést okozni.
+- Megmaradt a reconnect/full-snapshot folytonosság, a sequence/resync védelem, a gördülő path-ablak és az abszolút indexes élő útvonalkezelés.
+- Bekerült a tesztelt 2.4.7.2 performance ágból a legfrissebb Genie live-path és nyírási százalék megjelenítési hardening, az M-szériás progress post-trim kezelés, az álló helyzet pozíciókezelése és a location-recorder hardening.
+- Megmaradt a 2.4.7.2 startup-safe Developer Agent életciklus és a cloud/API resilience javítások.
+- A production robotvezérlési routing nem változott; az M-szériás ellenőrzött `stop_all_tasks` payload is változatlan maradt, csak az elavult regressziós tesztelvárások lettek frissítve.
+- Teljes kiadás előtti validáció: **359/359 unit teszt sikeres**, továbbá Python fordítási és célzott live-map ellenőrzések is lefutottak.
+- A release dokumentáció egységesen a `CHANGELOG.md` fájlban folytatódik; a korábban publikált részletes kiadási jegyzetek a GitHub Releases alatt továbbra is elérhetők.
+
 ### A 2.4.7.0 legfontosabb változásai
 
 - A nagy frekvenciájú live map/path/pose adatfolyam levált a Home Assistant entity state mechanizmusáról, és külön WebSocket transporton jut el a kártyához.
@@ -30,7 +41,6 @@ Legfrissebb kiadás: [Anthbot Map v2.4.7.3](https://github.com/Mqbretrofit/ha-an
 - A drága No-Go geometriai ellenőrzés kikerült a Home Assistant event loopból az M-szérián, az N8-on és a Genie path diagnosztikánál is; stabil revision cache és korlátozott live ellenőrzési gyakoriság védi a rendszert.
 - A robotvezérlési command routing nem változott: a Genie, az M5/M9 család és az N8 vezérlési útvonalai továbbra is külön maradnak.
 - Valódi ANTHBOT M9 Pro roboton, aktív nyírás közben ellenőrizve lett a WebSocket útvonal, a Recorder-terhelés csökkenése, a Home Assistant restart, a reconnect és a teljes snapshot visszatöltése.
-
 
 ### 2.4.6.x riportolás és fejlesztői diagnosztika
 
@@ -50,7 +60,7 @@ Az anonim statisztika, az automatikus diagnosztika és a read-only fejlesztői h
 Az N8-specifikus vezérlés, állapotkezelés, térkép-/útvonalkezelés és modellspecifikus entitások bekerültek.
 
 - **Code/API validáció:** elkészült külön regressziós és modellszeparációs tesztekkel.
-- **2.4.7.0 stabilitási védelem:** az N8 is a védett No-Go executor útvonalat használja, külön N8 regressziós tesztekkel.
+- **2.4.7.3 stabilitási védelem:** az N8 is a védett No-Go executor útvonalat és külön regressziós teszteket használja, a jelenlegi live-map transport pedig megtartja a modellenkénti elkülönítést.
 - **Valós N8 hardveres validáció:** ebben a projektben még nem történt meg közvetlenül.
 - A Genie és M-szériás modellrouting továbbra is elkülönül az N8-tól.
 
@@ -59,10 +69,10 @@ N8 tulajdonosok tesztjeit és modellspecifikus visszajelzéseit várjuk.
 ## Támogatott modellek
 
 - **ANTHBOT Genie:** támogatott és közvetlenül hardveren tesztelt; a Genie path diagnosztika elkülönül a többi modelltől.
-- **ANTHBOT M9 Pro:** M-szériás vezérlés, állapot, térkép, útvonal, zóna és előzménykezelés támogatott és közvetlenül hardveren tesztelt, beleértve a 2.4.7.0 live-stream/Recorder architektúrát is.
+- **ANTHBOT M9 Pro:** M-szériás vezérlés, állapot, térkép, útvonal, zóna és előzménykezelés támogatott és közvetlenül hardveren tesztelt, beleértve a 2.4.7.3 live-stream/Recorder architektúrát és az azt követő performance hardeninget is.
 - **ANTHBOT M9:** támogatott a közös M-szériás implementáción keresztül; közvetlen hardverteszt még nem történt.
 - **ANTHBOT M5:** támogatott a közös M-szériás implementáción keresztül; közvetlen hardverteszt még nem történt.
-- **ANTHBOT N8:** külön N8 implementációval támogatott; code/API és regressziós szinten ellenőrzött, de közvetlen 2.4.7.0 hardveres terepi validáció még nincs.
+- **ANTHBOT N8:** külön N8 implementációval támogatott; code/API és regressziós szinten ellenőrzött, de közvetlen 2.4.7.3 hardveres terepi validáció még nincs.
 
 ## Fő funkciók
 
@@ -152,7 +162,7 @@ Típus: **JavaScript module**.
 Ha kézzel kell felvenni, ezt használd:
 
 ```text
-/anthbot-map-v2/anthbot-map-card.js?v=2.4.7.0
+/anthbot-map-v2/anthbot-map-card.js?v=2.4.7.3
 ```
 
 Egyszerre csak egy Anthbot Map Card resource legyen engedélyezve.
@@ -262,7 +272,7 @@ HACS használatakor:
 YAML resource módban a cache-busting verziót is állítsd az aktuális verzióra, például:
 
 ```text
-/anthbot-map-v2/anthbot-map-card.js?v=2.4.7.0
+/anthbot-map-v2/anthbot-map-card.js?v=2.4.7.3
 ```
 
 # Hibakeresés
@@ -280,13 +290,13 @@ Ezután `Ctrl+Shift+R`.
 
 ## Nem jelenik meg a térkép
 
-Ellenőrizd, hogy a megfelelő robot Map entitása van kiválasztva, és annak állapota `ready`. Normál 2.4.7.0 live-stream módban a teljes élő `path`/`pose` geometria szándékosan **nincs** a Map entitás attribútumaiban. Helyette az entitásban `live_stream_available: true` és `live_stream_transport: websocket` várható, a kártya pedig Home Assistant WebSocketen kapja a teljes snapshotot és az élő deltákat.
+Ellenőrizd, hogy a megfelelő robot Map entitása van kiválasztva, és annak állapota `ready`. Normál 2.4.7.3 live-stream módban a teljes élő `path`/`pose` geometria szándékosan **nincs** a Map entitás attribútumaiban. Helyette az entitásban `live_stream_available: true` és `live_stream_transport: websocket` várható, a kártya pedig Home Assistant WebSocketen kapja a teljes snapshotot és az élő deltákat.
 
 Ha a térkép továbbra sem jelenik meg, frissítsd keményen a böngészőt, ellenőrizd, hogy csak egy Anthbot Map frontend resource aktív, és nézd meg a Home Assistant naplójában az `anthbot_map` vagy WebSocket hibákat.
 
 ## N8 probléma
 
-Az N8 támogatás bekerült és code/API szinten ellenőrzött, de a 2.4.7.0 közvetlen N8 hardveres terepi validációja ebben a projektben még nem történt meg. N8-specifikus hiba jelentésekor csatolj személyes adatoktól megtisztított diagnosztikát.
+Az N8 támogatás bekerült és code/API szinten ellenőrzött, de a 2.4.7.3 közvetlen N8 hardveres terepi validációja ebben a projektben még nem történt meg. N8-specifikus hiba jelentésekor csatolj személyes adatoktól megtisztított diagnosztikát.
 
 # Hibák jelentése
 
