@@ -1,5 +1,6 @@
 """Model compatibility entry point for the clean rebuild."""
 
+from .cloud_api_resilience import install_cloud_api_resilience
 from .entity_identity import install_setting_entity_identity
 from .genie_path_diagnostics import install_genie_path_diagnostics
 from .genie_status import install_genie_live_status_support
@@ -39,6 +40,9 @@ def install_m_series_compat() -> None:
     if _INSTALLED:
         return
     _INSTALLED = True
+    # Install vendor-cloud resilience before any model-specific layer can start
+    # polling task events or creating the live AWS IoT transport.
+    install_cloud_api_resilience()
     install_setting_entity_identity()
     _install_legacy()
     install_m_series_control_support()
