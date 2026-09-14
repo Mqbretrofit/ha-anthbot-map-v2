@@ -2,7 +2,7 @@
 
 [English](README.md) | [Magyar](README_HU.md)
 
-[![Release](https://img.shields.io/badge/release-v2.4.7.0-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.7.0)
+[![Release](https://img.shields.io/badge/release-v2.4.7.3-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.7.3)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
 [![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Mqbretrofit&repository=ha-anthbot-map-v2&category=integration)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -23,9 +23,9 @@ If this integration is useful to you, you can support continued development thro
 
 ## Current version
 
-Stable version: **2.4.7.0**
+Stable version: **2.4.7.3**
 
-Latest release: [Anthbot Map v2.4.7.0](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.7.0)
+Latest release: [Anthbot Map v2.4.7.3](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.7.3)
 
 ### Highlights in 2.4.7.0
 
@@ -37,7 +37,6 @@ Latest release: [Anthbot Map v2.4.7.0](https://github.com/Mqbretrofit/ha-anthbot
 - Mower command routing is unchanged; Genie, M5/M9-family, and N8 control paths remain separated.
 - Real-device validation on an ANTHBOT M9 Pro confirmed live WebSocket path updates, Recorder reduction, Home Assistant restart, reconnect, and full snapshot restore.
 
-See `RELEASE_NOTES_v2.4.7.0.md` and `CHANGELOG_v2.4.7.0_HU.md` for complete release details.
 
 ### 2.4.6.x reporting and developer diagnostics
 
