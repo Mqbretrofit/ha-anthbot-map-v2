@@ -8,6 +8,8 @@
 
 const ANTHBOT_LIVE_PROTOCOL = 2;
 const ANTHBOT_LIVE_TYPE = "anthbot_map/subscribe_live";
+const ANTHBOT_LIVE_RETRY_MIN_MS = 750;
+const ANTHBOT_LIVE_RETRY_MAX_MS = 10000;
 
 function baseMapEntity(card) {
   const entityId = card._activeEntityId || card.resolveMapEntityId?.() || card.config?.entity;
@@ -45,6 +47,13 @@ function resetLiveState(card) {
   card._anthbotLiveOverlay = null;
   card._anthbotLivePath = null;
   card._anthbotLiveSequence = null;
+}
+
+function clearSubscriptionRetry(card) {
+  if (card._anthbotLiveRetryTimer) {
+    window.clearTimeout(card._anthbotLiveRetryTimer);
+    card._anthbotLiveRetryTimer = null;
+  }
 }
 
 function stopLiveSubscription(card) {
@@ -162,6 +171,30 @@ function scheduleResubscribe(card, reason) {
   }
 }
 
+function scheduleSubscriptionRetry(card, reason) {
+  if (!card.isConnected) return;
+  clearSubscriptionRetry(card);
+  const previous = Number(card._anthbotLiveRetryDelayMs);
+  const delay = Number.isFinite(previous)
+    ? Math.min(Math.max(previous, ANTHBOT_LIVE_RETRY_MIN_MS), ANTHBOT_LIVE_RETRY_MAX_MS)
+    : ANTHBOT_LIVE_RETRY_MIN_MS;
+  card._anthbotLiveRetryDelayMs = Math.min(delay * 2, ANTHBOT_LIVE_RETRY_MAX_MS);
+  card._anthbotLiveRetryTimer = window.setTimeout(() => {
+    card._anthbotLiveRetryTimer = null;
+    if (!card.isConnected) return;
+    ensureLiveSubscription(card);
+  }, delay);
+  if (reason && card._anthbotLiveLastRetryReason !== reason) {
+    card._anthbotLiveLastRetryReason = reason;
+    console.debug(`[ANTHBOT live-map] retry in ${delay} ms: ${reason}`);
+  }
+}
+
+function markSubscriptionHealthy(card) {
+  clearSubscriptionRetry(card);
+  card._anthbotLiveRetryDelayMs = ANTHBOT_LIVE_RETRY_MIN_MS;
+}
+
 function applyLiveMessage(card, message) {
   if (!message || Number(message.protocol) !== ANTHBOT_LIVE_PROTOCOL) {
     scheduleResubscribe(card, "protocol mismatch");
@@ -174,6 +207,8 @@ function applyLiveMessage(card, message) {
     scheduleResubscribe(card, "invalid sequence");
     return;
   }
+
+  markSubscriptionHealthy(card);
 
   if (kind === "snapshot") {
     stopLegacyRefreshTimer(card);
@@ -231,6 +266,7 @@ function ensureLiveSubscription(card) {
   // never take over an integration version that still serves full map data
   // through the entity state.
   if (attributes.live_stream_available !== true) {
+    clearSubscriptionRetry(card);
     if (card._anthbotLiveSerial || card._anthbotLiveUnsubscribe) {
       stopLiveSubscription(card);
       resetLiveState(card);
@@ -268,12 +304,14 @@ function ensureLiveSubscription(card) {
       }
       card._anthbotLiveUnsubscribe = unsubscribe;
       card._anthbotLiveSubscribePromise = null;
+      markSubscriptionHealthy(card);
     })
     .catch((error) => {
       if (card._anthbotLiveGeneration !== generation) return;
       card._anthbotLiveSubscribePromise = null;
       card._anthbotLiveUnsubscribe = null;
       console.warn("[ANTHBOT live-map] subscription failed", error);
+      scheduleSubscriptionRetry(card, "subscription failed");
     });
 }
 
@@ -335,6 +373,7 @@ customElements.whenDefined("anthbot-map-card").then(() => {
     proto.setConfig = function patchedSetConfig(config) {
       const previousEntity = this.config?.entity;
       if (previousEntity && previousEntity !== config?.entity) {
+        clearSubscriptionRetry(this);
         stopLiveSubscription(this);
         resetLiveState(this);
       }
@@ -364,6 +403,7 @@ customElements.whenDefined("anthbot-map-card").then(() => {
   proto.disconnectedCallback = function patchedDisconnected(...args) {
     this._anthbotLiveResyncTimer && window.clearTimeout(this._anthbotLiveResyncTimer);
     this._anthbotLiveResyncTimer = null;
+    clearSubscriptionRetry(this);
     stopLiveSubscription(this);
     resetLiveState(this);
     if (typeof originalDisconnected === "function") {
