@@ -110,15 +110,35 @@ class TestLiveMapStreamArchitecture(unittest.TestCase):
         ):
             self.assertIn(required, signature)
 
-    def test_live_frontend_stops_legacy_map_entity_polling(self):
+    def test_live_frontend_keeps_lightweight_status_refresh_without_polling_map(self):
         source = ROOT / "www" / "anthbot-map" / "live-map-stream.js"
         text = source.read_text(encoding="utf-8")
-        self.assertIn("function stopLegacyRefreshTimer", text)
+        self.assertIn("function syncLiveCardFromHass", text)
         self.assertIn("patchedStartRefreshTimer", text)
         self.assertIn("patchedRefreshEntityIds", text)
         self.assertIn("patchedRefreshEntities", text)
         self.assertIn("entityId !== mapEntityId", text)
-        self.assertIn("stopLegacyRefreshTimer(this);", text)
+        self.assertIn("syncLiveCardFromHass(this);", text)
+        self.assertIn("return originalStartRefreshTimer.apply(this, args);", text)
+        self.assertIn("this.updateMowingProgressStatus?.();", text)
+
+        refresh_start = text.index("proto.refreshEntities = function patchedRefreshEntities")
+        refresh_end = text.index("const hassDescriptor", refresh_start)
+        live_refresh = text[refresh_start:refresh_end]
+        self.assertIn("if (liveStreamAvailable(this))", live_refresh)
+        self.assertIn("return Promise.resolve();", live_refresh)
+        self.assertNotIn('callService("homeassistant"', live_refresh)
+
+    def test_stopped_mowing_progress_remains_visible_until_next_task(self):
+        source = ROOT / "www" / "anthbot-map" / "live-map-stream.js"
+        text = source.read_text(encoding="utf-8")
+        self.assertIn("function preserveStoppedMowingProgress", text)
+        self.assertIn("anthbot-map-last-mowing-progress", text)
+        self.assertIn("function canonicalMowingIsActive", text)
+        self.assertIn("if (activeMowing) return;", text)
+        self.assertIn("line.hidden = false;", text)
+        self.assertIn("patchedUpdateMowingProgressStatus", text)
+        self.assertIn("preserveStoppedMowingProgress(this);", text)
 
     def test_live_frontend_retries_failed_subscription_without_page_reload(self):
         source = ROOT / "www" / "anthbot-map" / "live-map-stream.js"
