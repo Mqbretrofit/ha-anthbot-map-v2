@@ -237,6 +237,11 @@ function canonicalMowingIsActive(card) {
   ].some((value) => raw.includes(value));
 }
 
+function stoppedMowingLabel(card) {
+  const translated = String(card.t?.("mowedArea") || "").trim();
+  return translated && translated !== "mowedArea" ? translated : "Mowed area";
+}
+
 function preserveStoppedMowingProgress(card) {
   const lines = Array.from(card.shadowRoot?.querySelectorAll?.('[data-role="mowing-live-line"]') || []);
   if (!lines.length) return;
@@ -246,16 +251,18 @@ function preserveStoppedMowingProgress(card) {
   const activeMowing = canonicalMowingIsActive(card);
   const visible = lines.find((line) => !line.hidden);
   const saved = readLastMowingProgress(card);
+  const stoppedLabel = stoppedMowingLabel(card);
 
   if (visible) {
     const targetNode = visible.querySelector('[data-role="mowing-live-target"]');
     const progressNode = visible.querySelector('[data-role="mowing-live-progress"]');
     const displayedProgress = Number(String(progressNode?.textContent || "").replace("%", ""));
+    if (!activeMowing && targetNode) targetNode.textContent = stoppedLabel;
     if (Number.isFinite(displayedProgress)) {
       writeLastMowingProgress(card, {
         target: activeMowing
           ? String(targetNode?.textContent || "").trim()
-          : String(saved?.target || targetNode?.textContent || "").trim(),
+          : stoppedLabel,
         progress: displayedProgress,
       });
     }
@@ -275,12 +282,11 @@ function preserveStoppedMowingProgress(card) {
     : savedProgress;
   if (!Number.isFinite(displayProgress)) return;
 
-  const target = String(saved?.target || "").trim();
   lines.forEach((line) => {
     const targetNode = line.querySelector('[data-role="mowing-live-target"]');
     const progressNode = line.querySelector('[data-role="mowing-live-progress"]');
     if (!targetNode || !progressNode) return;
-    if (target) targetNode.textContent = target;
+    targetNode.textContent = stoppedLabel;
     progressNode.textContent = `${Math.max(0, Math.min(100, displayProgress)).toFixed(1)}%`;
     line.hidden = false;
   });
