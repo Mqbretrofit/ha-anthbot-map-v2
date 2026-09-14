@@ -219,6 +219,19 @@ function writeLastMowingProgress(card, value) {
   } catch (_) { /* localStorage can be disabled */ }
 }
 
+function specificMowingTarget(card, value) {
+  const text = String(value || "").trim();
+  if (!text || text === "-") return "";
+  const normalized = text.toLocaleLowerCase();
+  const generic = [
+    "mowing",
+    String(card.translateStatus?.("mowing") || ""),
+  ]
+    .map((item) => String(item || "").trim().toLocaleLowerCase())
+    .filter(Boolean);
+  return generic.includes(normalized) ? "" : text;
+}
+
 function canonicalMowingIsActive(card) {
   const statusEntity = card.getRelatedEntity?.("status");
   const canonical = String(statusEntity?.state || "")
@@ -298,20 +311,25 @@ function preserveStoppedMowingProgress(card) {
   const activeMowing = canonicalMowingIsActive(card);
   const visible = lines.find((line) => !line.hidden);
   const saved = readLastMowingProgress(card);
-  const rememberedTarget = rememberedMowingTarget(card, progressEntity);
+  const rememberedTarget = specificMowingTarget(
+    card,
+    rememberedMowingTarget(card, progressEntity),
+  );
 
   if (visible) {
     const targetNode = visible.querySelector('[data-role="mowing-live-target"]');
     const progressNode = visible.querySelector('[data-role="mowing-live-progress"]');
     const currentTarget = String(targetNode?.textContent || "").trim();
+    const currentSpecific = specificMowingTarget(card, currentTarget);
+    const savedSpecific = specificMowingTarget(card, saved?.target);
     const displayTarget = activeMowing
-      ? currentTarget
-      : String(rememberedTarget || saved?.target || currentTarget).trim();
+      ? String(rememberedTarget || currentSpecific || currentTarget).trim()
+      : String(rememberedTarget || currentSpecific || savedSpecific || currentTarget).trim();
     const displayedProgress = Number(String(progressNode?.textContent || "").replace("%", ""));
     if (targetNode && displayTarget) targetNode.textContent = displayTarget;
     if (Number.isFinite(displayedProgress)) {
       writeLastMowingProgress(card, {
-        target: displayTarget,
+        target: specificMowingTarget(card, displayTarget),
         progress: displayedProgress,
       });
     }
@@ -319,7 +337,7 @@ function preserveStoppedMowingProgress(card) {
   }
 
   // Starting a genuinely new task must never resurrect the previous task's
-  // percentage while the new progress sensor is still warming up.
+  // percentage or target while the new progress sensor is still warming up.
   if (activeMowing) return;
 
   const currentProgress = Number.isFinite(progress) && progress > 0
@@ -331,12 +349,16 @@ function preserveStoppedMowingProgress(card) {
     : savedProgress;
   if (!Number.isFinite(displayProgress)) return;
 
-  const target = String(rememberedTarget || saved?.target || "").trim();
+  const target = String(
+    rememberedTarget || specificMowingTarget(card, saved?.target) || "",
+  ).trim();
+  if (!target) return;
+
   lines.forEach((line) => {
     const targetNode = line.querySelector('[data-role="mowing-live-target"]');
     const progressNode = line.querySelector('[data-role="mowing-live-progress"]');
     if (!targetNode || !progressNode) return;
-    if (target) targetNode.textContent = target;
+    targetNode.textContent = target;
     progressNode.textContent = `${Math.max(0, Math.min(100, displayProgress)).toFixed(1)}%`;
     line.hidden = false;
   });
