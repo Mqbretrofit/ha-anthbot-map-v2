@@ -109,11 +109,17 @@ process.stdout.write(JSON.stringify({longSeconds, explicitMilliseconds, filtered
 
         version = manifest["version"]
         self.assertRegex(version, r"^\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.-]+)?$")
-        # Stable releases keep the main card cache key aligned with the manifest.
-        # Test/prerelease builds may deliberately leave the unchanged card bundle
-        # on its previous cache key; the new popup has its own dynamic version key.
-        if "-" not in version:
-            self.assertIn(f'?v={version}', init_source)
+        self.assertIn(
+            'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=',
+            init_source,
+        )
+        # A release branch may still carry the previous cache key because the
+        # frontend bundle is unchanged. The release workflow must rewrite it to
+        # the exact release version before running the release verification/tests.
+        if f'?v={version}' not in init_source:
+            self.assertIn("Finalize release metadata", workflow)
+            self.assertIn("FRONTEND_RESOURCE_URL", workflow)
+            self.assertIn("path = Path('custom_components/anthbot_map/__init__.py')", workflow)
         self.assertIn(f'INTEGRATION_VERSION = "{version}"', const_source)
         self.assertIn(
             'resource_url = f"{_POPUP_RESOURCE_PATH}?v={_integration_version()}"',
