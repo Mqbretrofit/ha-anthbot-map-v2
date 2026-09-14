@@ -17,6 +17,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .cloud_error_reporting import async_register_cloud_error_reporting
 from .const import DOMAIN
 from .coordinator import AnthbotGenieDataUpdateCoordinator
 from .developer_agent import async_register_developer_agent
@@ -51,6 +52,7 @@ async def async_setup_entry(
         entry.entry_id
     ]
     await async_register_robot_error_reporting(hass, entry, coordinators)
+    await async_register_cloud_error_reporting(hass, entry, coordinators)
 
     async_add_entities(
         AnthbotLocationTracker(coordinator) for coordinator in coordinators
