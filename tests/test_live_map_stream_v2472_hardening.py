@@ -112,7 +112,9 @@ class TestLiveMapStreamV2472Hardening(unittest.TestCase):
         """Opening a dashboard must not turn into cloud or coordinator refresh I/O."""
         source = (INTEGRATION / "live_map_stream.py").read_text(encoding="utf-8")
         self.assertIn("self.coordinator.reported_state", source)
-        self.assertIn("state_snapshot = dict(self.coordinator.reported_state)", source)
+        self.assertIn("_build_snapshot_frozen", source)
+        self.assertIn("_build_delta_frozen", source)
+        self.assertIn("self.hass.async_add_executor_job", source)
         self.assertNotIn("await self.coordinator.async_refresh", source)
         self.assertNotIn("await coordinator.async_refresh", source)
         self.assertNotIn("account_client.", source)
