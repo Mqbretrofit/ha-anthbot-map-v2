@@ -237,9 +237,56 @@ function canonicalMowingIsActive(card) {
   ].some((value) => raw.includes(value));
 }
 
-function stoppedMowingLabel(card) {
-  const translated = String(card.t?.("mowedArea") || "").trim();
-  return translated && translated !== "mowedArea" ? translated : "Mowed area";
+function mowingZoneTarget(card, rawIds) {
+  const ids = (Array.isArray(rawIds) ? rawIds : []).map(String).filter(Boolean);
+  if (!ids.length) return "";
+  const names = new Map((typeof card.currentZones === "function" ? card.currentZones() : [])
+    .filter((zone) => zone && zone.id !== undefined && zone.id !== null)
+    .map((zone) => [String(zone.id), String(zone.name || `${card.t?.("zone") || "Zone"} ${zone.id}`).trim()]));
+  const zoneLabel = String(card.t?.("zone") || "Zone").trim();
+  return ids.map((id) => names.get(id) || `${zoneLabel} ${id}`).join(" + ");
+}
+
+function rememberedMowingTarget(card, progressEntity) {
+  const task = card.entity?.attributes?.last_mowing_task
+    ?? progressEntity?.attributes?.last_mowing_task
+    ?? null;
+  if (task && typeof task === "object") {
+    const type = String(task.type || "").trim().toLowerCase();
+    const data = task.data && typeof task.data === "object" ? task.data : {};
+    if (type === "full") return String(card.t?.("fullArea") || "Full area").trim();
+    if (type === "edge") return String(card.t?.("commandOuterEdge") || "Outer edge").trim();
+    if (type === "dock_edge") return String(card.t?.("dockEdgeLabel") || "Dock edge").trim();
+    if (type === "auto_zone") return String(card.t?.("autoZone") || "Auto zone").trim();
+    if (type === "manual_zone") {
+      const target = mowingZoneTarget(card, data.id);
+      if (target) return target;
+    }
+  }
+
+  const attrs = progressEntity?.attributes || {};
+  const activeZoneTarget = mowingZoneTarget(card, attrs.active_zone_ids);
+  if (activeZoneTarget) return activeZoneTarget;
+
+  const learnedKey = String(attrs.learned_zone_mowing_key || "").trim().toLowerCase();
+  if (learnedKey.startsWith("manual:")) {
+    const learnedIds = learnedKey.slice("manual:".length)
+      .split(",").map((value) => value.trim()).filter(Boolean);
+    const target = mowingZoneTarget(card, learnedIds);
+    if (target) return target;
+  }
+
+  const source = String(attrs.progress_source || "").trim().toLowerCase();
+  const pathTaskType = String(card.entity?.attributes?.path_task_type || "").trim().toLowerCase();
+  if (
+    learnedKey === "full"
+    || source.startsWith("full_map_area")
+    || pathTaskType.includes("global")
+    || pathTaskType.includes("full")
+  ) {
+    return String(card.t?.("fullArea") || "Full area").trim();
+  }
+  return "";
 }
 
 function preserveStoppedMowingProgress(card) {
@@ -251,18 +298,20 @@ function preserveStoppedMowingProgress(card) {
   const activeMowing = canonicalMowingIsActive(card);
   const visible = lines.find((line) => !line.hidden);
   const saved = readLastMowingProgress(card);
-  const stoppedLabel = stoppedMowingLabel(card);
+  const rememberedTarget = rememberedMowingTarget(card, progressEntity);
 
   if (visible) {
     const targetNode = visible.querySelector('[data-role="mowing-live-target"]');
     const progressNode = visible.querySelector('[data-role="mowing-live-progress"]');
+    const currentTarget = String(targetNode?.textContent || "").trim();
+    const displayTarget = activeMowing
+      ? currentTarget
+      : String(rememberedTarget || saved?.target || currentTarget).trim();
     const displayedProgress = Number(String(progressNode?.textContent || "").replace("%", ""));
-    if (!activeMowing && targetNode) targetNode.textContent = stoppedLabel;
+    if (targetNode && displayTarget) targetNode.textContent = displayTarget;
     if (Number.isFinite(displayedProgress)) {
       writeLastMowingProgress(card, {
-        target: activeMowing
-          ? String(targetNode?.textContent || "").trim()
-          : stoppedLabel,
+        target: displayTarget,
         progress: displayedProgress,
       });
     }
@@ -282,11 +331,12 @@ function preserveStoppedMowingProgress(card) {
     : savedProgress;
   if (!Number.isFinite(displayProgress)) return;
 
+  const target = String(rememberedTarget || saved?.target || "").trim();
   lines.forEach((line) => {
     const targetNode = line.querySelector('[data-role="mowing-live-target"]');
     const progressNode = line.querySelector('[data-role="mowing-live-progress"]');
     if (!targetNode || !progressNode) return;
-    targetNode.textContent = stoppedLabel;
+    if (target) targetNode.textContent = target;
     progressNode.textContent = `${Math.max(0, Math.min(100, displayProgress)).toFixed(1)}%`;
     line.hidden = false;
   });
