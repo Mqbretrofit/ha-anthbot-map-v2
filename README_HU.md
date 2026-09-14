@@ -22,19 +22,21 @@ valamint egy saját légi vagy drónfelvétel a kertről.
 
 ## Aktuális verzió
 
-Stabil verzió: **2.4.7.0**
+Stabil verzió: **2.4.7.2**
 
-### A 2.4.7.0 legfontosabb változásai
+### A 2.4.7.2 legfontosabb változásai
 
 - A nagy frekvenciájú live map/path/pose adatfolyam kikerült a Home Assistant entity state mechanizmusából, és külön WebSocket streamen jut el a kártyához.
 - Első csatlakozáskor teljes snapshot érkezik, utána csak path delták mennek sequence/resync védelemmel, nem a teljes útvonal íródik újra entity attribútumként.
 - Live-stream módban a Map entitás kompakt marad: a teljes `path`, `cloud_path`, `mowed_path` és `pose` geometria nem kerül a Home Assistant state-be.
 - A kártya régi Map-entity pollingja live-stream módban leáll, a Recorder terhelése pedig releváns állapotváltozás nélkül nagyjából percenként egy heartbeat írásra csökken.
+- A rövid időn belül érkező live-map coordinator frissítések összevonódnak, a path delta felépítése pedig executorban fut a Home Assistant event loop helyett.
+- Snapshot és delta készítés előtt a módosítható path lista külön másolatot kap, így a közben növekvő útvonal nem tud torn frame-et okozni.
 - A drága No-Go geometriai ellenőrzés kikerült a Home Assistant event loopból az M-szérián, N8-on és Genie diagnosztikánál is; stabil revision cache és korlátozott live ellenőrzési gyakoriság védi a rendszert.
 - A modellfüggő robotvezérlési útvonalak nem változtak: a Genie, M5/M9 család és N8 vezérlése továbbra is külön marad.
-- Valódi ANTHBOT M9 Pro roboton, aktív nyírás közben terepen ellenőrizve lett a WebSocket útvonal, a Recorder-csökkenés, a Home Assistant restart, a reconnect és a teljes snapshot visszatöltése.
+- A live-map és nyírási százalék fejlesztése valódi ANTHBOT Genie 1000 és M9 Pro roboton is ellenőrizve lett.
 
-A teljes részletek a `RELEASE_NOTES_v2.4.7.0.md` és `CHANGELOG_v2.4.7.0_HU.md` fájlokban találhatók.
+Az eredeti 2.4.7.0 live-map kiadás részletei továbbra is a `RELEASE_NOTES_v2.4.7.0.md` és `CHANGELOG_v2.4.7.0_HU.md` fájlokban találhatók; a 2.4.7.2 további live-map, reconnect, progress-megjelenítési és stabilitási javításokat tartalmaz.
 
 ### A 2.4.5 legfontosabb változásai
 
@@ -140,17 +142,17 @@ A teljes részletek a `RELEASE_NOTES_v2.4.7.0.md` és `CHANGELOG_v2.4.7.0_HU.md`
 > **Az ANTHBOT M-szérián (M5/M9/M9 Pro) támogatott a térképkezelés, az N8 pedig saját külön modellfüggő path/control réteget használ.** A
 > határvonal-, nyírásiútvonal- és zónakezelés **M9 Pro modellen közvetlenül
 > tesztelve és ellenőrizve lett**. Az M5 és M9 ugyanazt az M-szériás
-> modellréteget használja. Az N8-specifikus path/control kezeléshez külön regressziós tesztek tartoznak, de a 2.4.7.0 live-stream architektúra közvetlen N8 hardvertesztje még nem történt meg ennél a projektnél.
+> modellréteget használja. Az N8-specifikus path/control kezeléshez külön regressziós tesztek tartoznak, de a 2.4.7.2 live-stream architektúra közvetlen N8 hardvertesztje még nem történt meg ennél a projektnél.
 
 ## Támogatott modellek
 
 Az integráció az ANTHBOT Genie, az M-széria modellcsalád és az N8 kezelését támogatja.
 
 - **ANTHBOT Genie:** támogatott; a Genie vezérlése és path diagnosztikája külön marad a többi modelltől.
-- **ANTHBOT M9 Pro:** az M-szériás térkép-, vezérlés-, állapot- és előzménykezelés támogatott és közvetlenül hardveren tesztelt, beleértve a 2.4.7.0 live-stream/Recorder architektúrát is.
+- **ANTHBOT M9 Pro:** az M-szériás térkép-, vezérlés-, állapot- és előzménykezelés támogatott és közvetlenül hardveren tesztelt, beleértve a 2.4.7.2 live-stream/Recorder architektúrát is.
 - **ANTHBOT M9:** a közös M-szériás megvalósítással támogatott; közvetlen hardverteszt még nem történt.
 - **ANTHBOT M5:** a közös M-szériás megvalósítással támogatott; közvetlen hardverteszt még nem történt.
-- **ANTHBOT N8:** a külön N8 path/control megvalósítással támogatott; N8-specifikus regressziós tesztek vannak, a 2.4.7.0 live-stream közvetlen hardveres terepi ellenőrzése még függőben van.
+- **ANTHBOT N8:** a külön N8 path/control megvalósítással támogatott; N8-specifikus regressziós tesztek vannak, a 2.4.7.2 live-stream közvetlen hardveres terepi ellenőrzése még függőben van.
 
 ## Más ANTHBOT-integráció használata
 
@@ -262,7 +264,7 @@ kézzel hozzáadni.
 2. Adj hozzá egy új erőforrást:
 
    ```text
-   /anthbot-map-v2/anthbot-map-card.js?v=2.4.7.0
+   /anthbot-map-v2/anthbot-map-card.js?v=2.4.7.2
    ```
 
 3. Típusnak válaszd a **JavaScript module** lehetőséget.
@@ -353,7 +355,7 @@ decodedBoundaryCalibration:
   rotation: 0
 ```
 
-A `refresh_interval` a visszafelé kompatibilitás és a legacy fallback miatt maradt meg. Normál 2.4.7.0 live-stream működésben a nagy frekvenciájú map/path/pose frissítések WebSocketen érkeznek, nem periodikus Map-entity pollingból.
+A `refresh_interval` a visszafelé kompatibilitás és a legacy fallback miatt maradt meg. Normál 2.4.7.2 live-stream működésben a nagy frekvenciájú map/path/pose frissítések WebSocketen érkeznek, nem periodikus Map-entity pollingból.
 
 ## Alapértelmezett menüelrendezés
 
@@ -526,7 +528,7 @@ HACS használata esetén:
 Storage módú Lovelace esetén az integráció automatikusan frissíti az erőforrás
 verzióparaméterét. YAML erőforrásmódban frissítés után módosítsd a
 gyorsítótárat megkerülő verzióparamétert, például:
-`/anthbot-map-v2/anthbot-map-card.js?v=2.4.7.0`.
+`/anthbot-map-v2/anthbot-map-card.js?v=2.4.7.2`.
 
 # Hibaelhárítás
 
@@ -544,7 +546,7 @@ Ezután nyomj `Ctrl+Shift+R`-t.
 
 ## Nem jelenik meg a térkép
 
-Ellenőrizd, hogy a helyes térképentitás van-e megadva, és az állapota `ready`-e. Normál 2.4.7.0 live-stream módban a teljes élő `path`/`pose` geometria szándékosan **nincs** a Map entitás attribútumaiban. Helyette az entitásban `live_stream_available: true` és `live_stream_transport: websocket` várható, a kártya pedig Home Assistant WebSocketen kapja a snapshotot és az élő deltákat.
+Ellenőrizd, hogy a helyes térképentitás van-e megadva, és az állapota `ready`-e. Normál 2.4.7.2 live-stream módban a teljes élő `path`/`pose` geometria szándékosan **nincs** a Map entitás attribútumaiban. Helyette az entitásban `live_stream_available: true` és `live_stream_transport: websocket` várható, a kártya pedig Home Assistant WebSocketen kapja a snapshotot és az élő deltákat.
 
 Ha a térkép továbbra sem jelenik meg, frissítsd keményen a böngészőt, ellenőrizd, hogy csak egy Anthbot Map frontend resource töltődik be, és nézd meg a Home Assistant naplójában az `anthbot_map` vagy WebSocket hibákat.
 
