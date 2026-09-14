@@ -129,28 +129,26 @@ class TestLiveMapStreamArchitecture(unittest.TestCase):
         self.assertIn("return Promise.resolve();", live_refresh)
         self.assertNotIn('callService("homeassistant"', live_refresh)
 
-    def test_stopped_mowing_progress_remains_visible_until_next_task(self):
+    def test_live_frontend_does_not_override_v2464_mowing_presentation(self):
         source = ROOT / "www" / "anthbot-map" / "live-map-stream.js"
         text = source.read_text(encoding="utf-8")
-        self.assertIn("function preserveStoppedMowingProgress", text)
-        self.assertIn("anthbot-map-last-mowing-progress", text)
-        self.assertIn("function canonicalMowingIsActive", text)
-        self.assertIn("if (activeMowing && !commandTarget) return;", text)
-        self.assertIn("line.hidden = false;", text)
-        self.assertIn("patchedUpdateMowingProgressStatus", text)
-        self.assertIn("preserveStoppedMowingProgress(this);", text)
+        self.assertNotIn("lastMowingProgressStorageKey", text)
+        self.assertNotIn("preserveStoppedMowingProgress", text)
+        self.assertNotIn("patchedUpdateMowingProgressStatus", text)
+        self.assertNotIn("armSelectedMowingTarget", text)
+        self.assertIn("this.updateMowingProgressStatus?.();", text)
 
-    def test_stopped_mowing_progress_preserves_exact_task_target(self):
-        source = ROOT / "www" / "anthbot-map" / "live-map-stream.js"
-        text = source.read_text(encoding="utf-8")
-        self.assertIn("function rememberedMowingTarget", text)
+    def test_v2464_calibration_keeps_exact_stopped_target_visible(self):
+        text = (ROOT / "www" / "anthbot-map" / "calibration.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("const resolveProgressTarget", text)
         self.assertIn("last_mowing_task", text)
         self.assertIn("active_zone_ids", text)
         self.assertIn("learned_zone_mowing_key", text)
         self.assertIn('source.startsWith("full_map_area")', text)
-        self.assertIn('card.t?.("fullArea")', text)
-        self.assertIn("mowingZoneTarget", text)
-        self.assertIn("armSelectedMowingTarget(this);", text)
+        self.assertIn('return card.t("fullArea")', text)
+        self.assertIn("line.hidden = false;", text)
 
     def test_live_frontend_retries_failed_subscription_without_page_reload(self):
         source = ROOT / "www" / "anthbot-map" / "live-map-stream.js"
