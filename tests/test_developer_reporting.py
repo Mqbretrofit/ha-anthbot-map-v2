@@ -171,7 +171,8 @@ class DeveloperReportingTests(unittest.TestCase):
         self.assertIn("_async_schedule_usage_heartbeat", source)
         self.assertIn("await _async_schedule_usage_heartbeat(hass, entry, coordinators)", source)
         self.assertIn('event="heartbeat"', source)
-        self.assertIn("hass.async_create_task(", source)
+        self.assertIn("entry.async_create_background_task(", source)
+        self.assertNotIn("hass.async_create_task(", source)
 
     def test_privacy_document_states_reporting_is_optional(self) -> None:
         privacy = (ROOT / "PRIVACY.md").read_text(encoding="utf-8")
