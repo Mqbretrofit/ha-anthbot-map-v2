@@ -27,6 +27,17 @@ Stable version: **2.4.7.3**
 
 Latest release: [Anthbot Map v2.4.7.3](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.7.3)
 
+### Highlights in 2.4.7.3
+
+- Improves live-map performance by coalescing bursty coordinator updates before WebSocket publication.
+- Moves live-map snapshot and delta construction out of the Home Assistant event loop and freezes mutable path data before frame construction, preventing torn updates while a trajectory is still growing.
+- Preserves reconnect/full-snapshot continuity, sequence/resync protection, rolling-window behavior, and absolute-index live-path handling.
+- Includes the latest Genie live-path and mowing-progress presentation hardening, M-series progress post-trim handling, stationary-position handling, and location-recorder hardening from the tested 2.4.7.2 performance line.
+- Preserves the startup-safe Developer Agent lifecycle and cloud/API resilience fixes introduced in 2.4.7.2.
+- Keeps production mower command routing unchanged, including the verified M-series `stop_all_tasks` payload; only stale regression expectations were updated.
+- Full pre-release validation completed successfully: **359/359 unit tests passed**, plus Python compilation and targeted live-map checks.
+- Repository release documentation is consolidated in `CHANGELOG.md`; GitHub Releases retain the published historical release notes.
+
 ### Highlights in 2.4.7.0
 
 - High-frequency live map/path/pose data is separated from the Home Assistant entity state machine and delivered to the card through a dedicated WebSocket transport.
@@ -36,7 +47,6 @@ Latest release: [Anthbot Map v2.4.7.3](https://github.com/Mqbretrofit/ha-anthbot
 - Expensive No-Go geometry evaluation is moved off the Home Assistant event loop for M-series, N8, and Genie path diagnostics, with stable revision caching and bounded live evaluation cadence.
 - Mower command routing is unchanged; Genie, M5/M9-family, and N8 control paths remain separated.
 - Real-device validation on an ANTHBOT M9 Pro confirmed live WebSocket path updates, Recorder reduction, Home Assistant restart, reconnect, and full snapshot restore.
-
 
 ### 2.4.6.x reporting and developer diagnostics
 
@@ -56,7 +66,7 @@ Anonymous statistics, automatic diagnostics, and read-only developer access are 
 N8-specific control, status, map/path handling, and model-scoped entities are included.
 
 - **Code/API validation:** completed with dedicated regression and model-isolation tests.
-- **2.4.7.0 stability coverage:** N8 uses the protected No-Go executor path and dedicated regression tests.
+- **2.4.7.3 stability coverage:** N8 uses the protected No-Go executor path and dedicated regression tests, while the current live-map transport preserves the same model isolation.
 - **Real N8 hardware validation:** not yet completed directly by this project.
 - Existing Genie and M-series model routing remains separated from N8 routing.
 
@@ -65,10 +75,10 @@ N8 owners are welcome to test and report model-specific behavior.
 ## Supported models
 
 - **ANTHBOT Genie:** supported and directly hardware-tested; Genie-specific path diagnostics remain separated from other models.
-- **ANTHBOT M9 Pro:** M-series control, status, map, path, zone, and history handling supported and directly hardware-tested, including the 2.4.7.0 live-stream/Recorder architecture.
+- **ANTHBOT M9 Pro:** M-series control, status, map, path, zone, and history handling supported and directly hardware-tested, including the 2.4.7.3 live-stream/Recorder architecture and follow-up performance hardening.
 - **ANTHBOT M9:** supported through the shared M-series implementation; not directly hardware-tested by this project yet.
 - **ANTHBOT M5:** supported through the shared M-series implementation; not directly hardware-tested by this project yet.
-- **ANTHBOT N8:** dedicated N8 implementation included; code/API and regression validated, but direct 2.4.7.0 hardware validation is still pending.
+- **ANTHBOT N8:** dedicated N8 implementation included; code/API and regression validated, but direct 2.4.7.3 hardware validation is still pending.
 
 ## Features
 
@@ -158,7 +168,7 @@ Resource type: **JavaScript module**.
 If it must be added manually, use:
 
 ```text
-/anthbot-map-v2/anthbot-map-card.js?v=2.4.7.0
+/anthbot-map-v2/anthbot-map-card.js?v=2.4.7.3
 ```
 
 Only one Anthbot Map Card resource should be enabled at a time.
@@ -268,7 +278,7 @@ When using HACS:
 In YAML resource mode, update the cache-busting query to the installed version, for example:
 
 ```text
-/anthbot-map-v2/anthbot-map-card.js?v=2.4.7.0
+/anthbot-map-v2/anthbot-map-card.js?v=2.4.7.3
 ```
 
 # Troubleshooting
@@ -286,13 +296,13 @@ Then hard-refresh with `Ctrl+Shift+R`.
 
 ## Map is not displayed
 
-Check that the correct mower map entity is configured and that its state is `ready`. In normal 2.4.7.0 live-stream mode, full live `path`/`pose` geometry is intentionally **not** stored in Map entity attributes. Instead, the Map entity should advertise `live_stream_available: true` and `live_stream_transport: websocket`, while the card receives the full snapshot and live deltas through Home Assistant WebSocket.
+Check that the correct mower map entity is configured and that its state is `ready`. In normal 2.4.7.3 live-stream mode, full live `path`/`pose` geometry is intentionally **not** stored in Map entity attributes. Instead, the Map entity should advertise `live_stream_available: true` and `live_stream_transport: websocket`, while the card receives the full snapshot and live deltas through Home Assistant WebSocket.
 
 If the map still does not render, hard-refresh the browser, verify that only one Anthbot Map frontend resource is active, and check the Home Assistant log for `anthbot_map` or WebSocket errors.
 
 ## N8 issue
 
-N8 support is included and code/API validated, but direct 2.4.7.0 hardware validation has not yet been completed by this project. Please attach privacy-cleaned diagnostics when reporting N8-specific behavior.
+N8 support is included and code/API validated, but direct 2.4.7.3 hardware validation has not yet been completed by this project. Please attach privacy-cleaned diagnostics when reporting N8-specific behavior.
 
 # Reporting problems
 
