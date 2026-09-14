@@ -28,7 +28,7 @@ _LOGGER = logging.getLogger(__name__)
 
 LIVE_DATA_KEY = f"{DOMAIN}_live_map_stream"
 LIVE_RESOURCE_PATH = "/anthbot-map-v2/live-map-stream.js"
-LIVE_RESOURCE_URL = f"{LIVE_RESOURCE_PATH}?v=247-live2-2"
+LIVE_RESOURCE_URL = f"{LIVE_RESOURCE_PATH}?v=247-live2-3"
 _COMPACT_HEARTBEAT_SECONDS = 60.0
 _COMPACTION_INSTALLED = False
 
