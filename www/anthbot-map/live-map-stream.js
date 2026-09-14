@@ -20,10 +20,6 @@ function liveStreamAvailable(card) {
   return baseMapEntity(card)?.attributes?.live_stream_available === true;
 }
 
-function stopLegacyRefreshTimer(card) {
-  if (liveStreamAvailable(card)) card.stopRefreshTimer?.();
-}
-
 function cloneEntityWithLiveOverlay(card) {
   const base = baseMapEntity(card) || card.entity;
   if (!base) return null;
@@ -41,6 +37,13 @@ function cloneEntityWithLiveOverlay(card) {
   };
   card.entity = merged;
   return merged;
+}
+
+function syncLiveCardFromHass(card) {
+  const base = baseMapEntity(card);
+  if (base) card.entity = base;
+  cloneEntityWithLiveOverlay(card);
+  card.updateRenderer?.();
 }
 
 function resetLiveState(card) {
@@ -195,6 +198,94 @@ function markSubscriptionHealthy(card) {
   card._anthbotLiveRetryDelayMs = ANTHBOT_LIVE_RETRY_MIN_MS;
 }
 
+function lastMowingProgressStorageKey(card) {
+  const entityId = String(card.config?.entity || card.entity?.entity_id || "default");
+  return `anthbot-map-last-mowing-progress:${entityId}`;
+}
+
+function readLastMowingProgress(card) {
+  try {
+    const raw = window.localStorage.getItem(lastMowingProgressStorageKey(card));
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeLastMowingProgress(card, value) {
+  try {
+    window.localStorage.setItem(lastMowingProgressStorageKey(card), JSON.stringify(value));
+  } catch (_) { /* localStorage can be disabled */ }
+}
+
+function canonicalMowingIsActive(card) {
+  const statusEntity = card.getRelatedEntity?.("status");
+  const canonical = String(statusEntity?.state || "")
+    .trim().toLowerCase().replace(/[_\s-]+/g, "");
+  if (canonical) {
+    return canonical === "mowing" || canonical.endsWith("mowing") || canonical.includes("mowing");
+  }
+  const raw = String(
+    card.entity?.attributes?.robot_status_raw
+    ?? statusEntity?.attributes?.robot_status_raw
+    ?? ""
+  ).trim().toLowerCase().replace(/[_\s-]+/g, "");
+  return [
+    "mowing", "zonemowing", "regionmowing", "globalmowing", "nestmowing",
+    "edgemowing", "bordermowing", "pointmowing", "spotmowing",
+  ].some((value) => raw.includes(value));
+}
+
+function preserveStoppedMowingProgress(card) {
+  const lines = Array.from(card.shadowRoot?.querySelectorAll?.('[data-role="mowing-live-line"]') || []);
+  if (!lines.length) return;
+
+  const progressEntity = card.getRelatedEntity?.("mowingProgress");
+  const progress = Number(progressEntity?.state);
+  const activeMowing = canonicalMowingIsActive(card);
+  const visible = lines.find((line) => !line.hidden);
+  const saved = readLastMowingProgress(card);
+
+  if (visible) {
+    const targetNode = visible.querySelector('[data-role="mowing-live-target"]');
+    const progressNode = visible.querySelector('[data-role="mowing-live-progress"]');
+    const displayedProgress = Number(String(progressNode?.textContent || "").replace("%", ""));
+    if (Number.isFinite(displayedProgress)) {
+      writeLastMowingProgress(card, {
+        target: activeMowing
+          ? String(targetNode?.textContent || "").trim()
+          : String(saved?.target || targetNode?.textContent || "").trim(),
+        progress: displayedProgress,
+      });
+    }
+    return;
+  }
+
+  // Starting a genuinely new task must never resurrect the previous task's
+  // percentage while the new progress sensor is still warming up.
+  if (activeMowing) return;
+
+  const currentProgress = Number.isFinite(progress) && progress > 0
+    ? Math.max(0, Math.min(100, progress))
+    : NaN;
+  const savedProgress = Number(saved?.progress);
+  const displayProgress = Number.isFinite(currentProgress)
+    ? currentProgress
+    : savedProgress;
+  if (!Number.isFinite(displayProgress)) return;
+
+  const target = String(saved?.target || "").trim();
+  lines.forEach((line) => {
+    const targetNode = line.querySelector('[data-role="mowing-live-target"]');
+    const progressNode = line.querySelector('[data-role="mowing-live-progress"]');
+    if (!targetNode || !progressNode) return;
+    if (target) targetNode.textContent = target;
+    progressNode.textContent = `${Math.max(0, Math.min(100, displayProgress)).toFixed(1)}%`;
+    line.hidden = false;
+  });
+}
+
 function applyLiveMessage(card, message) {
   if (!message || Number(message.protocol) !== ANTHBOT_LIVE_PROTOCOL) {
     scheduleResubscribe(card, "protocol mismatch");
@@ -211,7 +302,6 @@ function applyLiveMessage(card, message) {
   markSubscriptionHealthy(card);
 
   if (kind === "snapshot") {
-    stopLegacyRefreshTimer(card);
     card._anthbotLiveOverlay = { ...(message.attributes || {}) };
     card._anthbotLiveSequence = sequence;
     if (!applyPathMessage(card, message.path)) {
@@ -274,7 +364,6 @@ function ensureLiveSubscription(card) {
     return;
   }
 
-  stopLegacyRefreshTimer(card);
   const serial = attributes.serial_number;
   if (!serial || !hass?.connection?.subscribeMessage) return;
   if (
@@ -324,10 +413,9 @@ customElements.whenDefined("anthbot-map-card").then(() => {
   const originalStartRefreshTimer = proto.startRefreshTimer;
   if (typeof originalStartRefreshTimer === "function") {
     proto.startRefreshTimer = function patchedStartRefreshTimer(...args) {
-      if (liveStreamAvailable(this)) {
-        this.stopRefreshTimer?.();
-        return undefined;
-      }
+      // Keep the proven lightweight presentation cadence alive. The patched
+      // refreshEntities below turns live-mode ticks into local HA-state redraws
+      // instead of homeassistant.update_entity calls.
       return originalStartRefreshTimer.apply(this, args);
     };
   }
@@ -345,8 +433,11 @@ customElements.whenDefined("anthbot-map-card").then(() => {
   const originalRefreshEntities = proto.refreshEntities;
   if (typeof originalRefreshEntities === "function") {
     proto.refreshEntities = function patchedRefreshEntities(...args) {
-      if (liveStreamAvailable(this) && this.refreshEntityIds?.().length === 0) {
-        this.syncEntityAndRenderer?.();
+      if (liveStreamAvailable(this)) {
+        // Never turn the presentation timer back into cloud/coordinator I/O.
+        // HA already pushes the related sensor states; simply re-read them and
+        // redraw the card while the map/path/pose continue over WebSocket.
+        syncLiveCardFromHass(this);
         return Promise.resolve();
       }
       return originalRefreshEntities.apply(this, args);
@@ -361,8 +452,8 @@ customElements.whenDefined("anthbot-map-card").then(() => {
       enumerable: hassDescriptor.enumerable,
       set(hass) {
         originalHassSetter.call(this, hass);
-        stopLegacyRefreshTimer(this);
         cloneEntityWithLiveOverlay(this);
+        this.updateMowingProgressStatus?.();
         ensureLiveSubscription(this);
       },
     });
@@ -377,9 +468,7 @@ customElements.whenDefined("anthbot-map-card").then(() => {
         stopLiveSubscription(this);
         resetLiveState(this);
       }
-      const result = originalSetConfig.call(this, config);
-      stopLegacyRefreshTimer(this);
-      return result;
+      return originalSetConfig.call(this, config);
     };
   }
 
@@ -396,6 +485,15 @@ customElements.whenDefined("anthbot-map-card").then(() => {
     proto.updateRenderer = function patchedUpdateRenderer(...args) {
       cloneEntityWithLiveOverlay(this);
       return originalUpdateRenderer.apply(this, args);
+    };
+  }
+
+  const originalUpdateMowingProgressStatus = proto.updateMowingProgressStatus;
+  if (typeof originalUpdateMowingProgressStatus === "function") {
+    proto.updateMowingProgressStatus = function patchedUpdateMowingProgressStatus(...args) {
+      const result = originalUpdateMowingProgressStatus.apply(this, args);
+      preserveStoppedMowingProgress(this);
+      return result;
     };
   }
 
