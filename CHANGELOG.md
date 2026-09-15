@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.4.7.4 — 2026-09-15
+
+- Fixes the live-map robot orientation regression where horizontal direction could be mirrored while vertical direction remained correct.
+- Keeps `yaw` and `heading` as separate telemetry representations instead of relabelling `heading` as `yaw`.
+- Prefers the previously hardware-verified cloud/app `pose.yaw` when available, while retaining `heading` as a fallback.
+- Preserves the existing global heading conversion, so the earlier M9 Pro direction fix is not reverted.
+- Adds regression coverage for conflicting yaw/heading telemetry and keeps the bundled frontend copies byte-identical.
+- Validation passed before release: unit tests, HACS validation, Hassfest, JavaScript syntax checks, and frontend mirror checks.
+
 ## 2.4.7.3 — 2026-09-14
 
 - Improves live-map performance by coalescing bursty coordinator updates before WebSocket publication.
