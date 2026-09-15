@@ -808,7 +808,7 @@ export class AnthbotMapRenderer {
       ? Number(this.options.robotMowingHeadingOffset ?? this.options.robot_mowing_heading_offset ?? 0) || 0
       : 0;
     const cloudYaw =
-      cloudHeadingToCanvasRadians(this.cloudHeadingDegrees(pose)) +
+      cloudHeadingToCanvasRadians(this.cloudHeadingDegrees(pose), this.options.robotModel) +
       geometry.map.rotation +
       degreesToRadians(Number(this.options.robotHeadingOffset ?? this.options.robot_heading_offset) || 0) +
       degreesToRadians(mowingHeadingOffset) +
@@ -1314,11 +1314,16 @@ function degreesToRadians(degrees) {
   return (degrees * Math.PI) / 180;
 }
 
-// The cloud heading already uses the same cardinal orientation as the canvas.
-// Keep all four cardinal directions unchanged; applying 180-heading would
-// preserve left/right but swap up/down by 180 degrees.
-export function cloudHeadingToCanvasRadians(value) {
-  return normalizeAngle(degreesToRadians(normalizeHeadingDegrees(value)));
+// M-series heading was verified on real M9 Pro hardware with a direct
+// cardinal mapping. Genie uses the opposite horizontal axis: up/down match,
+// while left/right must be mirrored. Keep the conversion model-specific so
+// fixing Genie cannot regress the already-verified M-series orientation.
+export function cloudHeadingToCanvasRadians(value, model = "") {
+  const heading = normalizeHeadingDegrees(value);
+  const normalizedModel = String(model || "").toUpperCase().replace(/[-_]+/g, " ");
+  const isGenie = normalizedModel.includes("GENIE");
+  const canvasHeading = isGenie ? 180 - heading : heading;
+  return normalizeAngle(degreesToRadians(canvasHeading));
 }
 
 function milliRadiansToDegrees(value) {

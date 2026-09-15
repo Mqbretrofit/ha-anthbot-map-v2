@@ -1,4 +1,4 @@
-import { AnthbotMapRenderer } from "./renderer.js?v=2473-heading-source-fix1";
+import { AnthbotMapRenderer } from "./renderer.js?v=2474-genie-heading-test1";
 import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=2411";
 import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=2411";
 import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=243b2-mowing-mode-help3";
@@ -3185,6 +3185,7 @@ class AnthbotMapCard extends HTMLElement {
       robotCalibration: this.robotCalibration,
       mowingPathCalibration: this.mowingPathCalibration,
       decodedBoundaryCalibration: this.decodedBoundaryCalibration,
+      robotModel: this.entity?.attributes?.model,
       robotImage: this.config.robot_image || this.config.robotImage || this.resolveAsset(
         String(this.entity?.attributes?.model || "").toLowerCase().includes("m9 pro")
           ? "m9-pro.png?v=244"
