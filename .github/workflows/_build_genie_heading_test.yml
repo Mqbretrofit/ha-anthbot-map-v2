@@ -81,12 +81,12 @@ jobs:
               replace_once(
                   path,
                   '''      decodedBoundaryCalibration: this.decodedBoundaryCalibration,
-                        robotImage: this.config.robot_image || this.config.robotImage || this.resolveAsset(
-                  ''',
+          robotImage: this.config.robot_image || this.config.robotImage || this.resolveAsset(
+          ''',
                   '''      decodedBoundaryCalibration: this.decodedBoundaryCalibration,
-                        robotModel: this.entity?.attributes?.model,
-                        robotImage: this.config.robot_image || this.config.robotImage || this.resolveAsset(
-                  ''',
+          robotModel: this.entity?.attributes?.model,
+          robotImage: this.config.robot_image || this.config.robotImage || this.resolveAsset(
+          ''',
                   "robot model renderer option",
               )
 
@@ -125,21 +125,21 @@ jobs:
           text = text.replace(old_script, new_script, 1)
           old_assert = '''        cardinal = json.loads(result.stdout)
 
-                  self.assertAlmostEqual(cardinal[0], 0, places=7)
-                  self.assertAlmostEqual(cardinal[1], 90, places=7)
-                  self.assertAlmostEqual(cardinal[2], 180, places=7)
-                  self.assertAlmostEqual(cardinal[3], -90, places=7)
+          self.assertAlmostEqual(cardinal[0], 0, places=7)
+          self.assertAlmostEqual(cardinal[1], 90, places=7)
+          self.assertAlmostEqual(cardinal[2], 180, places=7)
+          self.assertAlmostEqual(cardinal[3], -90, places=7)
           '''
           new_assert = '''        cardinal = json.loads(result.stdout)
 
-                  self.assertAlmostEqual(cardinal["m9"][0], 0, places=7)
-                  self.assertAlmostEqual(cardinal["m9"][1], 90, places=7)
-                  self.assertAlmostEqual(cardinal["m9"][2], 180, places=7)
-                  self.assertAlmostEqual(cardinal["m9"][3], -90, places=7)
-                  self.assertAlmostEqual(cardinal["genie"][0], 180, places=7)
-                  self.assertAlmostEqual(cardinal["genie"][1], 90, places=7)
-                  self.assertAlmostEqual(cardinal["genie"][2], 0, places=7)
-                  self.assertAlmostEqual(cardinal["genie"][3], -90, places=7)
+          self.assertAlmostEqual(cardinal["m9"][0], 0, places=7)
+          self.assertAlmostEqual(cardinal["m9"][1], 90, places=7)
+          self.assertAlmostEqual(cardinal["m9"][2], 180, places=7)
+          self.assertAlmostEqual(cardinal["m9"][3], -90, places=7)
+          self.assertAlmostEqual(cardinal["genie"][0], 180, places=7)
+          self.assertAlmostEqual(cardinal["genie"][1], 90, places=7)
+          self.assertAlmostEqual(cardinal["genie"][2], 0, places=7)
+          self.assertAlmostEqual(cardinal["genie"][3], -90, places=7)
           '''
           if old_assert not in text:
               raise SystemExit("heading assertion block not found")
