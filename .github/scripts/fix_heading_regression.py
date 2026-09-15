@@ -184,7 +184,12 @@ test_source = textwrap.dedent(
             return base64.b64encode(renderer_source.encode("utf-8")).decode("ascii")
 
         def _cloud_heading(self, state: str, pose: str = "{}") -> float:
-            script = f'''\nconst renderer = await import("data:text/javascript;base64,{self._renderer_data()}");\nconst fake = {{ state: {state} }};\nconst value = renderer.AnthbotMapRenderer.prototype.cloudHeadingDegrees.call(fake, {pose});\nprocess.stdout.write(JSON.stringify(value));\n'''
+            script = (
+                f'const renderer = await import("data:text/javascript;base64,{self._renderer_data()}");\\n'
+                f'const fake = {{ state: {state} }};\\n'
+                f'const value = renderer.AnthbotMapRenderer.prototype.cloudHeadingDegrees.call(fake, {pose});\\n'
+                'process.stdout.write(JSON.stringify(value));\\n'
+            )
             result = subprocess.run(
                 ["node", "--input-type=module", "-e", script],
                 check=True,
