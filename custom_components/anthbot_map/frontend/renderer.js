@@ -808,7 +808,7 @@ export class AnthbotMapRenderer {
       ? Number(this.options.robotMowingHeadingOffset ?? this.options.robot_mowing_heading_offset ?? 0) || 0
       : 0;
     const cloudYaw =
-      cloudHeadingToCanvasRadians(this.cloudHeadingDegrees(pose)) +
+      cloudHeadingToCanvasRadians(this.cloudHeadingDegrees(pose), this.options.robotModel) +
       geometry.map.rotation +
       degreesToRadians(Number(this.options.robotHeadingOffset ?? this.options.robot_heading_offset) || 0) +
       degreesToRadians(mowingHeadingOffset) +
@@ -1314,11 +1314,17 @@ function degreesToRadians(degrees) {
   return (degrees * Math.PI) / 180;
 }
 
-// The cloud heading already uses the same cardinal orientation as the canvas.
-// Keep all four cardinal directions unchanged; applying 180-heading would
-// preserve left/right but swap up/down by 180 degrees.
-export function cloudHeadingToCanvasRadians(value) {
-  return normalizeAngle(degreesToRadians(normalizeHeadingDegrees(value)));
+// M-series heading stays on the already verified direct mapping.
+// Genie telemetry has the horizontal axis reversed while the vertical axis
+// already matches the map. In the ANTHBOT heading convention (0° = vertical),
+// a horizontal mirror is -heading / 360-heading, NOT 180-heading. The latter
+// flips the vertical axis and leaves the horizontal error in place.
+export function cloudHeadingToCanvasRadians(value, model = "") {
+  const heading = normalizeHeadingDegrees(value);
+  const normalizedModel = String(model || "").toUpperCase().replace(/[-_]+/g, " ");
+  const isGenie = normalizedModel.includes("GENIE");
+  const canvasHeading = isGenie ? -heading : heading;
+  return normalizeAngle(degreesToRadians(canvasHeading));
 }
 
 function milliRadiansToDegrees(value) {
