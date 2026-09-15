@@ -40,7 +40,6 @@ jobs:
 
           old_call = "cloudHeadingToCanvasRadians(this.cloudHeadingDegrees(pose)) +"
           new_call = "cloudHeadingToCanvasRadians(this.cloudHeadingDegrees(pose), this.options.robotModel) +"
-
           old_helper = '''// The cloud heading already uses the same cardinal orientation as the canvas.
           // Keep all four cardinal directions unchanged; applying 180-heading would
           // preserve left/right but swap up/down by 180 degrees.
@@ -80,13 +79,8 @@ jobs:
               )
               replace_once(
                   path,
-                  '''      decodedBoundaryCalibration: this.decodedBoundaryCalibration,
-          robotImage: this.config.robot_image || this.config.robotImage || this.resolveAsset(
-          ''',
-                  '''      decodedBoundaryCalibration: this.decodedBoundaryCalibration,
-          robotModel: this.entity?.attributes?.model,
-          robotImage: this.config.robot_image || this.config.robotImage || this.resolveAsset(
-          ''',
+                  "      decodedBoundaryCalibration: this.decodedBoundaryCalibration,\n",
+                  "      decodedBoundaryCalibration: this.decodedBoundaryCalibration,\n      robotModel: this.entity?.attributes?.model,\n",
                   "robot model renderer option",
               )
 
@@ -96,56 +90,71 @@ jobs:
               'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.7.4-genie-heading-test1"',
               "frontend test cache key",
           )
-
-          test = Path("tests/test_calibration_alignment.py")
-          text = test.read_text(encoding="utf-8")
-          text = text.replace(
-              "    def test_cloud_heading_preserves_all_cardinal_directions(self) -> None:\n",
-              "    def test_cloud_heading_is_model_specific(self) -> None:\n",
-              1,
-          )
-          old_script = '''const degrees = (radians) => radians * 180 / Math.PI;
-          const cardinal = [0, 90, 180, -90].map((heading) =>
-            degrees(renderer.cloudHeadingToCanvasRadians(heading))
-          );
-          process.stdout.write(JSON.stringify(cardinal));
-          '''
-          new_script = '''const degrees = (radians) => radians * 180 / Math.PI;
-          const headings = [0, 90, 180, -90];
-          const m9 = headings.map((heading) =>
-            degrees(renderer.cloudHeadingToCanvasRadians(heading, "M9 Pro"))
-          );
-          const genie = headings.map((heading) =>
-            degrees(renderer.cloudHeadingToCanvasRadians(heading, "Genie 1000"))
-          );
-          process.stdout.write(JSON.stringify({ m9, genie }));
-          '''
-          if old_script not in text:
-              raise SystemExit("heading test script block not found")
-          text = text.replace(old_script, new_script, 1)
-          old_assert = '''        cardinal = json.loads(result.stdout)
-
-          self.assertAlmostEqual(cardinal[0], 0, places=7)
-          self.assertAlmostEqual(cardinal[1], 90, places=7)
-          self.assertAlmostEqual(cardinal[2], 180, places=7)
-          self.assertAlmostEqual(cardinal[3], -90, places=7)
-          '''
-          new_assert = '''        cardinal = json.loads(result.stdout)
-
-          self.assertAlmostEqual(cardinal["m9"][0], 0, places=7)
-          self.assertAlmostEqual(cardinal["m9"][1], 90, places=7)
-          self.assertAlmostEqual(cardinal["m9"][2], 180, places=7)
-          self.assertAlmostEqual(cardinal["m9"][3], -90, places=7)
-          self.assertAlmostEqual(cardinal["genie"][0], 180, places=7)
-          self.assertAlmostEqual(cardinal["genie"][1], 90, places=7)
-          self.assertAlmostEqual(cardinal["genie"][2], 0, places=7)
-          self.assertAlmostEqual(cardinal["genie"][3], -90, places=7)
-          '''
-          if old_assert not in text:
-              raise SystemExit("heading assertion block not found")
-          text = text.replace(old_assert, new_assert, 1)
-          test.write_text(text, encoding="utf-8")
           PY
+
+          cat > tests/test_model_specific_heading.py <<'PYTEST'
+          """Regression test for model-specific robot heading orientation."""
+
+          from __future__ import annotations
+
+          import base64
+          import json
+          from pathlib import Path
+          import re
+          import subprocess
+          import unittest
+
+          ROOT = Path(__file__).parents[1]
+          FRONTEND = ROOT / "custom_components" / "anthbot_map" / "frontend"
+
+
+          class ModelSpecificHeadingTests(unittest.TestCase):
+              def test_m9_direct_and_genie_horizontal_mirror(self) -> None:
+                  geometry_source = base64.b64encode((FRONTEND / "geometry.js").read_bytes()).decode("ascii")
+                  renderer_source = (FRONTEND / "renderer.js").read_text(encoding="utf-8")
+                  renderer_source, replacements = re.subn(
+                      r'from "\./geometry\.js(?:\?v=[^"]+)?"',
+                      lambda _: f'from "data:text/javascript;base64,{geometry_source}"',
+                      renderer_source,
+                      count=1,
+                  )
+                  self.assertEqual(replacements, 1)
+                  renderer_data = base64.b64encode(renderer_source.encode("utf-8")).decode("ascii")
+                  script = f"""
+          const renderer = await import("data:text/javascript;base64,{renderer_data}");
+          const degrees = (radians) => radians * 180 / Math.PI;
+          const headings = [0, 90, 180, -90];
+          const m9 = headings.map((heading) => degrees(renderer.cloudHeadingToCanvasRadians(heading, "M9 Pro")));
+          const genie = headings.map((heading) => degrees(renderer.cloudHeadingToCanvasRadians(heading, "Genie 1000")));
+          process.stdout.write(JSON.stringify({{ m9, genie }}));
+          """
+                  result = subprocess.run(
+                      ["node", "--input-type=module", "-e", script],
+                      check=True,
+                      capture_output=True,
+                      text=True,
+                  )
+                  values = json.loads(result.stdout)
+                  expected_m9 = [0, 90, 180, -90]
+                  expected_genie = [180, 90, 0, -90]
+                  for actual, expected in zip(values["m9"], expected_m9, strict=True):
+                      self.assertAlmostEqual(actual, expected, places=7)
+                  for actual, expected in zip(values["genie"], expected_genie, strict=True):
+                      self.assertAlmostEqual(actual, expected, places=7)
+
+              def test_card_passes_model_to_renderer(self) -> None:
+                  card = (FRONTEND / "anthbot-map-card.js").read_text(encoding="utf-8")
+                  renderer = (FRONTEND / "renderer.js").read_text(encoding="utf-8")
+                  self.assertIn("robotModel: this.entity?.attributes?.model", card)
+                  self.assertIn(
+                      "cloudHeadingToCanvasRadians(this.cloudHeadingDegrees(pose), this.options.robotModel)",
+                      renderer,
+                  )
+
+
+          if __name__ == "__main__":
+              unittest.main()
+          PYTEST
 
       - name: Validate test build
         shell: bash
