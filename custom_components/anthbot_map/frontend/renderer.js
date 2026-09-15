@@ -1145,21 +1145,10 @@ export class AnthbotMapRenderer {
   }
 
   cloudHeadingDegrees(pose) {
-    const headingCandidates = [
-      this.state.raw_pose?.heading,
-      pose?.heading,
-      this.state.cur_pose?.heading,
-      this.state.curPose?.heading,
-      this.state.map_scan_pose?.heading,
-      this.state.mapScanPose?.heading,
-    ];
-    for (const value of headingCandidates) {
-      const heading = Number(value);
-      if (Number.isFinite(heading)) {
-        return normalizeHeadingDegrees(heading);
-      }
-    }
-
+    // The cloud/app pose.yaw orientation is the source already verified on
+    // real hardware. Live-map aliases can also expose `heading`, but that
+    // field may use a different horizontal-axis convention. A real yaw
+    // must therefore win whenever both representations are present.
     const yawCandidates = [
       this.state.raw_pose?.yaw,
       pose?.yaw,
@@ -1172,6 +1161,21 @@ export class AnthbotMapRenderer {
       const yaw = Number(value);
       if (Number.isFinite(yaw)) {
         return milliRadiansToDegrees(yaw);
+      }
+    }
+
+    const headingCandidates = [
+      this.state.raw_pose?.heading,
+      pose?.heading,
+      this.state.cur_pose?.heading,
+      this.state.curPose?.heading,
+      this.state.map_scan_pose?.heading,
+      this.state.mapScanPose?.heading,
+    ];
+    for (const value of headingCandidates) {
+      const heading = Number(value);
+      if (Number.isFinite(heading)) {
+        return normalizeHeadingDegrees(heading);
       }
     }
     return 0;
