@@ -2,12 +2,13 @@
 
 ## 2.4.7.4 — 2026-09-15
 
-- Fixes the live-map robot orientation regression where horizontal direction could be mirrored while vertical direction remained correct.
-- Keeps `yaw` and `heading` as separate telemetry representations instead of relabelling `heading` as `yaw`.
-- Prefers the previously hardware-verified cloud/app `pose.yaw` when available, while retaining `heading` as a fallback.
-- Preserves the existing global heading conversion, so the earlier M9 Pro direction fix is not reverted.
-- Adds regression coverage for conflicting yaw/heading telemetry and keeps the bundled frontend copies byte-identical.
-- Validation passed before release: unit tests, HACS validation, Hassfest, JavaScript syntax checks, and frontend mirror checks.
+- Corrects the Genie 1000 live-map robot orientation using the mapping verified on real hardware.
+- Genie now mirrors only the horizontal heading axis (`-heading`): left/right are corrected while up/down remain unchanged.
+- Keeps the already hardware-verified M-series/M9 Pro direct heading mapping unchanged.
+- Keeps `yaw` and `heading` as separate telemetry representations and prefers real `pose.yaw` when available.
+- Passes the mower model into the renderer so the heading conversion is model-specific rather than global.
+- Adds regression coverage for Genie vs M-series cardinal directions and keeps the bundled frontend copies byte-identical.
+- Hardware verification: Genie 1000 confirmed correct in both horizontal and vertical directions before republishing v2.4.7.4.
 
 ## 2.4.7.3 — 2026-09-14
 
