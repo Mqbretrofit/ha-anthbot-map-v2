@@ -79,8 +79,8 @@ jobs:
               )
               replace_once(
                   path,
-                  "      decodedBoundaryCalibration: this.decodedBoundaryCalibration,\n",
-                  "      decodedBoundaryCalibration: this.decodedBoundaryCalibration,\n      robotModel: this.entity?.attributes?.model,\n",
+                  "      robotImage: this.config.robot_image || this.config.robotImage || this.resolveAsset(\n",
+                  "      robotModel: this.entity?.attributes?.model,\n      robotImage: this.config.robot_image || this.config.robotImage || this.resolveAsset(\n",
                   "robot model renderer option",
               )
 
