@@ -1,0 +1,190 @@
+name: Build Genie heading hardware test
+
+on:
+  push:
+    branches:
+      - "test/genie-heading-model-specific"
+    paths:
+      - ".github/workflows/_build_genie_heading_test.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "test/genie-heading-model-specific"
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Apply model-specific heading fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new, label):
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly 1 match in {path}, got {count}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          old_call = "cloudHeadingToCanvasRadians(this.cloudHeadingDegrees(pose)) +"
+          new_call = "cloudHeadingToCanvasRadians(this.cloudHeadingDegrees(pose), this.options.robotModel) +"
+
+          old_helper = '''// The cloud heading already uses the same cardinal orientation as the canvas.
+          // Keep all four cardinal directions unchanged; applying 180-heading would
+          // preserve left/right but swap up/down by 180 degrees.
+          export function cloudHeadingToCanvasRadians(value) {
+            return normalizeAngle(degreesToRadians(normalizeHeadingDegrees(value)));
+          }
+          '''
+          new_helper = '''// M-series heading was verified on real M9 Pro hardware with a direct
+          // cardinal mapping. Genie uses the opposite horizontal axis: up/down match,
+          // while left/right must be mirrored. Keep the conversion model-specific so
+          // fixing Genie cannot regress the already-verified M-series orientation.
+          export function cloudHeadingToCanvasRadians(value, model = "") {
+            const heading = normalizeHeadingDegrees(value);
+            const normalizedModel = String(model || "").toUpperCase().replace(/[-_]+/g, " ");
+            const isGenie = normalizedModel.includes("GENIE");
+            const canvasHeading = isGenie ? 180 - heading : heading;
+            return normalizeAngle(degreesToRadians(canvasHeading));
+          }
+          '''
+
+          for path in (
+              "custom_components/anthbot_map/frontend/renderer.js",
+              "www/anthbot-map/renderer.js",
+          ):
+              replace_once(path, old_call, new_call, "model-specific heading call")
+              replace_once(path, old_helper, new_helper, "model-specific heading conversion")
+
+          for path in (
+              "custom_components/anthbot_map/frontend/anthbot-map-card.js",
+              "www/anthbot-map/anthbot-map-card.js",
+          ):
+              replace_once(
+                  path,
+                  'import { AnthbotMapRenderer } from "./renderer.js?v=2473-heading-source-fix1";',
+                  'import { AnthbotMapRenderer } from "./renderer.js?v=2474-genie-heading-test1";',
+                  "renderer test cache key",
+              )
+              replace_once(
+                  path,
+                  '''      decodedBoundaryCalibration: this.decodedBoundaryCalibration,
+                        robotImage: this.config.robot_image || this.config.robotImage || this.resolveAsset(
+                  ''',
+                  '''      decodedBoundaryCalibration: this.decodedBoundaryCalibration,
+                        robotModel: this.entity?.attributes?.model,
+                        robotImage: this.config.robot_image || this.config.robotImage || this.resolveAsset(
+                  ''',
+                  "robot model renderer option",
+              )
+
+          replace_once(
+              "custom_components/anthbot_map/__init__.py",
+              'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.7.4"',
+              'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.7.4-genie-heading-test1"',
+              "frontend test cache key",
+          )
+
+          test = Path("tests/test_calibration_alignment.py")
+          text = test.read_text(encoding="utf-8")
+          text = text.replace(
+              "    def test_cloud_heading_preserves_all_cardinal_directions(self) -> None:\n",
+              "    def test_cloud_heading_is_model_specific(self) -> None:\n",
+              1,
+          )
+          old_script = '''const degrees = (radians) => radians * 180 / Math.PI;
+          const cardinal = [0, 90, 180, -90].map((heading) =>
+            degrees(renderer.cloudHeadingToCanvasRadians(heading))
+          );
+          process.stdout.write(JSON.stringify(cardinal));
+          '''
+          new_script = '''const degrees = (radians) => radians * 180 / Math.PI;
+          const headings = [0, 90, 180, -90];
+          const m9 = headings.map((heading) =>
+            degrees(renderer.cloudHeadingToCanvasRadians(heading, "M9 Pro"))
+          );
+          const genie = headings.map((heading) =>
+            degrees(renderer.cloudHeadingToCanvasRadians(heading, "Genie 1000"))
+          );
+          process.stdout.write(JSON.stringify({ m9, genie }));
+          '''
+          if old_script not in text:
+              raise SystemExit("heading test script block not found")
+          text = text.replace(old_script, new_script, 1)
+          old_assert = '''        cardinal = json.loads(result.stdout)
+
+                  self.assertAlmostEqual(cardinal[0], 0, places=7)
+                  self.assertAlmostEqual(cardinal[1], 90, places=7)
+                  self.assertAlmostEqual(cardinal[2], 180, places=7)
+                  self.assertAlmostEqual(cardinal[3], -90, places=7)
+          '''
+          new_assert = '''        cardinal = json.loads(result.stdout)
+
+                  self.assertAlmostEqual(cardinal["m9"][0], 0, places=7)
+                  self.assertAlmostEqual(cardinal["m9"][1], 90, places=7)
+                  self.assertAlmostEqual(cardinal["m9"][2], 180, places=7)
+                  self.assertAlmostEqual(cardinal["m9"][3], -90, places=7)
+                  self.assertAlmostEqual(cardinal["genie"][0], 180, places=7)
+                  self.assertAlmostEqual(cardinal["genie"][1], 90, places=7)
+                  self.assertAlmostEqual(cardinal["genie"][2], 0, places=7)
+                  self.assertAlmostEqual(cardinal["genie"][3], -90, places=7)
+          '''
+          if old_assert not in text:
+              raise SystemExit("heading assertion block not found")
+          text = text.replace(old_assert, new_assert, 1)
+          test.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Validate test build
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -v
+          find custom_components www -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          cmp custom_components/anthbot_map/frontend/anthbot-map-card.js www/anthbot-map/anthbot-map-card.js
+          cmp custom_components/anthbot_map/frontend/renderer.js www/anthbot-map/renderer.js
+
+      - name: Commit test branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/_build_genie_heading_test.yml
+          git config user.name "Mqbretrofit"
+          git config user.email "matrai.attila975@gmail.com"
+          git add -A
+          git commit -m "Test model-specific Genie heading correction"
+          git push origin HEAD:test/genie-heading-model-specific
+
+      - name: Build hardware-test ZIP
+        shell: bash
+        run: |
+          zip -r anthbot-map-genie-heading-test1.zip \
+            custom_components \
+            www \
+            examples \
+            README.md \
+            README_HU.md \
+            CHANGELOG.md \
+            SUPPORT.md \
+            PRIVACY.md \
+            LICENSE \
+            NOTICE.md \
+            hacs.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anthbot-map-genie-heading-test1
+          path: anthbot-map-genie-heading-test1.zip
+          if-no-files-found: error
