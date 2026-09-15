@@ -1,4 +1,4 @@
-# Retry after fixing generated regression test indentation.
+# Retry after fixing heading-source assertion.
 name: Fix Genie heading regression
 
 on:
