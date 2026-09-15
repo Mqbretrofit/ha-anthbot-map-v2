@@ -1,0 +1,142 @@
+name: Build Genie heading hardware test2
+
+on:
+  push:
+    branches:
+      - "test/genie-heading-model-specific"
+    paths:
+      - ".github/workflows/_build_genie_heading_test2.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "test/genie-heading-model-specific"
+          fetch-depth: 0
+
+      - name: Apply corrected Genie horizontal mirror
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new, label):
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly 1 match in {path}, got {count}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          old_comment = '''// M-series heading was verified on real M9 Pro hardware with a direct
+          // cardinal mapping. Genie uses the opposite horizontal axis: up/down match,
+          // while left/right must be mirrored. Keep the conversion model-specific so
+          // fixing Genie cannot regress the already-verified M-series orientation.
+          export function cloudHeadingToCanvasRadians(value, model = "") {
+            const heading = normalizeHeadingDegrees(value);
+            const normalizedModel = String(model || "").toUpperCase().replace(/[-_]+/g, " ");
+            const isGenie = normalizedModel.includes("GENIE");
+            const canvasHeading = isGenie ? 180 - heading : heading;
+            return normalizeAngle(degreesToRadians(canvasHeading));
+          }
+          '''
+          new_comment = '''// M-series heading stays on the already verified direct mapping.
+          // Genie telemetry has the horizontal axis reversed while the vertical axis
+          // already matches the map. In the ANTHBOT heading convention (0° = vertical),
+          // a horizontal mirror is -heading / 360-heading, NOT 180-heading. The latter
+          // flips the vertical axis and leaves the horizontal error in place.
+          export function cloudHeadingToCanvasRadians(value, model = "") {
+            const heading = normalizeHeadingDegrees(value);
+            const normalizedModel = String(model || "").toUpperCase().replace(/[-_]+/g, " ");
+            const isGenie = normalizedModel.includes("GENIE");
+            const canvasHeading = isGenie ? -heading : heading;
+            return normalizeAngle(degreesToRadians(canvasHeading));
+          }
+          '''
+
+          for path in (
+              "custom_components/anthbot_map/frontend/renderer.js",
+              "www/anthbot-map/renderer.js",
+          ):
+              replace_once(path, old_comment, new_comment, "Genie horizontal mirror")
+
+          for path in (
+              "custom_components/anthbot_map/frontend/anthbot-map-card.js",
+              "www/anthbot-map/anthbot-map-card.js",
+          ):
+              replace_once(
+                  path,
+                  'import { AnthbotMapRenderer } from "./renderer.js?v=2474-genie-heading-test1";',
+                  'import { AnthbotMapRenderer } from "./renderer.js?v=2474-genie-heading-test2";',
+                  "renderer test2 cache key",
+              )
+
+          replace_once(
+              "custom_components/anthbot_map/__init__.py",
+              'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.7.4-genie-heading-test1"',
+              'FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.7.4-genie-heading-test2"',
+              "frontend test2 cache key",
+          )
+
+          test = Path("tests/test_model_specific_heading.py")
+          text = test.read_text(encoding="utf-8")
+          text = text.replace(
+              'expected_genie = [180, 90, 0, -90]',
+              'expected_genie = [0, -90, 180, 90]',
+              1,
+          )
+          text = text.replace(
+              'def test_m9_direct_and_genie_horizontal_mirror(self) -> None:',
+              'def test_m9_direct_and_genie_horizontal_mirror(self) -> None:',
+              1,
+          )
+          test.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Validate test2 build
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -v
+          find custom_components www -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          cmp custom_components/anthbot_map/frontend/anthbot-map-card.js www/anthbot-map/anthbot-map-card.js
+          cmp custom_components/anthbot_map/frontend/renderer.js www/anthbot-map/renderer.js
+
+      - name: Commit test2 branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/_build_genie_heading_test2.yml
+          git config user.name "Mqbretrofit"
+          git config user.email "matrai.attila975@gmail.com"
+          git add -A
+          git commit -m "Correct Genie horizontal heading mirror"
+          git push origin HEAD:test/genie-heading-model-specific
+
+      - name: Build hardware-test ZIP
+        shell: bash
+        run: |
+          zip -r anthbot-map-genie-heading-test2.zip \
+            custom_components \
+            www \
+            examples \
+            README.md \
+            README_HU.md \
+            CHANGELOG.md \
+            SUPPORT.md \
+            PRIVACY.md \
+            LICENSE \
+            NOTICE.md \
+            hacs.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anthbot-map-genie-heading-test2
+          path: anthbot-map-genie-heading-test2.zip
+          if-no-files-found: error
