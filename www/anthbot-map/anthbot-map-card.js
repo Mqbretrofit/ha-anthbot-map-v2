@@ -1,4 +1,4 @@
-import { AnthbotMapRenderer } from "./renderer.js?v=243-heading-fix1";
+import { AnthbotMapRenderer } from "./renderer.js?v=2473-heading-source-fix1";
 import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=2411";
 import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=2411";
 import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=243b2-mowing-mode-help3";
@@ -633,16 +633,23 @@ class AnthbotMapCard extends HTMLElement {
       Number.isFinite(Number(candidate?.x)) && Number.isFinite(Number(candidate?.y)),
     );
     const poseYawEntity = this.getRelatedEntity("poseYaw");
+    // Keep yaw and heading separate. They are different telemetry
+    // representations and, on Genie live aliases, can use different axis
+    // conventions. Copying heading into yaw makes the renderer interpret
+    // degrees as milliradians and can mirror the horizontal direction.
     const fallbackYaw = [
       coordinatePose?.yaw,
-      coordinatePose?.heading,
       rawPose.yaw,
-      rawPose.heading,
       poseYawEntity?.state,
     ].find((value) => Number.isFinite(Number(value)));
-    return coordinatePose
-      ? { ...rawPose, ...coordinatePose, yaw: fallbackYaw }
-      : { ...rawPose, yaw: fallbackYaw };
+    const fallbackHeading = [
+      coordinatePose?.heading,
+      rawPose.heading,
+    ].find((value) => Number.isFinite(Number(value)));
+    const merged = coordinatePose ? { ...rawPose, ...coordinatePose } : { ...rawPose };
+    if (fallbackYaw !== undefined) merged.yaw = fallbackYaw;
+    if (fallbackHeading !== undefined) merged.heading = fallbackHeading;
+    return merged;
   }
 
 
