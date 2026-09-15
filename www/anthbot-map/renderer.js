@@ -1314,15 +1314,16 @@ function degreesToRadians(degrees) {
   return (degrees * Math.PI) / 180;
 }
 
-// M-series heading was verified on real M9 Pro hardware with a direct
-// cardinal mapping. Genie uses the opposite horizontal axis: up/down match,
-// while left/right must be mirrored. Keep the conversion model-specific so
-// fixing Genie cannot regress the already-verified M-series orientation.
+// M-series heading stays on the already verified direct mapping.
+// Genie telemetry has the horizontal axis reversed while the vertical axis
+// already matches the map. In the ANTHBOT heading convention (0° = vertical),
+// a horizontal mirror is -heading / 360-heading, NOT 180-heading. The latter
+// flips the vertical axis and leaves the horizontal error in place.
 export function cloudHeadingToCanvasRadians(value, model = "") {
   const heading = normalizeHeadingDegrees(value);
   const normalizedModel = String(model || "").toUpperCase().replace(/[-_]+/g, " ");
   const isGenie = normalizedModel.includes("GENIE");
-  const canvasHeading = isGenie ? 180 - heading : heading;
+  const canvasHeading = isGenie ? -heading : heading;
   return normalizeAngle(degreesToRadians(canvasHeading));
 }
 

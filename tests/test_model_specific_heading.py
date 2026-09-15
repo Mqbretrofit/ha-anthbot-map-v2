@@ -41,7 +41,7 @@ process.stdout.write(JSON.stringify({{ m9, genie }}));
         )
         values = json.loads(result.stdout)
         expected_m9 = [0, 90, 180, -90]
-        expected_genie = [180, 90, 0, -90]
+        expected_genie = [0, -90, -180, 90]
         for actual, expected in zip(values["m9"], expected_m9, strict=True):
             self.assertAlmostEqual(actual, expected, places=7)
         for actual, expected in zip(values["genie"], expected_genie, strict=True):
