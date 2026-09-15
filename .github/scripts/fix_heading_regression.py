@@ -214,7 +214,7 @@ test_source = textwrap.dedent(
             start = card.index("  computeLivePose(")
             end = card.index("\\n  updateRenderer(", start)
             method = card[start:end]
-            yaw_block = method.split("const fallbackYaw = [", 1)[1].split("];", 1)[0]
+            yaw_block = method.split("const fallbackYaw = [", 1)[1].split("const fallbackHeading = [", 1)[0]
             self.assertNotIn("heading", yaw_block)
             self.assertIn("const fallbackHeading = [", method)
             self.assertIn("merged.heading = fallbackHeading", method)
