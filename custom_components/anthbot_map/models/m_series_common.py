@@ -9,6 +9,7 @@ from .genie_progress_posttrim import install_genie_progress_posttrim
 from .genie_progress_presentation import install_genie_progress_presentation
 from .genie_status import install_genie_live_status_support
 from .live_task_events import install_live_task_event_refresh
+from .m5_lidar_live_map_v2475 import install_m5_lidar_live_map_fix
 from .m_series_legacy import install_m_series_compat as _install_legacy
 from .m_series_control import install_m_series_control_support
 from .n8_control import install_n8_control_support
@@ -93,6 +94,9 @@ def install_m_series_compat() -> None:
     # iot_map payload is an unknown encoding, reuse its area_setting zone hull
     # instead of requesting the known-missing multi_maps/<serial>_0 object.
     install_m9_map_rescue_v2465()
+    # Install the M5 LiDAR live-map preference last among map adapters so every
+    # existing M5/M9/N8 fallback remains available underneath it unchanged.
+    install_m5_lidar_live_map_fix()
     install_recorder_v2465()
     # v2.4.6.7 wraps the final v2.4.6.5 Map-state throttle. This order lets the
     # semantic filter suppress unchanged writes while preserving the proven
