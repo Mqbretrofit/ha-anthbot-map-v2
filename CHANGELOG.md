@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.4.7.5 — 2026-09-16
+
+- Adds an isolated M5 LiDAR live-map preference for `Anthbot M5 LiDAR`, `MGS02Radar`, and equivalent M LiDAR model identifiers.
+- Uses the mobile-app-compatible current map path first: `map_<serial>.txt` with `category=device` and `sub_category=map`.
+- Keeps the existing serial-named `map_manager`, selected `multi_maps`, and legacy rescue paths unchanged as fallbacks when the live map is unavailable.
+- Does not alter normal M5, M9/M9 Pro, N8, Genie command, path, heading, frontend, or map-routing behavior.
+- Preserves the last valid live LiDAR map across transient cloud/download failures instead of replacing it with an older archive.
+- Adds regression coverage proving non-LiDAR models bypass the new wrapper, live-map success wins, live-map failure falls through to the existing stack, and transient failures retain a valid live map.
+- Validation before release: 344/344 unit tests passed, including all four new M5 LiDAR regressions; Hassfest and HACS validation passed.
+- M5 LiDAR hardware verification remains pending because the test mower is remote; diagnostics now expose `m5_lidar_live_map_probe` so the live source can be confirmed after installation.
+
 ## 2.4.7.4 — 2026-09-15
 
 - Corrects the Genie 1000 live-map robot orientation using the mapping verified on real hardware.
