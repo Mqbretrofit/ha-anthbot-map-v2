@@ -1,0 +1,66 @@
+title: Anthbot
+views:
+  - title: Anthbot
+    path: anthbot
+    icon: mdi:robot-mower
+    cards:
+      - type: custom:anthbot-map-card
+        entity: sensor.YOUR_MOWER_map
+        name: Anthbot Map
+        image: /local/anthbot-map-card/your-garden.png
+        refresh_interval: 3
+        entities:
+          battery: sensor.YOUR_MOWER_battery_level
+          status: sensor.YOUR_MOWER_mower_status
+          charging: binary_sensor.YOUR_MOWER_charging
+          next_appointment: sensor.YOUR_MOWER_next_appointment
+        controls:
+          start: button.YOUR_MOWER_start_full_mow
+          stop: button.YOUR_MOWER_stop_mow
+          dock: button.YOUR_MOWER_return_to_dock
+
+      - type: calendar
+        title: Anthbot schedule
+        initial_view: listWeek
+        entities:
+          - calendar.YOUR_MOWER_schedule
+
+      - type: entities
+        title: Next run
+        entities:
+          - entity: sensor.YOUR_MOWER_next_appointment
+            name: App appointment
+          - entity: calendar.YOUR_MOWER_schedule
+            name: HA schedule
+
+      - type: horizontal-stack
+        cards:
+          - type: button
+            name: Mow 2h
+            icon: mdi:robot-mower
+            tap_action:
+              action: perform-action
+              perform_action: anthbot_map.override_schedule
+              data:
+                action: mow
+                duration_hours: 2
+                entity_id: lawn_mower.YOUR_MOWER
+          - type: button
+            name: Park 6h
+            icon: mdi:parking
+            tap_action:
+              action: perform-action
+              perform_action: anthbot_map.override_schedule
+              data:
+                action: park
+                duration_hours: 6
+                entity_id: lawn_mower.YOUR_MOWER
+          - type: button
+            name: Clear
+            icon: mdi:calendar-remove
+            tap_action:
+              action: perform-action
+              perform_action: anthbot_map.override_schedule
+              data:
+                action: clear
+                entity_id: lawn_mower.YOUR_MOWER
