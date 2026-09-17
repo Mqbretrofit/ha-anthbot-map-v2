@@ -23,6 +23,7 @@ from .coordinator import AnthbotGenieDataUpdateCoordinator
 from .live_map_entity_semantics import install_live_map_entity_write_semantics
 from .live_map_stream import LIVE_DATA_KEY, async_setup_live_map_stream
 from .mower_status import mower_activity_name, raw_robot_status
+from .schedule_setup import async_setup_schedule
 
 _ACTIVITY_BY_NAME = {
     "mowing": LawnMowerActivity.MOWING,
@@ -43,12 +44,8 @@ async def async_setup_entry(
         entry.entry_id
     ]
     await async_setup_live_map_stream(hass, entry, coordinators)
+    await async_setup_schedule(hass, entry)
 
-    # The sensor platform is forwarded before lawn_mower. If a Map entity has
-    # already registered its Recorder listener, switch the shared signatures
-    # and rebind that stored bound callback to the compact class handler. Only
-    # do this when the frontend stream is actually available; compatibility
-    # mode must retain the legacy full-entity update semantics.
     live_data = hass.data.get(LIVE_DATA_KEY, {})
     if isinstance(live_data, dict) and live_data.get("frontend_ready"):
         install_live_map_entity_write_semantics(coordinators)
@@ -82,32 +79,27 @@ class AnthbotLawnMowerEntity(
 
     @property
     def activity(self) -> LawnMowerActivity | None:
-        """Return the current native mower activity."""
         activity_name = mower_activity_name(self.coordinator.reported_state)
         return _ACTIVITY_BY_NAME.get(activity_name)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Expose useful Anthbot metadata on the native entity."""
         return {
             "serial_number": self.coordinator.client.serial_number,
             "raw_status": raw_robot_status(self.coordinator.reported_state),
         }
 
     async def _async_refresh_after_command(self) -> None:
-        """Refresh the mower state after a command."""
         await self.coordinator.client.async_request_all_properties()
         await asyncio.sleep(1)
         await self.coordinator.async_request_refresh()
 
     async def async_start_mowing(self) -> None:
-        """Start full-lawn mowing."""
         started = await async_start_mowing(self.coordinator, app_state=1)
         if not started:
             raise AnthbotGenieApiError("The mower did not confirm the start command")
 
     async def async_pause(self) -> None:
-        """Stop the current Anthbot task through Home Assistant's pause action."""
         if not await async_prepare_cloud_connection(self.coordinator):
             raise AnthbotGenieApiError(
                 "The mower did not confirm its cloud connection; stop command was not sent"
@@ -116,7 +108,6 @@ class AnthbotLawnMowerEntity(
         await self._async_refresh_after_command()
 
     async def async_dock(self) -> None:
-        """Return the mower to its charging dock."""
         if not await async_prepare_cloud_connection(self.coordinator):
             raise AnthbotGenieApiError(
                 "The mower did not confirm its cloud connection; dock command was not sent"
