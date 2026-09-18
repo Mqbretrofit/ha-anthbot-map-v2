@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.4.8.0 — unreleased
+## 2.4.8.0 — 2026-09-18
 
 - Makes the mower's native ANTHBOT app schedule the single source of truth: the HA calendar and card mirror it, while create/edit/delete operations write back with the app's `mow_regular` command.
 - Preserves firmware/model-specific appointment fields while editing, and reads M5/M9/N8/Pion `time_setting.json` as a bounded fallback when the property shadow omits `appointment`.
@@ -15,6 +15,11 @@
 - Parses Genie/AWS IoT appointment envelopes that wrap the plan in `{value, timestamp}`, a bare list, a single appointment object, JSON strings, 0-6 or 1-7 weekdays, and weekday bitmasks.
 - Treats Genie's `appointment_time` correctly as the revision trigger for the app's `appointment_<serial>.json` cloud file, then mirrors the real rules from that file into the HA Schedule tab and `sensor.*_next_mow`.
 - Looks at `_service_reported` as well as the property shadow and refreshes the appointment file when its revision changes.
+- Shows disabled native app schedules in the Schedule tab without treating them as an upcoming mow.
+- Matches `sensor.*_next_mow` to the active mower by serial number on multi-mower dashboards.
+- Shows the next mow in blue inside the floating map status display only when a real upcoming mow exists.
+- Hardware verification: the Genie 1000 native app schedule was successfully loaded and displayed in Home Assistant.
+- Full validation before release: 363/363 unit tests passed, JavaScript syntax validation passed, and both bundled frontend copies are byte-identical.
 
 ## 2.4.7.5 — 2026-09-16
 

@@ -27,6 +27,16 @@ Stable version: **2.4.7.5**
 
 Latest release: [Anthbot Map v2.4.7.5](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.7.5)
 
+### Highlights in 2.4.8.0
+
+- Uses the mower's native ANTHBOT app schedule as the single source of truth and mirrors it into the HA calendar and Anthbot Map Card.
+- Creates, edits and deletes native weekly app rules from the card while preserving model- and firmware-specific fields.
+- Adds timed **mow until** and **remain parked until** overrides with a clear action.
+- Adds per-mower `next_mow`, native HA mower/schedule events, optional weather blocking and bounded catch-up.
+- Supports zones and cutting height per weekly rule; disabled app rules remain visible but do not create a next-mow time.
+- Shows the real next mow in blue in the floating map status display only when one exists.
+- Genie 1000 native app schedule loading was verified on real hardware; full release validation passed **363/363 unit tests**.
+
 ### Highlights in 2.4.7.3
 
 - Improves live-map performance by coalescing bursty coordinator updates before WebSocket publication.
@@ -88,7 +98,8 @@ N8 owners are welcome to test and report model-specific behavior.
 - dedicated WebSocket live-map transport with snapshot, delta, sequence and automatic resync handling
 - compact Map entity design that keeps high-frequency live geometry out of Home Assistant state/Recorder while live-stream mode is active
 - native Home Assistant `lawn_mower` entity
-- HA-owned weekly calendar, timed mow/park overrides and a next-effective-mow sensor
+- native ANTHBOT app schedule mirrored to the HA calendar and card, with write-back editing
+- timed mow/park overrides and a per-mower next-effective-mow sensor
 - per-rule zones, cutting height and optional weather forecast/catch-up behavior
 - native mower lifecycle and schedule events for HA automations
 - full-area, zone, outer-edge, and dock-surroundings mowing controls where supported

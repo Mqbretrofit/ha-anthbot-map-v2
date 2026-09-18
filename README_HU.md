@@ -21,6 +21,16 @@ Stabil verzió: **2.4.7.5**
 
 Legfrissebb kiadás: [Anthbot Map v2.4.7.5](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.7.5)
 
+### A 2.4.8.0 legfontosabb változásai
+
+- A robot natív ANTHBOT appos ütemezése az egyetlen hiteles forrás; ezt tükrözi a HA-naptár és az Anthbot Map Card.
+- A kártyáról létrehozhatók, szerkeszthetők és törölhetők a natív heti app-szabályok, a modell- és firmware-specifikus mezők megőrzésével.
+- Időzített **nyírj eddig** és **maradj bent eddig** felülírás, valamint felülírástörlés került a kártyába.
+- Robothoz kötött `next_mow`, natív HA robot-/ütemezési események, opcionális időjárásos halasztás és korlátozott pótlási időablak került be.
+- Heti szabályonként beállítható zóna és vágási magasság; a kikapcsolt app-szabály látható marad, de nem hoz létre következő nyírási időpontot.
+- A valódi következő nyírás kéken jelenik meg a térkép lebegő állapotkijelzőjében, de csak akkor, ha ténylegesen létezik.
+- A Genie 1000 natív app-ütemezésének betöltése valódi roboton ellenőrizve; a kiadás előtti teljes validáció **363/363 sikeres unit teszttel** zárult.
+
 ### A 2.4.7.3 legfontosabb változásai
 
 - Javult az élő térkép teljesítménye: a rövid időn belül érkező coordinator frissítések a WebSocket publikálás előtt összevonódnak.
@@ -82,7 +92,8 @@ N8 tulajdonosok tesztjeit és modellspecifikus visszajelzéseit várjuk.
 - külön WebSocket live-map transport snapshot, delta, sequence és automatikus resync kezeléssel
 - kompakt Map entitás, amely live-stream módban nem írja a nagy frekvenciájú teljes geometriát a Home Assistant state-be és Recorderbe
 - natív Home Assistant `lawn_mower` entitás
-- HA által kezelt heti naptár, időzített nyírás/parkolás felülírás és következő tényleges nyírás szenzor
+- a natív ANTHBOT app-ütemezés tükrözése a HA-naptárba és a kártyára, visszaírásos szerkesztéssel
+- időzített nyírás/parkolás felülírás és robothoz kötött következő tényleges nyírás szenzor
 - szabályonkénti zónák, vágási magasság, valamint opcionális időjárás-előrejelzés és pótlás
 - natív robot-életciklus- és ütemezési események HA automatizálásokhoz
 - teljes terület-, zóna-, külső szegély- és töltőkörüli nyírás, ahol az adott modell támogatja
