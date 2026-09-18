@@ -44,7 +44,6 @@ _APPOINTMENT_FIELDS = {
     "week",
     "workmode",
 }
-_SYNTHETIC_APPOINTMENT_ID = "appointment-time"
 
 
 def _model_text(coordinator: Any) -> str:
@@ -153,35 +152,17 @@ def _shadow_scalar(value: Any) -> Any:
     return value
 
 
-def _synthetic_plan_from_appointment_time(value: Any) -> dict[str, Any] | None:
-    """Expose Genie's scalar appointment_time as a read-only daily rule."""
-    value = _shadow_scalar(value)
-    if value in (None, "", 0, "0"):
-        return None
-    if isinstance(value, (int, float)) and value > 10_000_000_000:
-        # Be defensive if a firmware reports epoch milliseconds.
-        value = int(value / 1000)
-    if not (
-        isinstance(value, (int, float))
-        or (isinstance(value, str) and ":" in value)
-    ):
-        return None
-    plan = timezone_envelope(
-        [
-            {
-                "id": _SYNTHETIC_APPOINTMENT_ID,
-                "start_time": value,
-                "active": 1,
-                "unlock": 1,
-                "week": list(range(7)),
-                "repeat": 1,
-                "workmode": 0,
-                "_anthbot_synthetic": True,
-            }
-        ]
-    )
-    plan["_anthbot_synthetic"] = True
-    return plan
+def _appointment_revision(state: dict[str, Any]) -> Any:
+    """Return the app-file revision announced by either shadow."""
+    value = _shadow_scalar(state.get("appointment_time"))
+    if value not in (None, "", 0, "0"):
+        return value
+    service = state.get("_service_reported")
+    if isinstance(service, dict):
+        value = _shadow_scalar(service.get("appointment_time"))
+        if value not in (None, "", 0, "0"):
+            return value
+    return None
 
 
 def native_plan_for(coordinator: Any) -> dict[str, Any]:
@@ -198,18 +179,12 @@ def native_plan_for(coordinator: Any) -> dict[str, Any]:
             if service_plan is not None and service_plan.get("value"):
                 setattr(coordinator, "_anthbot_native_plan", deepcopy(service_plan))
                 return service_plan
-        appointment_time = state.get("appointment_time")
-        if appointment_time in (None, "") and isinstance(service, dict):
-            appointment_time = service.get("appointment_time")
-        synthetic = _synthetic_plan_from_appointment_time(appointment_time)
-        if synthetic is not None:
-            return synthetic
-        # Preserve an explicitly reported empty appointment plan instead of
-        # reviving an older cached plan.
-        if plan is not None:
-            setattr(coordinator, "_anthbot_native_plan", deepcopy(plan))
-            return plan
     cached = _plan_from_value(getattr(coordinator, "_anthbot_native_plan", None))
+    if cached is not None and cached.get("value"):
+        return cached
+    if isinstance(state, dict) and plan is not None:
+        setattr(coordinator, "_anthbot_native_plan", deepcopy(plan))
+        return plan
     if cached is not None:
         return cached
     return timezone_envelope([])
@@ -285,21 +260,78 @@ def _plan_from_map_manager(raw: bytes) -> dict[str, Any] | None:
 
 
 async def async_refresh_native_plan(coordinator: Any) -> bool:
-    """Load an MGS app plan from map_manager when the shadow omits it.
+    """Load the app plan file when the mower shadow only announces a revision.
 
-    Genie exposes ``appointment`` directly.  M5/M9/N8/Pion app builds can
-    instead keep the same envelope in ``time_setting.json``.  The download is
-    read-only, is retried at most every five minutes, and is forced when the
-    reported plan id changes.
+    Genie app 2.15.16 uses ``appointment_time`` as the revision trigger for
+    ``appointment_<serial>.json``.  M5/M9/N8/Pion builds can instead keep the
+    same envelope in ``time_setting.json``.  Both downloads are read-only and
+    bounded so an unavailable cloud file cannot cause request churn.
     """
     state = getattr(coordinator, "reported_state", {})
-    if not isinstance(state, dict) or not _is_mgs_family(coordinator):
+    if not isinstance(state, dict):
         return False
-    if _plan_from_value(state.get("appointment")) is not None:
+    direct = _plan_from_value(state.get("appointment"))
+    service = state.get("_service_reported")
+    service_plan = (
+        _plan_from_value(service.get("appointment"))
+        if isinstance(service, dict)
+        else None
+    )
+    if (direct is not None and direct.get("value")) or (
+        service_plan is not None and service_plan.get("value")
+    ):
+        return False
+
+    revision = _appointment_revision(state)
+    now = time.monotonic()
+    if revision is not None:
+        last_revision = getattr(
+            coordinator, "_anthbot_appointment_file_revision", None
+        )
+        last_probe = float(
+            getattr(
+                coordinator,
+                "_anthbot_appointment_file_probe_monotonic",
+                0.0,
+            )
+            or 0.0
+        )
+        appointment_probe_due = not (
+            last_probe
+            and revision == last_revision
+            and now - last_probe < _MGS_PLAN_RETRY_SECONDS
+        )
+        if appointment_probe_due:
+            setattr(coordinator, "_anthbot_appointment_file_revision", revision)
+            setattr(coordinator, "_anthbot_appointment_file_probe_monotonic", now)
+            try:
+                definition = (
+                    await coordinator.account_client.async_get_device_appointment_definition(
+                        coordinator.client.serial_number
+                    )
+                )
+                plan = _plan_from_time_setting(definition)
+                if plan is not None:
+                    setattr(coordinator, "_anthbot_native_plan", deepcopy(plan))
+                    updated = dict(state)
+                    updated["appointment"] = deepcopy(plan)
+                    coordinator.async_set_updated_data(updated)
+                    return True
+            except Exception as err:  # noqa: BLE001 - optional cloud mirror.
+                _LOGGER.debug(
+                    "Could not refresh Genie appointment file for %s: %s",
+                    getattr(
+                        getattr(coordinator, "client", None),
+                        "serial_number",
+                        "?",
+                    ),
+                    err,
+                )
+
+    if not _is_mgs_family(coordinator):
         return False
 
     plan_id = _plan_id_from_state(state)
-    now = time.monotonic()
     last_id = getattr(coordinator, "_anthbot_native_plan_probe_id", None)
     last_probe = float(
         getattr(coordinator, "_anthbot_native_plan_probe_monotonic", 0.0) or 0.0
@@ -466,7 +498,6 @@ def native_rules_for(
                 "last_fired": extra.get("last_fired"),
                 "source": "anthbot_app",
                 "native": True,
-                "synthetic": bool(raw.get("_anthbot_synthetic")),
                 "native_version": plan.get("version"),
                 "_native_index": index,
                 "_native_raw": deepcopy(raw),
@@ -605,19 +636,8 @@ async def async_publish_native_plan_change(
 ) -> dict[str, Any]:
     """Publish one app-native add/edit/delete and update the local mirror."""
     plan = native_plan_for(coordinator)
-    values = [
-        deepcopy(item)
-        for item in plan.get("value", [])
-        if isinstance(item, dict) and not item.get("_anthbot_synthetic")
-    ]
+    values = [deepcopy(item) for item in plan.get("value", []) if isinstance(item, dict)]
     found = find_native_entry(plan, schedule_id or "") if schedule_id else None
-    if (
-        schedule_id == _SYNTHETIC_APPOINTMENT_ID
-        or (found is not None and found[1].get("_anthbot_synthetic"))
-    ):
-        raise ValueError(
-            "The appointment_time fallback is read-only; edit it in the ANTHBOT app"
-        )
     incremental = plan.get("version") not in (None, "", 0)
 
     if operation in {"add", "edit"}:

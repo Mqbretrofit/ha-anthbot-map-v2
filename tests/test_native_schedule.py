@@ -50,9 +50,20 @@ class _Client:
         self.commands.append(kwargs)
 
 
+class _AccountClient:
+    def __init__(self, appointment=None) -> None:
+        self.appointment = appointment
+        self.appointment_requests = []
+
+    async def async_get_device_appointment_definition(self, serial_number):
+        self.appointment_requests.append(serial_number)
+        return self.appointment
+
+
 class _Coordinator:
     def __init__(self, plan, model="M9 Pro") -> None:
         self.client = _Client()
+        self.account_client = _AccountClient()
         self.device = types.SimpleNamespace(model=model)
         self.reported_state = {"appointment": plan}
 
@@ -209,19 +220,35 @@ class NativeScheduleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([0, 1, 6], native._weekday_list([0, 1, 6]))
         self.assertEqual(list(range(7)), native._weekday_list(127))
 
-    def test_appointment_time_builds_daily_nine_am_rule(self) -> None:
-        stamp = datetime(2026, 9, 18, 9, 0, tzinfo=timezone.utc)
+    async def test_appointment_time_downloads_real_genie_plan_file(self) -> None:
         coordinator = _Coordinator(None, model="Genie 1000")
+        coordinator.account_client = _AccountClient(
+            {
+                "timezone": 2,
+                "value": [
+                    {
+                        "start_time": 9 * 3600,
+                        "active": 1,
+                        "unlock": 1,
+                        "week": [1, 2, 3, 4, 5, 6, 7],
+                        "repeat": 1,
+                        "workmode": 0,
+                    }
+                ],
+            }
+        )
         coordinator.reported_state = {
             "appointment": {"value": [], "timestamp": 1},
-            "appointment_time": int(stamp.timestamp()),
+            # This is a file revision, not the scheduled mowing time.
+            "appointment_time": 1_789_718_400,
         }
+        self.assertTrue(await native.async_refresh_native_plan(coordinator))
         rules = native.native_rules_for(coordinator)
         self.assertEqual(1, len(rules))
         self.assertEqual("09:00", rules[0]["start_time"])
         self.assertEqual(list(range(7)), rules[0]["weekdays"])
-        self.assertTrue(rules[0]["synthetic"])
         self.assertTrue(rules[0]["repeating"])
+        self.assertEqual(["TEST123"], coordinator.account_client.appointment_requests)
 
     def test_service_shadow_appointment_is_visible(self) -> None:
         coordinator = _Coordinator(None, model="Genie 1000")
@@ -243,16 +270,10 @@ class NativeScheduleTests(unittest.IsolatedAsyncioTestCase):
         }
         self.assertEqual("09:00", native.native_rules_for(coordinator)[0]["start_time"])
 
-    async def test_appointment_time_fallback_is_read_only(self) -> None:
+    def test_appointment_time_is_not_invented_as_a_schedule(self) -> None:
         coordinator = _Coordinator(None, model="Genie 1000")
-        coordinator.reported_state = {"appointment_time": "09:00"}
-        with self.assertRaisesRegex(ValueError, "read-only"):
-            await native.async_publish_native_plan_change(
-                coordinator,
-                operation="delete",
-                schedule_id="appointment-time",
-            )
-        self.assertEqual([], coordinator.client.commands)
+        coordinator.reported_state = {"appointment_time": 1_789_718_400}
+        self.assertEqual([], native.native_rules_for(coordinator))
 
 
 if __name__ == "__main__":

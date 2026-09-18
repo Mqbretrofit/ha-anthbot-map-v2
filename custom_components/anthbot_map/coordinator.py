@@ -1667,6 +1667,17 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # Publish live telemetry immediately. A rare map archive
                 # download must not delay the mower's position/status update.
                 self.async_set_updated_data(state)
+                if (
+                    "appointment_time" in property_update
+                    or "appointment_time" in service_update
+                ):
+                    # Genie uses appointment_time as a cloud-file revision.
+                    # Mirror the freshly announced file immediately so the
+                    # dashboard does not have to wait for the 30-second
+                    # schedule-engine interval.
+                    from .native_schedule import async_refresh_native_plan
+
+                    await async_refresh_native_plan(self)
                 live_ridable_area_time = property_update.get("ridable_area_time")
                 if (
                     isinstance(live_ridable_area_time, str)

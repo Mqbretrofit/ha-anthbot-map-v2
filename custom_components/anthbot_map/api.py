@@ -1389,6 +1389,22 @@ class AnthbotCloudApiClient:
             raise AnthbotGenieApiError("Area definition payload type is not an object")
         return definition
 
+    async def async_get_device_appointment_definition(
+        self, serial_number: str
+    ) -> dict[str, Any] | list[Any]:
+        """Fetch the Genie appointment file used by the mobile app.
+
+        ``appointment_time`` is the cloud-file revision trigger, not the
+        scheduled mowing time.  App 2.15.16 downloads the current rules from
+        ``appointment_<serial>.json`` when that trigger changes.
+        """
+        return await self.async_get_device_json_file(
+            serial_number,
+            file_prefix="appointment",
+            sub_category="appointment",
+            filename=f"appointment_{serial_number}.json",
+        )
+
     async def async_get_device_ridable_area_definition(
         self, serial_number: str
     ) -> dict[str, Any] | list[Any]:
