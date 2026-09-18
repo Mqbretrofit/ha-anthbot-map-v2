@@ -20,7 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import AnthbotGenieDataUpdateCoordinator
-from .models.capabilities import supports_voice
+from .models.capabilities import supports_voice_volume
 from .zones import async_update_zone_settings, auto_zones, manual_zones
 
 
@@ -142,7 +142,7 @@ async def async_setup_entry(
         for description in NUMBERS
         if (
             description.key != "voice_volume_setting"
-            or supports_voice(
+            or supports_voice_volume(
                 getattr(coordinator.device, "model", None),
                 coordinator.reported_state,
             )
