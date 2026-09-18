@@ -88,6 +88,9 @@ N8 owners are welcome to test and report model-specific behavior.
 - dedicated WebSocket live-map transport with snapshot, delta, sequence and automatic resync handling
 - compact Map entity design that keeps high-frequency live geometry out of Home Assistant state/Recorder while live-stream mode is active
 - native Home Assistant `lawn_mower` entity
+- HA-owned weekly calendar, timed mow/park overrides and a next-effective-mow sensor
+- per-rule zones, cutting height and optional weather forecast/catch-up behavior
+- native mower lifecycle and schedule events for HA automations
 - full-area, zone, outer-edge, and dock-surroundings mowing controls where supported
 - pause, resume, stop, and return-to-dock commands
 - model-specific Genie / M-series / N8 routing
@@ -104,6 +107,8 @@ N8 owners are welcome to test and report model-specific behavior.
 - rain-hold handling and task-event diagnostics
 - optional anonymous usage statistics, automatic diagnostics, and read-only Developer Agent access
 - 23 selectable interface languages
+
+Schedule setup and examples: [Home Assistant scheduling and overrides](docs/HA_SCHEDULING.md).
 
 ## Using another ANTHBOT integration
 

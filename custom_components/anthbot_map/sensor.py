@@ -25,6 +25,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.event import async_track_time_interval
 
 from .const import (
     DOMAIN,
@@ -41,6 +42,12 @@ from .task_events import (
     task_event_value,
 )
 from .zones import active_manual_zone_ids, auto_zones, manual_zones, ridable_areas
+from .schedule_engine import (
+    next_mow_event,
+    override_for,
+    pending_catch_up,
+    schedules_for,
+)
 
 
 def _safe_get(data: dict[str, Any], *path: str) -> Any:
@@ -1384,8 +1391,88 @@ async def async_setup_entry(
         AnthbotMapSensorEntity(coordinator)
         for coordinator in coordinators
     )
+    entities.extend(
+        AnthbotNextMowSensor(coordinator)
+        for coordinator in coordinators
+    )
 
     async_add_entities(entities)
+
+
+class AnthbotNextMowSensor(
+    CoordinatorEntity[AnthbotGenieDataUpdateCoordinator], SensorEntity
+):
+    """Expose the next effective HA/cloud mowing appointment."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Next mow"
+    _attr_translation_key = "next_mow"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(self, coordinator: AnthbotGenieDataUpdateCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.client.serial_number}_next_mow"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, coordinator.client.serial_number)},
+            manufacturer="Anthbot",
+            model=coordinator.device.model,
+            name=coordinator.device.alias,
+        )
+
+    def _event(self) -> dict[str, Any] | None:
+        return next_mow_event(self.coordinator)
+
+    def _public_schedules(self) -> list[dict[str, Any]]:
+        return [
+            {key: value for key, value in item.items() if not key.startswith("_")}
+            for item in schedules_for(self.coordinator)
+        ]
+
+    @property
+    def native_value(self) -> datetime | None:
+        event = self._event()
+        return event.get("start") if event else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        event = self._event()
+        pending = pending_catch_up(self.coordinator)
+        if event is None:
+            return {
+                "source": None,
+                "weather_catch_up": pending,
+                "schedules": self._public_schedules(),
+                "active_override": override_for(self.coordinator),
+                "native_schedule_sync": self.coordinator.reported_state.get(
+                    "_native_schedule_sync"
+                ),
+            }
+        return {
+            "source": event.get("source"),
+            "summary": event.get("summary"),
+            "mode": event.get("mode"),
+            "zones": event.get("zones"),
+            "mow_height": event.get("mow_height"),
+            "weather_entity": event.get("weather_entity"),
+            "end": event.get("end"),
+            "schedule_id": event.get("uid"),
+            "weather_catch_up": pending,
+            "schedules": self._public_schedules(),
+            "active_override": override_for(self.coordinator),
+            "native_schedule_sync": self.coordinator.reported_state.get(
+                "_native_schedule_sync"
+            ),
+        }
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_track_time_interval(
+                self.hass,
+                lambda _now: self.async_write_ha_state(),
+                timedelta(minutes=1),
+            )
+        )
 
 
 class AnthbotSensorEntity(

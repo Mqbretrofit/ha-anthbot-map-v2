@@ -13,7 +13,7 @@ views:
           battery: sensor.YOUR_MOWER_battery_level
           status: sensor.YOUR_MOWER_mower_status
           charging: binary_sensor.YOUR_MOWER_charging
-          next_appointment: sensor.YOUR_MOWER_next_appointment
+          next_appointment: sensor.YOUR_MOWER_next_mow
         controls:
           start: button.YOUR_MOWER_start_full_mow
           stop: button.YOUR_MOWER_stop_mow
@@ -28,10 +28,10 @@ views:
       - type: entities
         title: Next run
         entities:
-          - entity: sensor.YOUR_MOWER_next_appointment
-            name: App appointment
+          - entity: sensor.YOUR_MOWER_next_mow
+            name: Next effective mow
           - entity: calendar.YOUR_MOWER_schedule
-            name: HA schedule
+            name: ANTHBOT app schedule
 
       - type: horizontal-stack
         cards:

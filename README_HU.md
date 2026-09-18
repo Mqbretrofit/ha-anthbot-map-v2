@@ -82,6 +82,9 @@ N8 tulajdonosok tesztjeit és modellspecifikus visszajelzéseit várjuk.
 - külön WebSocket live-map transport snapshot, delta, sequence és automatikus resync kezeléssel
 - kompakt Map entitás, amely live-stream módban nem írja a nagy frekvenciájú teljes geometriát a Home Assistant state-be és Recorderbe
 - natív Home Assistant `lawn_mower` entitás
+- HA által kezelt heti naptár, időzített nyírás/parkolás felülírás és következő tényleges nyírás szenzor
+- szabályonkénti zónák, vágási magasság, valamint opcionális időjárás-előrejelzés és pótlás
+- natív robot-életciklus- és ütemezési események HA automatizálásokhoz
 - teljes terület-, zóna-, külső szegély- és töltőkörüli nyírás, ahol az adott modell támogatja
 - szüneteltetés, folytatás, leállítás és dokkhoz visszatérés
 - külön Genie / M-széria / N8 modellrouting
@@ -98,6 +101,8 @@ N8 tulajdonosok tesztjeit és modellspecifikus visszajelzéseit várjuk.
 - eső miatti várakozás és cloud task-event diagnosztika
 - opcionális anonim statisztika, automatikus diagnosztika és read-only Developer Agent
 - 23 választható felületi nyelv
+
+Az ütemezés beállítása és példái: [Home Assistant scheduling and overrides](docs/HA_SCHEDULING.md).
 
 ## Más ANTHBOT-integráció használata
 

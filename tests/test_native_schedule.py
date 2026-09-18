@@ -1,0 +1,173 @@
+"""Unit tests for the app-native ANTHBOT schedule adapter."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+import importlib.util
+import io
+import json
+from pathlib import Path
+import sys
+import tarfile
+import types
+import unittest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+MODULE_PATH = ROOT / "custom_components" / "anthbot_map" / "native_schedule.py"
+
+
+def _load_module():
+    dt_module = types.ModuleType("homeassistant.util.dt")
+    dt_module.now = lambda: datetime(2026, 9, 18, 12, tzinfo=timezone.utc)
+    dt_module.as_local = lambda value: value
+    dt_module.utc_from_timestamp = lambda value: datetime.fromtimestamp(
+        value, tz=timezone.utc
+    )
+    homeassistant = types.ModuleType("homeassistant")
+    util = types.ModuleType("homeassistant.util")
+    util.dt = dt_module
+    sys.modules.setdefault("homeassistant", homeassistant)
+    sys.modules.setdefault("homeassistant.util", util)
+    sys.modules.setdefault("homeassistant.util.dt", dt_module)
+    spec = importlib.util.spec_from_file_location("anthbot_native_schedule_test", MODULE_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+native = _load_module()
+
+
+class _Client:
+    serial_number = "TEST123"
+
+    def __init__(self) -> None:
+        self.commands = []
+
+    async def async_publish_service_command(self, **kwargs) -> None:
+        self.commands.append(kwargs)
+
+
+class _Coordinator:
+    def __init__(self, plan, model="M9 Pro") -> None:
+        self.client = _Client()
+        self.device = types.SimpleNamespace(model=model)
+        self.reported_state = {"appointment": plan}
+
+    def async_set_updated_data(self, state) -> None:
+        self.reported_state = state
+
+
+class NativeScheduleTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self.plan = {
+            "timezone": 2,
+            "timezone_sec": 7200,
+            "version": 17,
+            "value": [
+                {
+                    "id": 9,
+                    "start_time": 9 * 3600 + 30 * 60,
+                    "active": 1,
+                    "unlock": 1,
+                    "week": [1, 3, 7],
+                    "repeat": 1,
+                    "workmode": 1,
+                    "area_id": [2, 4],
+                    "area_points": [],
+                    "cutter_height": 45,
+                    "firmware_extra": {"keep": True},
+                },
+                {"id": 10, "unlock": 0, "active": 1, "week": [1]},
+            ],
+        }
+        self.coordinator = _Coordinator(self.plan)
+
+    def test_normalizes_native_rule_and_hides_dnd(self) -> None:
+        rules = native.native_rules_for(
+            self.coordinator,
+            [{"id": "9", "summary": "Front", "weather_entity": "weather.home"}],
+        )
+        self.assertEqual(1, len(rules))
+        self.assertEqual("9", rules[0]["id"])
+        self.assertEqual([0, 2, 6], rules[0]["weekdays"])
+        self.assertEqual("09:30", rules[0]["start_time"])
+        self.assertEqual("zone", rules[0]["mode"])
+        self.assertEqual("2,4", rules[0]["zones"])
+        self.assertEqual(45, rules[0]["mow_height"])
+        self.assertEqual("Front", rules[0]["summary"])
+        self.assertTrue(rules[0]["repeating"])
+
+    def test_normalizes_one_time_app_appointment(self) -> None:
+        coordinator = _Coordinator(
+            {
+                "value": [
+                    {
+                        "start_time": 1_789_718_400,
+                        "active": 1,
+                        "unlock": 1,
+                        "repeat": 0,
+                        "week": [],
+                        "workmode": 0,
+                    }
+                ]
+            },
+            model="Genie 1000",
+        )
+        rule = native.native_rules_for(coordinator)[0]
+        self.assertFalse(rule["repeating"])
+        self.assertIsNotNone(rule["start_datetime"])
+
+    async def test_edit_preserves_unknown_fields_and_uses_incremental_payload(self) -> None:
+        previous = self.plan["value"][0]
+        entry = native.build_native_entry(
+            self.coordinator,
+            {
+                "weekdays": [1, 4],
+                "start_time": "08:15",
+                "mode": "zone",
+                "zones": "3",
+                "mow_height": 40,
+                "enabled": True,
+            },
+            previous,
+        )
+        await native.async_publish_native_plan_change(
+            self.coordinator,
+            operation="edit",
+            schedule_id="9",
+            entry=entry,
+        )
+        command = self.coordinator.client.commands[-1]
+        self.assertEqual("mow_regular", command["cmd"])
+        self.assertEqual(17, command["data"]["version"])
+        self.assertEqual([entry], command["data"]["value"])
+        self.assertEqual({"keep": True}, entry["firmware_extra"])
+        self.assertEqual([3], entry["area_id"])
+        self.assertEqual("command_sent", self.coordinator.reported_state["_native_schedule_sync"]["status"])
+
+    async def test_delete_uses_native_incremental_delete(self) -> None:
+        await native.async_publish_native_plan_change(
+            self.coordinator, operation="delete", schedule_id="9"
+        )
+        data = self.coordinator.client.commands[-1]["data"]
+        self.assertEqual([], data["value"])
+        self.assertEqual([9], data["delete_appointment"])
+        self.assertEqual([10], [item["id"] for item in self.coordinator.reported_state["appointment"]["value"]])
+
+    def test_extracts_nested_time_setting_archive(self) -> None:
+        raw = io.BytesIO()
+        payload = json.dumps({"data": {"appointment": self.plan["value"], "version": 4}}).encode()
+        with tarfile.open(fileobj=raw, mode="w:gz") as archive:
+            info = tarfile.TarInfo("map/time_setting.json")
+            info.size = len(payload)
+            archive.addfile(info, io.BytesIO(payload))
+        plan = native._plan_from_map_manager(raw.getvalue())
+        self.assertEqual(4, plan["version"])
+        self.assertEqual(2, len(plan["value"]))
+
+
+if __name__ == "__main__":
+    unittest.main()

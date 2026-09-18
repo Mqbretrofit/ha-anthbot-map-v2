@@ -85,7 +85,8 @@
       "custom_mowing_direction_enabled": {"name": "Custom mowing direction enabled"},
       "battery_level": {"name": "Battery level"},
       "zones": {"name": "Zones"},
-      "auto_zones": {"name": "Auto zones"}
+      "auto_zones": {"name": "Auto zones"},
+      "next_mow": {"name": "Next effective mow"}
     },
     "binary_sensor": {
       "connection": {"name": "Connection"},
@@ -118,6 +119,12 @@
       "edge_following_return_enabled": {"name": "Edge-following return"},
       "automatic_dock_mowing_enabled": {"name": "Automatic dock-area mowing"},
       "battery_saver_mode": {"name": "Battery saver mode"}
+    },
+    "calendar": {
+      "schedule": {"name": "Mowing schedule"}
+    },
+    "event": {
+      "mower_events": {"name": "Mower events"}
     }
   }
 }

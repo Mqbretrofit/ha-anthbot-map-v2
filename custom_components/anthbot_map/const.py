@@ -33,6 +33,8 @@ DEFAULT_SHARE_ANONYMOUS_USAGE = False
 DEFAULT_SEND_AUTOMATIC_DIAGNOSTICS = False
 DEFAULT_DEVELOPER_AGENT_ENABLED = False
 
+# Project-controlled developer-reporting endpoints. These remain opt-in and
+# are intentionally separate from ANTHBOT/TMT vendor infrastructure.
 DEVELOPER_TELEMETRY_ENDPOINT = (
     "https://reports.mqbretrofithungary.online/api/anthbot/telemetry"
 )
@@ -46,6 +48,9 @@ DEVELOPER_AGENT_RESULT_ENDPOINT = (
     "https://reports.mqbretrofithungary.online/api/anthbot/developer-agent/result"
 )
 
+# Known category_id values (as reported by /api/v1.8.2/device/bindList).
+# The app uses these as human-readable model names; mapping them keeps the
+# device card in HA clean instead of showing cryptic codes.
 MODEL_NAME_BY_CATEGORY: dict[str, str] = {
     "Genie 600": "Anthbot Genie 600",
     "Genie 1000": "Anthbot Genie 1000",
@@ -53,6 +58,9 @@ MODEL_NAME_BY_CATEGORY: dict[str, str] = {
     "Genie 5000": "Anthbot Genie 5000",
 }
 
+# Mapping of numeric error codes (err_code) to human-readable descriptions.
+# Sourced from the Anthbot mobile app i18n table (error_226_des..error_260_des
+# and friends) plus a few well-known ones; 0 means "no error".
 ERROR_CODE_DESCRIPTIONS: dict[int, str] = {
     0: "No error",
     1: "Battery low",
@@ -110,12 +118,15 @@ ERROR_CODE_DESCRIPTIONS: dict[int, str] = {
     237: "Lift motor fault",
 }
 
+# Robot maintenance component labels (shadow `robot_maintenance` has these
+# three wear counters expressed as remaining percentage).
 MAINTENANCE_LABELS: dict[str, str] = {
     "ccp_pecent": "Cutting components life",
     "cl_pecent": "Cutting line life",
     "rc_pecent": "Recharge dock brushes life",
 }
 
+# RTK state enum (from `rtk_state` int).
 RTK_STATE_OPTIONS: dict[int, str] = {
     0: "not_ready",
     1: "single",
@@ -125,6 +136,7 @@ RTK_STATE_OPTIONS: dict[int, str] = {
     5: "dead_reckoning",
 }
 
+# RTK base state enum (from `ctl_rtk_base.rtk_base_state` int).
 RTK_BASE_STATE_OPTIONS: dict[int, str] = {
     0: "offline",
     1: "initializing",
@@ -139,6 +151,7 @@ DEFAULT_BATTERY_SAVER_CHARGE_LIMIT = 80
 DEFAULT_BATTERY_SAVER_MAINTENANCE_LEVEL = 40
 DEFAULT_BATTERY_SAVER_RESUME_LEVEL = 40
 
+# Service names and attributes.
 SERVICE_START_FULL_MOW = "start_full_mow"
 SERVICE_START_OUTER_EDGE_MOW = "start_outer_edge_mow"
 SERVICE_START_DOCK_EDGE_MOW = "start_dock_edge_mow"
@@ -188,11 +201,13 @@ ATTR_ENABLE_RAIN_PERCEPTION = "enable_rain_perception"
 ATTR_ZONES = "zones"
 ATTR_AUTO_ZONES = "auto_zones"
 
+# Defaults embedded in Anthbot mobile app auth flow.
 DEFAULT_IOT_REGION = "us-east-1"
 DEFAULT_IOT_ENDPOINT = "a2bhy9nr7jkgaj-ats.iot.us-east-1.amazonaws.com"
 IOT_ENDPOINT_TEMPLATE = "a2bhy9nr7jkgaj-ats.iot.{region}.amazonaws.com"
 CN_NORTHWEST_IOT_ENDPOINT = "a2iw0czxjowiip-ats.iot.cn-northwest-1.amazonaws.com.cn"
 
+# Country list for login (areaCode in Anthbot API).
 COUNTRY_AREA_CODES: tuple[tuple[str, str], ...] = (
     ("Australia (+61)", "61"),
     ("Austria (+43)", "43"),

@@ -23,7 +23,6 @@ from .coordinator import AnthbotGenieDataUpdateCoordinator
 from .live_map_entity_semantics import install_live_map_entity_write_semantics
 from .live_map_stream import LIVE_DATA_KEY, async_setup_live_map_stream
 from .mower_status import mower_activity_name, raw_robot_status
-from .schedule_setup import async_setup_schedule
 
 _ACTIVITY_BY_NAME = {
     "mowing": LawnMowerActivity.MOWING,
@@ -44,7 +43,6 @@ async def async_setup_entry(
         entry.entry_id
     ]
     await async_setup_live_map_stream(hass, entry, coordinators)
-    await async_setup_schedule(hass, entry)
 
     live_data = hass.data.get(LIVE_DATA_KEY, {})
     if isinstance(live_data, dict) and live_data.get("frontend_ready"):

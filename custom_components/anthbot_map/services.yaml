@@ -1,3 +1,178 @@
+override_schedule:
+  name: Override mowing schedule
+  description: Temporarily mow or remain parked, or clear the active override.
+  target:
+    entity:
+      integration: anthbot_map
+      domain: lawn_mower
+  fields:
+    action:
+      name: Action
+      description: Start mowing now, remain parked, or clear the override.
+      required: true
+      selector:
+        select:
+          options:
+            - mow
+            - park
+            - clear
+    duration_hours:
+      name: Duration
+      description: Override duration in hours.
+      default: 2
+      selector:
+        number:
+          min: 0.25
+          max: 72
+          step: 0.25
+          unit_of_measurement: h
+    mode:
+      name: Mowing mode
+      default: full
+      selector:
+        select:
+          options:
+            - full
+            - zone
+            - auto_zone
+            - edge
+            - dock
+    zones:
+      name: Zones
+      description: Comma-separated zone IDs or names for a zone override.
+      selector:
+        text:
+    mow_height:
+      name: Mowing height
+      description: Optional cutting height applied before mowing starts.
+      selector:
+        select:
+          options: ["30", "35", "40", "45", "50", "55", "60", "65", "70"]
+
+add_ha_schedule:
+  name: Add ANTHBOT app schedule
+  description: Create or replace a native weekly rule in the ANTHBOT app; HA-only weather options are attached locally.
+  target:
+    entity:
+      integration: anthbot_map
+      domain: lawn_mower
+  fields:
+    summary:
+      name: Name
+      default: ANTHBOT app schedule
+      selector:
+        text:
+    schedule_id:
+      name: Schedule ID
+      description: Optional existing rule ID; providing it updates that rule.
+      selector:
+        text:
+    weekdays:
+      name: Weekdays
+      description: Monday is 0 and Sunday is 6; multiple values are allowed.
+      required: true
+      selector:
+        select:
+          multiple: true
+          options:
+            - "0"
+            - "1"
+            - "2"
+            - "3"
+            - "4"
+            - "5"
+            - "6"
+    start_time:
+      name: Start time
+      required: true
+      selector:
+        time:
+    mode:
+      name: Mowing mode
+      default: full
+      selector:
+        select:
+          options:
+            - full
+            - zone
+            - auto_zone
+    zones:
+      name: Zones
+      description: Comma-separated zone IDs or names.
+      selector:
+        text:
+    mow_height:
+      name: Mowing height
+      description: Optional cutting height applied before this rule starts.
+      selector:
+        select:
+          options: ["30", "35", "40", "45", "50", "55", "60", "65", "70"]
+    duration_minutes:
+      name: Calendar duration
+      description: Display duration of the calendar event.
+      default: 60
+      selector:
+        number:
+          min: 15
+          max: 720
+          step: 15
+          unit_of_measurement: min
+    weather_entity:
+      name: Weather entity
+      description: Optional HA weather entity used to postpone unsafe starts.
+      selector:
+        entity:
+          domain: weather
+    forecast_guard_hours:
+      name: Forecast guard
+      description: Do not start when rain is forecast within this many hours.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 24
+          step: 1
+          unit_of_measurement: h
+    rain_probability:
+      name: Rain probability limit
+      description: Forecast probability at or above this percentage postpones mowing.
+      default: 50
+      selector:
+        number:
+          min: 1
+          max: 100
+          step: 5
+          unit_of_measurement: "%"
+    catch_up_hours:
+      name: Catch-up window
+      description: Start later when weather clears within this many hours; zero disables catch-up.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 72
+          step: 1
+          unit_of_measurement: h
+    enabled:
+      name: Enabled
+      default: true
+      selector:
+        boolean:
+
+delete_ha_schedule:
+  name: Delete ANTHBOT app schedule
+  description: Delete one native weekly rule from the ANTHBOT app by its ID.
+  target:
+    entity:
+      integration: anthbot_map
+      domain: lawn_mower
+  fields:
+    schedule_id:
+      name: Schedule ID
+      required: true
+      selector:
+        text:
+
 start_full_mow:
   name: Start Full Mow
   description: Start mowing on selected Anthbot mower(s).

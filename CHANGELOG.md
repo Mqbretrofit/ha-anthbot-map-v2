@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.4.8.0 — unreleased
+
+- Makes the mower's native ANTHBOT app schedule the single source of truth: the HA calendar and card mirror it, while create/edit/delete operations write back with the app's `mow_regular` command.
+- Preserves firmware/model-specific appointment fields while editing, and reads M5/M9/N8/Pion `time_setting.json` as a bounded fallback when the property shadow omits `appointment`.
+- Adds timed schedule overrides for **mow now**, **remain parked** and **clear override**; mowing overrides return the mower to its dock when they expire.
+- Adds `sensor.<mower>_next_mow`, combining active overrides, the native app schedule and any pending weather catch-up.
+- Adds a native HA event entity for mowing start/completion, mower errors, stuck states, rain hold, docking, schedule starts/skips/errors and override changes.
+- Adds an optional weather start guard using current conditions and hourly forecast, plus a bounded catch-up window that retries after weather clears.
+- Adds a dedicated **Schedule** tab to the Anthbot Map Card. It displays the next mow and latest mower event, manages timed mow/park overrides, and creates, edits or deletes weekly zone, height and weather rules without Developer Tools.
+- Lets mower firmware start native appointments, preventing duplicate HA start commands; HA records the event and only intervenes for overrides or weather holds/catch-up.
+- Keeps all mower commands routed through the existing model-aware services; Genie, M5/M9-family and N8 command implementations are not replaced.
+- Geometry editing remains disabled until a model-specific, write-safe ANTHBOT cloud protocol is validated; the integration does not send guessed map writes.
+
 ## 2.4.7.5 — 2026-09-16
 
 - Adds an isolated M5 LiDAR live-map preference for `Anthbot M5 LiDAR`, `MGS02Radar`, and equivalent M LiDAR model identifiers.

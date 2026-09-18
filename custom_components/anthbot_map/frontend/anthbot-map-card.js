@@ -1,6 +1,7 @@
 import { AnthbotMapRenderer } from "./renderer.js?v=2474-genie-heading-test2";
 import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=2411";
 import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=2411";
+import { renderAnthbotSchedulePanel, anthbotScheduleText } from "./schedule-panel.js?v=2480-test3";
 import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=243b2-mowing-mode-help3";
 import {
   adjustCalibration,
@@ -34,6 +35,7 @@ const ENTITY_MAP = {
   gpsLatitude: ["sensor", ["gps_latitude"]],
   gpsLongitude: ["sensor", ["gps_longitude"]],
   poseYaw: ["sensor", ["pose_yaw"]],
+  nextMow: ["sensor", ["next_mow"]],
   shadowUpdated: ["sensor", ["shadow_last_updated"]],
 };
 
@@ -110,7 +112,7 @@ class AnthbotMapCard extends HTMLElement {
     }
 
     this.config = config;
-    const validPanels = new Set(["control", "settings", "interface", "status", "maintenance", "diagnostics"]);
+    const validPanels = new Set(["control", "schedule", "settings", "interface", "status", "maintenance", "diagnostics"]);
     const configuredPanel = String(config.default_panel ?? config.defaultPanel ?? "control").trim();
     this.activePanel = validPanels.has(configuredPanel) ? configuredPanel : "control";
     this.floatingMenuOpen = typeof config.menu_open === "boolean"
@@ -382,6 +384,7 @@ class AnthbotMapCard extends HTMLElement {
           </div>
           <div class="panel-tabs">
             <button type="button" data-panel="control">${this.t("control")}</button>
+            <button type="button" data-panel="schedule">${anthbotScheduleText(this, "schedule")}</button>
             <button type="button" data-panel="settings">${this.t("robotSettings")}</button>
             <button type="button" data-panel="interface">${this.t("interfaceSettings")}</button>
             <button type="button" data-panel="status">${this.t("status")}</button>
@@ -795,6 +798,7 @@ class AnthbotMapCard extends HTMLElement {
     // scroll position and collapses whatever the user just expanded.
     if (
       this.activePanel !== "settings"
+      && this.activePanel !== "schedule"
       && this.activePanel !== "diagnostics"
       && Date.now() >= this.panelInteractionUntil
       && !this.isPanelControlActive()
@@ -1172,7 +1176,9 @@ class AnthbotMapCard extends HTMLElement {
       button.classList.toggle("active", button.dataset.panel === this.activePanel);
     });
 
-    if (this.activePanel === "settings") {
+    if (this.activePanel === "schedule") {
+      renderAnthbotSchedulePanel(this, body);
+    } else if (this.activePanel === "settings") {
       this.renderSettingsPanel(body);
     } else if (this.activePanel === "interface") {
       this.renderInterfacePanel(body);

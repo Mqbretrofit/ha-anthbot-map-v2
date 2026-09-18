@@ -85,7 +85,8 @@
       "custom_mowing_direction_enabled": {"name": "Egyéni nyírási irány engedélyezve"},
       "battery_level": {"name": "Akkumulátorszint"},
       "zones": {"name": "Zónák"},
-      "auto_zones": {"name": "Automatikus zónák"}
+      "auto_zones": {"name": "Automatikus zónák"},
+      "next_mow": {"name": "Következő tényleges nyírás"}
     },
     "binary_sensor": {
       "connection": {"name": "Kapcsolat"},
@@ -118,6 +119,12 @@
       "edge_following_return_enabled": {"name": "Visszatérés szegélykövetéssel"},
       "automatic_dock_mowing_enabled": {"name": "Automatikus dokkoló körüli nyírás"},
       "battery_saver_mode": {"name": "Akkumulátorkímélő mód"}
+    },
+    "calendar": {
+      "schedule": {"name": "Nyírási naptár"}
+    },
+    "event": {
+      "mower_events": {"name": "Robotfűnyíró eseményei"}
     }
   }
 }

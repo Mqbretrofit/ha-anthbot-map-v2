@@ -73,6 +73,9 @@ from .const import (
     SERVICE_GET_MOWING_RECORD_DETAIL,
     SERVICE_SET_BATTERY_SAVER_CONFIG,
     SERVICE_SET_CUSTOM_BUTTON_ACTIONS,
+    SERVICE_OVERRIDE_SCHEDULE,
+    SERVICE_ADD_HA_SCHEDULE,
+    SERVICE_DELETE_HA_SCHEDULE,
 )
 from .coordinator import AnthbotGenieDataUpdateCoordinator
 from .commands import (
@@ -81,6 +84,8 @@ from .commands import (
     async_start_outer_edge_mowing,
 )
 from .zones import async_update_edge_settings, auto_zones, manual_zones
+from .schedule_engine import async_stop_schedule_engine
+from .schedule_setup import async_setup_schedule
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -93,11 +98,13 @@ PLATFORMS = [
     "switch",
     "device_tracker",
     "lawn_mower",
+    "calendar",
+    "event",
 ]
 _LOGGER = logging.getLogger(__name__)
 VALID_MOW_HEIGHTS = list(range(30, 75, 5))
 FRONTEND_RESOURCE_PATH = "/anthbot-map-v2/anthbot-map-card.js"
-FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.7.5"
+FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.8.0-test3"
 LEGACY_ENTITY_SUFFIXES: tuple[str, ...] = (
     "enable_custom_mowing_direction",
     "custom_mowing_direction_enable",
@@ -1183,6 +1190,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinators
     await _async_register_services(hass)
+    await async_setup_schedule(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     for coordinator in coordinators:
         coordinator.start_battery_saver_monitor()
@@ -1247,7 +1255,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             SERVICE_GET_MOWING_RECORD_DETAIL,
             SERVICE_SET_BATTERY_SAVER_CONFIG,
             SERVICE_SET_CUSTOM_BUTTON_ACTIONS,
+            SERVICE_OVERRIDE_SCHEDULE,
+            SERVICE_ADD_HA_SCHEDULE,
+            SERVICE_DELETE_HA_SCHEDULE,
         ):
             if hass.services.has_service(DOMAIN, service_name):
                 hass.services.async_remove(DOMAIN, service_name)
+        async_stop_schedule_engine(hass)
     return True
