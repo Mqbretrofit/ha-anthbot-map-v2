@@ -259,6 +259,52 @@ def _plan_from_map_manager(raw: bytes) -> dict[str, Any] | None:
     return None
 
 
+def _appointment_probe_details(definition: Any) -> dict[str, Any]:
+    """Return a bounded, non-secret description of an appointment payload."""
+    details: dict[str, Any] = {"payload_type": type(definition).__name__}
+    if isinstance(definition, dict):
+        details["keys"] = sorted(str(key) for key in definition)[:40]
+        source = definition.get("_download_source")
+        if isinstance(source, dict):
+            details["download_source"] = {
+                key: value
+                for key, value in source.items()
+                if key
+                in {
+                    "filename",
+                    "category",
+                    "sub_category",
+                    "content_md5",
+                    "expected_md5",
+                    "md5_matches",
+                }
+            }
+        binary = definition.get("_binary_probe")
+        if isinstance(binary, dict):
+            details["binary_probe"] = {
+                key: binary.get(key)
+                for key in ("label", "size", "first_bytes", "decode_errors")
+                if key in binary
+            }
+    elif isinstance(definition, list):
+        details["item_count"] = len(definition)
+        first = next((item for item in definition if isinstance(item, dict)), None)
+        if first is not None:
+            details["first_item_keys"] = sorted(str(key) for key in first)[:40]
+    return details
+
+
+def _publish_appointment_probe(
+    coordinator: Any,
+    state: dict[str, Any],
+    probe: dict[str, Any],
+) -> None:
+    """Expose the read-only appointment-file result for field diagnostics."""
+    updated = dict(state)
+    updated["_native_schedule_probe"] = probe
+    coordinator.async_set_updated_data(updated)
+
+
 async def async_refresh_native_plan(coordinator: Any) -> bool:
     """Load the app plan file when the mower shadow only announces a revision.
 
@@ -315,9 +361,34 @@ async def async_refresh_native_plan(coordinator: Any) -> bool:
                     setattr(coordinator, "_anthbot_native_plan", deepcopy(plan))
                     updated = dict(state)
                     updated["appointment"] = deepcopy(plan)
+                    updated["_native_schedule_probe"] = {
+                        "status": "loaded",
+                        "revision": revision,
+                        "entry_count": len(plan.get("value", [])),
+                        **_appointment_probe_details(definition),
+                    }
                     coordinator.async_set_updated_data(updated)
                     return True
+                _publish_appointment_probe(
+                    coordinator,
+                    state,
+                    {
+                        "status": "parse_failed",
+                        "revision": revision,
+                        **_appointment_probe_details(definition),
+                    },
+                )
             except Exception as err:  # noqa: BLE001 - optional cloud mirror.
+                _publish_appointment_probe(
+                    coordinator,
+                    state,
+                    {
+                        "status": "download_failed",
+                        "revision": revision,
+                        "error_type": type(err).__name__,
+                        "error": str(err)[:500],
+                    },
+                )
                 _LOGGER.debug(
                     "Could not refresh Genie appointment file for %s: %s",
                     getattr(

@@ -249,6 +249,38 @@ class NativeScheduleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(list(range(7)), rules[0]["weekdays"])
         self.assertTrue(rules[0]["repeating"])
         self.assertEqual(["TEST123"], coordinator.account_client.appointment_requests)
+        self.assertEqual(
+            "loaded",
+            coordinator.reported_state["_native_schedule_probe"]["status"],
+        )
+        self.assertEqual(
+            1,
+            coordinator.reported_state["_native_schedule_probe"]["entry_count"],
+        )
+
+    async def test_appointment_probe_exposes_parse_failure_shape(self) -> None:
+        coordinator = _Coordinator(None, model="Genie 1000")
+        coordinator.account_client = _AccountClient(
+            {
+                "_binary_probe": {
+                    "label": "appointment",
+                    "size": 12,
+                    "first_bytes": "00 01",
+                    "decode_errors": ["raw/json:test"],
+                },
+                "_download_source": {
+                    "filename": "appointment_TEST123.json",
+                    "category": "device",
+                    "sub_category": "appointment",
+                },
+            }
+        )
+        coordinator.reported_state = {"appointment_time": 1_789_718_400}
+        self.assertFalse(await native.async_refresh_native_plan(coordinator))
+        probe = coordinator.reported_state["_native_schedule_probe"]
+        self.assertEqual("parse_failed", probe["status"])
+        self.assertEqual("appointment_TEST123.json", probe["download_source"]["filename"])
+        self.assertEqual(12, probe["binary_probe"]["size"])
 
     def test_service_shadow_appointment_is_visible(self) -> None:
         coordinator = _Coordinator(None, model="Genie 1000")

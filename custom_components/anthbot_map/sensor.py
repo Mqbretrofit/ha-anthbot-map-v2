@@ -1446,6 +1446,9 @@ class AnthbotNextMowSensor(
                 "native_schedule_sync": self.coordinator.reported_state.get(
                     "_native_schedule_sync"
                 ),
+                "native_schedule_probe": self.coordinator.reported_state.get(
+                    "_native_schedule_probe"
+                ),
             }
         return {
             "source": event.get("source"),
@@ -1461,6 +1464,9 @@ class AnthbotNextMowSensor(
             "active_override": override_for(self.coordinator),
             "native_schedule_sync": self.coordinator.reported_state.get(
                 "_native_schedule_sync"
+            ),
+            "native_schedule_probe": self.coordinator.reported_state.get(
+                "_native_schedule_probe"
             ),
         }
 
