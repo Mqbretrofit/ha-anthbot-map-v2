@@ -61,13 +61,15 @@ def test_automatic_update_shadow_shapes() -> None:
     assert firmware.automatic_update_value({}) is None
 
 
-def test_manual_update_precondition_matches_app_rule() -> None:
+def test_manual_update_blocks_only_an_already_active_ota() -> None:
     firmware = _load_firmware_helpers()
-    assert firmware.update_precondition_error({"robot_sta": {"value": "idle"}}) is None
-    assert firmware.update_precondition_error({"robot_sta": {"value": "charge"}}) is None
-    error = firmware.update_precondition_error({"robot_sta": {"value": "mowing"}})
-    assert error is not None
-    assert "idle or charging" in error
+    assert firmware.ota_in_progress({}) is False
+    assert firmware.ota_in_progress(
+        {"ota_status": {"ota_state": "downloading", "ota_progress": 25}}
+    ) is True
+    # Do not invent model-specific robot-state restrictions that are not part
+    # of the recovered Android OTA command path.
+    assert "update_precondition_error" not in firmware.__dict__
 
 
 def test_firmware_metadata_is_vendor_only_and_validated() -> None:
@@ -102,16 +104,17 @@ def test_cloud_calls_match_reconstructed_android_ota_protocol() -> None:
     api = _read(COMPONENT / "api.py")
     assert "/api/v1/device/latest/firmware" in api
     assert 'params={"sn": serial_number}' in api
-    assert "/api/v1/device/v2/presigned_url" in api
-    assert '"category": "firmware"' in api
-    assert '"sub_category": ""' in api
     assert "/api/v1/device/v2/auto/upgrade" in api
     assert 'json={"sn": serial_number}' in api
+    assert "async_get_firmware_presigned_url" not in api
 
     firmware = _read(COMPONENT / "firmware_update.py")
-    assert 'cmd="ota_start"' in firmware
-    for field in ('"category": "firmware"', '"version"', '"url"', '"md5"'):
-        assert field in firmware
+    block = firmware.split("async def async_start_vendor_firmware_update", 1)[1]
+    assert 'cmd="ota_start"' in block
+    assert '"version": firmware.version' in block
+    assert '"url": firmware.fw_url' in block
+    assert '"category": "firmware"' not in block
+    assert '"md5": firmware.md5' not in block
 
 
 def test_ha_update_entity_exposes_install_progress_and_release_notes() -> None:
