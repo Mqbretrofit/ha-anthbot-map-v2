@@ -76,55 +76,137 @@
   },
   "entity": {
     "sensor": {
-      "mower_status": {"name": "Robotfűnyíró állapota"},
-      "cutting_height": {"name": "Vágási magasság"},
-      "voice_volume": {"name": "Hangerő"},
-      "mowing_time": {"name": "Nyírási idő (munkamenet)"},
-      "mowing_area": {"name": "Lenyírt terület (munkamenet)"},
-      "custom_mowing_direction": {"name": "Egyéni nyírási irány"},
-      "custom_mowing_direction_enabled": {"name": "Egyéni nyírási irány engedélyezve"},
-      "battery_level": {"name": "Akkumulátorszint"},
-      "zones": {"name": "Zónák"},
-      "auto_zones": {"name": "Automatikus zónák"},
-      "next_mow": {"name": "Következő tényleges nyírás"}
+      "mower_status": {
+        "name": "Robotfűnyíró állapota"
+      },
+      "cutting_height": {
+        "name": "Vágási magasság"
+      },
+      "voice_volume": {
+        "name": "Hangerő"
+      },
+      "mowing_time": {
+        "name": "Nyírási idő (munkamenet)"
+      },
+      "mowing_area": {
+        "name": "Lenyírt terület (munkamenet)"
+      },
+      "custom_mowing_direction": {
+        "name": "Egyéni nyírási irány"
+      },
+      "custom_mowing_direction_enabled": {
+        "name": "Egyéni nyírási irány engedélyezve"
+      },
+      "battery_level": {
+        "name": "Akkumulátorszint"
+      },
+      "zones": {
+        "name": "Zónák"
+      },
+      "auto_zones": {
+        "name": "Automatikus zónák"
+      },
+      "next_mow": {
+        "name": "Következő tényleges nyírás"
+      }
     },
     "binary_sensor": {
-      "connection": {"name": "Kapcsolat"},
-      "charging": {"name": "Töltés"},
-      "custom_mowing_direction_enabled": {"name": "Egyéni nyírási irány engedélyezve"}
+      "connection": {
+        "name": "Kapcsolat"
+      },
+      "charging": {
+        "name": "Töltés"
+      },
+      "custom_mowing_direction_enabled": {
+        "name": "Egyéni nyírási irány engedélyezve"
+      }
     },
     "button": {
-      "connect_cloud": {"name": "Felhő csatlakoztatása"},
-      "start_full_mow": {"name": "Teljes nyírás indítása"},
-      "stop_mow": {"name": "Nyírás leállítása"},
-      "return_to_dock": {"name": "Visszatérés a dokkolóhoz"},
-      "resume_mow": {"name": "Szüneteltetett feladat folytatása"},
-      "pause_mow": {"name": "Nyírás szüneteltetése"},
-      "reset_blade_maintenance": {"name": "Pengekarbantartás visszaállítása"},
-      "reset_camera_maintenance": {"name": "Kamerakarbantartás visszaállítása"},
-      "reset_dock_contact_maintenance": {"name": "Töltőérintkezők karbantartásának visszaállítása"}
+      "connect_cloud": {
+        "name": "Felhő csatlakoztatása"
+      },
+      "start_full_mow": {
+        "name": "Teljes nyírás indítása"
+      },
+      "stop_mow": {
+        "name": "Nyírás leállítása"
+      },
+      "return_to_dock": {
+        "name": "Visszatérés a dokkolóhoz"
+      },
+      "resume_mow": {
+        "name": "Szüneteltetett feladat folytatása"
+      },
+      "pause_mow": {
+        "name": "Nyírás szüneteltetése"
+      },
+      "reset_blade_maintenance": {
+        "name": "Pengekarbantartás visszaállítása"
+      },
+      "reset_camera_maintenance": {
+        "name": "Kamerakarbantartás visszaállítása"
+      },
+      "reset_dock_contact_maintenance": {
+        "name": "Töltőérintkezők karbantartásának visszaállítása"
+      }
     },
     "number": {
-      "mow_height_setting": {"name": "Nyírási magasság"},
-      "voice_volume_setting": {"name": "Hangerő"},
-      "custom_mowing_direction_setting": {"name": "Egyéni nyírási irány"},
-      "rain_continue_time_setting": {"name": "Eső utáni várakozási idő"},
-      "mow_count_setting": {"name": "Nyírási menetek száma"},
-      "visual_obstacle_level_setting": {"name": "Vizuális akadályérzékelés érzékenysége"}
+      "mow_height_setting": {
+        "name": "Nyírási magasság"
+      },
+      "voice_volume_setting": {
+        "name": "Hangerő"
+      },
+      "custom_mowing_direction_setting": {
+        "name": "Egyéni nyírási irány"
+      },
+      "rain_continue_time_setting": {
+        "name": "Eső utáni várakozási idő"
+      },
+      "mow_count_setting": {
+        "name": "Nyírási menetek száma"
+      },
+      "visual_obstacle_level_setting": {
+        "name": "Vizuális akadályérzékelés érzékenysége"
+      }
     },
     "switch": {
-      "custom_mowing_direction_enabled": {"name": "Egyéni nyírási irány engedélyezve"},
-      "rain_perception_enabled": {"name": "Esőérzékelés"},
-      "visual_obstacle_detection_enabled": {"name": "Vizuális akadályérzékelés"},
-      "edge_following_return_enabled": {"name": "Visszatérés szegélykövetéssel"},
-      "automatic_dock_mowing_enabled": {"name": "Automatikus dokkoló körüli nyírás"},
-      "battery_saver_mode": {"name": "Akkumulátorkímélő mód"}
+      "custom_mowing_direction_enabled": {
+        "name": "Egyéni nyírási irány engedélyezve"
+      },
+      "rain_perception_enabled": {
+        "name": "Esőérzékelés"
+      },
+      "visual_obstacle_detection_enabled": {
+        "name": "Vizuális akadályérzékelés"
+      },
+      "edge_following_return_enabled": {
+        "name": "Visszatérés szegélykövetéssel"
+      },
+      "automatic_dock_mowing_enabled": {
+        "name": "Automatikus dokkoló körüli nyírás"
+      },
+      "battery_saver_mode": {
+        "name": "Akkumulátorkímélő mód"
+      },
+      "automatic_firmware_update": {
+        "name": "Automatikus firmware-frissítés"
+      }
     },
     "calendar": {
-      "schedule": {"name": "Nyírási naptár"}
+      "schedule": {
+        "name": "Nyírási naptár"
+      }
     },
     "event": {
-      "mower_events": {"name": "Robotfűnyíró eseményei"}
+      "mower_events": {
+        "name": "Robotfűnyíró eseményei"
+      }
+    },
+    "update": {
+      "firmware": {
+        "name": "Firmware"
+      }
     }
   }
 }
