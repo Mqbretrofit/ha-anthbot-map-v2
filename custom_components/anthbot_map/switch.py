@@ -15,6 +15,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .api import AnthbotGenieApiError
 from .const import DOMAIN
 from .coordinator import AnthbotGenieDataUpdateCoordinator
+from .firmware_update import automatic_update_value
 from .models.n8_control import is_n8_model
 from .zones import async_update_zone_settings, auto_zones, manual_zones
 
@@ -85,6 +86,11 @@ async def async_setup_entry(
         for description in SWITCHES
     ]
     entities.extend(AnthbotBatterySaverSwitchEntity(coordinator) for coordinator in coordinators)
+    entities.extend(
+        AnthbotAutomaticFirmwareUpdateSwitch(coordinator)
+        for coordinator in coordinators
+        if automatic_update_value(coordinator.reported_state) is not None
+    )
     for coordinator in coordinators:
         if is_n8_model(getattr(coordinator.device, "model", None)):
             entities.extend(
@@ -171,6 +177,84 @@ class AnthbotBatterySaverSwitchEntity(
     async def async_turn_off(self, **kwargs) -> None:
         """Disarm battery-saving behavior."""
         await self.coordinator.async_set_battery_saver_enabled(False)
+
+
+class AnthbotAutomaticFirmwareUpdateSwitch(
+    CoordinatorEntity[AnthbotGenieDataUpdateCoordinator], SwitchEntity
+):
+    """Toggle the mower's vendor automatic firmware update mode."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "automatic_firmware_update"
+    _attr_name = "Automatic firmware update"
+    _attr_icon = "mdi:update"
+
+    def __init__(self, coordinator: AnthbotGenieDataUpdateCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = (
+            f"{coordinator.client.serial_number}_automatic_firmware_update"
+        )
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, coordinator.client.serial_number)},
+            manufacturer="Anthbot",
+            model=coordinator.device.model,
+            name=coordinator.device.alias,
+        )
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return the automatic OTA setting reported by the mower."""
+        return automatic_update_value(self.coordinator.reported_state)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        """Expose which raw shadow representation supplied the setting."""
+        state = self.coordinator.reported_state
+        source = (
+            "auto_upgrade"
+            if state.get("auto_upgrade") is not None
+            else "ota_params.auto"
+        )
+        return {
+            "serial_number": self.coordinator.client.serial_number,
+            "model": self.coordinator.device.model,
+            "source": source,
+            "automatic_window": "01:00-03:00",
+        }
+
+    async def _async_set_enabled(self, enabled: bool) -> None:
+        current = automatic_update_value(self.coordinator.reported_state)
+        if current is None:
+            raise AnthbotGenieApiError(
+                "Automatic firmware update is not reported by this mower"
+            )
+        if current == enabled:
+            return
+
+        # The Android app uses a toggle endpoint: POST {sn: ...}, then waits
+        # for auto_upgrade to change. Never retry the toggle blindly.
+        await self.coordinator.account_client.async_toggle_auto_upgrade(
+            self.coordinator.client.serial_number
+        )
+        await self.coordinator.client.async_request_all_properties()
+
+        for _attempt in range(5):
+            await asyncio.sleep(1)
+            if automatic_update_value(self.coordinator.reported_state) == enabled:
+                self.async_write_ha_state()
+                return
+
+        await self.coordinator.async_request_refresh()
+        if automatic_update_value(self.coordinator.reported_state) != enabled:
+            raise AnthbotGenieApiError(
+                "Automatic firmware update toggle was not confirmed by the mower"
+            )
+
+    async def async_turn_on(self, **kwargs) -> None:
+        await self._async_set_enabled(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        await self._async_set_enabled(False)
 
 
 class AnthbotSwitchEntity(
