@@ -56,12 +56,20 @@ def _is_mgs_family(coordinator: Any) -> bool:
 
 
 def _is_pion_family(coordinator: Any) -> bool:
-    return "PION" in _model_text(coordinator)
+    model = _model_text(coordinator)
+    return "PION" in model or "MGC" in model
+
+
+def _is_mgc_family(coordinator: Any) -> bool:
+    return "MGC" in _model_text(coordinator)
 
 
 def _current_mow_height(coordinator: Any) -> int:
     state = getattr(coordinator, "reported_state", {})
     if isinstance(state, dict):
+        height = _safe_int(state.get("cutter_height"), 0)
+        if 20 <= height <= 100:
+            return height
         for parent in ("param_set", "mow_remote"):
             value = state.get(parent)
             if isinstance(value, dict):
@@ -510,6 +518,20 @@ def _time_text(value: Any) -> str:
     return f"{seconds // 3600:02d}:{(seconds % 3600) // 60:02d}"
 
 
+def _weekday_list_for(coordinator: Any, value: Any) -> list[int]:
+    """Normalize model-specific weekday encodings to HA's zero-based list."""
+    if (
+        _is_pion_family(coordinator)
+        and isinstance(value, int)
+        and not isinstance(value, bool)
+        and 1 <= value <= 7
+    ):
+        # MGC/Pion property shadows store one weekday number per appointment
+        # instead of the bitmask used by some Genie firmware.
+        return [value - 1]
+    return _weekday_list(value)
+
+
 def _zone_text(entry: dict[str, Any]) -> str | None:
     zones = entry.get("area_id")
     if isinstance(zones, list):
@@ -552,7 +574,7 @@ def native_rules_for(
             {
                 "id": schedule_id,
                 "summary": str(extra.get("summary") or f"ANTHBOT app schedule {index + 1}"),
-                "weekdays": _weekday_list(raw.get("week")),
+                "weekdays": _weekday_list_for(coordinator, raw.get("week")),
                 "start_time": _time_text(raw.get("start_time")),
                 "start_datetime": start_datetime,
                 "repeating": repeating,
@@ -633,12 +655,21 @@ def build_native_entry(
     if workmode == 4 and not entry.get("area_points"):
         raise ValueError("Mapped-region schedules must first be created in the ANTHBOT app")
 
+    native_weekdays = _native_weekdays(rule.get("weekdays"))
+    week_value: Any = native_weekdays
+    if _is_mgc_family(coordinator):
+        if len(native_weekdays) != 1:
+            raise ValueError(
+                "MGC/Pion schedules use one native appointment per weekday"
+            )
+        week_value = native_weekdays[0]
+
     entry.update(
         {
             "start_time": _seconds_from_time(rule.get("start_time")),
             "active": 1 if bool(rule.get("enabled", True)) else 0,
             "unlock": 1,
-            "week": _native_weekdays(rule.get("weekdays")),
+            "week": week_value,
             "repeat": 1,
             "workmode": workmode,
         }
