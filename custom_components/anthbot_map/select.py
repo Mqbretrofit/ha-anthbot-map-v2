@@ -15,7 +15,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .api import AnthbotGenieApiError
 from .const import DOMAIN
 from .coordinator import AnthbotGenieDataUpdateCoordinator
-from .models.capabilities import supports_voice
+from .models.capabilities import supports_voice_packages
 from .models.n8_control import is_n8_model
 from .voice_packs import (
     VoicePack,
@@ -52,7 +52,7 @@ async def async_setup_entry(
     ]
     entities: list[SelectEntity] = []
     for coordinator in coordinators:
-        if supports_voice(
+        if supports_voice_packages(
             getattr(coordinator.device, "model", None),
             coordinator.reported_state,
         ):
