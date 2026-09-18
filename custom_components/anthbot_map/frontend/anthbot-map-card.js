@@ -52,6 +52,10 @@ const SELECT_MAP = {
   voicePack: ["voice_pack", "voice pack"],
 };
 
+const UPDATE_MAP = {
+  firmware: ["firmware", "firmware_update"],
+};
+
 const SWITCH_MAP = {
   rain: ["rain_perception", "rain_perception_enabled", "rain perception"],
   visualObstacle: ["visual_obstacle_detection", "visual_obstacle_detection_enabled", "visual obstacle detection"],
@@ -59,6 +63,7 @@ const SWITCH_MAP = {
   edgeReturn: ["edge_following_return_enabled", "edge-following return"],
   autoDockMow: ["automatic_dock_mowing_enabled", "automatic dock-area mowing"],
   batterySaver: ["battery_saver_mode", "battery saver mode"],
+  autoFirmwareUpdate: ["automatic_firmware_update", "automatic firmware update"],
 };
 
 class AnthbotMapCard extends HTMLElement {
@@ -1340,6 +1345,9 @@ class AnthbotMapCard extends HTMLElement {
       this.createNumberControl(this.t("customDirection"), "mowDirection", 0, 180, 1, "deg"),
       this.createNumberControl(this.t("rainDelay"), "rainContinue", 0, 8, 1, "h"),
     ];
+    if (this.getUpdateEntity("firmware")) {
+      controls.push(this.createFirmwareUpdateControl());
+    }
     if (this.getNumberEntity("voiceVolume")) {
       controls.push(this.createNumberControl(this.t("volume"), "voiceVolume", 0, 100, 1, "%"));
     }
@@ -1353,6 +1361,14 @@ class AnthbotMapCard extends HTMLElement {
       this.createSwitchControl(this.t("autoDockMow"), "autoDockMow"),
       this.createSwitchControl(this.t("batterySaverMode"), "batterySaver"),
     );
+    if (this.getSwitchEntity("autoFirmwareUpdate")) {
+      controls.push(
+        this.createSwitchControl(
+          this.t("automaticFirmwareUpdate"),
+          "autoFirmwareUpdate",
+        ),
+      );
+    }
     grid.append(...controls);
     globalSection.querySelector(".settings-section-body").appendChild(grid);
     body.appendChild(globalSection);
@@ -2929,6 +2945,56 @@ class AnthbotMapCard extends HTMLElement {
     return tile;
   }
 
+  createFirmwareUpdateControl() {
+    const entityId = this.getUpdateEntity("firmware");
+    const entity = entityId ? this._hass.states[entityId] : null;
+    const attrs = entity?.attributes || {};
+    const installed = attrs.installed_version || "-";
+    const latest = attrs.latest_version || "-";
+    const inProgress = Boolean(attrs.in_progress);
+    const progress = Number(attrs.update_percentage);
+    const hasProgress = Number.isFinite(progress) && progress >= 0;
+    const available = entity?.state === "on";
+
+    const tile = document.createElement("div");
+    tile.className = "panel-tile control-tile firmware-update-tile";
+    tile.innerHTML = `
+      <div class="control-head">
+        <span>${escapeHtml(this.t("firmwareUpdate"))}</span>
+        <strong>${escapeHtml(String(installed))} → ${escapeHtml(String(latest))}</strong>
+      </div>
+      <small style="display:block;opacity:.68;margin:4px 0 10px">
+        ${escapeHtml(
+          inProgress
+            ? `${this.t("firmwareUpdating")}${hasProgress ? ` ${Math.round(progress)}%` : ""}`
+            : available ? this.t("firmwareAvailable") : this.t("firmwareUpToDate")
+        )}
+      </small>
+      <button type="button" class="panel-action-button" ${!available || inProgress ? "disabled" : ""}>
+        ${escapeHtml(inProgress ? this.t("firmwareUpdating") : this.t("firmwareInstall"))}
+      </button>
+    `;
+
+    const button = tile.querySelector("button");
+    button.addEventListener("click", async () => {
+      if (!entityId || button.disabled) return;
+      button.disabled = true;
+      try {
+        await this._hass.callService("update", "install", { entity_id: entityId });
+        this.notify(this.t("firmwareUpdateStarted"));
+        this.scheduleRefresh();
+      } catch (error) {
+        this.notify(this.t("firmwareUpdateFailed"));
+        throw error;
+      } finally {
+        window.setTimeout(() => {
+          if (button.isConnected) button.disabled = false;
+        }, 2000);
+      }
+    });
+    return tile;
+  }
+
   createSelectControl(label, key) {
     const entityId = this.getSelectEntity(key);
     const entity = entityId ? this._hass.states[entityId] : null;
@@ -4085,6 +4151,14 @@ class AnthbotMapCard extends HTMLElement {
       return configured;
     }
     return this.findEntity("select", SELECT_MAP[kind] || []);
+  }
+
+  getUpdateEntity(kind) {
+    const configured = this.config.updates?.[kind];
+    if (this.isEntityAvailable(configured)) {
+      return configured;
+    }
+    return this.findEntity("update", UPDATE_MAP[kind] || []);
   }
 
   getSwitchEntity(kind) {
