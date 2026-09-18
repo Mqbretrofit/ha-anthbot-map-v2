@@ -48,6 +48,10 @@ const NUMBER_MAP = {
   voiceVolume: ["voice_volume", "voice_volume_setting", "voice volume"],
 };
 
+const SELECT_MAP = {
+  voicePack: ["voice_pack", "voice pack"],
+};
+
 const SWITCH_MAP = {
   rain: ["rain_perception", "rain_perception_enabled", "rain perception"],
   visualObstacle: ["visual_obstacle_detection", "visual_obstacle_detection_enabled", "visual obstacle detection"],
@@ -1325,7 +1329,7 @@ class AnthbotMapCard extends HTMLElement {
     body.innerHTML = "";
     const globalSection = this.createSettingsSection(this.t("globalSettings"), "global", true);
     const grid = this.createPanelGrid();
-    grid.append(
+    const controls = [
       this.createCommandTile(this.t("cloud"), this.t("cloudSub"), "connect"),
       this.createMowHeightControl(),
       this.createNumberControl(this.t("mowCount"), "mowCount", 1, 3, 1, "×"),
@@ -1335,13 +1339,21 @@ class AnthbotMapCard extends HTMLElement {
       ),
       this.createNumberControl(this.t("customDirection"), "mowDirection", 0, 180, 1, "deg"),
       this.createNumberControl(this.t("rainDelay"), "rainContinue", 0, 8, 1, "h"),
-      this.createNumberControl(this.t("volume"), "voiceVolume", 0, 100, 1, "%"),
+    ];
+    if (this.getNumberEntity("voiceVolume")) {
+      controls.push(this.createNumberControl(this.t("volume"), "voiceVolume", 0, 100, 1, "%"));
+    }
+    if (this.getSelectEntity("voicePack")) {
+      controls.push(this.createSelectControl(this.t("voicePack"), "voicePack"));
+    }
+    controls.push(
       this.createSwitchControl(this.t("rainDetection"), "rain"),
       this.createSwitchControl(this.t("customCutDirection"), "customDirection"),
       this.createSwitchControl(this.t("edgeReturn"), "edgeReturn"),
       this.createSwitchControl(this.t("autoDockMow"), "autoDockMow"),
       this.createSwitchControl(this.t("batterySaverMode"), "batterySaver"),
     );
+    grid.append(...controls);
     globalSection.querySelector(".settings-section-body").appendChild(grid);
     body.appendChild(globalSection);
     body.appendChild(this.createCustomButtonActionsSection());
@@ -2917,6 +2929,51 @@ class AnthbotMapCard extends HTMLElement {
     return tile;
   }
 
+  createSelectControl(label, key) {
+    const entityId = this.getSelectEntity(key);
+    const entity = entityId ? this._hass.states[entityId] : null;
+    const tile = document.createElement("label");
+    tile.className = "panel-tile control-tile";
+    const options = Array.isArray(entity?.attributes?.options) ? entity.attributes.options : [];
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", label);
+    select.disabled = !entityId || options.length === 0;
+
+    const heading = document.createElement("div");
+    heading.className = "control-head";
+    heading.innerHTML = `<span>${label}</span><strong>${entity?.state && entity.state !== "unknown" ? escapeHtml(entity.state) : "-"}</strong>`;
+    tile.append(heading, select);
+
+    for (const value of options) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = value;
+      option.selected = value === entity?.state;
+      select.appendChild(option);
+    }
+
+    select.addEventListener("change", async () => {
+      if (!entityId) return;
+      const previous = entity?.state;
+      select.disabled = true;
+      try {
+        await this._hass.callService("select", "select_option", {
+          entity_id: entityId,
+          option: select.value,
+        });
+        heading.querySelector("strong").textContent = select.value;
+        this.scheduleRefresh();
+      } catch (error) {
+        if (previous) select.value = previous;
+        this.notify(`${this.t("settingFailed")}: ${entityId}`);
+        throw error;
+      } finally {
+        select.disabled = false;
+      }
+    });
+    return tile;
+  }
+
   createSwitchControl(label, key) {
     const entityId = this.getSwitchEntity(key);
     const entity = entityId ? this._hass.states[entityId] : null;
@@ -3621,7 +3678,7 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   hasSettingFallback(kind) {
-    return ["mowHeight", "mowDirection", "rainContinue", "voiceVolume"].includes(kind);
+    return ["mowHeight", "mowDirection", "rainContinue"].includes(kind);
   }
 
   async callSettingFallback(kind, value) {
@@ -3629,7 +3686,6 @@ class AnthbotMapCard extends HTMLElement {
       mowHeight: ["set_mow_height", { mow_height: value }],
       mowDirection: ["set_custom_mowing_direction", { mow_direction: value, enable_custom_direction: true }],
       rainContinue: ["set_rain_continue_time", { rain_continue_time: value }],
-      voiceVolume: ["set_voice_volume", { voice_volume: value }],
     }[kind];
     if (!fallback) {
       throw new Error(`No fallback service for ${kind}`);
@@ -4021,6 +4077,14 @@ class AnthbotMapCard extends HTMLElement {
       return configured;
     }
     return this.findEntity("number", NUMBER_MAP[kind] || []);
+  }
+
+  getSelectEntity(kind) {
+    const configured = this.config.selects?.[kind];
+    if (this.isEntityAvailable(configured)) {
+      return configured;
+    }
+    return this.findEntity("select", SELECT_MAP[kind] || []);
   }
 
   getSwitchEntity(kind) {
