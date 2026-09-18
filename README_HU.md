@@ -21,6 +21,14 @@ Stabil verzió: **2.4.8.0**
 
 Legfrissebb kiadás: [Anthbot Map v2.4.8.0](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.8.0)
 
+### A 2.4.8.1 legfontosabb változásai
+
+- Javítja a natív ANTHBOT app-ütemezés visszaírását az M5/M9/N8/Pion modellcsaládnál.
+- A pontos M-szériás `appointment` / `delete_appointment` payloadot használja, és létrehozza a szükséges következő numerikus szabályazonosítót.
+- A már működő Genie ütemezési útvonal változatlan maradt.
+- Valódi M9 Pro roboton ellenőrizve: a kártyáról létrehozott ütemezés most már megjelenik az ANTHBOT appban.
+- A teljes kiadás előtti validáció **365/365 sikeres unit teszttel** zárult.
+
 ### A 2.4.8.0 legfontosabb változásai
 
 - A robot natív ANTHBOT appos ütemezése az egyetlen hiteles forrás; ezt tükrözi a HA-naptár és az Anthbot Map Card.

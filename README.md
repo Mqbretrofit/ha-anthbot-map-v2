@@ -27,6 +27,14 @@ Stable version: **2.4.8.0**
 
 Latest release: [Anthbot Map v2.4.8.0](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.8.0)
 
+### Highlights in 2.4.8.1
+
+- Fixes native ANTHBOT app schedule write-back for M5/M9/N8/Pion-family mowers.
+- Uses the exact M-series `appointment` / `delete_appointment` payload and generates the required next numeric rule ID.
+- Keeps the working Genie schedule path unchanged.
+- Creating an M9 Pro schedule from the card was verified on real hardware: the rule now appears in the ANTHBOT app.
+- Full release validation passed **365/365 unit tests**.
+
 ### Highlights in 2.4.8.0
 
 - Uses the mower's native ANTHBOT app schedule as the single source of truth and mirrors it into the HA calendar and Anthbot Map Card.

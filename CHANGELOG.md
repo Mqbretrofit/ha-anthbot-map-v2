@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.4.8.1 — 2026-09-18
+
+- Fixes native schedule write-back for M5/M9/N8/Pion-family mowers by using the app's model-specific `appointment` and `delete_appointment` payloads instead of the Genie `value` envelope.
+- Generates the required next numeric appointment ID for new M-series rules.
+- Keeps the already working Genie schedule payload unchanged.
+- Hardware verification: creating an M9 Pro schedule from the Anthbot Map Card now makes it appear in the ANTHBOT app.
+- Full validation before release: 365/365 unit tests passed, including separate M-series add/edit/delete payload regressions and Genie isolation coverage.
+
 ## 2.4.8.0 — 2026-09-18
 
 - Makes the mower's native ANTHBOT app schedule the single source of truth: the HA calendar and card mirror it, while create/edit/delete operations write back with the app's `mow_regular` command.
