@@ -78,7 +78,7 @@ from .const import (
     SERVICE_DELETE_HA_SCHEDULE,
 )
 from .coordinator import AnthbotGenieDataUpdateCoordinator
-from .models.capabilities import supports_voice
+from .models.capabilities import supports_voice_volume
 from .commands import (
     async_prepare_cloud_connection,
     async_start_mowing,
@@ -645,7 +645,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             raise AnthbotGenieApiError("No target Anthbot mower found")
         voice_volume = int(service_call.data[ATTR_VOICE_VOLUME])
         for coordinator in targets:
-            if not supports_voice(
+            if not supports_voice_volume(
                 getattr(coordinator.device, "model", None),
                 coordinator.reported_state,
             ):
