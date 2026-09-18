@@ -41,22 +41,30 @@ def _load_capabilities():
     return capabilities
 
 
-def test_voice_capability_is_hard_disabled_for_m9_family() -> None:
+def test_m9_family_keeps_volume_but_has_no_spoken_voice_packs() -> None:
     capabilities = _load_capabilities()
-    assert capabilities.supports_voice("Anthbot M9", {}) is False
-    assert capabilities.supports_voice("Anthbot M9 Pro", {}) is False
-    # A misleading cloud field must never override the known hardware limit.
-    assert capabilities.supports_voice(
+    for model in ("Anthbot M9", "Anthbot M9 Pro"):
+        assert capabilities.supports_voice_volume(model, {}) is True
+        assert capabilities.supports_voice_packages(model, {}) is False
+
+    # Even misleading voice-package fields must not expose spoken packs on M9.
+    assert capabilities.supports_voice_packages(
         "Anthbot M9 Pro", {"voice_status": {"name": "English"}, "volume": 50}
     ) is False
 
 
-def test_genie_voice_is_enabled_and_unknown_models_fail_closed() -> None:
+def test_genie_supports_both_voice_volume_and_voice_packs() -> None:
     capabilities = _load_capabilities()
-    assert capabilities.supports_voice("Anthbot Genie 1000", {}) is True
-    assert capabilities.supports_voice("Genie 600", {}) is True
-    assert capabilities.supports_voice("Unknown mower", {}) is False
-    assert capabilities.supports_voice(
+    for model in ("Anthbot Genie 1000", "Genie 600"):
+        assert capabilities.supports_voice_volume(model, {}) is True
+        assert capabilities.supports_voice_packages(model, {}) is True
+
+    assert capabilities.supports_voice_volume("Unknown mower", {}) is False
+    assert capabilities.supports_voice_packages("Unknown mower", {}) is False
+    assert capabilities.supports_voice_volume(
+        "Future mower", {"volume": 50}
+    ) is True
+    assert capabilities.supports_voice_packages(
         "Future mower", {"music_cfg": {"music_language": "English"}}
     ) is True
 
@@ -86,12 +94,12 @@ def test_all_voice_entry_points_use_capability_guard() -> None:
     init = _read(COMPONENT / "__init__.py")
 
     assert "AnthbotVoicePackSelect" in select
-    assert "supports_voice(" in select
+    assert "supports_voice_packages(" in select
     assert 'description.key != "voice_volume_setting"' in number
-    assert "supports_voice(" in number
+    assert "supports_voice_volume(" in number
     assert 'description.key != "voice_volume"' in sensor
-    assert "supports_voice(" in sensor
-    assert coordinator.count("supports_voice(") >= 2
+    assert "supports_voice_volume(" in sensor
+    assert coordinator.count("supports_voice_volume(") >= 2
     assert "Voice volume is not supported by" in init
 
 
