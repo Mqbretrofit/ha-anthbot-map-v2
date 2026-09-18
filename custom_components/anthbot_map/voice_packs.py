@@ -9,7 +9,7 @@ from typing import Any
 from aiohttp import ClientError
 
 from .api import AnthbotGenieApiError
-from .models.capabilities import supports_voice
+from .models.capabilities import supports_voice_packages
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -166,7 +166,7 @@ async def async_get_community_voice_packs(session: Any) -> list[VoicePack]:
 
 async def async_get_voice_packs(coordinator: Any) -> list[VoicePack]:
     """Return official + community voice packs for a voice-capable mower."""
-    if not supports_voice(
+    if not supports_voice_packages(
         getattr(coordinator.device, "model", None),
         coordinator.reported_state,
     ):
@@ -211,7 +211,7 @@ def installed_voice_identity(state: dict[str, Any]) -> tuple[Any, str | None, st
 async def async_install_voice_pack(coordinator: Any, pack: VoicePack) -> None:
     """Install a selected voice pack through the app-confirmed voice_set command."""
     model = getattr(coordinator.device, "model", None)
-    if not supports_voice(model, coordinator.reported_state):
+    if not supports_voice_packages(model, coordinator.reported_state):
         raise AnthbotGenieApiError(
             f"Voice packages are not supported by {model or 'this mower'}"
         )
