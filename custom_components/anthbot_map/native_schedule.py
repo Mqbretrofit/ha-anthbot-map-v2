@@ -33,6 +33,19 @@ MODE_TO_WORKMODE = {
     "region": 4,
 }
 
+_APPOINTMENT_FIELDS = {
+    "active",
+    "area_id",
+    "area_points",
+    "end_time",
+    "repeat",
+    "start_time",
+    "unlock",
+    "week",
+    "workmode",
+}
+_SYNTHETIC_APPOINTMENT_ID = "appointment-time"
+
 
 def _model_text(coordinator: Any) -> str:
     return str(getattr(getattr(coordinator, "device", None), "model", "") or "").upper()
@@ -69,12 +82,106 @@ def _safe_int(value: Any, default: int = 0) -> int:
 
 
 def _plan_from_value(value: Any) -> dict[str, Any] | None:
+    """Normalize the appointment shapes used by Genie and MGS shadows."""
+    if isinstance(value, str):
+        try:
+            return _plan_from_value(json.loads(value))
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return None
+    if isinstance(value, list):
+        return timezone_envelope(
+            [deepcopy(item) for item in value if isinstance(item, dict)]
+        )
     if not isinstance(value, dict):
         return None
+
     entries = value.get("value")
-    if not isinstance(entries, list):
+    if isinstance(entries, list):
+        plan = deepcopy(value)
+        plan["value"] = [deepcopy(item) for item in entries if isinstance(item, dict)]
+        return plan
+
+    # AWS IoT can wrap the actual appointment envelope in
+    # {"value": <plan>, "timestamp": ...}.  It may also JSON-encode that
+    # nested value.
+    if isinstance(entries, (dict, str)):
+        nested = _plan_from_value(entries)
+        if nested is not None:
+            return nested
+
+    for key in ("appointment", "appointments", "plans", "schedule"):
+        if key not in value:
+            continue
+        child = value.get(key)
+        if isinstance(child, list):
+            nested = {
+                name: deepcopy(item)
+                for name, item in value.items()
+                if name != key
+            }
+            nested["value"] = [
+                deepcopy(item) for item in child if isinstance(item, dict)
+            ]
+            defaults = timezone_envelope([])
+            nested.setdefault("timezone", defaults["timezone"])
+            nested.setdefault("timezone_sec", defaults["timezone_sec"])
+            return nested
+        nested = _plan_from_value(child)
+        if nested is not None:
+            return nested
+
+    # Some Genie firmware reports one appointment object directly instead of
+    # an envelope or list.
+    if _APPOINTMENT_FIELDS.intersection(value):
+        return timezone_envelope([deepcopy(value)])
+    return None
+
+
+def _shadow_scalar(value: Any) -> Any:
+    """Unwrap a JSON/AWS scalar without accepting arbitrary containers."""
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            decoded = json.loads(text)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return value
+        return _shadow_scalar(decoded)
+    if isinstance(value, dict) and "value" in value:
+        return _shadow_scalar(value.get("value"))
+    return value
+
+
+def _synthetic_plan_from_appointment_time(value: Any) -> dict[str, Any] | None:
+    """Expose Genie's scalar appointment_time as a read-only daily rule."""
+    value = _shadow_scalar(value)
+    if value in (None, "", 0, "0"):
         return None
-    return deepcopy(value)
+    if isinstance(value, (int, float)) and value > 10_000_000_000:
+        # Be defensive if a firmware reports epoch milliseconds.
+        value = int(value / 1000)
+    if not (
+        isinstance(value, (int, float))
+        or (isinstance(value, str) and ":" in value)
+    ):
+        return None
+    plan = timezone_envelope(
+        [
+            {
+                "id": _SYNTHETIC_APPOINTMENT_ID,
+                "start_time": value,
+                "active": 1,
+                "unlock": 1,
+                "week": list(range(7)),
+                "repeat": 1,
+                "workmode": 0,
+                "_anthbot_synthetic": True,
+            }
+        ]
+    )
+    plan["_anthbot_synthetic"] = True
+    return plan
 
 
 def native_plan_for(coordinator: Any) -> dict[str, Any]:
@@ -82,6 +189,23 @@ def native_plan_for(coordinator: Any) -> dict[str, Any]:
     state = getattr(coordinator, "reported_state", {})
     if isinstance(state, dict):
         plan = _plan_from_value(state.get("appointment"))
+        if plan is not None and plan.get("value"):
+            setattr(coordinator, "_anthbot_native_plan", deepcopy(plan))
+            return plan
+        service = state.get("_service_reported")
+        if isinstance(service, dict):
+            service_plan = _plan_from_value(service.get("appointment"))
+            if service_plan is not None and service_plan.get("value"):
+                setattr(coordinator, "_anthbot_native_plan", deepcopy(service_plan))
+                return service_plan
+        appointment_time = state.get("appointment_time")
+        if appointment_time in (None, "") and isinstance(service, dict):
+            appointment_time = service.get("appointment_time")
+        synthetic = _synthetic_plan_from_appointment_time(appointment_time)
+        if synthetic is not None:
+            return synthetic
+        # Preserve an explicitly reported empty appointment plan instead of
+        # reviving an older cached plan.
         if plan is not None:
             setattr(coordinator, "_anthbot_native_plan", deepcopy(plan))
             return plan
@@ -248,12 +372,17 @@ def _entry_key(entry: dict[str, Any], index: int) -> str:
 
 
 def _weekday_list(value: Any) -> list[int]:
-    if not isinstance(value, list):
+    if isinstance(value, int) and not isinstance(value, bool):
+        return [weekday for weekday in range(7) if value & (1 << weekday)]
+    if not isinstance(value, (list, tuple, set)):
         return []
+    numbers = [_safe_int(item, -1) for item in value]
+    zero_based = 0 in numbers
     result: list[int] = []
-    for item in value:
-        number = _safe_int(item, -1)
-        if 1 <= number <= 7:
+    for number in numbers:
+        if zero_based and 0 <= number <= 6:
+            result.append(number)
+        elif not zero_based and 1 <= number <= 7:
             result.append(number - 1)
     return sorted(set(result))
 
@@ -337,6 +466,7 @@ def native_rules_for(
                 "last_fired": extra.get("last_fired"),
                 "source": "anthbot_app",
                 "native": True,
+                "synthetic": bool(raw.get("_anthbot_synthetic")),
                 "native_version": plan.get("version"),
                 "_native_index": index,
                 "_native_raw": deepcopy(raw),
@@ -475,8 +605,19 @@ async def async_publish_native_plan_change(
 ) -> dict[str, Any]:
     """Publish one app-native add/edit/delete and update the local mirror."""
     plan = native_plan_for(coordinator)
-    values = [deepcopy(item) for item in plan.get("value", []) if isinstance(item, dict)]
+    values = [
+        deepcopy(item)
+        for item in plan.get("value", [])
+        if isinstance(item, dict) and not item.get("_anthbot_synthetic")
+    ]
     found = find_native_entry(plan, schedule_id or "") if schedule_id else None
+    if (
+        schedule_id == _SYNTHETIC_APPOINTMENT_ID
+        or (found is not None and found[1].get("_anthbot_synthetic"))
+    ):
+        raise ValueError(
+            "The appointment_time fallback is read-only; edit it in the ANTHBOT app"
+        )
     incremental = plan.get("version") not in (None, "", 0)
 
     if operation in {"add", "edit"}:

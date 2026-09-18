@@ -185,6 +185,9 @@ class NativeScheduleTests(unittest.IsolatedAsyncioTestCase):
         listed = _Coordinator([self.plan["value"][0]], model="Genie 1000")
         self.assertEqual("09:30", native.native_rules_for(listed)[0]["start_time"])
 
+        encoded = _Coordinator(json.dumps(wrapped), model="Genie 1000")
+        self.assertEqual("09:30", native.native_rules_for(encoded)[0]["start_time"])
+
     def test_parses_genie_single_appointment_object(self) -> None:
         coordinator = _Coordinator(
             {
@@ -239,6 +242,17 @@ class NativeScheduleTests(unittest.IsolatedAsyncioTestCase):
             }
         }
         self.assertEqual("09:00", native.native_rules_for(coordinator)[0]["start_time"])
+
+    async def test_appointment_time_fallback_is_read_only(self) -> None:
+        coordinator = _Coordinator(None, model="Genie 1000")
+        coordinator.reported_state = {"appointment_time": "09:00"}
+        with self.assertRaisesRegex(ValueError, "read-only"):
+            await native.async_publish_native_plan_change(
+                coordinator,
+                operation="delete",
+                schedule_id="appointment-time",
+            )
+        self.assertEqual([], coordinator.client.commands)
 
 
 if __name__ == "__main__":
