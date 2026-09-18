@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 64611)
-Total output lines: 5598
-
 import { AnthbotMapRenderer } from "./renderer.js?v=2474-genie-heading-test2";
 import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=2411";
 import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=2411";
@@ -2426,7 +2423,397 @@ class AnthbotMapCard extends HTMLElement {
       };
       // Same garden photo the live map card underlays behind the
       // boundary/zones (config.image) -- reused here so the history popup's
-      // zone schematic sits on the same familiar backdrop. Prel…4611 tokens truncated…= "button";
+      // zone schematic sits on the same familiar backdrop. Preloaded (and
+      // its natural pixel size read) *before* rendering so the image can be
+      // placed with the exact same affine fit the live map uses (see
+      // renderMowingRecordZonesSvg) instead of a naive stretch-to-fit.
+      const backgroundImage = this.config?.image ? await loadImageElement(this.config.image) : null;
+
+      // Mirrors renderer.js's own draw() exactly (confirmed by reading it):
+      // the live map does NOT feed the same world bounds into every
+      // geometry blindly -- it prefers an explicit `config.bounds` override
+      // when the user has set one, only falling back to a freshly computed
+      // getWorldBounds() otherwise. And critically, it fits BOTH its
+      // "base" (image) and calibrated (zones/path) geometries using the
+      // *photo's own* aspect ratio, and applies the same view rotation
+      // (config.rotation, plus the mobile auto-rotate) to both. Any of
+      // these three that differ between the popup and the live map would
+      // reproduce the "photo looks aligned-ish but isn't really" bug even
+      // with the correct calibration numbers -- so all three are threaded
+      // through here instead of recomputed independently.
+      const mobileViewport = typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches;
+      const mobileRotation = mobileViewport
+        ? Number(this.config.mobile_map_rotation ?? this.config.mobileMapRotation ?? 90) || 0
+        : 0;
+      const rotation = degreesToRadians((Number(this.config.rotation) || 0) + mobileRotation);
+
+      // A record's own `area_url` snapshot is what got mowed *then*, but it
+      // can differ slightly from the property's current live boundary/zone
+      // data (re-mapped since, edge points refined, etc.) -- if the popup
+      // computed its world bounds from that historical snapshot while the
+      // live map computes its bounds from the CURRENT live state, the two
+      // would end up scaled just enough differently to visibly mismatch
+      // (Attila's "squeeze it together horizontally" report) even with
+      // identical calibration numbers. So world bounds are computed here
+      // from the exact same live inputs `updateRenderer()` feeds the live
+      // renderer -- not from the historical record's own area data -- and
+      // handed down already resolved, matching renderer.js's own
+      // `bounds = this.config.bounds || getWorldBounds(mapSource, pose)`.
+      const liveAttributes = this.entity?.attributes || {};
+      const liveMapSource = {
+        ...(liveAttributes.area_definition || {}),
+        map_raster: liveAttributes.map_raster,
+        map_definition: liveAttributes.map_definition,
+        path_definition: liveAttributes.path_definition,
+        map_binary_paths: liveAttributes.map_binary_paths,
+        path_binary_paths: liveAttributes.path_binary_paths,
+      };
+      const livePose = this.computeLivePose(liveAttributes);
+      const bounds = this.config?.bounds || getWorldBounds(liveMapSource, livePose);
+      // Attila asked for the lawn's own boundary outline to also be visible
+      // in the popup. First attempt used getBoundaryPaths() (map_binary_paths
+      // -- the raw wire-perimeter/travel-route data), but Attila noticed it
+      // cuts straight across the driveway/parking area: that vector path is
+      // the "legacy boundary" the live map itself only draws when
+      // showLegacyBoundary is explicitly turned on (normally off). What the
+      // live map actually shows BY DEFAULT is a pixel-traced outline of the
+      // `map_raster` mask (drawDecodedBoundary/drawRasterBoundary in
+      // renderer.js) -- the real mapped-lawn silhouette, not the wire route.
+      // boundaryRaster carries that live raster through so the popup can
+      // trace the same outline; boundaryPaths is kept only as a fallback
+      // for the (rare) case no live map_raster is available.
+      const boundaryRaster = liveMapSource.map_raster;
+      const boundaryPaths = getBoundaryPaths(liveMapSource);
+
+      // Attila: the zones/coverage still read "too tall" vertically vs. the
+      // live map, even with identical bounds/calibration. Root cause: the
+      // live map's own "map" rect (computeMapFit's width/height/center) is
+      // fit against the live CANVAS's own pixel width/height -- whatever
+      // the card's actual on-screen box happens to be, which (with the
+      // default `fit: "cover"`, or any configured fixed `height:`) can have
+      // a different aspect ratio than the photo, causing the live view to
+      // crop/zoom rather than show the whole world uncropped. The popup was
+      // instead sizing its own SVG canvas to exactly match the photo's own
+      // aspect ratio (zero letterboxing by construction) -- a DIFFERENT fit
+      // than the live map's, so even identical bounds/calibration produced
+      // a differently-cropped/zoomed picture. Reading the live renderer's
+      // *actual* current canvas pixel size (and its `fit` mode) and reusing
+      // both here reproduces the exact same "map" rect the live view uses.
+      const liveCanvas = this.renderer?.canvas;
+      const liveDpr = this.renderer?.dpr || 1;
+      const canvasSize =
+        liveCanvas && liveCanvas.width > 0 && liveCanvas.height > 0
+          ? { width: liveCanvas.width / liveDpr, height: liveCanvas.height / liveDpr }
+          : null;
+      const fit = this.renderer?.options?.fit || this.config?.fit || "cover";
+
+      this.renderMowingRecordDetailBody(body, detail, {
+        pathRequested: Boolean(pathUrl),
+        anchor,
+        mowedZoneInfo: mowedZoneInfoFromRecord(record),
+        // The card's own calibration (from the "Map fit" controls) -- the
+        // same one the live map applies -- so the zone/image placement here
+        // matches the live map instead of an independent, uncalibrated fit.
+        calibration: this.calibration,
+        // Separate, additional calibration knob (from the live map's own
+        // "decoded boundary" fit controls) applied only to the raster-
+        // traced boundary outline -- distinct from the main `calibration`
+        // used for zones/coverage/photo. Threading it through is what lets
+        // the traced outline land exactly where it does on the live map.
+        decodedBoundaryCalibration: this.decodedBoundaryCalibration,
+        backgroundImage,
+        bounds,
+        boundaryRaster,
+        boundaryPaths,
+        canvasSize,
+        fit,
+        rotation,
+      });
+    } catch (error) {
+      body.innerHTML = `<div class="mowing-record-detail-status mowing-record-detail-error">${escapeHtml(String(error?.message || error))}</div>`;
+    }
+  }
+
+  renderMowingRecordDetailBody(
+    body,
+    detail,
+    {
+      pathRequested = true,
+      anchor = null,
+      mowedZoneInfo = null,
+      calibration = null,
+      decodedBoundaryCalibration = null,
+      backgroundImage = null,
+      bounds = null,
+      boundaryRaster = null,
+      boundaryPaths = null,
+      canvasSize = null,
+      fit = "cover",
+      rotation = 0,
+    } = {}
+  ) {
+    body.innerHTML = "";
+    let rendered = false;
+
+    // The map file is just the mower's static lawn boundary (the same
+    // outline every session) -- it does NOT show what got mowed *this*
+    // session. That comes from the path file's decoded trajectory points,
+    // which get drawn as a coverage overlay on top of whichever background
+    // (raster or zone schematic) is available, or on their own if neither is.
+    const pathPoints = extractDetailPathPoints(detail?.path, anchor);
+
+    // Sanity guard: the delta+anchor reconstruction (see
+    // extractDetailPathPoints) can still drift wildly if the struct-layout
+    // guess is wrong for this record's path format -- drawing that as a
+    // "coverage" line would be actively misleading (a stray line shooting
+    // across the whole map), worse than showing nothing. Only draw it if
+    // its extent is in the same ballpark as the raster's own world size.
+    let pathLooksSane = true;
+    const mapRaster = detail?.map?._map_raster;
+    if (mapRaster?.bounds && pathPoints.length) {
+      const pb = boundingBoxOf(pathPoints);
+      const rb = mapRaster.bounds;
+      const rasterSpanX = Number(rb.max_x ?? rb.maxX) - Number(rb.min_x ?? rb.minX);
+      const rasterSpanY = Number(rb.max_y ?? rb.maxY) - Number(rb.min_y ?? rb.minY);
+      if (Number.isFinite(rasterSpanX) && rasterSpanX > 0 && Number.isFinite(rasterSpanY) && rasterSpanY > 0) {
+        pathLooksSane = pb.maxX - pb.minX <= rasterSpanX * 4 && pb.maxY - pb.minY <= rasterSpanY * 4;
+      }
+    }
+
+    // Prefer the zone schematic (labeled rectangles/polygons, with the
+    // zone(s) this record actually mowed highlighted) when zone data is
+    // available -- this is the layout Attila's reference screenshot (the
+    // real app's own history detail screen) uses, and it reads much better
+    // than the raw boundary raster. Fall back to the raster picture, then
+    // to a bare path plot, when there's no zone data to work with.
+    if (detail?.area && typeof detail.area === "object") {
+      const svg = renderMowingRecordZonesSvg(detail.area, pathLooksSane ? pathPoints : [], mowedZoneInfo, {
+        backgroundImage,
+        calibration,
+        decodedBoundaryCalibration,
+        bounds,
+        boundaryRaster,
+        boundaryPaths,
+        canvasSize,
+        fit,
+        rotation,
+      });
+      if (svg) {
+        const wrap = document.createElement("div");
+        wrap.className = "mowing-record-detail-canvas-wrap";
+        wrap.appendChild(svg);
+        body.appendChild(wrap);
+        rendered = true;
+      }
+    }
+
+    if (!rendered && mapRaster && Array.isArray(mapRaster.runs) && mapRaster.width && mapRaster.height) {
+      const canvas = renderMowingRecordRasterCanvas(mapRaster);
+      if (canvas) {
+        if (pathPoints.length && pathLooksSane) {
+          drawDetailPathOnRasterCanvas(canvas, mapRaster, pathPoints);
+        }
+        const wrap = document.createElement("div");
+        wrap.className = "mowing-record-detail-canvas-wrap";
+        wrap.appendChild(canvas);
+        body.appendChild(wrap);
+        rendered = true;
+      }
+    }
+
+    if (!rendered && pathPoints.length && pathLooksSane) {
+      const svg = renderMowingRecordPathOnlySvg(pathPoints);
+      if (svg) {
+        const wrap = document.createElement("div");
+        wrap.className = "mowing-record-detail-canvas-wrap";
+        wrap.appendChild(svg);
+        body.appendChild(wrap);
+        rendered = true;
+      }
+    }
+
+    if (!rendered) {
+      const status = document.createElement("div");
+      status.className = "mowing-record-detail-status";
+      status.textContent = this.t("mowingHistoryDetailUnavailable");
+      body.appendChild(status);
+    }
+
+    const errors = detail?._errors;
+    if (Array.isArray(errors) && errors.length) {
+      const errBox = document.createElement("div");
+      errBox.className = "mowing-record-detail-error";
+      errBox.textContent = errors.join(" | ");
+      body.appendChild(errBox);
+    }
+
+  }
+
+  formatMowingDateRange(start, end) {
+    if (!start && !end) return this.t("mowingHistoryUnknownTime");
+    const locale = this.language && this.language !== "auto" ? this.language : undefined;
+    const dateFmt = new Intl.DateTimeFormat(locale, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const timeFmt = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" });
+    if (start && !end) return dateFmt.format(start);
+    if (end && !start) return dateFmt.format(end);
+    const startLabel = start ? dateFmt.format(start) : "?";
+    const endLabel = end ? timeFmt.format(end) : "?";
+    return `${startLabel} – ${endLabel}`;
+  }
+
+  formatRecordMode(value) {
+    const normalized = String(value).toLowerCase();
+    // Confirmed against the mobile app (2026-08-19): the cloud's numeric
+    // mow_mode "1" is shown by the app as "Zónák" (zone mowing), not "Teljes
+    // terület" as previously (incorrectly) guessed. "0" is assumed to be the
+    // complementary full-area mow since it's the only other observed value.
+    if (normalized === "1") return this.t("mowingModeZones");
+    if (normalized === "0") return this.t("mowingModeGlobal");
+    if (normalized.includes("zone") || normalized.includes("zona")) return this.t("mowingModeZones");
+    if (normalized.includes("edge") || normalized.includes("border") || normalized.includes("szeg")) return this.t("mowingModeEdge");
+    if (normalized.includes("dock")) return this.t("mowingModeDockEdge");
+    if (normalized.includes("global") || normalized.includes("all") || normalized.includes("entire")) return this.t("mowingModeGlobal");
+    return String(value);
+  }
+
+  formatRecordSource(value) {
+    const normalized = String(value).toLowerCase();
+    // Confirmed against the mobile app (2026-08-19): start_cause "1" is shown
+    // by the app as "APP" (started from the mobile app).
+    if (normalized === "1") return this.t("mowingSourceApp");
+    if (normalized.includes("app")) return this.t("mowingSourceApp");
+    if (normalized.includes("sched") || normalized.includes("plan") || normalized.includes("timer")) return this.t("mowingSourceSchedule");
+    if (normalized.includes("button") || normalized.includes("key") || normalized.includes("manual")) return this.t("mowingSourceButton");
+    if (normalized.includes("voice")) return this.t("mowingSourceVoice");
+    return String(value).toUpperCase();
+  }
+
+  createPanelGrid() {
+    const grid = document.createElement("div");
+    grid.className = "panel-grid";
+    return grid;
+  }
+
+  createCommandTile(title, subtitle, command) {
+    const tile = document.createElement("button");
+    tile.type = "button";
+    tile.className = `panel-tile command-tile ${command}`;
+    tile.innerHTML = `<strong>${title}</strong><span>${subtitle}</span>`;
+    tile.addEventListener("click", () => this.handleCommand(command));
+    return tile;
+  }
+
+  primaryMowingAction() {
+    const statuses = this.commandStatusValues();
+    if (statuses.some((value) => ["paused", "pause", "szunetel", "szuneteltetve"].some((item) => value.includes(item)))) {
+      return this.entity?.attributes?.last_mowing_task?.type ? "resume" : "start";
+    }
+    if (statuses.some((value) => ["mowing", "globalmowing", "zonemowing", "regionmowing", "working", "cutting", "nyiras", "funyiras"].some((item) => value.includes(item)))) {
+      return "pause";
+    }
+    return "start";
+  }
+
+  createPrimaryMowingTile(action) {
+    const labels = {
+      start: [this.t("startLabel"), this.t("startSelectedTask")],
+      pause: [this.t("pauseTask"), this.t("pauseTaskSub")],
+      resume: [this.t("resumeTask"), this.t("resumeTaskSub")],
+    };
+    const tile = document.createElement("button");
+    tile.type = "button";
+    tile.dataset.primaryMowingAction = action;
+    tile.className = `panel-tile task-action-tile ${action}`;
+    tile.innerHTML = `<strong>${labels[action][0]}</strong><span>${labels[action][1]}</span>`;
+    tile.addEventListener("click", () => this.handlePrimaryMowingAction(action));
+    return tile;
+  }
+
+  async handlePrimaryMowingAction(action) {
+    if (action === "pause" || action === "resume") {
+      await this.handleCommand(action);
+      return;
+    }
+    if (this.selectedMowingTarget?.type === "zone-set" && this.selectedMowingTarget.zones?.length) {
+      if (this.selectedMowingTarget.zones.length === 1) {
+        await this.startZone(this.selectedMowingTarget.zones[0]);
+        return;
+      }
+      await this.startZones(this.selectedMowingTarget.zones);
+      return;
+    }
+    if (this.selectedMowingTarget?.type === "auto-zone-set" && this.selectedMowingTarget.zones?.length) {
+      if (this.selectedMowingTarget.zones.length === 1) {
+        await this.startAutoZone(this.selectedMowingTarget.zones[0]);
+        return;
+      }
+      await this.startAutoZones(this.selectedMowingTarget.zones);
+      return;
+    }
+    if (this.selectedMowingTarget?.type === "edge") {
+      await this.handleCommand("outer-edge");
+      return;
+    }
+    if (this.selectedMowingTarget?.type === "dock-edge") {
+      await this.handleCommand("dock-edge");
+      return;
+    }
+    await this.handleCommand("start");
+  }
+
+  createInfoTile(label, key) {
+    const entity = this.getRelatedEntity(key);
+    const tile = document.createElement("div");
+    tile.className = "panel-tile info-tile";
+    tile.innerHTML = `<span>${label}</span><strong>${this.formatEntity(entity, key)}</strong>`;
+    return tile;
+  }
+
+  createLanguageControl() {
+    const tile = document.createElement("label");
+    tile.className = "panel-tile language-tile";
+    const title = document.createElement("span");
+    title.textContent = this.t("language");
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", this.t("language"));
+    for (const [code, name] of LANGUAGES) {
+      const option = document.createElement("option");
+      option.value = code;
+      option.textContent = code === "auto" ? this.t("automatic") : name;
+      option.selected = code === this.selectedLanguage;
+      select.appendChild(option);
+    }
+    select.addEventListener("change", () => {
+      this.selectedLanguage = select.value;
+      this.languageOverride = true;
+      this.config = { ...this.config, language: select.value };
+      window.localStorage.setItem("anthbot-map-language", select.value);
+      this.saveInterfaceSettings();
+      this.render();
+    });
+    tile.append(title, select);
+    return tile;
+  }
+
+  createMowHeightControl() {
+    const key = "mowHeight";
+    const entityId = this.getNumberEntity(key);
+    const entity = entityId ? this._hass.states[entityId] : null;
+    const value = this.displayedNumberValue(key, Number(entity?.state));
+    const selected = Number.isFinite(value) ? Math.max(30, Math.min(70, Math.round(value / 5) * 5)) : 50;
+    const tile = document.createElement("div");
+    tile.className = "panel-tile control-tile mow-height-tile";
+    tile.innerHTML = `
+      <div class="control-head">
+        <span>${this.t("cutHeight")}</span>
+        <strong>${selected} mm</strong>
+      </div>
+      <div class="height-options" role="group" aria-label="${this.t("cutHeight")}"></div>
+    `;
+    const options = tile.querySelector(".height-options");
+    for (let height = 30; height <= 70; height += 5) {
+      const button = document.createElement("button");
+      button.type = "button";
       button.className = "height-option";
       button.textContent = String(height);
       button.classList.toggle("active", height === selected);
