@@ -265,6 +265,8 @@ class AnthbotMapCard extends HTMLElement {
           .map-live-status [data-role="mower-status"] { display:block; max-width:230px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; line-height:1.15; }
           .map-live-status .rain-hold-line { display:block; margin-top:3px; font-size:11px; font-weight:600; line-height:1.2; }
           .map-live-status .rain-hold-line[hidden] { display:none; }
+          .map-live-status .next-mow-line { display:block; margin-top:3px; font-size:11px; font-weight:700; line-height:1.2; color:#55a6ff; white-space:nowrap; }
+          .map-live-status .next-mow-line[hidden] { display:none; }
           .map-live-status .mowing-live-line { margin-top:3px; font-size:11px; }
           .map-live-status .mowing-live-line .mowing-live-target { max-width:185px; }
           @media (max-width:720px) {
@@ -402,6 +404,7 @@ class AnthbotMapCard extends HTMLElement {
               <span class="status-label">${this.t("status")}</span>
               <strong data-role="mower-status">-</strong>
               <span class="rain-hold-line" data-role="rain-hold-line" hidden></span>
+              <span class="next-mow-line" data-role="next-mow-line" hidden></span>
               <span class="mowing-live-line" data-role="mowing-live-line" hidden>
                 <span class="mowing-live-target" data-role="mowing-live-target">-</span>
                 <strong class="mowing-live-progress" data-role="mowing-live-progress">--%</strong>
@@ -1011,8 +1014,21 @@ class AnthbotMapCard extends HTMLElement {
       mowerStatus.textContent = displayedStatus;
     });
     this.updateRainHoldDisplay();
+    this.updateNextMowDisplay();
 
     this.updateMowingProgressStatus();
+  }
+
+  updateNextMowDisplay() {
+    const line = this.shadowRoot.querySelector('[data-role="next-mow-line"]');
+    if (!line) return;
+    const entity = this.getNextMowEntity();
+    const raw = String(entity?.state || "").toLowerCase();
+    const hasNextMow = Boolean(entity) && !["", "unknown", "unavailable", "none"].includes(raw);
+    line.hidden = !hasNextMow;
+    line.textContent = hasNextMow
+      ? `${anthbotScheduleText(this, "nextMow")}: ${this.formatLocalDateTime(entity.state)}`
+      : "";
   }
 
   mowingCompletionStorageKey() {
@@ -1840,8 +1856,6 @@ class AnthbotMapCard extends HTMLElement {
     ]) {
       grid.appendChild(this.createInfoTile(item[0], item[1]));
     }
-    const nextMowTile = this.createNextMowTile();
-    if (nextMowTile) grid.appendChild(nextMowTile);
     grid.appendChild(this.createShutdownGuardTile());
     body.appendChild(grid);
   }
@@ -1863,17 +1877,6 @@ class AnthbotMapCard extends HTMLElement {
       if (match) return match;
     }
     return this.getRelatedEntity("nextMow");
-  }
-
-  createNextMowTile() {
-    const entity = this.getNextMowEntity();
-    const raw = String(entity?.state || "").toLowerCase();
-    if (!entity || ["", "unknown", "unavailable", "none"].includes(raw)) return null;
-    const tile = document.createElement("div");
-    tile.className = "panel-tile info-tile next-mow-tile";
-    const value = this.formatLocalDateTime(entity.state);
-    tile.innerHTML = `<span>${anthbotScheduleText(this, "nextMow")}</span><strong>${value}</strong>`;
-    return tile;
   }
 
   createShutdownGuardTile() {
