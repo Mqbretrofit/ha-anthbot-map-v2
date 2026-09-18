@@ -42,7 +42,7 @@ from .definition_refresh import (
     should_refresh_map_definition,
 )
 from .mqtt_live import AnthbotLiveShadowListener
-from .models.capabilities import supports_voice
+from .models.capabilities import supports_voice_volume
 
 _LOGGER = logging.getLogger(__name__)
 _LIVE_HISTORY_REFRESH_SECONDS = 5.0
@@ -913,7 +913,7 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _current_voice_volume(self) -> int | None:
         """Return the mower voice volume from the live shadow."""
-        if not supports_voice(
+        if not supports_voice_volume(
             getattr(self.device, "model", None), self.reported_state
         ):
             return None
@@ -926,7 +926,7 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_restore_voice_volume(self) -> None:
         """Restore the volume saved before a smart-plug charging start."""
-        if not supports_voice(
+        if not supports_voice_volume(
             getattr(self.device, "model", None), self.reported_state
         ):
             self._battery_saver_saved_volume = None
