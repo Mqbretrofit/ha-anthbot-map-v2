@@ -2,7 +2,7 @@
 
 [English](README.md) | Magyar
 
-[![Kiadás](https://img.shields.io/badge/release-v2.4.7.5-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.7.5)
+[![Kiadás](https://img.shields.io/badge/release-v2.4.8.0-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.8.0)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
 [![Megnyitás HACS-ban](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Mqbretrofit&repository=ha-anthbot-map-v2&category=integration)
 [![Licenc: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -17,9 +17,9 @@ Az Anthbot Map összekapcsolja a Home Assistantot az ANTHBOT felhővel, modellen
 
 ## Aktuális verzió
 
-Stabil verzió: **2.4.7.5**
+Stabil verzió: **2.4.8.0**
 
-Legfrissebb kiadás: [Anthbot Map v2.4.7.5](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.7.5)
+Legfrissebb kiadás: [Anthbot Map v2.4.8.0](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.8.0)
 
 ### A 2.4.8.0 legfontosabb változásai
 

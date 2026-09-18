@@ -2,7 +2,7 @@
 
 [English](README.md) | [Magyar](README_HU.md)
 
-[![Release](https://img.shields.io/badge/release-v2.4.7.5-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.7.5)
+[![Release](https://img.shields.io/badge/release-v2.4.8.0-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.8.0)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
 [![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Mqbretrofit&repository=ha-anthbot-map-v2&category=integration)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -23,9 +23,9 @@ If this integration is useful to you, you can support continued development thro
 
 ## Current version
 
-Stable version: **2.4.7.5**
+Stable version: **2.4.8.0**
 
-Latest release: [Anthbot Map v2.4.7.5](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.7.5)
+Latest release: [Anthbot Map v2.4.8.0](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.8.0)
 
 ### Highlights in 2.4.8.0
 
