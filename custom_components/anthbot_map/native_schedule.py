@@ -1,11 +1,11 @@
 """Native ANTHBOT app schedule parsing and write support.
 
 The ANTHBOT 2.15.16 application uses the named service-shadow command
-``mow_regular`` for both the Genie and MGS/Pion planner families.  The current
-plan is exposed as ``appointment`` and contains a timezone envelope plus the
-native appointment objects.  Keep every unknown object field intact so model
-and firmware specific settings are never lost when Home Assistant edits a
-rule.
+``mow_regular`` for both the Genie and MGS/Pion planner families.  Genie sends
+the appointment list as ``value`` while M5/M9/N8/Pion sends incremental writes
+as ``appointment`` (or ``delete_appointment``).  Keep every unknown object
+field intact so model and firmware specific settings are never lost when Home
+Assistant edits a rule.
 """
 
 from __future__ import annotations
@@ -687,10 +687,20 @@ def _command_data(
     *,
     entries: list[dict[str, Any]],
     deleted_ids: list[Any] | None = None,
+    mgs_family: bool = False,
 ) -> dict[str, Any]:
     base = timezone_envelope(entries)
     base["timezone"] = plan.get("timezone", base["timezone"])
     base["timezone_sec"] = plan.get("timezone_sec", base["timezone_sec"])
+    if mgs_family:
+        # App 2.15.16 uses incremental MGS/Pion payloads.  It never sends the
+        # Genie ``value`` envelope for these models.
+        base.pop("value", None)
+        if entries:
+            base["appointment"] = deepcopy(entries)
+        if deleted_ids:
+            base["delete_appointment"] = list(deleted_ids)
+        return base
     if plan.get("version") not in (None, "", 0):
         base["version"] = plan["version"]
         if deleted_ids:
@@ -710,22 +720,42 @@ async def async_publish_native_plan_change(
     values = [deepcopy(item) for item in plan.get("value", []) if isinstance(item, dict)]
     found = find_native_entry(plan, schedule_id or "") if schedule_id else None
     incremental = plan.get("version") not in (None, "", 0)
+    mgs_family = _is_mgs_family(coordinator)
 
     if operation in {"add", "edit"}:
         if entry is None:
             raise ValueError("A native appointment is required")
+        entry = deepcopy(entry)
+        if operation == "add" and mgs_family and entry.get("id") in (None, ""):
+            numeric_ids = [
+                _safe_int(item.get("id"), 0)
+                for item in values
+                if isinstance(item, dict)
+            ]
+            entry["id"] = max(numeric_ids, default=0) + 1
         if found is None:
             values.append(deepcopy(entry))
         else:
             values[found[0]] = deepcopy(entry)
-        data = _command_data(plan, entries=[entry] if incremental else values)
+        data = _command_data(
+            plan,
+            entries=[entry] if (incremental or mgs_family) else values,
+            mgs_family=mgs_family,
+        )
     elif operation == "delete":
         if found is None:
             raise ValueError(f"Native ANTHBOT schedule '{schedule_id}' was not found")
         native_id = found[1].get("id")
         values.pop(found[0])
-        if incremental and native_id not in (None, ""):
-            data = _command_data(plan, entries=[], deleted_ids=[native_id])
+        if (incremental or mgs_family) and native_id not in (None, ""):
+            data = _command_data(
+                plan,
+                entries=[],
+                deleted_ids=[native_id],
+                mgs_family=mgs_family,
+            )
+        elif mgs_family:
+            raise ValueError("M-series native schedules require a numeric id")
         else:
             data = _command_data(plan, entries=values)
             data.pop("version", None)

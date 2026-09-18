@@ -131,7 +131,7 @@ class NativeScheduleTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(rule["repeating"])
         self.assertIsNotNone(rule["start_datetime"])
 
-    async def test_edit_preserves_unknown_fields_and_uses_incremental_payload(self) -> None:
+    async def test_m_series_edit_uses_appointment_payload(self) -> None:
         previous = self.plan["value"][0]
         entry = native.build_native_entry(
             self.coordinator,
@@ -153,20 +153,66 @@ class NativeScheduleTests(unittest.IsolatedAsyncioTestCase):
         )
         command = self.coordinator.client.commands[-1]
         self.assertEqual("mow_regular", command["cmd"])
-        self.assertEqual(17, command["data"]["version"])
-        self.assertEqual([entry], command["data"]["value"])
+        self.assertEqual([entry], command["data"]["appointment"])
+        self.assertNotIn("value", command["data"])
+        self.assertNotIn("version", command["data"])
         self.assertEqual({"keep": True}, entry["firmware_extra"])
         self.assertEqual([3], entry["area_id"])
         self.assertEqual("command_sent", self.coordinator.reported_state["_native_schedule_sync"]["status"])
 
-    async def test_delete_uses_native_incremental_delete(self) -> None:
+    async def test_m_series_delete_uses_native_incremental_delete(self) -> None:
         await native.async_publish_native_plan_change(
             self.coordinator, operation="delete", schedule_id="9"
         )
         data = self.coordinator.client.commands[-1]["data"]
-        self.assertEqual([], data["value"])
+        self.assertNotIn("value", data)
+        self.assertNotIn("appointment", data)
         self.assertEqual([9], data["delete_appointment"])
         self.assertEqual([10], [item["id"] for item in self.coordinator.reported_state["appointment"]["value"]])
+
+    async def test_m_series_add_generates_id_and_uses_appointment_payload(self) -> None:
+        entry = native.build_native_entry(
+            self.coordinator,
+            {
+                "weekdays": [0, 2],
+                "start_time": "07:30",
+                "mode": "full",
+                "enabled": True,
+            },
+        )
+        await native.async_publish_native_plan_change(
+            self.coordinator,
+            operation="add",
+            entry=entry,
+        )
+        data = self.coordinator.client.commands[-1]["data"]
+        self.assertEqual(11, data["appointment"][0]["id"])
+        self.assertNotIn("value", data)
+
+    async def test_genie_versioned_plan_keeps_value_payload(self) -> None:
+        coordinator = _Coordinator(self.plan, model="Genie 1000")
+        previous = self.plan["value"][0]
+        entry = native.build_native_entry(
+            coordinator,
+            {
+                "weekdays": [1],
+                "start_time": "08:15",
+                "mode": "zone",
+                "zones": "3",
+                "enabled": True,
+            },
+            previous,
+        )
+        await native.async_publish_native_plan_change(
+            coordinator,
+            operation="edit",
+            schedule_id="9",
+            entry=entry,
+        )
+        data = coordinator.client.commands[-1]["data"]
+        self.assertEqual(17, data["version"])
+        self.assertEqual([entry], data["value"])
+        self.assertNotIn("appointment", data)
 
     def test_extracts_nested_time_setting_archive(self) -> None:
         raw = io.BytesIO()
