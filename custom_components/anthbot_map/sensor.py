@@ -34,7 +34,7 @@ from .const import (
     RTK_STATE_OPTIONS,
 )
 from .coordinator import AnthbotGenieDataUpdateCoordinator
-from .models.capabilities import supports_voice
+from .models.capabilities import supports_voice_volume
 from .task_events import (
     latest_task_event,
     task_event_code,
@@ -1395,7 +1395,7 @@ async def async_setup_entry(
         for description in SENSORS
         if (
             description.key != "voice_volume"
-            or supports_voice(
+            or supports_voice_volume(
                 getattr(coordinator.device, "model", None),
                 coordinator.reported_state,
             )
