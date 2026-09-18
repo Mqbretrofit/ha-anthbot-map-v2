@@ -7,6 +7,7 @@ import logging
 
 from .api import AnthbotGenieApiError
 from .coordinator import AnthbotGenieDataUpdateCoordinator, is_robot_online
+from .models.base import model_family
 from .models.m_series_common import install_m_series_compat
 from .models.n8_control import is_n8_model
 from .mower_status import raw_robot_status
@@ -29,6 +30,11 @@ def _is_n8(coordinator: AnthbotGenieDataUpdateCoordinator) -> bool:
     return is_n8_model(getattr(coordinator.device, "model", ""))
 
 
+def _is_pion(coordinator: AnthbotGenieDataUpdateCoordinator) -> bool:
+    """Return whether this coordinator controls a Pion/MGC mower."""
+    return model_family(getattr(coordinator.device, "model", "")) == "pion"
+
+
 async def async_prepare_cloud_connection(
     coordinator: AnthbotGenieDataUpdateCoordinator,
     *,
@@ -48,7 +54,8 @@ async def async_prepare_cloud_connection(
         await coordinator.async_prepare_mowing_power()
     m_series = _is_m_series(coordinator)
     n8 = _is_n8(coordinator)
-    native_app_model = m_series or n8
+    pion = _is_pion(coordinator)
+    native_app_model = m_series or n8 or pion
 
     for attempt in range(attempts):
         if not coordinator.live_shadow_connected:
@@ -112,16 +119,18 @@ async def async_start_mowing(
 
     m_series = _is_m_series(coordinator)
     n8 = _is_n8(coordinator)
+    pion = _is_pion(coordinator)
     for attempt in range(2):
         # Genie uses the historical app_state preamble. M5/M9/M9 Pro and N8
         # use their native app command wrapper directly; sending app_state to
         # their service shadow can prevent the real mow_start being accepted.
         if not m_series:
             if not n8:
-                await coordinator.client.async_publish_service_command(
-                    cmd="app_state", data=app_state
-                )
-                await asyncio.sleep(1.5)
+                if not pion:
+                    await coordinator.client.async_publish_service_command(
+                        cmd="app_state", data=app_state
+                    )
+                    await asyncio.sleep(1.5)
 
         await coordinator.client.async_publish_service_command(cmd="mow_start", data=1)
 

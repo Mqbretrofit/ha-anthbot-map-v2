@@ -266,6 +266,62 @@ class NativeScheduleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([0, 1, 6], native._weekday_list([0, 1, 6]))
         self.assertEqual(list(range(7)), native._weekday_list(127))
 
+    def test_mgc_scalar_week_is_one_weekday_not_a_bitmask(self) -> None:
+        coordinator = _Coordinator(
+            {
+                "value": [
+                    {
+                        "start_time": 11 * 3600,
+                        "end_time": 21 * 3600,
+                        "active": 1,
+                        "unlock": 1,
+                        "repeat": 1,
+                        "week": 3,
+                        "workmode": 0,
+                        "cutter_height": 50,
+                    }
+                ]
+            },
+            model="Anthbot MGC1000",
+        )
+        rule = native.native_rules_for(coordinator)[0]
+        self.assertEqual([2], rule["weekdays"])
+        self.assertEqual("11:00", rule["start_time"])
+        self.assertEqual("full", rule["mode"])
+        self.assertEqual(50, rule["mow_height"])
+
+    def test_mgc_build_uses_scalar_week_and_top_level_cutting_height(self) -> None:
+        coordinator = _Coordinator({"value": []}, model="Anthbot MGC1000")
+        coordinator.reported_state["cutter_height"] = 40
+        entry = native.build_native_entry(
+            coordinator,
+            {
+                "weekdays": [4],
+                "start_time": "11:00",
+                "mode": "full",
+                "enabled": True,
+            },
+        )
+        self.assertEqual(5, entry["week"])
+        self.assertEqual(40, entry["cutter_height"])
+        self.assertEqual(0, entry["workmode"])
+        self.assertEqual(0, entry["cutter_direction"])
+
+    def test_mgc_rejects_combined_weekday_rule(self) -> None:
+        coordinator = _Coordinator({"value": []}, model="Anthbot MGC1000")
+        with self.assertRaisesRegex(
+            ValueError, "one native appointment per weekday"
+        ):
+            native.build_native_entry(
+                coordinator,
+                {
+                    "weekdays": [0, 1],
+                    "start_time": "11:00",
+                    "mode": "full",
+                    "enabled": True,
+                },
+            )
+
     async def test_appointment_time_downloads_real_genie_plan_file(self) -> None:
         coordinator = _Coordinator(None, model="Genie 1000")
         coordinator.account_client = _AccountClient(

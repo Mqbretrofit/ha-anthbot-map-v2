@@ -2,7 +2,7 @@
 
 [English](README.md) | [Magyar](README_HU.md)
 
-[![Release](https://img.shields.io/badge/release-v2.4.8.1-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.8.1)
+[![Release](https://img.shields.io/badge/release-v2.4.8.2-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.8.2)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
 [![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Mqbretrofit&repository=ha-anthbot-map-v2&category=integration)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -10,7 +10,7 @@
 
 Unofficial Home Assistant integration and custom map card for ANTHBOT robotic lawn mowers.
 
-Anthbot Map connects Home Assistant to the ANTHBOT cloud, creates model-aware mower entities, and bundles the `anthbot-map-card` Lovelace card. It provides mower control, map/path/zone rendering, mowing history, diagnostics, Battery Saver functions, and model-specific handling for Genie, M-series, and N8 devices.
+Anthbot Map connects Home Assistant to the ANTHBOT cloud, creates model-aware mower entities, and bundles the `anthbot-map-card` Lovelace card. It provides mower control, map/path/zone rendering, mowing history, diagnostics, Battery Saver functions, and model-specific handling for Genie, M-series, N8, and Pion/MGC devices.
 
 > [!WARNING]
 > This is an independent community project and is not affiliated with or endorsed by ANTHBOT.
@@ -23,9 +23,17 @@ If this integration is useful to you, you can support continued development thro
 
 ## Current version
 
-Stable version: **2.4.8.1**
+Stable version: **2.4.8.2**
 
-Latest release: [Anthbot Map v2.4.8.1](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.8.1)
+Latest release: [Anthbot Map v2.4.8.2](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.8.2)
+
+### Highlights in 2.4.8.2
+
+- Adds a dedicated **Pion / MGC** model family for identifiers such as `MGC500`, `MGC750` and `MGC1000`; these devices no longer fall through to Genie-only handling.
+- Fixes the native MGC schedule format: scalar `week: 1..7` values are handled as individual weekdays and MGC keeps its one-appointment-per-day/full-lawn shape.
+- Uses the native Pion/MGC start path without the Genie-only `app_state` preamble.
+- Exposes confirmed MGC cutting height, mowing progress/area, rain state, Wi-Fi/IP, path payload and firmware data through an isolated Pion normalization layer.
+- Leaves unverified Pion/MGC setting writes and `curpath` decoding disabled rather than sending guessed commands.
 
 ### Highlights in 2.4.8.1
 
@@ -97,6 +105,7 @@ N8 owners are welcome to test and report model-specific behavior.
 - **ANTHBOT M9:** supported through the shared M-series implementation; not directly hardware-tested by this project yet.
 - **ANTHBOT M5:** supported through the shared M-series implementation; not directly hardware-tested by this project yet.
 - **ANTHBOT N8:** dedicated N8 implementation included; code/API and regression validated, but direct 2.4.7.3 hardware validation is still pending.
+- **ANTHBOT Pion / MGC500 / MGC750 / MGC1000:** isolated model detection, flat-shadow status normalization, native schedule parsing/write shape and native start routing are included. Map/path decoding and unverified setting writes remain intentionally disabled until protocol/hardware confirmation.
 
 ## Features
 

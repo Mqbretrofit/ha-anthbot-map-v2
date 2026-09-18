@@ -7,6 +7,8 @@ def model_family(model: object) -> str:
     """Return the normalized ANTHBOT model family."""
     value = str(model or "").upper().replace("-", " ").replace("_", " ")
     compact = " ".join(value.split())
+    if "PION" in compact or "MGC" in compact:
+        return "pion"
     if "N8" in compact:
         return "n8"
     if "M9 PRO" in compact or "M9PRO" in compact.replace(" ", ""):

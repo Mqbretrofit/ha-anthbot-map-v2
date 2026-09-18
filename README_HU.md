@@ -2,7 +2,7 @@
 
 [English](README.md) | Magyar
 
-[![Kiadás](https://img.shields.io/badge/release-v2.4.8.1-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.8.1)
+[![Kiadás](https://img.shields.io/badge/release-v2.4.8.2-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.8.2)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
 [![Megnyitás HACS-ban](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Mqbretrofit&repository=ha-anthbot-map-v2&category=integration)
 [![Licenc: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -10,16 +10,24 @@
 
 Nem hivatalos Home Assistant-integráció és egyedi térképkártya ANTHBOT robotfűnyírókhoz.
 
-Az Anthbot Map összekapcsolja a Home Assistantot az ANTHBOT felhővel, modellenként kezeli a robotokat, és tartalmazza az `anthbot-map-card` Lovelace-kártyát. Vezérlést, térkép-/útvonal-/zónakezelést, nyírási előzményeket, diagnosztikát, Battery Saver funkciókat és külön Genie / M-széria / N8 működési ágakat biztosít.
+Az Anthbot Map összekapcsolja a Home Assistantot az ANTHBOT felhővel, modellenként kezeli a robotokat, és tartalmazza az `anthbot-map-card` Lovelace-kártyát. Vezérlést, térkép-/útvonal-/zónakezelést, nyírási előzményeket, diagnosztikát, Battery Saver funkciókat és külön Genie / M-széria / N8 / Pion-MGC működési ágakat biztosít.
 
 > [!WARNING]
 > Ez egy független közösségi projekt, amely nem áll kapcsolatban az ANTHBOT gyártójával és nem hivatalos ANTHBOT-termék.
 
 ## Aktuális verzió
 
-Stabil verzió: **2.4.8.1**
+Stabil verzió: **2.4.8.2**
 
-Legfrissebb kiadás: [Anthbot Map v2.4.8.1](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.8.1)
+Legfrissebb kiadás: [Anthbot Map v2.4.8.2](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.8.2)
+
+### A 2.4.8.2 legfontosabb változásai
+
+- Külön **Pion / MGC** modellcsalád került be az `MGC500`, `MGC750` és `MGC1000` azonosítókhoz; ezek a robotok már nem a Genie-specifikus ágra esnek vissza.
+- Javítva lett az MGC natív ütemezési formátuma: a `week: 1..7` skalár érték egyetlen hétköznapot jelent, és megmarad az MGC napi egy rekordos, teljes területes formája.
+- A Pion/MGC indítás a natív útvonalat használja, Genie-féle `app_state` előparancs nélkül.
+- Elkülönített Pion normalizáló réteg teszi elérhetővé a bizonyított MGC vágásmagasság-, nyírási progress/terület-, eső-, Wi-Fi/IP-, útvonal- és firmware-adatokat.
+- A még nem bizonyított Pion/MGC beállításírások és a `curpath` dekódolása szándékosan nincs engedélyezve; nem küldünk találomra parancsot.
 
 ### A 2.4.8.1 legfontosabb változásai
 
@@ -91,6 +99,7 @@ N8 tulajdonosok tesztjeit és modellspecifikus visszajelzéseit várjuk.
 - **ANTHBOT M9:** támogatott a közös M-szériás implementáción keresztül; közvetlen hardverteszt még nem történt.
 - **ANTHBOT M5:** támogatott a közös M-szériás implementáción keresztül; közvetlen hardverteszt még nem történt.
 - **ANTHBOT N8:** külön N8 implementációval támogatott; code/API és regressziós szinten ellenőrzött, de közvetlen 2.4.7.3 hardveres terepi validáció még nincs.
+- **ANTHBOT Pion / MGC500 / MGC750 / MGC1000:** külön modellfelismerés, flat-shadow állapotnormalizálás, natív ütemezési formátum és natív indítási routing került be. A térkép/útvonal dekódolás és a még nem bizonyított beállításírások szándékosan tiltva maradnak a protokoll/hardveres megerősítésig.
 
 ## Fő funkciók
 
