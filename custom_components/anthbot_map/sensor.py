@@ -1439,6 +1439,7 @@ class AnthbotNextMowSensor(
         pending = pending_catch_up(self.coordinator)
         if event is None:
             return {
+                "serial_number": self.coordinator.client.serial_number,
                 "source": None,
                 "weather_catch_up": pending,
                 "schedules": self._public_schedules(),
@@ -1451,6 +1452,7 @@ class AnthbotNextMowSensor(
                 ),
             }
         return {
+            "serial_number": self.coordinator.client.serial_number,
             "source": event.get("source"),
             "summary": event.get("summary"),
             "mode": event.get("mode"),
