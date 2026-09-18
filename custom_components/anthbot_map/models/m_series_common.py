@@ -24,6 +24,7 @@ from .m_series_zones import install_m_series_zone_support
 from .m9_map_rescue_v2465 import install_m9_map_rescue_v2465
 from .m9_progress_posttrim import install_m9_progress_posttrim
 from .performance_diagnostics import install_performance_diagnostics
+from .pion_status import install_pion_status_support
 from .rain_battery_saver import install_rain_battery_saver_safety
 from .recorder_v2465 import install_recorder_v2465
 from .recorder_v2467 import install_recorder_v2467
@@ -67,6 +68,9 @@ def install_m_series_compat() -> None:
     # wrapper that reuses only the confirmed common v3 record/task helpers.
     install_m_series_status_support()
     install_n8_status_support()
+    # Pion/MGC has a flat property shadow; normalize only its confirmed fields
+    # without widening the proven Genie/M-series/N8 model guards.
+    install_pion_status_support()
     install_m_series_history_support()
     install_genie_live_status_support()
     install_genie_path_diagnostics()
