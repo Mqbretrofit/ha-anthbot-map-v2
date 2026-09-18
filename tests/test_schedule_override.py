@@ -97,7 +97,10 @@ class ScheduleOverrideSourceTests(unittest.TestCase):
         self.assertIn('"schedules": self._public_schedules()', sensor)
         self.assertIn('"active_override": override_for(self.coordinator)', sensor)
         setup = (INTEGRATION / "__init__.py").read_text(encoding="utf-8")
-        self.assertIn('?v=2.4.8.0', setup)
+        manifest = json.loads(
+            (INTEGRATION / "manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertIn(f'?v={manifest["version"]}', setup)
 
     def test_schedule_frontend_is_mirrored(self) -> None:
         for name in ("anthbot-map-card.js", "schedule-panel.js"):
@@ -109,8 +112,9 @@ class ScheduleOverrideSourceTests(unittest.TestCase):
     def test_release_version_matches_manifest(self) -> None:
         manifest = json.loads((INTEGRATION / "manifest.json").read_text(encoding="utf-8"))
         const = (INTEGRATION / "const.py").read_text(encoding="utf-8")
-        self.assertEqual("2.4.8.0", manifest["version"])
-        self.assertIn('INTEGRATION_VERSION = "2.4.8.0"', const)
+        version = manifest["version"]
+        self.assertRegex(version, r"^\d+\.\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$")
+        self.assertIn(f'INTEGRATION_VERSION = "{version}"', const)
 
 
 if __name__ == "__main__":
