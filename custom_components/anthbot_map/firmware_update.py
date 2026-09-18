@@ -9,9 +9,6 @@ from typing import Any
 from .api import AnthbotGenieApiError
 
 _MD5_RE = re.compile(r"^[0-9a-fA-F]{32}$")
-_ALLOWED_UPDATE_STATES = frozenset(
-    {"idle", "charge", "charging", "standby", "docked", "dock"}
-)
 _FINISHED_OTA_STATES = frozenset(
     {"", "idle", "success", "succeeded", "complete", "completed", "done"}
 )
@@ -24,7 +21,7 @@ class FirmwareInfo:
 
     version: str
     fw_url: str
-    md5: str
+    md5: str | None = None
     upgrade_mode: int | str | None = None
     firmware_id: int | str | None = None
     description: str | None = None
@@ -34,26 +31,41 @@ def normalize_firmware_info(value: dict[str, Any] | None) -> FirmwareInfo | None
     """Validate and normalize firmware metadata returned by ANTHBOT."""
     if not isinstance(value, dict):
         return None
+
     version = value.get("version")
     fw_url = value.get("fw_url")
-    md5 = value.get("md5")
-    if not all(isinstance(item, str) and item.strip() for item in (version, fw_url, md5)):
+    if not (
+        isinstance(version, str)
+        and version.strip()
+        and isinstance(fw_url, str)
+        and fw_url.strip()
+    ):
         return None
+
     version = version.strip()
     fw_url = fw_url.strip()
-    md5 = md5.strip().lower()
     if not fw_url.lower().startswith("https://"):
         raise AnthbotGenieApiError("Firmware URL is not HTTPS")
-    if not _MD5_RE.fullmatch(md5):
-        raise AnthbotGenieApiError("Firmware metadata contains an invalid MD5")
+
+    md5_value = value.get("md5")
+    md5: str | None = None
+    if isinstance(md5_value, str) and _MD5_RE.fullmatch(md5_value.strip()):
+        md5 = md5_value.strip().lower()
+
     description = value.get("description")
+    firmware_id = value.get("firmware_id", value.get("id"))
+
     return FirmwareInfo(
         version=version,
         fw_url=fw_url,
         md5=md5,
         upgrade_mode=value.get("upgrade_mode"),
-        firmware_id=value.get("firmware_id"),
-        description=description.strip() if isinstance(description, str) and description.strip() else None,
+        firmware_id=firmware_id,
+        description=(
+            description.strip()
+            if isinstance(description, str) and description.strip()
+            else None
+        ),
     )
 
 
@@ -117,7 +129,9 @@ def ota_status(state: dict[str, Any]) -> tuple[str, int | float | None]:
 
     progress_value = _unwrap(status.get("ota_progress"))
     progress: int | float | None = None
-    if isinstance(progress_value, (int, float)) and not isinstance(progress_value, bool):
+    if isinstance(progress_value, (int, float)) and not isinstance(
+        progress_value, bool
+    ):
         progress = max(0, min(100, progress_value))
     elif isinstance(progress_value, str):
         try:
@@ -137,48 +151,26 @@ def ota_in_progress(state: dict[str, Any]) -> bool:
     return bool(state_text)
 
 
-def update_precondition_error(state: dict[str, Any]) -> str | None:
-    """Return a proven app-side OTA precondition failure, if clearly known."""
-    if ota_in_progress(state):
-        return "A firmware update is already in progress"
-
-    status_value: Any = None
-    for key in ("robot_sta", "mower_status", "robot_status", "mode"):
-        candidate = _unwrap(state.get(key))
-        if candidate not in (None, ""):
-            status_value = candidate
-            break
-
-    # Only block when the mower gives us a textual state we understand.
-    # Unknown/model-specific numeric states are left to the mower's own safety
-    # checks rather than guessing their meaning.
-    if isinstance(status_value, str):
-        normalized = status_value.strip().lower().replace("-", "_").replace(" ", "_")
-        if normalized not in _ALLOWED_UPDATE_STATES:
-            return "Firmware update is allowed only while the mower is idle or charging"
-    return None
-
-
 async def async_start_vendor_firmware_update(
     coordinator: Any,
     firmware: FirmwareInfo,
 ) -> None:
-    """Start the official app-compatible OTA pipeline."""
-    error = update_precondition_error(coordinator.reported_state)
-    if error:
-        raise AnthbotGenieApiError(error)
+    """Start the exact manual OTA command used by the ANTHBOT Android app.
 
-    serial = coordinator.client.serial_number
-    presigned_url = await coordinator.account_client.async_get_firmware_presigned_url(
-        serial,
-        firmware.fw_url,
-    )
+    App 2.15.16 builds:
+      {"cmd": "ota_start", "data": {"version": <version>, "url": <fw_url>}}
+
+    The firmware URL comes directly from GET /device/latest/firmware.  Do not
+    add fields or rewrite the URL: the mower protocol is intentionally kept
+    byte-for-field compatible with the app's payload shape.
+    """
+    if ota_in_progress(coordinator.reported_state):
+        raise AnthbotGenieApiError("A firmware update is already in progress")
+
     await coordinator.client.async_publish_service_command(
         cmd="ota_start",
         data={
-            "category": "firmware",
             "version": firmware.version,
-            "url": presigned_url,
-            "md5": firmware.md5,
+            "url": firmware.fw_url,
         },
     )
