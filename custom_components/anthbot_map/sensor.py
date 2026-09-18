@@ -714,6 +714,10 @@ def _progress_target_area(data: dict[str, Any]) -> tuple[float | None, str]:
 
 
 def _mowing_progress(data: dict[str, Any]) -> float | None:
+    pion_progress = _progress_float(_safe_get(data, "_pion", "mowing_progress"))
+    if pion_progress is not None and 0 <= pion_progress <= 100:
+        return round(pion_progress, 1)
+
     mowing_area = _progress_float(_safe_get(data, "mowing_area_new", "value"))
     if mowing_area is None or mowing_area < 0:
         return None
@@ -936,6 +940,7 @@ SENSORS: tuple[AnthbotSensorDescription, ...] = (
         value_fn=lambda data: (
             _safe_get(data, "param_set", "cutter_height")
             or _safe_get(data, "mow_remote", "cutter_height")
+            or _safe_get(data, "_pion", "cutter_height")
         ),
     ),
     AnthbotSensorDescription(
@@ -1014,7 +1019,9 @@ SENSORS: tuple[AnthbotSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfArea.SQUARE_METERS,
         device_class=SensorDeviceClass.AREA,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data.get("map_area"),
+        value_fn=lambda data: (
+            data.get("map_area") or _safe_get(data, "_pion", "mowing_area")
+        ),
     ),
     AnthbotSensorDescription(
         key="map_status",
