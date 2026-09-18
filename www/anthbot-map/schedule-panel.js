@@ -116,6 +116,38 @@ function entity(card, domain, suffix) {
   return entityId ? card._hass?.states?.[entityId] : null;
 }
 
+function nextMowEntity(card) {
+  const states = card._hass?.states || {};
+  const configured = card.config?.entities?.nextMow;
+  if (configured && states[configured]) return states[configured];
+
+  const activeId = String(card._activeEntityId || card.config?.entity || "");
+  const mapMatch = activeId.match(/^sensor\.(.*)_map(?:_(\d+))?$/);
+  const base = mapMatch?.[1] || card.entityBase?.();
+  const ordinal = mapMatch?.[2] || "";
+  if (base) {
+    const exactId = `sensor.${base}_next_mow${ordinal ? `_${ordinal}` : ""}`;
+    if (states[exactId]) return states[exactId];
+  }
+
+  // A disabled schedule deliberately makes the timestamp sensor `unknown`,
+  // but its `schedules` attribute is still the authoritative app plan.  The
+  // generic entity resolver filters unknown states, so resolve this sensor by
+  // mower serial before falling back to its state value.
+  const mapState = states[activeId] || card.entity;
+  const serial = String(mapState?.attributes?.serial_number || "");
+  if (serial) {
+    const serialMatch = Object.values(states).find((state) => (
+      state?.entity_id?.startsWith("sensor.")
+      && state.entity_id.includes("next_mow")
+      && String(state.attributes?.serial_number || "") === serial
+    ));
+    if (serialMatch) return serialMatch;
+  }
+
+  return card.getRelatedEntity?.("nextMow") || entity(card, "sensor", "next_mow");
+}
+
 function targetEntity(card) {
   const serial = String(card.entity?.attributes?.serial_number || "");
   const entries = Object.entries(card._hass?.states || {});
@@ -359,7 +391,7 @@ export function renderAnthbotSchedulePanel(card, body) {
   ensureStyle(card);
   const t = (key) => anthbotScheduleText(card, key);
   body.innerHTML = "";
-  const next = card.getRelatedEntity?.("nextMow") || entity(card, "sensor", "next_mow");
+  const next = nextMowEntity(card);
   const attrs = next?.attributes || {};
   const rules = Array.isArray(attrs.schedules) ? attrs.schedules : [];
   const activeOverride = attrs.active_override && typeof attrs.active_override === "object" ? attrs.active_override : null;
