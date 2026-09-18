@@ -1005,8 +1005,9 @@ class AnthbotCloudApiClient:
     ) -> dict[str, Any] | None:
         """Fetch the latest vendor firmware offered for a mower.
 
-        The Android app's getOtaVersion wrapper performs GET
-        /device/latest/firmware with params={sn: ...}.
+        Android app 2.15.16 getOtaVersion performs:
+        GET /device/latest/firmware
+        params={"sn": serial_number}
         """
         self._require_token()
         url = f"https://{self._host}/api/v1/device/latest/firmware"
@@ -1044,86 +1045,40 @@ class AnthbotCloudApiClient:
         data = payload.get("data")
         if data in (None, "", []):
             return None
+
+        def _firmware_record(value: Any) -> dict[str, Any] | None:
+            if not isinstance(value, dict):
+                return None
+            version = value.get("version")
+            fw_url = value.get("fw_url")
+            if (
+                isinstance(version, str)
+                and version.strip()
+                and isinstance(fw_url, str)
+                and fw_url.strip()
+            ):
+                return value
+            return None
+
+        direct = _firmware_record(data)
+        if direct is not None:
+            return direct
+
         if isinstance(data, dict):
-            # Some backend revisions wrap the record once more.
-            if all(key in data for key in ("version", "fw_url", "md5")):
-                return data
             for key in ("firmware", "latest", "info", "data"):
-                nested = data.get(key)
-                if isinstance(nested, dict) and all(
-                    name in nested for name in ("version", "fw_url", "md5")
-                ):
+                nested = _firmware_record(data.get(key))
+                if nested is not None:
                     return nested
+
         if isinstance(data, list):
             for item in data:
-                if isinstance(item, dict) and all(
-                    name in item for name in ("version", "fw_url", "md5")
-                ):
-                    return item
+                nested = _firmware_record(item)
+                if nested is not None:
+                    return nested
 
         raise AnthbotGenieApiError(
-            "Firmware-check response did not contain version/fw_url/md5"
+            "Firmware-check response did not contain version/fw_url"
         )
-
-    async def async_get_firmware_presigned_url(
-        self,
-        serial_number: str,
-        firmware_url: str,
-    ) -> str:
-        """Resolve the app-compatible presigned URL for a vendor firmware."""
-        self._require_token()
-        filename = urlparse(firmware_url).path.rsplit("/", 1)[-1]
-        if not filename:
-            raise AnthbotGenieApiError("Firmware URL does not contain a filename")
-
-        url = f"https://{self._host}/api/v1/device/v2/presigned_url"
-        params = {
-            "sn": serial_number,
-            "category": "firmware",
-            "sub_category": "",
-            "filename": filename,
-        }
-        try:
-            async with self._session.get(
-                url,
-                headers=self._auth_headers,
-                params=params,
-                timeout=15,
-            ) as resp:
-                if resp.status != 200:
-                    body = await resp.text()
-                    raise AnthbotGenieApiError(
-                        f"Firmware presigned URL failed ({resp.status}): {body[:300]}",
-                        status_code=resp.status,
-                        temporary=resp.status in _RETRYABLE_HTTP_STATUS_CODES,
-                    )
-                payload = await resp.json(content_type=None)
-        except ClientError as err:
-            raise AnthbotGenieApiError(
-                f"Firmware presigned URL network error: {err}", temporary=True
-            ) from err
-        except TimeoutError as err:
-            raise AnthbotGenieApiError(
-                "Firmware presigned URL request timed out", temporary=True
-            ) from err
-
-        if not isinstance(payload, dict):
-            raise AnthbotGenieApiError("Invalid firmware presigned URL payload")
-        if payload.get("code") not in (None, 0):
-            raise AnthbotGenieApiError(
-                f"Firmware presigned URL returned code={payload.get('code')}"
-            )
-        response_data = payload.get("data")
-        if not isinstance(response_data, dict):
-            raise AnthbotGenieApiError(
-                "Firmware presigned URL payload missing data object"
-            )
-        presigned_url = response_data.get("presigned_url")
-        if not isinstance(presigned_url, str) or not presigned_url:
-            raise AnthbotGenieApiError(
-                "Firmware presigned URL payload missing presigned_url"
-            )
-        return presigned_url
 
     async def async_toggle_auto_upgrade(self, serial_number: str) -> None:
         """Toggle vendor automatic firmware update exactly like the Android app.
