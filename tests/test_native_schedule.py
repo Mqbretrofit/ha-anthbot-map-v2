@@ -168,6 +168,78 @@ class NativeScheduleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(4, plan["version"])
         self.assertEqual(2, len(plan["value"]))
 
+    def test_unwraps_aws_shadow_envelope_and_bare_list(self) -> None:
+        wrapped = {
+            "value": {
+                "timezone": 2,
+                "timezone_sec": 7200,
+                "value": [self.plan["value"][0]],
+            },
+            "timestamp": 1_789_718_400,
+        }
+        coordinator = _Coordinator(wrapped, model="Genie 1000")
+        rules = native.native_rules_for(coordinator)
+        self.assertEqual(1, len(rules))
+        self.assertEqual("09:30", rules[0]["start_time"])
+
+        listed = _Coordinator([self.plan["value"][0]], model="Genie 1000")
+        self.assertEqual("09:30", native.native_rules_for(listed)[0]["start_time"])
+
+    def test_parses_genie_single_appointment_object(self) -> None:
+        coordinator = _Coordinator(
+            {
+                "start_time": 9 * 3600,
+                "active": 1,
+                "unlock": 1,
+                "week": [0, 1, 2, 3, 4, 5, 6],
+                "repeat": 1,
+                "workmode": 0,
+            },
+            model="Genie 1000",
+        )
+        rule = native.native_rules_for(coordinator)[0]
+        self.assertEqual("09:00", rule["start_time"])
+        self.assertEqual(list(range(7)), rule["weekdays"])
+
+    def test_weekdays_accept_zero_based_and_bitmask(self) -> None:
+        self.assertEqual([0, 2, 6], native._weekday_list([1, 3, 7]))
+        self.assertEqual([0, 1, 6], native._weekday_list([0, 1, 6]))
+        self.assertEqual(list(range(7)), native._weekday_list(127))
+
+    def test_appointment_time_builds_daily_nine_am_rule(self) -> None:
+        stamp = datetime(2026, 9, 18, 9, 0, tzinfo=timezone.utc)
+        coordinator = _Coordinator(None, model="Genie 1000")
+        coordinator.reported_state = {
+            "appointment": {"value": [], "timestamp": 1},
+            "appointment_time": int(stamp.timestamp()),
+        }
+        rules = native.native_rules_for(coordinator)
+        self.assertEqual(1, len(rules))
+        self.assertEqual("09:00", rules[0]["start_time"])
+        self.assertEqual(list(range(7)), rules[0]["weekdays"])
+        self.assertTrue(rules[0]["synthetic"])
+        self.assertTrue(rules[0]["repeating"])
+
+    def test_service_shadow_appointment_is_visible(self) -> None:
+        coordinator = _Coordinator(None, model="Genie 1000")
+        coordinator.reported_state = {
+            "_service_reported": {
+                "appointment": {
+                    "value": [
+                        {
+                            "start_time": "09:00",
+                            "active": 1,
+                            "unlock": 1,
+                            "week": [1, 2, 3, 4, 5, 6, 7],
+                            "repeat": 1,
+                            "workmode": 0,
+                        }
+                    ]
+                }
+            }
+        }
+        self.assertEqual("09:00", native.native_rules_for(coordinator)[0]["start_time"])
+
 
 if __name__ == "__main__":
     unittest.main()
