@@ -7,6 +7,7 @@ import importlib.util
 from pathlib import Path
 import sys
 import types
+import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,110 +43,116 @@ def _load_firmware_helpers():
     return module
 
 
-def test_new_ota_python_files_are_syntax_valid() -> None:
-    for path in (
-        COMPONENT / "api.py",
-        COMPONENT / "firmware_update.py",
-        COMPONENT / "update.py",
-        COMPONENT / "switch.py",
-    ):
-        ast.parse(_read(path), filename=str(path))
+class FirmwareOtaSupportTests(unittest.TestCase):
+    def test_new_ota_python_files_are_syntax_valid(self) -> None:
+        for path in (
+            COMPONENT / "api.py",
+            COMPONENT / "firmware_update.py",
+            COMPONENT / "update.py",
+            COMPONENT / "switch.py",
+        ):
+            ast.parse(_read(path), filename=str(path))
 
+    def test_automatic_update_shadow_shapes(self) -> None:
+        firmware = _load_firmware_helpers()
+        self.assertIs(firmware.automatic_update_value({"auto_upgrade": 0}), False)
+        self.assertIs(firmware.automatic_update_value({"auto_upgrade": 1}), True)
+        self.assertIs(
+            firmware.automatic_update_value({"ota_params": {"auto": 0}}), False
+        )
+        self.assertIs(
+            firmware.automatic_update_value({"ota_params": {"auto": 1}}), True
+        )
+        self.assertIsNone(firmware.automatic_update_value({}))
 
-def test_automatic_update_shadow_shapes() -> None:
-    firmware = _load_firmware_helpers()
-    assert firmware.automatic_update_value({"auto_upgrade": 0}) is False
-    assert firmware.automatic_update_value({"auto_upgrade": 1}) is True
-    assert firmware.automatic_update_value({"ota_params": {"auto": 0}}) is False
-    assert firmware.automatic_update_value({"ota_params": {"auto": 1}}) is True
-    assert firmware.automatic_update_value({}) is None
+    def test_manual_update_blocks_only_an_already_active_ota(self) -> None:
+        firmware = _load_firmware_helpers()
+        self.assertFalse(firmware.ota_in_progress({}))
+        self.assertTrue(
+            firmware.ota_in_progress(
+                {"ota_status": {"ota_state": "downloading", "ota_progress": 25}}
+            )
+        )
+        # Do not invent model-specific robot-state restrictions that are not
+        # part of the recovered Android 2.15.16 OTA command path.
+        self.assertNotIn("update_precondition_error", firmware.__dict__)
 
-
-def test_manual_update_blocks_only_an_already_active_ota() -> None:
-    firmware = _load_firmware_helpers()
-    assert firmware.ota_in_progress({}) is False
-    assert firmware.ota_in_progress(
-        {"ota_status": {"ota_state": "downloading", "ota_progress": 25}}
-    ) is True
-    # Do not invent model-specific robot-state restrictions that are not part
-    # of the recovered Android OTA command path.
-    assert "update_precondition_error" not in firmware.__dict__
-
-
-def test_firmware_metadata_is_vendor_only_and_validated() -> None:
-    firmware = _load_firmware_helpers()
-    info = firmware.normalize_firmware_info(
-        {
-            "version": "1.17.2",
-            "fw_url": "https://vendor.example/firmware/test.MowerPack",
-            "md5": "6157b8627ebd06306e2eaad0c4744c78",
-            "upgrade_mode": 3,
-        }
-    )
-    assert info is not None
-    assert info.version == "1.17.2"
-    assert info.upgrade_mode == 3
-
-    try:
-        firmware.normalize_firmware_info(
+    def test_firmware_metadata_is_vendor_only_and_validated(self) -> None:
+        firmware = _load_firmware_helpers()
+        info = firmware.normalize_firmware_info(
             {
-                "version": "1",
-                "fw_url": "http://example.invalid/test.MowerPack",
+                "version": "1.17.2",
+                "fw_url": "https://vendor.example/firmware/test.MowerPack",
                 "md5": "6157b8627ebd06306e2eaad0c4744c78",
+                "upgrade_mode": 3,
             }
         )
-    except Exception:
-        pass
-    else:
-        raise AssertionError("Non-HTTPS firmware URL must be rejected")
+        self.assertIsNotNone(info)
+        self.assertEqual("1.17.2", info.version)
+        self.assertEqual(3, info.upgrade_mode)
+
+        with self.assertRaises(Exception):
+            firmware.normalize_firmware_info(
+                {
+                    "version": "1",
+                    "fw_url": "http://example.invalid/test.MowerPack",
+                    "md5": "6157b8627ebd06306e2eaad0c4744c78",
+                }
+            )
+
+    def test_cloud_calls_match_android_21516_ota_protocol(self) -> None:
+        api = _read(COMPONENT / "api.py")
+        self.assertIn("/api/v1/device/latest/firmware", api)
+        self.assertIn('params={"sn": serial_number}', api)
+        self.assertIn("/api/v1/device/v2/auto/upgrade", api)
+        self.assertIn('json={"sn": serial_number}', api)
+        self.assertNotIn("async_get_firmware_presigned_url", api)
+
+        firmware = _read(COMPONENT / "firmware_update.py")
+        block = firmware.split("async def async_start_vendor_firmware_update", 1)[1]
+        self.assertIn('cmd="ota_start"', block)
+        self.assertIn('"version": firmware.version', block)
+        self.assertIn('"url": firmware.fw_url', block)
+        self.assertNotIn('"category": "firmware"', block)
+        self.assertNotIn('"md5": firmware.md5', block)
+
+    def test_ha_update_entity_exposes_install_progress_and_release_notes(self) -> None:
+        update = _read(COMPONENT / "update.py")
+        self.assertIn("UpdateDeviceClass.FIRMWARE", update)
+        self.assertIn("UpdateEntityFeature.INSTALL", update)
+        self.assertIn("UpdateEntityFeature.PROGRESS", update)
+        self.assertIn("UpdateEntityFeature.RELEASE_NOTES", update)
+        self.assertIn("def update_percentage", update)
+        self.assertIn("async def async_install", update)
+
+        init = _read(COMPONENT / "__init__.py")
+        self.assertIn('"update"', init)
+
+    def test_auto_update_toggle_never_blindly_retries(self) -> None:
+        switch = _read(COMPONENT / "switch.py")
+        block = switch.split("class AnthbotAutomaticFirmwareUpdateSwitch", 1)[1]
+        block = block.split("class AnthbotSwitchEntity", 1)[0]
+        self.assertIn("if current == enabled:", block)
+        self.assertEqual(1, block.count("async_toggle_auto_upgrade("))
+        self.assertIn("toggle was not confirmed", block)
+
+    def test_map_card_exposes_manual_and_automatic_ota_controls(self) -> None:
+        for path in (
+            ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
+            COMPONENT / "frontend" / "anthbot-map-card.js",
+        ):
+            card = _read(path)
+            self.assertIn('firmware: ["firmware", "firmware_update"]', card)
+            self.assertIn(
+                'autoFirmwareUpdate: ["automatic_firmware_update"', card
+            )
+            self.assertIn(
+                'this._hass.callService("update", "install"', card
+            )
+            self.assertIn(
+                'this.getSwitchEntity("autoFirmwareUpdate")', card
+            )
 
 
-def test_cloud_calls_match_reconstructed_android_ota_protocol() -> None:
-    api = _read(COMPONENT / "api.py")
-    assert "/api/v1/device/latest/firmware" in api
-    assert 'params={"sn": serial_number}' in api
-    assert "/api/v1/device/v2/auto/upgrade" in api
-    assert 'json={"sn": serial_number}' in api
-    assert "async_get_firmware_presigned_url" not in api
-
-    firmware = _read(COMPONENT / "firmware_update.py")
-    block = firmware.split("async def async_start_vendor_firmware_update", 1)[1]
-    assert 'cmd="ota_start"' in block
-    assert '"version": firmware.version' in block
-    assert '"url": firmware.fw_url' in block
-    assert '"category": "firmware"' not in block
-    assert '"md5": firmware.md5' not in block
-
-
-def test_ha_update_entity_exposes_install_progress_and_release_notes() -> None:
-    update = _read(COMPONENT / "update.py")
-    assert "UpdateDeviceClass.FIRMWARE" in update
-    assert "UpdateEntityFeature.INSTALL" in update
-    assert "UpdateEntityFeature.PROGRESS" in update
-    assert "UpdateEntityFeature.RELEASE_NOTES" in update
-    assert "def update_percentage" in update
-    assert "async def async_install" in update
-
-    init = _read(COMPONENT / "__init__.py")
-    assert '"update"' in init
-
-
-def test_auto_update_toggle_never_blindly_retries() -> None:
-    switch = _read(COMPONENT / "switch.py")
-    block = switch.split("class AnthbotAutomaticFirmwareUpdateSwitch", 1)[1]
-    block = block.split("class AnthbotSwitchEntity", 1)[0]
-    assert "if current == enabled:" in block
-    assert block.count("async_toggle_auto_upgrade(") == 1
-    assert "toggle was not confirmed" in block
-
-
-def test_map_card_exposes_manual_and_automatic_ota_controls() -> None:
-    for path in (
-        ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
-        COMPONENT / "frontend" / "anthbot-map-card.js",
-    ):
-        card = _read(path)
-        assert 'firmware: ["firmware", "firmware_update"]' in card
-        assert 'autoFirmwareUpdate: ["automatic_firmware_update"' in card
-        assert 'this._hass.callService("update", "install"' in card
-        assert 'this.getSwitchEntity("autoFirmwareUpdate")' in card
+if __name__ == "__main__":
+    unittest.main()
