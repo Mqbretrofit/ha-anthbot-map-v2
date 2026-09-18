@@ -219,7 +219,6 @@ class AnthbotAutomaticFirmwareUpdateSwitch(
             "serial_number": self.coordinator.client.serial_number,
             "model": self.coordinator.device.model,
             "source": source,
-            "automatic_window": "01:00-03:00",
         }
 
     async def _async_set_enabled(self, enabled: bool) -> None:
