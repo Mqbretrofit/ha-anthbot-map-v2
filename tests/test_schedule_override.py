@@ -78,6 +78,7 @@ class ScheduleOverrideSourceTests(unittest.TestCase):
         self.assertIn('data-panel="schedule"', card)
         self.assertIn("renderAnthbotSchedulePanel(this, body)", card)
         self.assertIn('nextMow: ["sensor", ["next_mow"]]', card)
+        self.assertIn("createNextMowTile", card)
         for service in (
             'call(card, "override_schedule"',
             'call(card, "add_ha_schedule"',
@@ -95,7 +96,7 @@ class ScheduleOverrideSourceTests(unittest.TestCase):
         self.assertIn('"schedules": self._public_schedules()', sensor)
         self.assertIn('"active_override": override_for(self.coordinator)', sensor)
         setup = (INTEGRATION / "__init__.py").read_text(encoding="utf-8")
-        self.assertIn('?v=2.4.8.0-test5', setup)
+        self.assertIn('?v=2.4.8.0-test6', setup)
 
     def test_schedule_frontend_is_mirrored(self) -> None:
         for name in ("anthbot-map-card.js", "schedule-panel.js"):

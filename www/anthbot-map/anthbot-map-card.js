@@ -1840,8 +1840,40 @@ class AnthbotMapCard extends HTMLElement {
     ]) {
       grid.appendChild(this.createInfoTile(item[0], item[1]));
     }
+    grid.appendChild(this.createNextMowTile());
     grid.appendChild(this.createShutdownGuardTile());
     body.appendChild(grid);
+  }
+
+  getNextMowEntity() {
+    const states = this._hass?.states || {};
+    const configured = this.config?.entities?.nextMow;
+    if (configured && states[configured]) return states[configured];
+
+    const activeId = String(this._activeEntityId || this.config?.entity || "");
+    const mapState = states[activeId] || this.entity;
+    const serial = String(mapState?.attributes?.serial_number || "");
+    if (serial) {
+      const match = Object.values(states).find((state) => (
+        state?.entity_id?.startsWith("sensor.")
+        && state.entity_id.includes("next_mow")
+        && String(state.attributes?.serial_number || "") === serial
+      ));
+      if (match) return match;
+    }
+    return this.getRelatedEntity("nextMow");
+  }
+
+  createNextMowTile() {
+    const tile = document.createElement("div");
+    tile.className = "panel-tile info-tile next-mow-tile";
+    const entity = this.getNextMowEntity();
+    const raw = String(entity?.state || "").toLowerCase();
+    const value = entity && !["", "unknown", "unavailable", "none"].includes(raw)
+      ? this.formatLocalDateTime(entity.state)
+      : anthbotScheduleText(this, "noNextMow");
+    tile.innerHTML = `<span>${anthbotScheduleText(this, "nextMow")}</span><strong>${value}</strong>`;
+    return tile;
   }
 
   createShutdownGuardTile() {
