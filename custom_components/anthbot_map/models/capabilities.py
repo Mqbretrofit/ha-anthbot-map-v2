@@ -21,7 +21,9 @@ def supports_voice(model: object, state: dict[str, Any] | None = None) -> bool:
     family = model_family(model)
     if family in _VOICE_DENY_FAMILIES:
         return False
-    if family == "genie":
+
+    normalized_model = str(model or "").upper().replace("-", " ").replace("_", " ")
+    if "GENIE" in " ".join(normalized_model.split()):
         return True
 
     live = state if isinstance(state, dict) else {}
