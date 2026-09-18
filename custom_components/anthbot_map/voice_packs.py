@@ -172,7 +172,16 @@ async def async_get_voice_packs(coordinator: Any) -> list[VoicePack]:
     ):
         return []
 
-    official = await async_get_official_voice_packs(coordinator.account_client)
+    try:
+        official = await async_get_official_voice_packs(coordinator.account_client)
+    except AnthbotGenieApiError as err:
+        _LOGGER.debug(
+            "Official ANTHBOT voice catalogue unavailable for %s: %s",
+            coordinator.client.serial_number,
+            err,
+        )
+        official = []
+
     community = await async_get_community_voice_packs(
         coordinator.account_client._session
     )
