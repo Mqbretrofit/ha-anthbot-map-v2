@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.4.8.2 — 2026-09-18
+
+- Adds an isolated **Pion / MGC** model family and recognizes cloud model identifiers such as `MGC500`, `MGC750` and `MGC1000` instead of routing them through Genie-only behavior.
+- Normalizes the confirmed flat MGC shadow fields without changing their raw vendor values, including cutting height, mowing progress/area, mowing direction, rain status, RSSI/IP, map revision, current path payload, breakpoint and board firmware data.
+- Fixes Pion/MGC native weekly schedules where `week: 1..7` is a single weekday rather than a Genie-style bitmask.
+- Preserves the MGC app schedule shape: one native appointment per weekday, full-lawn work mode, top-level cutting height fallback and the existing full `value` envelope instead of assuming the M-series incremental schedule payload.
+- Uses the native Pion/MGC cloud wake/start path and avoids the Genie-only `app_state` preamble before `mow_start`.
+- Exposes confirmed MGC cutting-height, mowing-progress and mapped-area values through the existing Home Assistant sensors using a Pion-only namespaced fallback.
+- Keeps Genie, M5/M9/M9 Pro and N8 model guards unchanged and adds dedicated regression coverage for Pion/MGC isolation.
+- Does **not** enable guessed Pion/MGC rain/cutting-height write payloads or a guessed `curpath` decoder; those remain disabled until the app/real hardware confirms their exact protocol.
+
 ## 2.4.8.1 — 2026-09-18
 
 - Fixes native schedule write-back for M5/M9/N8/Pion-family mowers by using the app's model-specific `appointment` and `delete_appointment` payloads instead of the Genie `value` envelope.
