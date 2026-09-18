@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
+
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -9,9 +12,17 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .api import AnthbotGenieApiError
 from .const import DOMAIN
 from .coordinator import AnthbotGenieDataUpdateCoordinator
+from .models.capabilities import supports_voice
 from .models.n8_control import is_n8_model
+from .voice_packs import (
+    VoicePack,
+    async_get_voice_packs,
+    async_install_voice_pack,
+    installed_voice_identity,
+)
 from .zones import async_update_zone_settings, auto_zones, manual_zones
 
 _MODE_TO_RAW: dict[str, int] = {
@@ -27,6 +38,8 @@ _N8_WORK_MODE_TO_RAW: dict[str, int] = {
 }
 _N8_RAW_TO_WORK_MODE = {value: key for key, value in _N8_WORK_MODE_TO_RAW.items()}
 
+_LOGGER = logging.getLogger(__name__)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -39,6 +52,11 @@ async def async_setup_entry(
     ]
     entities: list[SelectEntity] = []
     for coordinator in coordinators:
+        if supports_voice(
+            getattr(coordinator.device, "model", None),
+            coordinator.reported_state,
+        ):
+            entities.append(AnthbotVoicePackSelect(coordinator))
         if is_n8_model(getattr(coordinator.device, "model", None)):
             entities.append(AnthbotN8WorkModeSelect(coordinator))
         for zone_kind, zones in (
@@ -54,6 +72,96 @@ async def async_setup_entry(
                         )
                     )
     async_add_entities(entities)
+
+
+class AnthbotVoicePackSelect(
+    CoordinatorEntity[AnthbotGenieDataUpdateCoordinator], SelectEntity
+):
+    """Select and install an official or community voice pack."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Voice pack"
+    _attr_icon = "mdi:account-voice"
+
+    def __init__(self, coordinator: AnthbotGenieDataUpdateCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.client.serial_number}_voice_pack"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, coordinator.client.serial_number)},
+            manufacturer="Anthbot",
+            model=coordinator.device.model,
+            name=coordinator.device.alias,
+        )
+        self._catalog_by_label: dict[str, VoicePack] = {}
+        self._attr_options = []
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        await self._async_reload_catalog()
+
+    async def _async_reload_catalog(self) -> None:
+        try:
+            packs = await async_get_voice_packs(self.coordinator)
+        except AnthbotGenieApiError as err:
+            _LOGGER.warning(
+                "Could not load ANTHBOT voice catalogue for %s: %s",
+                self.coordinator.client.serial_number,
+                err,
+            )
+            return
+
+        self._catalog_by_label = {pack.label: pack for pack in packs}
+        self._attr_options = list(self._catalog_by_label)
+        self.async_write_ha_state()
+
+    @property
+    def current_option(self) -> str | None:
+        package_id, installed_name, installed_version = installed_voice_identity(
+            self.coordinator.reported_state
+        )
+        for label, pack in self._catalog_by_label.items():
+            if package_id is not None and str(pack.music_package) == str(package_id):
+                if installed_version and pack.version != installed_version:
+                    continue
+                return label
+            if installed_name and pack.english_name.casefold() == installed_name.casefold():
+                return label
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        package_id, installed_name, installed_version = installed_voice_identity(
+            self.coordinator.reported_state
+        )
+        return {
+            "serial_number": self.coordinator.client.serial_number,
+            "model": self.coordinator.device.model,
+            "voice_supported": True,
+            "installed_music_package": package_id,
+            "installed_voice_name": installed_name,
+            "installed_voice_version": installed_version,
+            "official_pack_count": sum(
+                1 for pack in self._catalog_by_label.values() if pack.source == "anthbot"
+            ),
+            "community_pack_count": sum(
+                1
+                for pack in self._catalog_by_label.values()
+                if pack.source == "community"
+            ),
+        }
+
+    async def async_select_option(self, option: str) -> None:
+        pack = self._catalog_by_label.get(option)
+        if pack is None:
+            await self._async_reload_catalog()
+            pack = self._catalog_by_label.get(option)
+        if pack is None:
+            raise ValueError(f"Unknown voice pack: {option}")
+
+        await async_install_voice_pack(self.coordinator, pack)
+        await self.coordinator.client.async_request_all_properties()
+        await asyncio.sleep(1)
+        await self.coordinator.async_request_refresh()
 
 
 class AnthbotN8WorkModeSelect(
