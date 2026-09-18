@@ -12,6 +12,9 @@
 - Lets mower firmware start native appointments, preventing duplicate HA start commands; HA records the event and only intervenes for overrides or weather holds/catch-up.
 - Keeps all mower commands routed through the existing model-aware services; Genie, M5/M9-family and N8 command implementations are not replaced.
 - Geometry editing remains disabled until a model-specific, write-safe ANTHBOT cloud protocol is validated; the integration does not send guessed map writes.
+- Parses Genie/AWS IoT appointment envelopes that wrap the plan in `{value, timestamp}`, a bare list, a single appointment object, JSON strings, 0-6 or 1-7 weekdays, and weekday bitmasks.
+- When the property shadow omits a usable plan, builds a daily read-only rule from `appointment_time` so an app-saved 09:00 schedule appears on the HA Schedule tab and `sensor.*_next_mow`.
+- Looks at `_service_reported` as well as the property shadow, and refuses to write the synthetic `appointment-time` fallback back to the mower as if it were a firmware plan id.
 
 ## 2.4.7.5 — 2026-09-16
 
