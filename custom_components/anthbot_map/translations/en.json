@@ -76,55 +76,137 @@
   },
   "entity": {
     "sensor": {
-      "mower_status": {"name": "Mower status"},
-      "cutting_height": {"name": "Cutting height"},
-      "voice_volume": {"name": "Voice volume"},
-      "mowing_time": {"name": "Mowing time (session)"},
-      "mowing_area": {"name": "Mowing area (session)"},
-      "custom_mowing_direction": {"name": "Custom mowing direction"},
-      "custom_mowing_direction_enabled": {"name": "Custom mowing direction enabled"},
-      "battery_level": {"name": "Battery level"},
-      "zones": {"name": "Zones"},
-      "auto_zones": {"name": "Auto zones"},
-      "next_mow": {"name": "Next effective mow"}
+      "mower_status": {
+        "name": "Mower status"
+      },
+      "cutting_height": {
+        "name": "Cutting height"
+      },
+      "voice_volume": {
+        "name": "Voice volume"
+      },
+      "mowing_time": {
+        "name": "Mowing time (session)"
+      },
+      "mowing_area": {
+        "name": "Mowing area (session)"
+      },
+      "custom_mowing_direction": {
+        "name": "Custom mowing direction"
+      },
+      "custom_mowing_direction_enabled": {
+        "name": "Custom mowing direction enabled"
+      },
+      "battery_level": {
+        "name": "Battery level"
+      },
+      "zones": {
+        "name": "Zones"
+      },
+      "auto_zones": {
+        "name": "Auto zones"
+      },
+      "next_mow": {
+        "name": "Next effective mow"
+      }
     },
     "binary_sensor": {
-      "connection": {"name": "Connection"},
-      "charging": {"name": "Charging"},
-      "custom_mowing_direction_enabled": {"name": "Custom mowing direction enabled"}
+      "connection": {
+        "name": "Connection"
+      },
+      "charging": {
+        "name": "Charging"
+      },
+      "custom_mowing_direction_enabled": {
+        "name": "Custom mowing direction enabled"
+      }
     },
     "button": {
-      "connect_cloud": {"name": "Connect cloud"},
-      "start_full_mow": {"name": "Start full mow"},
-      "stop_mow": {"name": "Stop mow"},
-      "return_to_dock": {"name": "Return to dock"},
-      "resume_mow": {"name": "Resume paused task"},
-      "pause_mow": {"name": "Pause mowing task"},
-      "reset_blade_maintenance": {"name": "Reset blade maintenance"},
-      "reset_camera_maintenance": {"name": "Reset camera maintenance"},
-      "reset_dock_contact_maintenance": {"name": "Reset charging contact maintenance"}
+      "connect_cloud": {
+        "name": "Connect cloud"
+      },
+      "start_full_mow": {
+        "name": "Start full mow"
+      },
+      "stop_mow": {
+        "name": "Stop mow"
+      },
+      "return_to_dock": {
+        "name": "Return to dock"
+      },
+      "resume_mow": {
+        "name": "Resume paused task"
+      },
+      "pause_mow": {
+        "name": "Pause mowing task"
+      },
+      "reset_blade_maintenance": {
+        "name": "Reset blade maintenance"
+      },
+      "reset_camera_maintenance": {
+        "name": "Reset camera maintenance"
+      },
+      "reset_dock_contact_maintenance": {
+        "name": "Reset charging contact maintenance"
+      }
     },
     "number": {
-      "mow_height_setting": {"name": "Mow height"},
-      "voice_volume_setting": {"name": "Voice volume"},
-      "custom_mowing_direction_setting": {"name": "Custom mowing direction"},
-      "rain_continue_time_setting": {"name": "Rain continue time"},
-      "mow_count_setting": {"name": "Mowing passes"},
-      "visual_obstacle_level_setting": {"name": "Visual obstacle sensitivity"}
+      "mow_height_setting": {
+        "name": "Mow height"
+      },
+      "voice_volume_setting": {
+        "name": "Voice volume"
+      },
+      "custom_mowing_direction_setting": {
+        "name": "Custom mowing direction"
+      },
+      "rain_continue_time_setting": {
+        "name": "Rain continue time"
+      },
+      "mow_count_setting": {
+        "name": "Mowing passes"
+      },
+      "visual_obstacle_level_setting": {
+        "name": "Visual obstacle sensitivity"
+      }
     },
     "switch": {
-      "custom_mowing_direction_enabled": {"name": "Custom mowing direction enabled"},
-      "rain_perception_enabled": {"name": "Rain perception"},
-      "visual_obstacle_detection_enabled": {"name": "Visual obstacle detection"},
-      "edge_following_return_enabled": {"name": "Edge-following return"},
-      "automatic_dock_mowing_enabled": {"name": "Automatic dock-area mowing"},
-      "battery_saver_mode": {"name": "Battery saver mode"}
+      "custom_mowing_direction_enabled": {
+        "name": "Custom mowing direction enabled"
+      },
+      "rain_perception_enabled": {
+        "name": "Rain perception"
+      },
+      "visual_obstacle_detection_enabled": {
+        "name": "Visual obstacle detection"
+      },
+      "edge_following_return_enabled": {
+        "name": "Edge-following return"
+      },
+      "automatic_dock_mowing_enabled": {
+        "name": "Automatic dock-area mowing"
+      },
+      "battery_saver_mode": {
+        "name": "Battery saver mode"
+      },
+      "automatic_firmware_update": {
+        "name": "Automatic firmware update"
+      }
     },
     "calendar": {
-      "schedule": {"name": "Mowing schedule"}
+      "schedule": {
+        "name": "Mowing schedule"
+      }
     },
     "event": {
-      "mower_events": {"name": "Mower events"}
+      "mower_events": {
+        "name": "Mower events"
+      }
+    },
+    "update": {
+      "firmware": {
+        "name": "Firmware"
+      }
     }
   }
 }
