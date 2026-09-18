@@ -97,7 +97,10 @@ class AnthbotVoicePackSelect(
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        await self._async_reload_catalog()
+        self.hass.async_create_background_task(
+            self._async_reload_catalog(),
+            f"anthbot_voice_catalog_{self.coordinator.client.serial_number}",
+        )
 
     async def _async_reload_catalog(self) -> None:
         try:
