@@ -96,7 +96,7 @@ class ScheduleOverrideSourceTests(unittest.TestCase):
         self.assertIn('"schedules": self._public_schedules()', sensor)
         self.assertIn('"active_override": override_for(self.coordinator)', sensor)
         setup = (INTEGRATION / "__init__.py").read_text(encoding="utf-8")
-        self.assertIn('?v=2.4.8.0-test6', setup)
+        self.assertIn('?v=2.4.8.0-test7', setup)
 
     def test_schedule_frontend_is_mirrored(self) -> None:
         for name in ("anthbot-map-card.js", "schedule-panel.js"):

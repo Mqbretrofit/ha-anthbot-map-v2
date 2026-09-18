@@ -1840,7 +1840,8 @@ class AnthbotMapCard extends HTMLElement {
     ]) {
       grid.appendChild(this.createInfoTile(item[0], item[1]));
     }
-    grid.appendChild(this.createNextMowTile());
+    const nextMowTile = this.createNextMowTile();
+    if (nextMowTile) grid.appendChild(nextMowTile);
     grid.appendChild(this.createShutdownGuardTile());
     body.appendChild(grid);
   }
@@ -1865,13 +1866,12 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   createNextMowTile() {
-    const tile = document.createElement("div");
-    tile.className = "panel-tile info-tile next-mow-tile";
     const entity = this.getNextMowEntity();
     const raw = String(entity?.state || "").toLowerCase();
-    const value = entity && !["", "unknown", "unavailable", "none"].includes(raw)
-      ? this.formatLocalDateTime(entity.state)
-      : anthbotScheduleText(this, "noNextMow");
+    if (!entity || ["", "unknown", "unavailable", "none"].includes(raw)) return null;
+    const tile = document.createElement("div");
+    tile.className = "panel-tile info-tile next-mow-tile";
+    const value = this.formatLocalDateTime(entity.state);
     tile.innerHTML = `<span>${anthbotScheduleText(this, "nextMow")}</span><strong>${value}</strong>`;
     return tile;
   }
