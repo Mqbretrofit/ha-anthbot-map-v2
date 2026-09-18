@@ -124,7 +124,13 @@ class AnthbotFirmwareUpdateEntity(
 
     @property
     def latest_version(self) -> str | None:
-        return self._firmware.version if self._firmware else None
+        # If ANTHBOT does not offer a newer package, report the installed
+        # version as latest so the HA update entity remains healthy/up-to-date.
+        return (
+            self._firmware.version
+            if self._firmware
+            else self.installed_version
+        )
 
     @property
     def title(self) -> str:
