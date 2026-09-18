@@ -6,28 +6,40 @@ from typing import Any
 
 from .base import model_family
 
-# Confirmed on real hardware: M9 and M9 Pro do not have a speaker/voice output.
-_VOICE_DENY_FAMILIES = frozenset({"m9", "m9_pro"})
+# M9/M9 Pro have audible beeps and support volume control, but do not expose
+# spoken voice-package playback.
+_VOICE_PACK_DENY_FAMILIES = frozenset({"m9", "m9_pro"})
 
 
-def supports_voice(model: object, state: dict[str, Any] | None = None) -> bool:
-    """Return whether voice controls may be exposed for this mower.
+def _normalized_model(model: object) -> str:
+    return " ".join(
+        str(model or "").upper().replace("-", " ").replace("_", " ").split()
+    )
 
-    M9/M9 Pro are an explicit hard deny even if a cloud payload later contains
-    similarly named fields. Genie is confirmed voice-capable. Other families
-    are fail-closed unless their live state actually exposes voice-package or
-    voice-volume telemetry.
-    """
+
+def supports_voice_volume(model: object, state: dict[str, Any] | None = None) -> bool:
+    """Return whether the mower may expose audible volume control."""
     family = model_family(model)
-    if family in _VOICE_DENY_FAMILIES:
-        return False
+    if family in {"m9", "m9_pro"}:
+        return True
 
-    normalized_model = str(model or "").upper().replace("-", " ").replace("_", " ")
-    if "GENIE" in " ".join(normalized_model.split()):
+    if "GENIE" in _normalized_model(model):
         return True
 
     live = state if isinstance(state, dict) else {}
-    return any(
-        key in live
-        for key in ("music_cfg", "voice_status", "volume")
-    )
+    return "volume" in live
+
+
+def supports_voice_packages(
+    model: object, state: dict[str, Any] | None = None
+) -> bool:
+    """Return whether spoken voice packs may be selected/installed."""
+    family = model_family(model)
+    if family in _VOICE_PACK_DENY_FAMILIES:
+        return False
+
+    if "GENIE" in _normalized_model(model):
+        return True
+
+    live = state if isinstance(state, dict) else {}
+    return any(key in live for key in ("music_cfg", "voice_status"))
