@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 import logging
 
 from homeassistant.components.select import SelectEntity
@@ -10,6 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .api import AnthbotGenieApiError
@@ -19,6 +21,7 @@ from .models.capabilities import supports_voice_packages
 from .models.n8_control import is_n8_model
 from .voice_packs import (
     VoicePack,
+    async_get_community_voice_packs,
     async_get_voice_packs,
     async_install_voice_pack,
     installed_voice_identity,
@@ -39,6 +42,8 @@ _N8_WORK_MODE_TO_RAW: dict[str, int] = {
 _N8_RAW_TO_WORK_MODE = {value: key for key, value in _N8_WORK_MODE_TO_RAW.items()}
 
 _LOGGER = logging.getLogger(__name__)
+
+_VOICE_CATALOG_REFRESH_INTERVAL = timedelta(seconds=60)
 
 
 async def async_setup_entry(
@@ -94,6 +99,7 @@ class AnthbotVoicePackSelect(
         )
         self._catalog_by_label: dict[str, VoicePack] = {}
         self._attr_options = []
+        self._catalog_refresh_lock = asyncio.Lock()
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -101,21 +107,68 @@ class AnthbotVoicePackSelect(
             self._async_reload_catalog(),
             f"anthbot_voice_catalog_{self.coordinator.client.serial_number}",
         )
+        self.async_on_remove(
+            async_track_time_interval(
+                self.hass,
+                self._async_refresh_community_catalog,
+                _VOICE_CATALOG_REFRESH_INTERVAL,
+            )
+        )
 
     async def _async_reload_catalog(self) -> None:
-        try:
-            packs = await async_get_voice_packs(self.coordinator)
-        except AnthbotGenieApiError as err:
-            _LOGGER.warning(
-                "Could not load ANTHBOT voice catalogue for %s: %s",
-                self.coordinator.client.serial_number,
-                err,
-            )
-            return
+        async with self._catalog_refresh_lock:
+            try:
+                packs = await async_get_voice_packs(self.coordinator)
+            except AnthbotGenieApiError as err:
+                _LOGGER.warning(
+                    "Could not load ANTHBOT voice catalogue for %s: %s",
+                    self.coordinator.client.serial_number,
+                    err,
+                )
+                return
 
-        self._catalog_by_label = {pack.label: pack for pack in packs}
-        self._attr_options = list(self._catalog_by_label)
-        self.async_write_ha_state()
+            self._apply_catalog(packs)
+
+    async def _async_refresh_community_catalog(self, _now) -> None:
+        """Refresh only the dynamic Community portion without restarting HA."""
+        async with self._catalog_refresh_lock:
+            community = await async_get_community_voice_packs(
+                self.coordinator.account_client._session,
+                use_fallback=False,
+            )
+            if community is None:
+                return
+
+            official = [
+                pack
+                for pack in self._catalog_by_label.values()
+                if pack.source == "anthbot"
+            ]
+            changed = self._apply_catalog(official + community)
+            if changed:
+                _LOGGER.info(
+                    "Updated Community voice catalogue for %s: %s option(s)",
+                    self.coordinator.client.serial_number,
+                    len(community),
+                )
+
+    def _apply_catalog(self, packs: list[VoicePack]) -> bool:
+        """Replace the catalogue and write state only when options changed."""
+        new_catalog = {pack.label: pack for pack in packs}
+        old_signature = [
+            (pack.label, pack.key, pack.music_url, pack.music_md5)
+            for pack in self._catalog_by_label.values()
+        ]
+        new_signature = [
+            (pack.label, pack.key, pack.music_url, pack.music_md5)
+            for pack in new_catalog.values()
+        ]
+        changed = old_signature != new_signature
+        self._catalog_by_label = new_catalog
+        self._attr_options = list(new_catalog)
+        if changed:
+            self.async_write_ha_state()
+        return changed
 
     @property
     def current_option(self) -> str | None:
