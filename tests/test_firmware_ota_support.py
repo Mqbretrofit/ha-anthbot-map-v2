@@ -104,8 +104,6 @@ class FirmwareOtaSupportTests(unittest.TestCase):
         api = _read(COMPONENT / "api.py")
         self.assertIn("/api/v1/device/latest/firmware", api)
         self.assertIn('params={"sn": serial_number}', api)
-        self.assertIn("/api/v1/device/v2/auto/upgrade", api)
-        self.assertIn('json={"sn": serial_number}', api)
         self.assertIn("async_get_presigned_download_url", api)
         presigned = api.split("async def async_get_presigned_download_url", 1)[1]
         presigned = presigned.split("async def async_toggle_auto_upgrade", 1)[0]
@@ -165,13 +163,14 @@ class FirmwareOtaSupportTests(unittest.TestCase):
         init = _read(COMPONENT / "__init__.py")
         self.assertIn('"update"', init)
 
-    def test_auto_update_toggle_never_blindly_retries(self) -> None:
+    def test_unproven_automatic_ota_write_is_not_exposed(self) -> None:
+        api = _read(COMPONENT / "api.py")
         switch = _read(COMPONENT / "switch.py")
-        block = switch.split("class AnthbotAutomaticFirmwareUpdateSwitch", 1)[1]
-        block = block.split("class AnthbotSwitchEntity", 1)[0]
-        self.assertIn("if current == enabled:", block)
-        self.assertEqual(1, block.count("async_toggle_auto_upgrade("))
-        self.assertIn("toggle was not confirmed", block)
+        self.assertNotIn("async_toggle_auto_upgrade", api)
+        self.assertNotIn("AnthbotAutomaticFirmwareUpdateSwitch", switch)
+        # The reported auto flag remains readable through the update entity.
+        update = _read(COMPONENT / "update.py")
+        self.assertIn("automatic_update_value(", update)
 
     def test_map_card_exposes_manual_and_automatic_ota_controls(self) -> None:
         for path in (
