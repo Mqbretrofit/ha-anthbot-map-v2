@@ -1143,48 +1143,6 @@ class AnthbotCloudApiClient:
             raise AnthbotGenieApiError("Presigned download URL is not HTTPS")
         return presigned_url
 
-    async def async_toggle_auto_upgrade(self, serial_number: str) -> None:
-        """Toggle vendor automatic firmware update exactly like the Android app.
-
-        The app POSTs only {sn: ...}; the mower/cloud flips auto_upgrade and
-        reports the resulting value through the device shadow.
-        """
-        self._require_token()
-        url = f"https://{self._host}/api/v1/device/v2/auto/upgrade"
-        try:
-            async with self._session.post(
-                url,
-                headers={**self._auth_headers, "content-type": "application/json"},
-                json={"sn": serial_number},
-                timeout=15,
-            ) as resp:
-                if resp.status != 200:
-                    body = await resp.text()
-                    raise AnthbotGenieApiError(
-                        f"Automatic firmware update toggle failed ({resp.status}): "
-                        f"{body[:300]}",
-                        status_code=resp.status,
-                        temporary=resp.status in _RETRYABLE_HTTP_STATUS_CODES,
-                    )
-                payload = await resp.json(content_type=None)
-        except ClientError as err:
-            raise AnthbotGenieApiError(
-                f"Automatic firmware update network error: {err}", temporary=True
-            ) from err
-        except TimeoutError as err:
-            raise AnthbotGenieApiError(
-                "Automatic firmware update request timed out", temporary=True
-            ) from err
-
-        if not isinstance(payload, dict):
-            raise AnthbotGenieApiError(
-                "Invalid automatic firmware update response"
-            )
-        if payload.get("code") not in (None, 0):
-            raise AnthbotGenieApiError(
-                f"Automatic firmware update returned code={payload.get('code')}"
-            )
-
     async def async_get_mowing_records(
         self,
         serial_number: str,
