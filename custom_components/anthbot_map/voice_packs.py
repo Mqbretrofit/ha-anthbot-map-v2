@@ -68,7 +68,7 @@ def normalize_reported_voice_name(name: str | None) -> tuple[str | None, str | N
 # The endpoint may be empty/unavailable while the registry is being prepared;
 # official ANTHBOT packs remain usable in that case.
 COMMUNITY_VOICE_REGISTRY_URL = (
-    "https://reports.mqbretrofithungary.online/api/anthbot/voice-packs"
+    "https://reports.mqbretrofithungary.online/api/anthbot/store/voice-packs"
 )
 OFFICIAL_VOICE_CACHE_URL = (
     "https://reports.mqbretrofithungary.online/api/anthbot/voice-packs/cache-official"
@@ -136,6 +136,7 @@ class VoicePack:
     access: str = "free"
     price_amount: int | None = None
     currency: str | None = None
+    locked: bool = False
 
 
 def _technical_voice_slot(name: object, sex: object) -> str | None:
@@ -199,13 +200,22 @@ def _iter_records(value: Any):
 
 def normalize_voice_pack(record: dict[str, Any], *, source: str) -> VoicePack | None:
     """Normalize known ANTHBOT/community metadata shapes."""
+    access = str(record.get("access") or "free").strip().casefold()
+    if access not in {"free", "paid"}:
+        access = "free"
+
     music_url = _first_text(record, "music_url", "vp_url", "url", "download_url")
     music_md5 = _first_text(record, "music_md5", "vp_md5", "md5")
     music_package = _first_scalar(
         record, "music_package", "package_id", "voice_package_id", "id"
     )
-    if music_url is None or music_md5 is None or music_package is None:
+    locked = source == "community" and access == "paid" and music_url is None
+    if music_md5 is None or music_package is None:
         return None
+    if music_url is None and not locked:
+        return None
+    if music_url is None:
+        music_url = ""
 
     english_name = _first_text(
         record, "english_name", "englishName", "language_en", "language"
@@ -237,14 +247,25 @@ def normalize_voice_pack(record: dict[str, Any], *, source: str) -> VoicePack | 
         display_name = f"{display_name} – {variant_name}"
     source_label = "ANTHBOT" if source == "anthbot" else "Community"
     label = f"{display_name} · {source_label}"
+    if locked:
+        price_raw = record.get("price_amount")
+        try:
+            display_price = max(0, int(price_raw or 0))
+        except (TypeError, ValueError):
+            display_price = 0
+        currency_raw = _first_text(record, "currency") or "eur"
+        if display_price > 0:
+            label = (
+                f"🔒 {label} · {display_price / 100:.2f} "
+                f"{currency_raw.upper()}"
+            )
+        else:
+            label = f"🔒 {label} · Fizetős"
     key = (
         f"{source}:{community_id or variant_id or ''}:{music_package}:"
         f"{english_name}:{sex}:{version}"
     )
 
-    access = str(record.get("access") or "free").strip().casefold()
-    if access not in {"free", "paid"}:
-        access = "free"
     price_raw = record.get("price_amount")
     try:
         price_amount = int(price_raw) if price_raw is not None else None
@@ -273,6 +294,7 @@ def normalize_voice_pack(record: dict[str, Any], *, source: str) -> VoicePack | 
         access=access,
         price_amount=price_amount,
         currency=currency,
+        locked=locked,
     )
 
 
@@ -473,6 +495,35 @@ async def async_cache_official_voice_pack(
     return replace(pack, music_url=cached_url), True, None
 
 
+def merge_community_voice_packs(
+    catalogue: list[VoicePack],
+    purchased: list[VoicePack],
+) -> list[VoicePack]:
+    """Merge public catalogue with entitlements, purchased packs winning by stable ID."""
+    owned_by_id = {
+        pack.community_id: pack
+        for pack in purchased
+        if pack.community_id
+    }
+    merged: list[VoicePack] = []
+    seen: set[str] = set()
+    for pack in catalogue:
+        stable_id = pack.community_id or pack.key
+        replacement = owned_by_id.get(pack.community_id) if pack.community_id else None
+        chosen = replacement or pack
+        if stable_id in seen:
+            continue
+        merged.append(chosen)
+        seen.add(stable_id)
+    for pack in purchased:
+        stable_id = pack.community_id or pack.key
+        if stable_id in seen:
+            continue
+        merged.append(pack)
+        seen.add(stable_id)
+    return merged
+
+
 async def async_get_voice_packs(
     coordinator: Any,
     *,
@@ -506,7 +557,7 @@ async def async_get_voice_packs(
         )
         if owned is not None:
             purchased = owned
-    return official + (community or []) + purchased
+    return official + merge_community_voice_packs(community or [], purchased)
 
 
 def installed_voice_identity(state: dict[str, Any]) -> tuple[Any, str | None, str | None]:
