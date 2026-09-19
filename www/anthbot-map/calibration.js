@@ -1,4 +1,4 @@
-import "./serial-entity-resolver.js?v=243-zone-scope-fix3";
+import "./serial-entity-resolver.js?v=2482-voice-select-unknown1";
 
 export const DEFAULT_CALIBRATION = Object.freeze({
   offsetX: 0,
