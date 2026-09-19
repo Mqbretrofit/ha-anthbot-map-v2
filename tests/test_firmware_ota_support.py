@@ -106,7 +106,7 @@ class FirmwareOtaSupportTests(unittest.TestCase):
         self.assertIn('params={"sn": serial_number}', api)
         self.assertIn("async_get_presigned_download_url", api)
         presigned = api.split("async def async_get_presigned_download_url", 1)[1]
-        presigned = presigned.split("async def async_toggle_auto_upgrade", 1)[0]
+        presigned = presigned.split("async def async_get_mowing_records", 1)[0]
         self.assertIn("/api/v1/device/v2/presigned_url", presigned)
         for field in (
             '"sn": serial_number',
