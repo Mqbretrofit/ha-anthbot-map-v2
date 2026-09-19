@@ -11,7 +11,7 @@ import {
   readMowingPathCalibration,
   readRobotCalibration,
   resetCalibration,
-} from "./calibration.js?v=243-zone-scope-fix3";
+} from "./calibration.js?v=2482-voice-select-unknown1";
 
 const ENTITY_MAP = {
   battery: ["sensor", ["battery_level"]],
