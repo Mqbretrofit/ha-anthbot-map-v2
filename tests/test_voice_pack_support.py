@@ -144,6 +144,14 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn("candidateSerial !== activeSerial", card)
             self.assertIn("state.attributes?.serial_number", card)
 
+    def test_community_voice_variants_have_distinct_labels_and_keys(self) -> None:
+        source = _read(COMPONENT / "voice_packs.py")
+        self.assertIn('"variant_id": "noemi_standard"', source)
+        self.assertIn('"variant_name": "Noémi (női) · Standard"', source)
+        self.assertIn('if source == "community" and variant_name:', source)
+        self.assertIn('display_name = f"{display_name} – {variant_name}"', source)
+        self.assertIn("f\"{source}:{variant_id or ''}:{music_package}:\"", source)
+
     def test_verified_hungarian_community_pack_is_built_in_as_fallback(self) -> None:
         source = _read(COMPONENT / "voice_packs.py")
         self.assertIn('"language": "Magyar"', source)
