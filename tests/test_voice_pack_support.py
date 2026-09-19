@@ -193,6 +193,7 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn("Store(", select)
         self.assertIn("requested_voice_pack", select)
         self.assertIn("voice_install_status", select)
+        self.assertIn('"metadata_confirmed"', select)
         self.assertIn('"slot_confirmed"', select)
         self.assertIn('"verified"', select)
         self.assertIn('"mismatch"', select)
@@ -212,6 +213,7 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn("attrs.voice_install_status", card)
             self.assertIn("attrs.requested_voice_pack", card)
             self.assertIn("attrs.installed_voice_name", card)
+            self.assertIn('"voiceInstallMetadataConfirmed"', card)
             self.assertIn('"voiceInstallSlotConfirmed"', card)
             self.assertIn('"voiceSelectPlaceholder"', card)
             self.assertIn("Array.isArray(attrs.options) ? attrs.options : []", card)
@@ -222,6 +224,7 @@ class VoicePackSupportTests(unittest.TestCase):
         ):
             i18n = _read(path)
             self.assertIn('voiceInstallVerified: "✅', i18n)
+            self.assertIn("voiceInstallMetadataConfirmed:", i18n)
             self.assertIn('voiceRobotReport: "Robot jelentése"', i18n)
 
     def test_map_card_rerenders_when_optional_entities_appear(self) -> None:
