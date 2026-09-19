@@ -232,7 +232,7 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn('this.t("voicePurchaseRequired")', card)
             self.assertIn("attrs.locked_community_pack_count", card)
             self.assertIn('this.t("voiceStorePaidAvailable")', card)
-            self.assertIn("./i18n.js?v=2482-voice-popup1", card)
+            self.assertIn("./i18n.js?v=2482-voice-popup2", card)
 
         for path in (
             ROOT / "www" / "anthbot-map" / "i18n.js",
@@ -285,7 +285,7 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn('window.open(voiceStoreUrl, "_blank", "noopener,noreferrer")', card)
             self.assertIn('this.t("voiceStorePurchasedCount")', card)
             self.assertIn("attrs.voice_store_error", card)
-            self.assertIn("./i18n.js?v=2482-voice-popup1", card)
+            self.assertIn("./i18n.js?v=2482-voice-popup2", card)
 
         for path in (
             ROOT / "www" / "anthbot-map" / "i18n.js",
@@ -439,6 +439,42 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn("voiceSearchPlaceholder:", i18n)
             self.assertIn("voiceSearchNoResults:", i18n)
 
+    def test_voice_store_popup_is_translated_in_all_23_languages(self) -> None:
+        expected_languages = (
+            "en", "hu", "de", "fr", "es", "it", "pt", "nl", "pl", "cs", "sk",
+            "ro", "da", "sv", "no", "fi", "zh-CN", "zh-TW", "tr", "th", "vi",
+            "ko", "km",
+        )
+        keys = (
+            "voiceStoreOpen",
+            "voiceStoreAutoNote",
+            "voiceStorePurchasedCount",
+            "voiceStorePaidAvailable",
+            "voicePurchaseRequired",
+            "voiceStoreUnavailable",
+            "voiceManage",
+            "voicePopupSubtitle",
+            "voiceStoreCompactSummary",
+        )
+        for path in (
+            ROOT / "www" / "anthbot-map" / "i18n.js",
+            COMPONENT / "frontend" / "i18n.js",
+        ):
+            i18n = _read(path)
+            block = i18n.split("const voiceStoreTranslations = {", 1)[1].split(
+                "for (const [language, values] of Object.entries(voiceStoreTranslations))",
+                1,
+            )[0]
+            for language in expected_languages:
+                marker = f'"{language}":' if "-" in language else f"  {language}:"
+                self.assertIn(marker, block)
+            for key in keys:
+                self.assertEqual(
+                    block.count(f"{key}:"),
+                    23,
+                    f"{key} must be translated in all 23 languages",
+                )
+
     def test_voice_pack_controls_live_in_popup_with_compact_summary_tile(self) -> None:
         for path in (
             ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
@@ -457,7 +493,7 @@ class VoicePackSupportTests(unittest.TestCase):
                 "this.openVoicePackDialog({ refresh: true })",
                 card,
             )
-            self.assertIn("./i18n.js?v=2482-voice-popup1", card)
+            self.assertIn("./i18n.js?v=2482-voice-popup2", card)
 
         for path in (
             ROOT / "www" / "anthbot-map" / "i18n.js",
