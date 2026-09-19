@@ -329,7 +329,7 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn('replace(/[\\u0300-\\u036f]/g, "")', card)
             self.assertIn('options.filter((value) => normalizeSearch(value).includes(query))', card)
             self.assertIn('voiceSearchNoResults', card)
-            self.assertIn('searchCount.textContent = \`\${filtered.length}/\${options.length}\`', card)
+            self.assertIn('searchCount.textContent = `${filtered.length}/${options.length}`', card)
 
         for path in (
             ROOT / "www" / "anthbot-map" / "i18n.js",
