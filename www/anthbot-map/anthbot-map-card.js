@@ -3047,12 +3047,13 @@ class AnthbotMapCard extends HTMLElement {
     ) ? String(entity.state) : "";
 
     let headline = currentState || reportedPack || robotName || "-";
-    if (["pending", "slot_confirmed", "verified"].includes(status) && requested) {
+    if (["pending", "slot_confirmed", "metadata_confirmed", "verified"].includes(status) && requested) {
       headline = requested;
     }
 
     const statusKeys = {
       verified: "voiceInstallVerified",
+      metadata_confirmed: "voiceInstallMetadataConfirmed",
       slot_confirmed: "voiceInstallSlotConfirmed",
       pending: "voiceInstallPending",
       mismatch: "voiceInstallMismatch",
@@ -3063,6 +3064,7 @@ class AnthbotMapCard extends HTMLElement {
     };
     const statusColors = {
       verified: "#55e58a",
+      metadata_confirmed: "#8fdf9f",
       slot_confirmed: "#ffd45c",
       pending: "#ffd45c",
       mismatch: "#ff8b6b",
