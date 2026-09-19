@@ -305,18 +305,28 @@ class AnthbotVoicePackSelect(
             and reported_version.casefold() == requested_version.casefold()
         )
 
-        if slot_match and version_match:
-            status = "verified"
-            exact = True
-        elif slot_match and requested_source == "anthbot" and not version_reported:
-            # A factory voice is uniquely described by its ANTHBOT language/sex slot.
-            status = "verified"
-            exact = True
-        elif slot_match:
-            # Community audio can reuse an ANTHBOT slot. Without a matching
-            # robot-reported version we can only prove the slot, not the exact audio.
+        if requested_source == "community" and slot_match and version_match:
+            # The mower confirms our slot + version metadata, but it does not
+            # report the downloaded file MD5 or Community variant identifier.
+            status = "metadata_confirmed"
+            exact = False
+        elif (
+            requested_source == "community"
+            and slot_match
+            and not version_reported
+        ):
+            # Community audio can reuse an ANTHBOT slot. Slot-only confirmation
+            # proves the target slot, not the exact downloaded audio.
             status = "slot_confirmed"
             exact = False
+        elif (
+            requested_source == "anthbot"
+            and slot_match
+            and (version_match or not version_reported)
+        ):
+            # A factory voice is uniquely described by ANTHBOT language/sex slot.
+            status = "verified"
+            exact = True
         else:
             age = self._request_age_seconds()
             has_report = any(reported.values())
@@ -349,7 +359,7 @@ class AnthbotVoicePackSelect(
 
         # Never claim an exact Community variant from a slot-only match.
         if (
-            verification["status"] == "slot_confirmed"
+            verification["status"] in {"slot_confirmed", "metadata_confirmed"}
             and self._requested_pack
             and self._requested_pack.get("source") == "community"
         ):
