@@ -27,6 +27,8 @@ _VERIFIED_COMMUNITY_FALLBACK = (
         "id": "hu-girl-de-slot-3-v1.2.4",
         "language": "Magyar",
         "language_code": "hu",
+        "variant_id": "noemi_standard",
+        "variant_name": "Noémi (női) · Standard",
         "english_name": "German",
         "sex": "girl",
         "music_package": 3,
@@ -57,6 +59,8 @@ class VoicePack:
     music_url: str
     music_md5: str
     language: str | None = None
+    variant_id: str | None = None
+    variant_name: str | None = None
 
 
 def _first_text(record: dict[str, Any], *keys: str) -> str | None:
@@ -101,12 +105,21 @@ def normalize_voice_pack(record: dict[str, Any], *, source: str) -> VoicePack | 
         record, "english_name", "englishName", "language_en", "language"
     ) or "Voice"
     language = _first_text(record, "language", "language_name", "name")
+    variant_id = _first_text(record, "variant_id", "variant", "voice_variant")
+    variant_name = _first_text(
+        record, "variant_name", "variant_label", "voice_variant_name"
+    )
     sex = _first_text(record, "sex", "gender") or "girl"
     version = _first_text(record, "version", "vp_version") or "0"
     display_name = language or english_name
+    if source == "community" and variant_name:
+        display_name = f"{display_name} – {variant_name}"
     source_label = "ANTHBOT" if source == "anthbot" else "Community"
     label = f"{display_name} · {source_label}"
-    key = f"{source}:{music_package}:{english_name}:{sex}:{version}"
+    key = (
+        f"{source}:{variant_id or ''}:{music_package}:"
+        f"{english_name}:{sex}:{version}"
+    )
 
     return VoicePack(
         key=key,
@@ -119,6 +132,8 @@ def normalize_voice_pack(record: dict[str, Any], *, source: str) -> VoicePack | 
         music_url=music_url,
         music_md5=music_md5,
         language=language,
+        variant_id=variant_id,
+        variant_name=variant_name,
     )
 
 
