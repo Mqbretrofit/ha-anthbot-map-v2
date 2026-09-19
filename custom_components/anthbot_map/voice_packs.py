@@ -84,9 +84,11 @@ _VERIFIED_COMMUNITY_FALLBACK = (
         "id": "hu-girl-de-slot-3-v1.2.4",
         "language": "Magyar",
         "language_code": "hu",
+        "community_id": "hu_noemi_standard",
         "variant_id": "noemi_standard",
         "variant_name": "Noémi (női) · Standard",
         "voice_gender": "female",
+        "technical_slot": "German_girl",
         "english_name": "German",
         "sex": "girl",
         "music_package": 3,
@@ -117,9 +119,11 @@ class VoicePack:
     music_url: str
     music_md5: str
     language: str | None = None
+    community_id: str | None = None
     variant_id: str | None = None
     variant_name: str | None = None
     voice_gender: str | None = None
+    technical_slot: str | None = None
 
 
 def _technical_voice_slot(name: object, sex: object) -> str | None:
@@ -195,6 +199,7 @@ def normalize_voice_pack(record: dict[str, Any], *, source: str) -> VoicePack | 
         record, "english_name", "englishName", "language_en", "language"
     ) or "Voice"
     language = _first_text(record, "language", "language_name", "name")
+    community_id = _first_text(record, "community_id", "community_voice_id")
     variant_id = _first_text(record, "variant_id", "variant", "voice_variant")
     variant_name = _first_text(
         record, "variant_name", "variant_label", "voice_variant_name"
@@ -202,6 +207,7 @@ def normalize_voice_pack(record: dict[str, Any], *, source: str) -> VoicePack | 
     voice_gender = _first_text(
         record, "voice_gender", "speaker_gender", "human_gender"
     )
+    technical_slot = _first_text(record, "technical_slot", "robot_slot")
     sex = _first_text(record, "sex", "gender") or "girl"
     if source == "community":
         # All custom voices deliberately reuse the same Genie factory slot.
@@ -209,6 +215,10 @@ def normalize_voice_pack(record: dict[str, Any], *, source: str) -> VoicePack | 
         # the mower's German_girl slot and must never be used as speaker gender.
         english_name = COMMUNITY_TECHNICAL_LANGUAGE
         sex = COMMUNITY_TECHNICAL_SEX
+        technical_slot = COMMUNITY_TECHNICAL_SLOT
+        if not community_id:
+            language_code = _first_text(record, "language_code", "locale") or "community"
+            community_id = f"{language_code}_{variant_id or 'default'}".casefold()
     version = _first_text(record, "version", "vp_version") or "0"
     display_name = language or english_name
     if source == "community" and variant_name:
@@ -216,7 +226,7 @@ def normalize_voice_pack(record: dict[str, Any], *, source: str) -> VoicePack | 
     source_label = "ANTHBOT" if source == "anthbot" else "Community"
     label = f"{display_name} · {source_label}"
     key = (
-        f"{source}:{variant_id or ''}:{music_package}:"
+        f"{source}:{community_id or variant_id or ''}:{music_package}:"
         f"{english_name}:{sex}:{version}"
     )
 
@@ -231,9 +241,11 @@ def normalize_voice_pack(record: dict[str, Any], *, source: str) -> VoicePack | 
         music_url=music_url,
         music_md5=music_md5,
         language=language,
+        community_id=community_id,
         variant_id=variant_id,
         variant_name=variant_name,
         voice_gender=voice_gender,
+        technical_slot=technical_slot,
     )
 
 
