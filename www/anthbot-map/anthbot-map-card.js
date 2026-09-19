@@ -2,7 +2,7 @@ import { AnthbotMapRenderer } from "./renderer.js?v=2474-genie-heading-test2";
 import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=2411";
 import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=2411";
 import { renderAnthbotSchedulePanel, anthbotScheduleText } from "./schedule-panel.js?v=2480-test4";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=2482-voice-ota5";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=2482-voice-ota6";
 import {
   adjustCalibration,
   cardToYaml,
@@ -272,6 +272,10 @@ class AnthbotMapCard extends HTMLElement {
       attrs.reported_voice_pack || "",
       attrs.installed_voice_name || "",
       attrs.installed_voice_version || "",
+      attrs.installed_voice_state || "",
+      attrs.installed_voice_progress ?? "",
+      attrs.installed_voice_time ?? "",
+      attrs.installed_voice_id ?? "",
       attrs.installed_music_package ?? "",
       attrs.voice_command_status || "",
       attrs.voice_command_attempts ?? "",
@@ -3099,18 +3103,21 @@ class AnthbotMapCard extends HTMLElement {
     );
     const robotRawName = String(attrs.installed_voice_name || "");
     const robotVersion = String(attrs.installed_voice_version || "");
+    const robotState = String(attrs.installed_voice_state || "");
+    const robotProgress = Number(attrs.installed_voice_progress);
     const robotPackage = attrs.installed_music_package;
     const currentState = (
       entity?.state && entity.state !== "unknown" && entity.state !== "unavailable"
     ) ? String(entity.state) : "";
 
     let headline = currentState || reportedPack || robotName || "-";
-    if (["pending", "slot_confirmed", "metadata_confirmed", "verified"].includes(status) && requested) {
+    if (["pending", "slot_confirmed", "metadata_confirmed", "community_verified", "verified"].includes(status) && requested) {
       headline = requested;
     }
 
     const statusKeys = {
       verified: "voiceInstallVerified",
+      community_verified: "voiceInstallCommunityVerified",
       metadata_confirmed: "voiceInstallMetadataConfirmed",
       slot_confirmed: "voiceInstallSlotConfirmed",
       pending: "voiceInstallPending",
@@ -3122,6 +3129,7 @@ class AnthbotMapCard extends HTMLElement {
     };
     const statusColors = {
       verified: "#55e58a",
+      community_verified: "#55e58a",
       metadata_confirmed: "#8fdf9f",
       slot_confirmed: "#ffd45c",
       pending: "#ffd45c",
@@ -3188,6 +3196,12 @@ class AnthbotMapCard extends HTMLElement {
     }
     if (robotVersion) {
       robotParts.push(`v${robotVersion}`);
+    }
+    if (robotState) {
+      const progressText = Number.isFinite(robotProgress)
+        ? ` ${Math.max(0, Math.min(100, Math.round(robotProgress)))}%`
+        : "";
+      robotParts.push(`${robotState}${progressText}`);
     }
 
     const robotLine = document.createElement("small");
