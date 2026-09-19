@@ -115,6 +115,14 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertGreaterEqual(coordinator.count("supports_voice_volume("), 2)
         self.assertIn("Voice volume is not supported by", init)
 
+    def test_cloud_alias_entity_ids_are_migrated_to_map_base(self) -> None:
+        init = _read(COMPONENT / "__init__.py")
+        self.assertIn("def _async_align_cloud_alias_entity_ids(", init)
+        self.assertIn('item.unique_id == f"{serial_number}_map"', init)
+        self.assertIn("alias_base = slugify(cloud_alias)", init)
+        self.assertIn("new_entity_id=desired_entity_id", init)
+        self.assertIn("Preserve manually renamed or already aligned entity IDs", init)
+
     def test_map_card_matches_optional_entities_by_mower_serial(self) -> None:
         for path in (
             ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
