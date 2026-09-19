@@ -316,6 +316,29 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn("voiceCommandRetrying:", i18n)
             self.assertIn("voiceRetryButton:", i18n)
 
+    def test_voice_pack_selector_has_persistent_accent_insensitive_search(self) -> None:
+        for path in (
+            ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
+            COMPONENT / "frontend" / "anthbot-map-card.js",
+        ):
+            card = _read(path)
+            self.assertIn('this.voiceSearchQuery = ""', card)
+            self.assertIn('search.type = "search"', card)
+            self.assertIn('this.t("voiceSearchPlaceholder")', card)
+            self.assertIn('normalize("NFD")', card)
+            self.assertIn('replace(/[\\u0300-\\u036f]/g, "")', card)
+            self.assertIn('options.filter((value) => normalizeSearch(value).includes(query))', card)
+            self.assertIn('voiceSearchNoResults', card)
+            self.assertIn('searchCount.textContent = \`\${filtered.length}/\${options.length}\`', card)
+
+        for path in (
+            ROOT / "www" / "anthbot-map" / "i18n.js",
+            COMPONENT / "frontend" / "i18n.js",
+        ):
+            i18n = _read(path)
+            self.assertIn("voiceSearchPlaceholder:", i18n)
+            self.assertIn("voiceSearchNoResults:", i18n)
+
     def test_voice_pack_tile_is_compact_and_cannot_overflow_grid(self) -> None:
         for path in (
             ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
