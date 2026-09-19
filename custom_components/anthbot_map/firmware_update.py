@@ -127,9 +127,13 @@ def ota_status(state: dict[str, Any]) -> tuple[str, int | float | None]:
     raw = state.get("ota_status")
     status = raw if isinstance(raw, dict) else {}
     state_value = _unwrap(status.get("ota_state"))
+    if state_value is None:
+        state_value = _unwrap(state.get("ota_state"))
     state_text = str(state_value or "").strip().lower()
 
     progress_value = _unwrap(status.get("ota_progress"))
+    if progress_value is None:
+        progress_value = _unwrap(state.get("ota_progress"))
     progress: int | float | None = None
     if isinstance(progress_value, (int, float)) and not isinstance(
         progress_value, bool
