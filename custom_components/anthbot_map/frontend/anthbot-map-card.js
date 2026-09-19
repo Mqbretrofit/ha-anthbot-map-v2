@@ -2,7 +2,7 @@ import { AnthbotMapRenderer } from "./renderer.js?v=2474-genie-heading-test2";
 import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=2411";
 import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=2411";
 import { renderAnthbotSchedulePanel, anthbotScheduleText } from "./schedule-panel.js?v=2480-test4";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=2482-voice-store1";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=2482-paid-discovery1";
 import {
   adjustCalibration,
   cardToYaml,
@@ -291,6 +291,7 @@ class AnthbotMapCard extends HTMLElement {
       attrs.voice_store_url || "",
       attrs.voice_store_connected ?? "",
       attrs.voice_store_entitlement_count ?? "",
+      attrs.locked_community_pack_count ?? "",
       attrs.voice_store_error || "",
       Array.isArray(attrs.options) ? attrs.options : [],
     ]);
@@ -3110,6 +3111,7 @@ class AnthbotMapCard extends HTMLElement {
     const reportedPack = String(attrs.reported_voice_pack || "");
     const voiceStoreUrl = String(attrs.voice_store_url || "");
     const voiceStoreEntitlementCount = Number(attrs.voice_store_entitlement_count || 0);
+    const lockedVoiceCount = Number(attrs.locked_community_pack_count || 0);
     const voiceStoreError = String(attrs.voice_store_error || "");
     const robotName = String(
       attrs.installed_voice_display_name || attrs.installed_voice_name || ""
@@ -3234,9 +3236,15 @@ class AnthbotMapCard extends HTMLElement {
     storeWrap.style.cssText = "display:grid;gap:5px;margin:5px 0 7px";
     const storeLine = document.createElement("small");
     storeLine.style.cssText = "display:block;min-width:0;opacity:.78;line-height:1.25;font-size:11px;white-space:normal;overflow-wrap:anywhere";
-    storeLine.textContent = voiceStoreEntitlementCount > 0
-      ? this.t("voiceStorePurchasedCount").replace("{count}", String(voiceStoreEntitlementCount))
-      : this.t("voiceStoreAutoNote");
+    if (lockedVoiceCount > 0) {
+      storeLine.textContent = this.t("voiceStorePaidAvailable")
+        .replace("{locked}", String(lockedVoiceCount))
+        .replace("{owned}", String(voiceStoreEntitlementCount));
+    } else {
+      storeLine.textContent = voiceStoreEntitlementCount > 0
+        ? this.t("voiceStorePurchasedCount").replace("{count}", String(voiceStoreEntitlementCount))
+        : this.t("voiceStoreAutoNote");
+    }
     const storeButton = document.createElement("button");
     storeButton.type = "button";
     storeButton.className = "panel-action-button";
@@ -3350,7 +3358,18 @@ class AnthbotMapCard extends HTMLElement {
 
     select.addEventListener("change", async () => {
       if (!select.value) return;
-      await submitVoicePack(select.value);
+      const requestedValue = select.value;
+      if (requestedValue.startsWith("🔒 ")) {
+        if (voiceStoreUrl) {
+          this.notify(this.t("voicePurchaseRequired"));
+          window.open(voiceStoreUrl, "_blank", "noopener,noreferrer");
+        } else {
+          this.notify(voiceStoreError || this.t("voiceStoreUnavailable"));
+        }
+        window.setTimeout(renderVoiceOptions, 0);
+        return;
+      }
+      await submitVoicePack(requestedValue);
     });
 
     let retryButton = null;
