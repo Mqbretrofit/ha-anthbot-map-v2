@@ -12,7 +12,7 @@ from .api import AnthbotGenieApiError
 
 _MD5_RE = re.compile(r"^[0-9a-fA-F]{32}$")
 _FINISHED_OTA_STATES = frozenset(
-    {"", "idle", "success", "succeeded", "complete", "completed", "done"}
+    {"", "none", "idle", "success", "succeeded", "complete", "completed", "done"}
 )
 _FAILED_OTA_STATES = frozenset({"fail", "failed", "error"})
 
@@ -128,12 +128,22 @@ def ota_status(state: dict[str, Any]) -> tuple[str, int | float | None]:
     status = raw if isinstance(raw, dict) else {}
     state_value = _unwrap(status.get("ota_state"))
     if state_value is None:
+        state_value = _unwrap(status.get("states"))
+    if state_value is None:
+        state_value = _unwrap(status.get("state"))
+    if state_value is None:
         state_value = _unwrap(state.get("ota_state"))
+    if state_value is None:
+        state_value = _unwrap(state.get("states"))
     state_text = str(state_value or "").strip().lower()
 
     progress_value = _unwrap(status.get("ota_progress"))
     if progress_value is None:
+        progress_value = _unwrap(status.get("progress"))
+    if progress_value is None:
         progress_value = _unwrap(state.get("ota_progress"))
+    if progress_value is None:
+        progress_value = _unwrap(state.get("progress"))
     progress: int | float | None = None
     if isinstance(progress_value, (int, float)) and not isinstance(
         progress_value, bool
