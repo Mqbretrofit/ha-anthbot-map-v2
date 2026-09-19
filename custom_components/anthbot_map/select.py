@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import logging
 
@@ -334,54 +333,6 @@ class AnthbotVoicePackSelect(
             return None
         return pack.community_id
 
-    def _slot_version_for_pack(self, pack: VoicePack) -> str | None:
-        """Return the mower's stored version for this pack's technical slot."""
-        music_cfg = self.coordinator.reported_state.get("music_cfg")
-        if not isinstance(music_cfg, dict):
-            return None
-        slot = f"{pack.english_name}_{pack.sex}"
-        value = music_cfg.get(slot)
-        if isinstance(value, (str, int, float)) and not isinstance(value, bool):
-            text = str(value).strip()
-            return text or None
-        return None
-
-    def _factory_force_version(self, pack: VoicePack) -> str | None:
-        """Return a different numeric version to force a real factory download."""
-        parts = pack.version.strip().split(".")
-        if len(parts) != 3 or not all(part.isdigit() for part in parts):
-            return None
-
-        major, minor, patch = (int(part) for part in parts)
-        candidate_patch = patch + 1
-        slot = f"{pack.english_name}_{pack.sex}".casefold()
-        used_versions = {
-            other.version.casefold()
-            for other in self._catalog_by_label.values()
-            if other.source == "community"
-            and f"{other.english_name}_{other.sex}".casefold() == slot
-        }
-        while f"{major}.{minor}.{candidate_patch}".casefold() in used_versions:
-            candidate_patch += 1
-        return f"{major}.{minor}.{candidate_patch}"
-
-    def _factory_install_pack(self, pack: VoicePack) -> tuple[VoicePack, bool]:
-        """Force-download a factory pack when the mower would skip same version."""
-        if pack.source != "anthbot":
-            return pack, False
-        current_version = self._slot_version_for_pack(pack)
-        if (
-            current_version is None
-            or current_version.casefold() != pack.version.casefold()
-        ):
-            return pack, False
-
-        force_version = self._factory_force_version(pack)
-        if force_version is None or force_version.casefold() == pack.version.casefold():
-            return pack, False
-
-        return replace(pack, version=force_version), True
-
     def _request_age_seconds(self) -> float | None:
         if not self._requested_pack:
             return None
@@ -617,10 +568,6 @@ class AnthbotVoicePackSelect(
             "requested_voice_source": requested.get("source"),
             "requested_music_package": requested.get("music_package"),
             "requested_voice_version": requested.get("version"),
-            "requested_voice_catalog_version": requested.get("catalog_version"),
-            "factory_voice_restore_forced": requested.get(
-                "factory_restore_forced", False
-            ),
             "requested_voice_md5": requested.get("music_md5"),
             "requested_voice_url": requested.get("music_url"),
             "requested_at": requested.get("requested_at"),
@@ -713,17 +660,12 @@ class AnthbotVoicePackSelect(
                         and fresh_pack.source == "anthbot"
                     ):
                         retry_pack = fresh_pack
-                    retry_pack, retry_forced = self._factory_install_pack(retry_pack)
-                    self._requested_pack["factory_restore_forced"] = retry_forced
-                    self._requested_pack["catalog_version"] = (
-                        fresh_pack.version if fresh_pack else pack.version
-                    )
-                    self._requested_pack["version"] = retry_pack.version
-                    self._requested_pack["verification_key"] = (
-                        voice_pack_verification_key(retry_pack)
-                    )
-                    self._requested_pack["music_url"] = retry_pack.music_url
-                    self._requested_pack["music_md5"] = retry_pack.music_md5
+                        self._requested_pack["version"] = retry_pack.version
+                        self._requested_pack["verification_key"] = (
+                            voice_pack_verification_key(retry_pack)
+                        )
+                        self._requested_pack["music_url"] = retry_pack.music_url
+                        self._requested_pack["music_md5"] = retry_pack.music_md5
 
                 try:
                     await async_install_voice_pack(self.coordinator, retry_pack)
@@ -782,8 +724,6 @@ class AnthbotVoicePackSelect(
                     f"Factory voice pack disappeared from ANTHBOT catalogue: {option}"
                 )
 
-        install_pack, factory_restore_forced = self._factory_install_pack(pack)
-
         requested_at = datetime.now(timezone.utc).isoformat()
         self._requested_pack = {
             "label": pack.label,
@@ -791,15 +731,13 @@ class AnthbotVoicePackSelect(
             "community_id": pack.community_id,
             "variant_id": pack.variant_id,
             "voice_gender": pack.voice_gender,
-            "verification_key": voice_pack_verification_key(install_pack),
-            "music_package": install_pack.music_package,
-            "english_name": install_pack.english_name,
-            "sex": install_pack.sex,
-            "version": install_pack.version,
-            "catalog_version": pack.version,
-            "factory_restore_forced": factory_restore_forced,
-            "music_url": install_pack.music_url,
-            "music_md5": install_pack.music_md5,
+            "verification_key": voice_pack_verification_key(pack),
+            "music_package": pack.music_package,
+            "english_name": pack.english_name,
+            "sex": pack.sex,
+            "version": pack.version,
+            "music_url": pack.music_url,
+            "music_md5": pack.music_md5,
             "requested_at": requested_at,
             "request_id": requested_at,
             "command_status": "sending",
@@ -812,7 +750,7 @@ class AnthbotVoicePackSelect(
         self.async_write_ha_state()
 
         try:
-            await async_install_voice_pack(self.coordinator, install_pack)
+            await async_install_voice_pack(self.coordinator, pack)
         except Exception:
             self._requested_pack["command_status"] = "failed"
             await self._async_save_requested_pack()
