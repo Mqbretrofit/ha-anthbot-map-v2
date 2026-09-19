@@ -2,7 +2,7 @@ import { AnthbotMapRenderer } from "./renderer.js?v=2474-genie-heading-test2";
 import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=2411";
 import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=2411";
 import { renderAnthbotSchedulePanel, anthbotScheduleText } from "./schedule-panel.js?v=2480-test4";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=2482-voice-ota4";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=2482-voice-ota5";
 import {
   adjustCalibration,
   cardToYaml,
@@ -273,6 +273,11 @@ class AnthbotMapCard extends HTMLElement {
       attrs.installed_voice_name || "",
       attrs.installed_voice_version || "",
       attrs.installed_music_package ?? "",
+      attrs.voice_command_status || "",
+      attrs.voice_command_attempts ?? "",
+      attrs.voice_command_max_attempts ?? "",
+      attrs.voice_confirmation_at || "",
+      attrs.voice_verification_finished_at || "",
       Array.isArray(attrs.options) ? attrs.options : [],
     ]);
   }
@@ -3084,6 +3089,9 @@ class AnthbotMapCard extends HTMLElement {
     const attrs = entity?.attributes || {};
     const options = Array.isArray(attrs.options) ? attrs.options : [];
     const status = String(attrs.voice_install_status || "unknown");
+    const commandStatus = String(attrs.voice_command_status || "");
+    const commandAttempts = Number(attrs.voice_command_attempts || 0);
+    const commandMaxAttempts = Number(attrs.voice_command_max_attempts || 0);
     const requested = String(attrs.requested_voice_pack || "");
     const reportedPack = String(attrs.reported_voice_pack || "");
     const robotName = String(
@@ -3148,6 +3156,27 @@ class AnthbotMapCard extends HTMLElement {
     }
     statusLine.title = this.t(statusKeys[status] || "voiceInstallUnknown");
 
+    const commandKeys = {
+      sending: "voiceCommandSending",
+      sent: "voiceCommandSent",
+      retrying: "voiceCommandRetrying",
+      confirmed: "voiceCommandConfirmed",
+      slot_confirmed: "voiceCommandSlotConfirmed",
+      failed: "voiceCommandFailed",
+      retry_failed: "voiceCommandRetryFailed",
+      not_confirmed: "voiceCommandNotConfirmed",
+    };
+    const commandLine = document.createElement("small");
+    commandLine.style.cssText = "display:block;min-width:0;margin:0 0 5px;line-height:1.2;font-size:11px;opacity:.82;white-space:normal;overflow-wrap:anywhere";
+    const commandKey = commandKeys[commandStatus];
+    const attemptSuffix = commandAttempts > 0 && commandMaxAttempts > 0
+      ? ` · ${this.t("voiceCommandAttempt")} ${commandAttempts}/${commandMaxAttempts}`
+      : "";
+    commandLine.textContent = commandKey
+      ? `${this.t(commandKey)}${attemptSuffix}`
+      : "";
+    commandLine.hidden = !commandLine.textContent;
+
     const robotParts = [];
     if (robotName) {
       robotParts.push(robotRawName && robotRawName !== robotName ? `${robotName} (${robotRawName})` : robotName);
@@ -3191,33 +3220,60 @@ class AnthbotMapCard extends HTMLElement {
       select.appendChild(option);
     }
 
-    select.addEventListener("change", async () => {
-      if (!entityId || !select.value) return;
-      const requestedValue = select.value;
+    const submitVoicePack = async (requestedValue, trigger) => {
+      if (!entityId || !requestedValue) return;
       select.disabled = true;
+      if (trigger) trigger.disabled = true;
       headingValue.textContent = requestedValue;
       headingValue.title = requestedValue;
       statusLine.textContent = this.t("voiceInstallPending");
       statusLine.style.color = statusColors.pending;
+      commandLine.hidden = false;
+      commandLine.textContent = this.t("voiceCommandSending");
       try {
         await this._hass.callService("select", "select_option", {
           entity_id: entityId,
           option: requestedValue,
         });
+        commandLine.textContent = this.t("voiceCommandSent");
         this.scheduleRefresh(250);
       } catch (error) {
         statusLine.textContent = this.t("voiceInstallFailed");
         statusLine.style.color = statusColors.failed;
+        commandLine.textContent = this.t("voiceCommandFailed");
         this.notify(`${this.t("settingFailed")}: ${entityId}`);
         throw error;
       } finally {
         window.setTimeout(() => {
           if (select.isConnected) select.disabled = false;
+          if (trigger?.isConnected) trigger.disabled = false;
         }, 1200);
       }
+    };
+
+    select.addEventListener("change", async () => {
+      if (!select.value) return;
+      await submitVoicePack(select.value);
     });
 
-    tile.append(heading, statusLine, robotLine, select);
+    let retryButton = null;
+    if (
+      requested
+      && options.includes(requested)
+      && ["mismatch", "unconfirmed", "failed"].includes(status)
+    ) {
+      retryButton = document.createElement("button");
+      retryButton.type = "button";
+      retryButton.className = "panel-action-button";
+      retryButton.style.cssText = "display:block;width:100%;margin-top:7px";
+      retryButton.textContent = this.t("voiceRetryButton");
+      retryButton.addEventListener("click", async () => {
+        await submitVoicePack(requested, retryButton);
+      });
+    }
+
+    tile.append(heading, statusLine, commandLine, robotLine, select);
+    if (retryButton) tile.appendChild(retryButton);
     return tile;
   }
 
