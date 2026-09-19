@@ -211,6 +211,8 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn("voice_install_status", select)
         self.assertIn('"metadata_confirmed"', select)
         self.assertIn('"slot_confirmed"', select)
+        self.assertIn('name = (', voice)
+        self.assertIn('_first_text(cfg, "music_language", "english_name", "language")', voice)
         self.assertIn("slot_version = cfg.get(name)", voice)
         self.assertIn('"community_verified"', select)
         self.assertIn("and version_match", select)
@@ -256,6 +258,14 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn("Factory pack URLs are signed/temporary", select)
         self.assertIn("retry_pack = pack", select)
         self.assertIn("async_install_voice_pack(self.coordinator, retry_pack)", select)
+        self.assertIn("from dataclasses import replace", select)
+        self.assertIn("def _slot_version_for_pack(", select)
+        self.assertIn("def _factory_force_version(", select)
+        self.assertIn("def _factory_install_pack(", select)
+        self.assertIn("replace(pack, version=force_version)", select)
+        self.assertIn("factory_restore_forced", select)
+        self.assertIn("requested_voice_catalog_version", select)
+        self.assertIn("factory_voice_restore_forced", select)
 
     def test_map_card_shows_voice_verification_and_tracks_option_changes(self) -> None:
         for path in (
