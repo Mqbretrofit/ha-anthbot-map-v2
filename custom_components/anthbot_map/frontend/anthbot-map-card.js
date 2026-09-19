@@ -2,7 +2,7 @@ import { AnthbotMapRenderer } from "./renderer.js?v=2474-genie-heading-test2";
 import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=2411";
 import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=2411";
 import { renderAnthbotSchedulePanel, anthbotScheduleText } from "./schedule-panel.js?v=2480-test4";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=2482-voice-ota1";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=2482-voice-ota2";
 import {
   adjustCalibration,
   cardToYaml,
@@ -217,10 +217,27 @@ class AnthbotMapCard extends HTMLElement {
   getOptionalEntitySignature() {
     return [
       this.getUpdateEntity("firmware") || "",
-      this.getSelectEntity("voicePack") || "",
+      this.getVoicePackSignature(),
       this.getNumberEntity("voiceVolume") || "",
       this.getSwitchEntity("autoFirmwareUpdate") || "",
     ].join("|");
+  }
+
+  getVoicePackSignature() {
+    const entityId = this.getSelectEntity("voicePack");
+    const entity = entityId ? this._hass?.states?.[entityId] : null;
+    const attrs = entity?.attributes || {};
+    return JSON.stringify([
+      entityId || "",
+      entity?.state || "",
+      attrs.voice_install_status || "",
+      attrs.requested_voice_pack || "",
+      attrs.reported_voice_pack || "",
+      attrs.installed_voice_name || "",
+      attrs.installed_voice_version || "",
+      attrs.installed_music_package ?? "",
+      Array.isArray(attrs.options) ? attrs.options : [],
+    ]);
   }
 
   get language() {
@@ -1368,7 +1385,7 @@ class AnthbotMapCard extends HTMLElement {
       controls.push(this.createNumberControl(this.t("volume"), "voiceVolume", 0, 100, 1, "%"));
     }
     if (this.getSelectEntity("voicePack")) {
-      controls.push(this.createSelectControl(this.t("voicePack"), "voicePack"));
+      controls.push(this.createVoicePackControl());
     }
     controls.push(
       this.createSwitchControl(this.t("rainDetection"), "rain"),
@@ -3008,6 +3025,131 @@ class AnthbotMapCard extends HTMLElement {
         }, 2000);
       }
     });
+    return tile;
+  }
+
+  createVoicePackControl() {
+    const entityId = this.getSelectEntity("voicePack");
+    const entity = entityId ? this._hass.states[entityId] : null;
+    const attrs = entity?.attributes || {};
+    const options = Array.isArray(attrs.options) ? attrs.options : [];
+    const status = String(attrs.voice_install_status || "unknown");
+    const requested = String(attrs.requested_voice_pack || "");
+    const reportedPack = String(attrs.reported_voice_pack || "");
+    const robotName = String(
+      attrs.installed_voice_display_name || attrs.installed_voice_name || ""
+    );
+    const robotRawName = String(attrs.installed_voice_name || "");
+    const robotVersion = String(attrs.installed_voice_version || "");
+    const robotPackage = attrs.installed_music_package;
+    const currentState = (
+      entity?.state && entity.state !== "unknown" && entity.state !== "unavailable"
+    ) ? String(entity.state) : "";
+
+    let headline = currentState || reportedPack || robotName || "-";
+    if (["pending", "slot_confirmed", "verified"].includes(status) && requested) {
+      headline = requested;
+    }
+
+    const statusKeys = {
+      verified: "voiceInstallVerified",
+      slot_confirmed: "voiceInstallSlotConfirmed",
+      pending: "voiceInstallPending",
+      mismatch: "voiceInstallMismatch",
+      unconfirmed: "voiceInstallUnconfirmed",
+      failed: "voiceInstallFailed",
+      reported: "voiceInstallReported",
+      unknown: "voiceInstallUnknown",
+    };
+    const statusColors = {
+      verified: "#55e58a",
+      slot_confirmed: "#ffd45c",
+      pending: "#ffd45c",
+      mismatch: "#ff8b6b",
+      unconfirmed: "#ffb86b",
+      failed: "#ff6b6b",
+      reported: "#8fbfff",
+      unknown: "#aeb7c2",
+    };
+
+    const tile = document.createElement("div");
+    tile.className = "panel-tile control-tile voice-pack-tile";
+
+    const heading = document.createElement("div");
+    heading.className = "control-head";
+    heading.innerHTML = `<span>${escapeHtml(this.t("voicePack"))}</span><strong>${escapeHtml(headline)}</strong>`;
+
+    const statusLine = document.createElement("small");
+    statusLine.style.cssText = `display:block;margin:4px 0 8px;line-height:1.35;color:${statusColors[status] || statusColors.unknown}`;
+    statusLine.textContent = this.t(statusKeys[status] || "voiceInstallUnknown");
+
+    const robotParts = [];
+    if (robotName) {
+      robotParts.push(robotRawName && robotRawName !== robotName ? `${robotName} (${robotRawName})` : robotName);
+    } else if (robotRawName) {
+      robotParts.push(robotRawName);
+    }
+    if (robotPackage !== null && robotPackage !== undefined && robotPackage !== "") {
+      robotParts.push(`slot ${robotPackage}`);
+    }
+    if (robotVersion) {
+      robotParts.push(`v${robotVersion}`);
+    }
+
+    const robotLine = document.createElement("small");
+    robotLine.style.cssText = "display:block;opacity:.68;margin:0 0 8px;line-height:1.35";
+    robotLine.textContent = robotParts.length
+      ? `${this.t("voiceRobotReport")}: ${robotParts.join(" · ")}`
+      : `${this.t("voiceRobotReport")}: -`;
+
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", this.t("voicePack"));
+    select.disabled = !entityId || options.length === 0;
+
+    const hasExactSelection = currentState && options.includes(currentState);
+    if (!hasExactSelection) {
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = this.t("voiceSelectPlaceholder");
+      placeholder.selected = true;
+      placeholder.disabled = true;
+      select.appendChild(placeholder);
+    }
+
+    for (const value of options) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = value;
+      option.selected = hasExactSelection && value === currentState;
+      select.appendChild(option);
+    }
+
+    select.addEventListener("change", async () => {
+      if (!entityId || !select.value) return;
+      const requestedValue = select.value;
+      select.disabled = true;
+      heading.querySelector("strong").textContent = requestedValue;
+      statusLine.textContent = this.t("voiceInstallPending");
+      statusLine.style.color = statusColors.pending;
+      try {
+        await this._hass.callService("select", "select_option", {
+          entity_id: entityId,
+          option: requestedValue,
+        });
+        this.scheduleRefresh(250);
+      } catch (error) {
+        statusLine.textContent = this.t("voiceInstallFailed");
+        statusLine.style.color = statusColors.failed;
+        this.notify(`${this.t("settingFailed")}: ${entityId}`);
+        throw error;
+      } finally {
+        window.setTimeout(() => {
+          if (select.isConnected) select.disabled = false;
+        }, 1200);
+      }
+    });
+
+    tile.append(heading, statusLine, robotLine, select);
     return tile;
   }
 
