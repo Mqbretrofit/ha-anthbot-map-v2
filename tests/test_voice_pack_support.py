@@ -156,6 +156,26 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn("_verified_community_fallback()", source)
         self.assertIn("if not packs:", source)
 
+    def test_voice_catalog_auto_refreshes_without_ha_restart(self) -> None:
+        select = _read(COMPONENT / "select.py")
+        voice = _read(COMPONENT / "voice_packs.py")
+
+        self.assertIn(
+            "_VOICE_CATALOG_REFRESH_INTERVAL = timedelta(seconds=60)",
+            select,
+        )
+        self.assertIn("async_track_time_interval(", select)
+        self.assertIn("_async_refresh_community_catalog", select)
+        self.assertIn("use_fallback=False", select)
+        self.assertIn("if community is None:", select)
+        self.assertIn("self._apply_catalog(official + community)", select)
+        self.assertIn("self.async_write_ha_state()", select)
+        self.assertIn("use_fallback: bool = True", voice)
+        self.assertIn(
+            "return _verified_community_fallback() if use_fallback else None",
+            voice,
+        )
+
     def test_map_card_rerenders_when_optional_entities_appear(self) -> None:
         for path in (
             ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
