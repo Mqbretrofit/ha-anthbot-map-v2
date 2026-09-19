@@ -28,7 +28,7 @@ def test_control_resolver_is_serial_scoped_with_safe_legacy_fallback() -> None:
     """Legacy settings may fall back only to this mower's exact HA ordinal."""
     source = _read(RUNTIME_FRONTEND / "serial-entity-resolver.js")
 
-    assert 'ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-05-control-v12"' in source
+    assert 'ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-19-control-v13"' in source
     assert "serialOf(state) === identity.serial" in source
     assert 'return String(this.config?.entity || "")' in source
     assert "const exactOrdinalEntity = (card, domain, suffix) =>" in source
@@ -39,6 +39,15 @@ def test_control_resolver_is_serial_scoped_with_safe_legacy_fallback() -> None:
     assert "window.__anthbotFeedbackClickHandler" in source
     assert 'window.setInterval(disableLegacyCommandRouter, 25)' in source
     assert "document.removeEventListener(\"click\", handler, true)" in source
+
+
+def test_unknown_select_with_options_is_available() -> None:
+    """Selects with real options stay visible even before current_option resolves."""
+    source = _read(RUNTIME_FRONTEND / "serial-entity-resolver.js")
+    assert 'const isAvailable = (state, allowUnknown = false) =>' in source
+    assert 'const allowUnknownSelect = domain === "select"' in source
+    assert 'state.attributes.options.length > 0' in source
+    assert "isDomainAvailable(state, domain)" in source
 
 
 def test_primary_mowing_tile_uses_direct_anthbot_services() -> None:
