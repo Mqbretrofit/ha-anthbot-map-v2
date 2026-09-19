@@ -288,6 +288,10 @@ class AnthbotMapCard extends HTMLElement {
       attrs.voice_command_max_attempts ?? "",
       attrs.voice_confirmation_at || "",
       attrs.voice_verification_finished_at || "",
+      attrs.voice_store_url || "",
+      attrs.voice_store_connected ?? "",
+      attrs.voice_store_entitlement_count ?? "",
+      attrs.voice_store_error || "",
       Array.isArray(attrs.options) ? attrs.options : [],
     ]);
   }
@@ -3104,6 +3108,9 @@ class AnthbotMapCard extends HTMLElement {
     const commandMaxAttempts = Number(attrs.voice_command_max_attempts || 0);
     const requested = String(attrs.requested_voice_pack || "");
     const reportedPack = String(attrs.reported_voice_pack || "");
+    const voiceStoreUrl = String(attrs.voice_store_url || "");
+    const voiceStoreEntitlementCount = Number(attrs.voice_store_entitlement_count || 0);
+    const voiceStoreError = String(attrs.voice_store_error || "");
     const robotName = String(
       attrs.installed_voice_display_name || attrs.installed_voice_name || ""
     );
@@ -3223,6 +3230,28 @@ class AnthbotMapCard extends HTMLElement {
       : `${this.t("voiceRobotReport")}: -`;
     robotLine.title = robotLine.textContent;
 
+    const storeWrap = document.createElement("div");
+    storeWrap.style.cssText = "display:grid;gap:5px;margin:5px 0 7px";
+    const storeLine = document.createElement("small");
+    storeLine.style.cssText = "display:block;min-width:0;opacity:.78;line-height:1.25;font-size:11px;white-space:normal;overflow-wrap:anywhere";
+    storeLine.textContent = voiceStoreEntitlementCount > 0
+      ? this.t("voiceStorePurchasedCount").replace("{count}", String(voiceStoreEntitlementCount))
+      : this.t("voiceStoreAutoNote");
+    const storeButton = document.createElement("button");
+    storeButton.type = "button";
+    storeButton.className = "panel-action-button";
+    storeButton.style.cssText = "display:block;width:100%";
+    storeButton.textContent = this.t("voiceStoreOpen");
+    storeButton.disabled = !voiceStoreUrl;
+    storeButton.title = voiceStoreUrl
+      ? this.t("voiceStoreAutoNote")
+      : (voiceStoreError || this.t("voiceStoreUnavailable"));
+    storeButton.addEventListener("click", () => {
+      if (!voiceStoreUrl) return;
+      window.open(voiceStoreUrl, "_blank", "noopener,noreferrer");
+    });
+    storeWrap.append(storeLine, storeButton);
+
     const searchWrap = document.createElement("div");
     searchWrap.style.cssText = "display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center;margin:3px 0 6px";
     const search = document.createElement("input");
@@ -3340,7 +3369,7 @@ class AnthbotMapCard extends HTMLElement {
       });
     }
 
-    tile.append(heading, statusLine, commandLine, robotLine, searchWrap, select);
+    tile.append(heading, statusLine, commandLine, robotLine, storeWrap, searchWrap, select);
     if (retryButton) tile.appendChild(retryButton);
     return tile;
   }
