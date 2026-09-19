@@ -42,7 +42,7 @@ def test_manual_ota_payload_is_exact_android_shape() -> None:
 def test_firmware_presigned_url_request_matches_android_app() -> None:
     source = _source("api.py")
     start = source.index("async def async_get_presigned_download_url")
-    end = source.index("async def async_toggle_auto_upgrade", start)
+    end = source.index("async def async_get_mowing_records", start)
     block = source[start:end]
 
     assert '"/api/v1/device/v2/presigned_url"' in block
