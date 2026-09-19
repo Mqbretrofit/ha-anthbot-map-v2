@@ -24,6 +24,7 @@ from .voice_packs import (
     COMMUNITY_TECHNICAL_SLOT,
     VoicePack,
     async_get_community_voice_packs,
+    async_get_official_voice_packs,
     async_get_voice_packs,
     async_install_voice_pack,
     installed_voice_identity,
@@ -151,6 +152,29 @@ class AnthbotVoicePackSelect(
                 return
 
             self._apply_catalog(packs)
+
+    async def _async_refresh_official_catalog(self) -> bool:
+        """Refresh expiring ANTHBOT factory voice URLs before installation."""
+        async with self._catalog_refresh_lock:
+            try:
+                official = await async_get_official_voice_packs(
+                    self.coordinator.account_client
+                )
+            except AnthbotGenieApiError as err:
+                _LOGGER.warning(
+                    "Could not refresh ANTHBOT factory voice catalogue for %s: %s",
+                    self.coordinator.client.serial_number,
+                    err,
+                )
+                return False
+
+            community = [
+                pack
+                for pack in self._catalog_by_label.values()
+                if pack.source == "community"
+            ]
+            self._apply_catalog(official + community)
+            return True
 
     async def _async_refresh_community_catalog(self, _now) -> None:
         """Refresh only the dynamic Community portion without restarting HA."""
@@ -626,8 +650,19 @@ class AnthbotVoicePackSelect(
                 await self._async_save_requested_pack()
                 self.async_write_ha_state()
 
+                retry_pack = pack
+                if pack.source == "anthbot":
+                    refreshed = await self._async_refresh_official_catalog()
+                    fresh_pack = self._catalog_by_label.get(pack.label)
+                    if (
+                        refreshed
+                        and fresh_pack is not None
+                        and fresh_pack.source == "anthbot"
+                    ):
+                        retry_pack = fresh_pack
+
                 try:
-                    await async_install_voice_pack(self.coordinator, pack)
+                    await async_install_voice_pack(self.coordinator, retry_pack)
                 except Exception as err:
                     self._requested_pack["command_status"] = "retry_failed"
                     self._requested_pack["last_command_error"] = str(err)[:240]
@@ -666,6 +701,22 @@ class AnthbotVoicePackSelect(
             pack = self._catalog_by_label.get(option)
         if pack is None:
             raise ValueError(f"Unknown voice pack: {option}")
+
+        if pack.source == "anthbot":
+            # Factory pack URLs are signed/temporary. Always fetch fresh
+            # metadata immediately before sending voice_set to the mower.
+            refreshed = await self._async_refresh_official_catalog()
+            fresh_pack = self._catalog_by_label.get(option)
+            if refreshed and fresh_pack is not None and fresh_pack.source == "anthbot":
+                pack = fresh_pack
+            elif not refreshed:
+                raise AnthbotGenieApiError(
+                    "Could not refresh the ANTHBOT factory voice download URL"
+                )
+            else:
+                raise AnthbotGenieApiError(
+                    f"Factory voice pack disappeared from ANTHBOT catalogue: {option}"
+                )
 
         requested_at = datetime.now(timezone.utc).isoformat()
         self._requested_pack = {
