@@ -467,7 +467,14 @@ button:hover {
 .panel-grid {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
+  min-width: 0;
+}
+
+.panel-grid > .panel-tile {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .mowing-target-grid {
