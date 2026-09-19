@@ -4192,6 +4192,42 @@ class AnthbotMapCard extends HTMLElement {
       }
     }
 
+
+    // Home Assistant keeps entity IDs across device renames. Resolve optional
+    // entities by the mower serial before any loose name-based fallback.
+    const states = this._hass?.states || {};
+    const activeId = String(this._activeEntityId || this.config?.entity || "");
+    const activeState = states[activeId] || this.entity;
+    const activeSerial = String(
+      activeState?.attributes?.serial_number
+      || activeState?.attributes?.sn
+      || ""
+    ).trim();
+    if (activeSerial) {
+      for (const suffix of suffixes) {
+        const suffixSlug = slugify(suffix);
+        for (const [entityId, state] of Object.entries(states)) {
+          if (!entityId.startsWith(domain + ".") || state.state === "unavailable") {
+            continue;
+          }
+          const candidateSerial = String(
+            state.attributes?.serial_number || state.attributes?.sn || ""
+          ).trim();
+          if (candidateSerial !== activeSerial) {
+            continue;
+          }
+          const entitySlug = slugify(entityId.slice(domain.length + 1));
+          const friendlySlug = slugify(state.attributes?.friendly_name);
+          if (
+            entitySlug.endsWith("_" + suffixSlug)
+            || entitySlug.includes("_" + suffixSlug + "_")
+            || friendlySlug.includes(suffixSlug)
+          ) {
+            return entityId;
+          }
+        }
+      }
+    }
     for (const suffix of suffixes) {
       const wanted = slugify(`${base}_${suffix}`);
       for (const [entityId, state] of Object.entries(this._hass.states || {})) {
