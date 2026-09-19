@@ -20,6 +20,28 @@ COMMUNITY_VOICE_REGISTRY_URL = (
     "https://reports.mqbretrofithungary.online/api/anthbot/voice-packs"
 )
 
+# Verified community fallback. This keeps the already robot-tested Hungarian
+# pack available while the external registry is being deployed or is offline.
+_VERIFIED_COMMUNITY_FALLBACK = (
+    {
+        "id": "hu-girl-de-slot-3-v1.2.4",
+        "language": "Magyar",
+        "language_code": "hu",
+        "english_name": "German",
+        "sex": "girl",
+        "music_package": 3,
+        "version": "1.2.4",
+        "music_url": (
+            "https://ha.mqbretrofithungary.online/local/"
+            "anthbot-map-v2/girl_de-1.2.4"
+        ),
+        "music_md5": "74e1955f019aa422d446a0d367232826",
+        "size": 3117368,
+        "models": ["Anthbot Genie 1000"],
+    },
+)
+
+
 
 @dataclass(frozen=True, slots=True)
 class VoicePack:
@@ -138,21 +160,30 @@ async def async_get_official_voice_packs(account_client: Any) -> list[VoicePack]
     return packs
 
 
+def _verified_community_fallback() -> list[VoicePack]:
+    """Return community packs that have already passed a real mower install."""
+    return [
+        pack
+        for record in _VERIFIED_COMMUNITY_FALLBACK
+        if (pack := normalize_voice_pack(record, source="community")) is not None
+    ]
+
+
 async def async_get_community_voice_packs(session: Any) -> list[VoicePack]:
-    """Fetch optional community voice packs from the separate registry."""
+    """Fetch community voice packs, with a verified offline fallback."""
     try:
         async with session.get(COMMUNITY_VOICE_REGISTRY_URL, timeout=15) as response:
             if response.status == 404:
-                return []
+                return _verified_community_fallback()
             if response.status != 200:
                 _LOGGER.debug(
                     "Community voice registry unavailable: HTTP %s", response.status
                 )
-                return []
+                return _verified_community_fallback()
             payload = await response.json(content_type=None)
     except (ClientError, TimeoutError, ValueError) as err:
         _LOGGER.debug("Community voice registry unavailable: %s", err)
-        return []
+        return _verified_community_fallback()
 
     packs: list[VoicePack] = []
     seen: set[str] = set()
@@ -161,6 +192,11 @@ async def async_get_community_voice_packs(session: Any) -> list[VoicePack]:
         if pack is not None and pack.key not in seen:
             packs.append(pack)
             seen.add(pack.key)
+
+    # An empty/invalid registry should never hide the known-good Hungarian
+    # community package.
+    if not packs:
+        return _verified_community_fallback()
     return packs
 
 
