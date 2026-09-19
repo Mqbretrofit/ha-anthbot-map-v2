@@ -142,6 +142,16 @@ class FirmwareOtaSupportTests(unittest.TestCase):
             "ota_state": "installing",
             "ota_progress": 67,
         }))
+        # M-series shadow uses states/progress and reports "none" while idle.
+        m9_state = {
+            "fw_version": {"system_version": "1.0.141"},
+            "ota_params": {"auto": 1},
+            "ota_status": {"error_code": 0, "progress": 0, "states": "none"},
+        }
+        self.assertEqual("1.0.141", firmware.installed_firmware_version(m9_state))
+        self.assertEqual(("none", 0), firmware.ota_status(m9_state))
+        self.assertFalse(firmware.ota_in_progress(m9_state))
+        self.assertIs(firmware.automatic_update_value(m9_state), True)
 
     def test_ha_update_entity_exposes_install_progress_and_release_notes(self) -> None:
         update = _read(COMPONENT / "update.py")
