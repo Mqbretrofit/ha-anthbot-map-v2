@@ -123,6 +123,16 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn("new_entity_id=desired_entity_id", init)
         self.assertIn("Preserve manually renamed or already aligned entity IDs", init)
 
+    def test_cloud_alias_entities_are_aligned_to_established_ha_prefix(self) -> None:
+        init = _read(COMPONENT / "__init__.py")
+        block = init.split("def _async_align_cloud_alias_entity_ids", 1)[1]
+        block = block.split("def _sync_standalone_frontend", 1)[0]
+        self.assertIn("base_votes", block)
+        self.assertIn("count >= 2", block)
+        self.assertIn("base != alias_base", block)
+        self.assertIn("new_entity_id=desired_entity_id", block)
+        self.assertIn("cloud_alias=coordinator.device.alias", init)
+
     def test_map_card_matches_optional_entities_by_mower_serial(self) -> None:
         for path in (
             ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
