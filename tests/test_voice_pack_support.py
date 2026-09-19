@@ -127,9 +127,10 @@ class VoicePackSupportTests(unittest.TestCase):
         init = _read(COMPONENT / "__init__.py")
         block = init.split("def _async_align_cloud_alias_entity_ids", 1)[1]
         block = block.split("def _sync_standalone_frontend", 1)[0]
-        self.assertIn("base_votes", block)
-        self.assertIn("count >= 2", block)
-        self.assertIn("base != alias_base", block)
+        self.assertIn("discovered_bases", block)
+        self.assertIn("canonical_base", block)
+        self.assertIn("historical_bases", block)
+        self.assertIn("object_id.startswith(f\"{base}_\")", block)
         self.assertIn("new_entity_id=desired_entity_id", block)
         self.assertIn("cloud_alias=coordinator.device.alias", init)
 
