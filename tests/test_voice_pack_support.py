@@ -188,8 +188,14 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn("async_track_time_interval(", select)
         self.assertIn("_async_refresh_community_catalog", select)
         self.assertIn("use_fallback=False", select)
-        self.assertIn("if community is None:", select)
-        self.assertIn("self._apply_catalog(official + community)", select)
+        self.assertIn(
+            "free_packs = previous_free if community is None else community",
+            select,
+        )
+        self.assertIn(
+            "self._apply_catalog(official + free_packs + paid_packs)",
+            select,
+        )
         self.assertIn("self.async_write_ha_state()", select)
         self.assertIn("use_fallback: bool = True", voice)
         self.assertIn(
