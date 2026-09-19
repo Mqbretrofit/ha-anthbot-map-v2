@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 import logging
+import re
 from pathlib import Path
 import shutil
 
@@ -21,6 +22,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import slugify
 
 from .api import AnthbotCloudApiClient, AnthbotGenieApiError, AnthbotShadowApiClient
 from .const import (
@@ -980,6 +982,82 @@ def _async_cleanup_legacy_entities(
             entity_registry.async_remove(entry_reg.entity_id)
 
 
+
+def _async_align_cloud_alias_entity_ids(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    *,
+    serial_number: str,
+    cloud_alias: str,
+) -> None:
+    """Move auto-generated cloud-alias entity IDs under the existing map base.
+
+    Home Assistant keeps entity IDs when users rename devices/entities. New
+    entities introduced later would otherwise be generated from the current
+    ANTHBOT cloud alias and appear under a different mower name.
+    """
+    entity_registry = er.async_get(hass)
+    entries = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
+
+    map_entry = next(
+        (
+            item
+            for item in entries
+            if item.domain == "sensor"
+            and item.unique_id == f"{serial_number}_map"
+        ),
+        None,
+    )
+    if map_entry is None:
+        return
+
+    map_object_id = map_entry.entity_id.split(".", 1)[1]
+    match = re.fullmatch(r"(.+)_map(?:_\d+)?", map_object_id)
+    map_base = match.group(1) if match else map_object_id
+    alias_base = slugify(cloud_alias)
+    if not map_base or not alias_base or map_base == alias_base:
+        return
+
+    unique_prefix = f"{serial_number}_"
+    for item in entries:
+        unique_id = item.unique_id
+        if not isinstance(unique_id, str) or not unique_id.startswith(unique_prefix):
+            continue
+        suffix = unique_id[len(unique_prefix):]
+        if not suffix:
+            continue
+
+        object_id = item.entity_id.split(".", 1)[1]
+        auto_alias_pattern = rf"{re.escape(alias_base)}_{re.escape(suffix)}(?:_\d+)?"
+        if re.fullmatch(auto_alias_pattern, object_id) is None:
+            # Preserve manually renamed or already aligned entity IDs.
+            continue
+
+        desired_entity_id = f"{item.domain}.{map_base}_{suffix}"
+        if desired_entity_id == item.entity_id:
+            continue
+
+        occupied = entity_registry.async_get(desired_entity_id)
+        if occupied is not None and occupied.id != item.id:
+            _LOGGER.warning(
+                "Cannot align %s to %s because the target entity ID already exists",
+                item.entity_id,
+                desired_entity_id,
+            )
+            continue
+
+        _LOGGER.info(
+            "Aligning ANTHBOT entity ID %s -> %s (serial=%s)",
+            item.entity_id,
+            desired_entity_id,
+            serial_number,
+        )
+        entity_registry.async_update_entity(
+            item.entity_id,
+            new_entity_id=desired_entity_id,
+        )
+
+
 def _sync_standalone_frontend(source: Path, destination: Path) -> None:
     """Mirror the card into /config/www so it survives a disabled config entry."""
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -1202,6 +1280,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await async_setup_schedule(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     for coordinator in coordinators:
+        _async_align_cloud_alias_entity_ids(
+            hass,
+            entry,
+            serial_number=coordinator.client.serial_number,
+            cloud_alias=coordinator.device.alias,
+        )
         coordinator.start_battery_saver_monitor()
     return True
 
