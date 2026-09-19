@@ -21,6 +21,7 @@ from .coordinator import AnthbotGenieDataUpdateCoordinator
 from .models.capabilities import supports_voice_packages
 from .models.n8_control import is_n8_model
 from .voice_packs import (
+    COMMUNITY_TECHNICAL_SLOT,
     VoicePack,
     async_get_community_voice_packs,
     async_get_voice_packs,
@@ -507,6 +508,12 @@ class AnthbotVoicePackSelect(
             ),
             "requested_voice_pack": requested.get("label"),
             "requested_voice_variant_id": requested.get("variant_id"),
+            "requested_voice_gender": requested.get("voice_gender"),
+            "requested_voice_technical_slot": (
+                COMMUNITY_TECHNICAL_SLOT
+                if requested.get("source") == "community"
+                else None
+            ),
             "requested_voice_verification_key": requested.get("verification_key"),
             "requested_voice_source": requested.get("source"),
             "requested_music_package": requested.get("music_package"),
@@ -639,6 +646,7 @@ class AnthbotVoicePackSelect(
             "label": pack.label,
             "source": pack.source,
             "variant_id": pack.variant_id,
+            "voice_gender": pack.voice_gender,
             "verification_key": voice_pack_verification_key(pack),
             "music_package": pack.music_package,
             "english_name": pack.english_name,
