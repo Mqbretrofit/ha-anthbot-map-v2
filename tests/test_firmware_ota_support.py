@@ -181,5 +181,104 @@ class FirmwareOtaSupportTests(unittest.TestCase):
             )
 
 
+class FirmwareOtaCommandTests(unittest.IsolatedAsyncioTestCase):
+    async def test_manual_ota_uses_presigned_vendor_package_and_exact_payload(self) -> None:
+        firmware = _load_firmware_helpers()
+
+        class FakeAccountClient:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, dict]] = []
+
+            async def async_get_presigned_download_url(
+                self, serial_number: str, **kwargs
+            ) -> str:
+                self.calls.append((serial_number, kwargs))
+                return "https://signed.example/firmware/test.MowerPack?signature=ok"
+
+        class FakeClient:
+            serial_number = "TEST-SN"
+
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, dict]] = []
+
+            async def async_publish_service_command(self, *, cmd: str, data) -> None:
+                self.calls.append((cmd, data))
+
+        class FakeCoordinator:
+            reported_state = {}
+
+            def __init__(self) -> None:
+                self.account_client = FakeAccountClient()
+                self.client = FakeClient()
+
+        coordinator = FakeCoordinator()
+        info = firmware.FirmwareInfo(
+            version="1.18.0",
+            fw_url="https://vendor.example/path/test.MowerPack",
+            md5="0123456789abcdef0123456789abcdef",
+        )
+
+        await firmware.async_start_vendor_firmware_update(coordinator, info)
+
+        self.assertEqual(
+            [
+                (
+                    "TEST-SN",
+                    {
+                        "category": "firmware",
+                        "sub_category": "",
+                        "filename": "test.MowerPack",
+                    },
+                )
+            ],
+            coordinator.account_client.calls,
+        )
+        self.assertEqual(
+            [
+                (
+                    "ota_start",
+                    {
+                        "category": "firmware",
+                        "version": "1.18.0",
+                        "url": (
+                            "https://signed.example/firmware/"
+                            "test.MowerPack?signature=ok"
+                        ),
+                        "md5": "0123456789abcdef0123456789abcdef",
+                    },
+                )
+            ],
+            coordinator.client.calls,
+        )
+
+    async def test_manual_ota_refuses_missing_md5_before_sending(self) -> None:
+        firmware = _load_firmware_helpers()
+
+        class FakeCoordinator:
+            reported_state = {}
+
+            class Account:
+                async def async_get_presigned_download_url(self, *args, **kwargs):
+                    raise AssertionError("presigned URL must not be requested")
+
+            class Client:
+                serial_number = "TEST-SN"
+
+                async def async_publish_service_command(self, **kwargs):
+                    raise AssertionError("OTA command must not be sent")
+
+            account_client = Account()
+            client = Client()
+
+        info = firmware.FirmwareInfo(
+            version="1.18.0",
+            fw_url="https://vendor.example/path/test.MowerPack",
+            md5=None,
+        )
+
+        with self.assertRaises(Exception):
+            await firmware.async_start_vendor_firmware_update(FakeCoordinator(), info)
+
+
 if __name__ == "__main__":
     unittest.main()
