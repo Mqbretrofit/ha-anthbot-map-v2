@@ -190,6 +190,8 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn("normalize_reported_voice_name", voice)
         self.assertIn('"en": "English"', voice)
         self.assertIn('"de": "German"', voice)
+        self.assertIn('"German_girl"', voice)
+        self.assertIn("elif token in language_names:", voice)
         self.assertIn("Store(", select)
         self.assertIn("requested_voice_pack", select)
         self.assertIn("voice_install_status", select)
