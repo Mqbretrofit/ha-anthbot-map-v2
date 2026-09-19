@@ -270,6 +270,11 @@ class AnthbotMapCard extends HTMLElement {
       attrs.voice_install_status || "",
       attrs.requested_voice_pack || "",
       attrs.reported_voice_pack || "",
+      attrs.reported_community_pack || "",
+      attrs.voice_variant_match ?? "",
+      attrs.requested_voice_variant_id || "",
+      attrs.requested_voice_verification_key || "",
+      attrs.installed_voice_verification_key || "",
       attrs.installed_voice_name || "",
       attrs.installed_voice_version || "",
       attrs.installed_voice_state || "",
@@ -3161,6 +3166,9 @@ class AnthbotMapCard extends HTMLElement {
     statusLine.textContent = this.t((statusKeys[status] || "voiceInstallUnknown") + "Short");
     if (statusLine.textContent.endsWith("Short")) {
       statusLine.textContent = this.t(statusKeys[status] || "voiceInstallUnknown");
+    }
+    if (status === "community_verified" && headline && headline !== "-") {
+      statusLine.textContent = `${this.t("voiceInstallCommunityVerifiedShort")}: ${headline}`;
     }
     statusLine.title = this.t(statusKeys[status] || "voiceInstallUnknown");
 
