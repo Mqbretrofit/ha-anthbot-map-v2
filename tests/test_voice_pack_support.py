@@ -177,6 +177,34 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn("_verified_community_fallback()", source)
         self.assertIn("if not packs and use_fallback:", source)
 
+    def test_factory_english_repair_is_explicit_two_stage_and_voice_only(self) -> None:
+        voice = _read(COMPONENT / "voice_packs.py")
+        button = _read(COMPONENT / "button.py")
+        en = _read(COMPONENT / "translations" / "en.json")
+        hu = _read(COMPONENT / "translations" / "hu.json")
+
+        self.assertIn("async def async_repair_factory_english_voice", voice)
+        self.assertIn('slot="English_girl"', voice)
+        self.assertIn("_factory_english_repair_version(", voice)
+        self.assertIn("temporary = replace(cached, version=temporary_version)", voice)
+        self.assertIn("await async_install_voice_pack(coordinator, temporary)", voice)
+        self.assertIn("await async_install_voice_pack(coordinator, cached)", voice)
+        self.assertIn("expected_version=temporary_version", voice)
+        self.assertIn("expected_version=cached.version", voice)
+        self.assertIn("Factory English cache is unavailable", voice)
+
+        self.assertIn("VOICE_BUTTONS", button)
+        self.assertIn('key="repair_factory_english_voice"', button)
+        self.assertIn("supports_voice_packages(", button)
+        self.assertIn("async_repair_factory_english_voice(self.coordinator)", button)
+        self.assertIn("Factory English voice repair is already running", button)
+        self.assertIn('"repair_status": "success"', button)
+
+        self.assertIn('"repair_factory_english_voice"', en)
+        self.assertIn("Repair factory English voice", en)
+        self.assertIn('"repair_factory_english_voice"', hu)
+        self.assertIn("Gyári angol hang javítása", hu)
+
     def test_voice_catalog_auto_refreshes_without_ha_restart(self) -> None:
         select = _read(COMPONENT / "select.py")
         voice = _read(COMPONENT / "voice_packs.py")
