@@ -232,7 +232,7 @@ class VoicePackSupportTests(unittest.TestCase):
             card = _read(path)
             self.assertIn('this.optionalEntitySignature = ""', card)
             self.assertIn("getOptionalEntitySignature()", card)
-            self.assertIn('this.getSelectEntity("voicePack") || ""', card)
+            self.assertIn("this.getVoicePackSignature()", card)
             self.assertIn("previousOptionalSignature !== this.optionalEntitySignature", card)
 
     def test_map_card_hides_voice_controls_without_voice_entities(self) -> None:
