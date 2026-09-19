@@ -312,6 +312,18 @@ def installed_voice_identity(state: dict[str, Any]) -> tuple[Any, str | None, st
         or _first_text(cfg, "music_language", "english_name", "language")
     )
     version = _first_text(status, "version") or _first_text(cfg, "version")
+    if version is None and isinstance(name, str) and name:
+        # Genie 1000 reports the installed voice version under the active
+        # music-language key, e.g.:
+        #   music_cfg = {"German_girl": "1.2.4",
+        #                "music_language": "German_girl"}
+        # This is the field that changed from the factory German 1.2.2 to the
+        # tested Community Noémi 1.2.4 package.
+        slot_version = cfg.get(name)
+        if isinstance(slot_version, (str, int, float)) and not isinstance(
+            slot_version, bool
+        ):
+            version = str(slot_version).strip() or None
     return package_id, name, version
 
 
