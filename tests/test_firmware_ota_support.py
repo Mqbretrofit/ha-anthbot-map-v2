@@ -106,15 +106,42 @@ class FirmwareOtaSupportTests(unittest.TestCase):
         self.assertIn('params={"sn": serial_number}', api)
         self.assertIn("/api/v1/device/v2/auto/upgrade", api)
         self.assertIn('json={"sn": serial_number}', api)
-        self.assertNotIn("async_get_firmware_presigned_url", api)
+        self.assertIn("async_get_presigned_download_url", api)
+        presigned = api.split("async def async_get_presigned_download_url", 1)[1]
+        presigned = presigned.split("async def async_toggle_auto_upgrade", 1)[0]
+        self.assertIn("/api/v1/device/v2/presigned_url", presigned)
+        for field in (
+            '"sn": serial_number',
+            '"category": category',
+            '"sub_category": sub_category',
+            '"filename": filename',
+            '"verification_token": self.build_verification_token(serial_number)',
+        ):
+            self.assertIn(field, presigned)
 
         firmware = _read(COMPONENT / "firmware_update.py")
         block = firmware.split("async def async_start_vendor_firmware_update", 1)[1]
         self.assertIn('cmd="ota_start"', block)
+        self.assertIn('category="firmware"', block)
+        self.assertIn('sub_category=""', block)
+        self.assertIn('"category": "firmware"', block)
         self.assertIn('"version": firmware.version', block)
-        self.assertIn('"url": firmware.fw_url', block)
-        self.assertNotIn('"category": "firmware"', block)
-        self.assertNotIn('"md5": firmware.md5', block)
+        self.assertIn('"url": presigned_url', block)
+        self.assertIn('"md5": firmware.md5', block)
+        self.assertNotIn('"url": firmware.fw_url', block)
+
+    def test_live_shadow_firmware_and_ota_shapes_are_supported(self) -> None:
+        firmware = _load_firmware_helpers()
+        state = {
+            "fw_version": {"system_version": "1.17.2"},
+            "ota_status": {"ota_state": "downloading", "ota_progress": 42},
+        }
+        self.assertEqual("1.17.2", firmware.installed_firmware_version(state))
+        self.assertEqual(("downloading", 42), firmware.ota_status(state))
+        self.assertEqual(("installing", 67), firmware.ota_status({
+            "ota_state": "installing",
+            "ota_progress": 67,
+        }))
 
     def test_ha_update_entity_exposes_install_progress_and_release_notes(self) -> None:
         update = _read(COMPONENT / "update.py")
