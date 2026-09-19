@@ -714,13 +714,16 @@ class AnthbotVoicePackSelect(
                     ):
                         retry_pack = fresh_pack
                     retry_pack, retry_forced = self._factory_install_pack(retry_pack)
-                    if retry_forced:
-                        self._requested_pack["factory_restore_forced"] = True
-                        self._requested_pack["catalog_version"] = fresh_pack.version if fresh_pack else pack.version
-                        self._requested_pack["version"] = retry_pack.version
-                        self._requested_pack["verification_key"] = (
-                            voice_pack_verification_key(retry_pack)
-                        )
+                    self._requested_pack["factory_restore_forced"] = retry_forced
+                    self._requested_pack["catalog_version"] = (
+                        fresh_pack.version if fresh_pack else pack.version
+                    )
+                    self._requested_pack["version"] = retry_pack.version
+                    self._requested_pack["verification_key"] = (
+                        voice_pack_verification_key(retry_pack)
+                    )
+                    self._requested_pack["music_url"] = retry_pack.music_url
+                    self._requested_pack["music_md5"] = retry_pack.music_md5
 
                 try:
                     await async_install_voice_pack(self.coordinator, retry_pack)
