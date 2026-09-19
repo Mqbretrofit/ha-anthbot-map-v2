@@ -71,6 +71,12 @@ COMMUNITY_VOICE_REGISTRY_URL = (
     "https://reports.mqbretrofithungary.online/api/anthbot/voice-packs"
 )
 
+# Every custom/Community voice is installed into the same Genie factory slot.
+# These values describe the technical mower slot, not the human speaker.
+COMMUNITY_TECHNICAL_LANGUAGE = "German"
+COMMUNITY_TECHNICAL_SEX = "girl"
+COMMUNITY_TECHNICAL_SLOT = "German_girl"
+
 # Verified community fallback. This keeps the already robot-tested Hungarian
 # pack available while the external registry is being deployed or is offline.
 _VERIFIED_COMMUNITY_FALLBACK = (
@@ -80,6 +86,7 @@ _VERIFIED_COMMUNITY_FALLBACK = (
         "language_code": "hu",
         "variant_id": "noemi_standard",
         "variant_name": "Noémi (női) · Standard",
+        "voice_gender": "female",
         "english_name": "German",
         "sex": "girl",
         "music_package": 3,
@@ -112,15 +119,24 @@ class VoicePack:
     language: str | None = None
     variant_id: str | None = None
     variant_name: str | None = None
+    voice_gender: str | None = None
+
+
+def _technical_voice_slot(name: object, sex: object) -> str | None:
+    """Return the mower's technical voice slot name."""
+    if not isinstance(name, str) or not name.strip():
+        return None
+    if not isinstance(sex, str) or not sex.strip():
+        return None
+    return f"{name.strip()}_{sex.strip()}".casefold()
 
 
 def voice_pack_verification_key(pack: VoicePack) -> str:
-    """Return the robot-visible Community identity for one catalogue pack."""
-    return (
-        f"{pack.english_name.strip().casefold()}|"
-        f"{pack.sex.strip().casefold()}|"
-        f"{pack.version.strip().casefold()}"
-    )
+    """Return the robot-visible identity: technical slot + package version."""
+    slot = _technical_voice_slot(pack.english_name, pack.sex)
+    if slot is None:
+        return ""
+    return f"{slot}|{pack.version.strip().casefold()}"
 
 
 def reported_voice_verification_key(
@@ -128,18 +144,13 @@ def reported_voice_verification_key(
     sex: object,
     version: object,
 ) -> str | None:
-    """Build the same identity from mower-reported slot metadata."""
-    if not isinstance(name, str) or not name.strip():
-        return None
-    if not isinstance(sex, str) or not sex.strip():
+    """Build technical slot + version from mower-reported metadata."""
+    slot = _technical_voice_slot(name, sex)
+    if slot is None:
         return None
     if not isinstance(version, str) or not version.strip():
         return None
-    return (
-        f"{name.strip().casefold()}|"
-        f"{sex.strip().casefold()}|"
-        f"{version.strip().casefold()}"
-    )
+    return f"{slot}|{version.strip().casefold()}"
 
 
 def _first_text(record: dict[str, Any], *keys: str) -> str | None:
@@ -188,7 +199,16 @@ def normalize_voice_pack(record: dict[str, Any], *, source: str) -> VoicePack | 
     variant_name = _first_text(
         record, "variant_name", "variant_label", "voice_variant_name"
     )
+    voice_gender = _first_text(
+        record, "voice_gender", "speaker_gender", "human_gender"
+    )
     sex = _first_text(record, "sex", "gender") or "girl"
+    if source == "community":
+        # All custom voices deliberately reuse the same Genie factory slot.
+        # voice_gender describes the real speaker; sex=girl only addresses
+        # the mower's German_girl slot and must never be used as speaker gender.
+        english_name = COMMUNITY_TECHNICAL_LANGUAGE
+        sex = COMMUNITY_TECHNICAL_SEX
     version = _first_text(record, "version", "vp_version") or "0"
     display_name = language or english_name
     if source == "community" and variant_name:
@@ -213,6 +233,7 @@ def normalize_voice_pack(record: dict[str, Any], *, source: str) -> VoicePack | 
         language=language,
         variant_id=variant_id,
         variant_name=variant_name,
+        voice_gender=voice_gender,
     )
 
 
