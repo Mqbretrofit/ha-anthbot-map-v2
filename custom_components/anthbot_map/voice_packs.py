@@ -48,9 +48,17 @@ def normalize_reported_voice_name(name: str | None) -> tuple[str | None, str | N
     ]
     language: str | None = None
     sex: str | None = None
+    language_names = {
+        english_name.casefold(): english_name
+        for english_name in _ROBOT_LANGUAGE_ALIASES.values()
+    }
     for token in tokens:
         if token in _ROBOT_LANGUAGE_ALIASES:
             language = _ROBOT_LANGUAGE_ALIASES[token]
+        elif token in language_names:
+            # Some Genie firmware reports full identifiers such as
+            # "German_girl" instead of the shorter "girl_de".
+            language = language_names[token]
         if token in _ROBOT_SEX_ALIASES:
             sex = _ROBOT_SEX_ALIASES[token]
 
