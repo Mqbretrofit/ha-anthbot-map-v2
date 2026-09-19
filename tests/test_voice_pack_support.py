@@ -125,6 +125,17 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn("candidateSerial !== activeSerial", card)
             self.assertIn("state.attributes?.serial_number", card)
 
+    def test_map_card_rerenders_when_optional_entities_appear(self) -> None:
+        for path in (
+            ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
+            COMPONENT / "frontend" / "anthbot-map-card.js",
+        ):
+            card = _read(path)
+            self.assertIn('this.optionalEntitySignature = ""', card)
+            self.assertIn("getOptionalEntitySignature()", card)
+            self.assertIn('this.getSelectEntity("voicePack") || ""', card)
+            self.assertIn("previousOptionalSignature !== this.optionalEntitySignature", card)
+
     def test_map_card_hides_voice_controls_without_voice_entities(self) -> None:
         for path in (
             ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
