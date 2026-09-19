@@ -23,6 +23,7 @@ from .models.n8_control import is_n8_model
 from .voice_packs import (
     COMMUNITY_TECHNICAL_SLOT,
     VoicePack,
+    async_cache_official_voice_pack,
     async_get_community_voice_packs,
     async_get_official_voice_packs,
     async_get_voice_packs,
@@ -424,6 +425,11 @@ class AnthbotVoicePackSelect(
             and isinstance(reported_install_progress, int)
             and reported_install_progress >= 100
         )
+        download_failed = (
+            isinstance(reported_install_state, str)
+            and reported_install_state.casefold()
+            in {"download_failed", "download_fail", "download_error", "failed"}
+        )
         variant_match = (
             requested_source == "community"
             and (
@@ -441,7 +447,10 @@ class AnthbotVoicePackSelect(
             )
         )
 
-        if (
+        if download_failed:
+            status = "download_failed"
+            exact = False
+        elif (
             requested_source == "community"
             and variant_match
             and slot_match
@@ -570,6 +579,8 @@ class AnthbotVoicePackSelect(
             "requested_voice_version": requested.get("version"),
             "requested_voice_md5": requested.get("music_md5"),
             "requested_voice_url": requested.get("music_url"),
+            "factory_voice_cache_used": requested.get("factory_cache_used", False),
+            "factory_voice_cache_error": requested.get("factory_cache_error"),
             "requested_at": requested.get("requested_at"),
             "voice_command_status": command_status,
             "voice_command_attempts": requested.get("command_attempts", 0),
@@ -660,12 +671,21 @@ class AnthbotVoicePackSelect(
                         and fresh_pack.source == "anthbot"
                     ):
                         retry_pack = fresh_pack
-                        self._requested_pack["version"] = retry_pack.version
-                        self._requested_pack["verification_key"] = (
-                            voice_pack_verification_key(retry_pack)
+
+                    retry_pack, cache_used, cache_error = (
+                        await async_cache_official_voice_pack(
+                            self.coordinator.account_client._session,
+                            retry_pack,
                         )
-                        self._requested_pack["music_url"] = retry_pack.music_url
-                        self._requested_pack["music_md5"] = retry_pack.music_md5
+                    )
+                    self._requested_pack["factory_cache_used"] = cache_used
+                    self._requested_pack["factory_cache_error"] = cache_error
+                    self._requested_pack["version"] = retry_pack.version
+                    self._requested_pack["verification_key"] = (
+                        voice_pack_verification_key(retry_pack)
+                    )
+                    self._requested_pack["music_url"] = retry_pack.music_url
+                    self._requested_pack["music_md5"] = retry_pack.music_md5
 
                 try:
                     await async_install_voice_pack(self.coordinator, retry_pack)
@@ -708,9 +728,11 @@ class AnthbotVoicePackSelect(
         if pack is None:
             raise ValueError(f"Unknown voice pack: {option}")
 
+        factory_cache_used = False
+        factory_cache_error: str | None = None
         if pack.source == "anthbot":
-            # Factory pack URLs are signed/temporary. Always fetch fresh
-            # metadata immediately before sending voice_set to the mower.
+            # Factory pack URLs are signed/temporary. Fetch fresh metadata, then
+            # mirror the binary behind the stable Reporting Server HTTPS URL.
             refreshed = await self._async_refresh_official_catalog()
             fresh_pack = self._catalog_by_label.get(option)
             if refreshed and fresh_pack is not None and fresh_pack.source == "anthbot":
@@ -722,6 +744,21 @@ class AnthbotVoicePackSelect(
             else:
                 raise AnthbotGenieApiError(
                     f"Factory voice pack disappeared from ANTHBOT catalogue: {option}"
+                )
+
+            pack, factory_cache_used, factory_cache_error = (
+                await async_cache_official_voice_pack(
+                    self.coordinator.account_client._session,
+                    pack,
+                )
+            )
+            if factory_cache_error:
+                _LOGGER.warning(
+                    "Factory voice cache unavailable for %s (%s): %s; "
+                    "falling back to ANTHBOT URL",
+                    self.coordinator.client.serial_number,
+                    option,
+                    factory_cache_error,
                 )
 
         requested_at = datetime.now(timezone.utc).isoformat()
@@ -738,6 +775,8 @@ class AnthbotVoicePackSelect(
             "version": pack.version,
             "music_url": pack.music_url,
             "music_md5": pack.music_md5,
+            "factory_cache_used": factory_cache_used,
+            "factory_cache_error": factory_cache_error,
             "requested_at": requested_at,
             "request_id": requested_at,
             "command_status": "sending",
