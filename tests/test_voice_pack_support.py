@@ -258,6 +258,13 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn("Factory pack URLs are signed/temporary", select)
         self.assertIn("retry_pack = pack", select)
         self.assertIn("async_install_voice_pack(self.coordinator, retry_pack)", select)
+        self.assertIn("async_cache_official_voice_pack", voice)
+        self.assertIn("OFFICIAL_VOICE_CACHE_URL", voice)
+        self.assertIn("factory_voice_cache_used", select)
+        self.assertIn("factory_voice_cache_error", select)
+        self.assertIn('"download_failed"', select)
+        self.assertIn("install_target_match", select)
+        self.assertIn('verification["status"] == "download_failed"', select)
 
     def test_map_card_shows_voice_verification_and_tracks_option_changes(self) -> None:
         for path in (
@@ -278,6 +285,9 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn("attrs.installed_voice_state", card)
             self.assertIn("attrs.installed_voice_progress", card)
             self.assertIn('"voiceInstallSlotConfirmed"', card)
+            self.assertIn('"voiceInstallDownloadFailed"', card)
+            self.assertIn('"voiceCommandDownloadFailed"', card)
+            self.assertIn('["download_failed", "mismatch", "unconfirmed", "failed"]', card)
             self.assertIn('"voiceSelectPlaceholder"', card)
             self.assertIn("attrs.voice_command_status", card)
             self.assertIn("voiceCommandRetrying", card)
@@ -299,6 +309,8 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn('voiceInstallVerified: "✅', i18n)
             self.assertIn("voiceInstallCommunityVerified:", i18n)
             self.assertIn("voiceInstallMetadataConfirmed:", i18n)
+            self.assertIn("voiceInstallDownloadFailed:", i18n)
+            self.assertIn("voiceCommandDownloadFailed:", i18n)
             self.assertIn('voiceRobotReport: "Robot jelentése"', i18n)
             self.assertIn("voiceCommandConfirmed:", i18n)
             self.assertIn("voiceCommandRetrying:", i18n)
