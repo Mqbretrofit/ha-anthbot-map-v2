@@ -374,6 +374,11 @@ class AnthbotVoicePackSelect(
         reported = self._reported_voice()
         verification = self._voice_verification()
         requested = self._requested_pack or {}
+        command_status = requested.get("command_status")
+        if verification["status"] == "verified":
+            command_status = "confirmed"
+        elif verification["status"] in {"slot_confirmed", "metadata_confirmed"}:
+            command_status = "slot_confirmed"
         return {
             "serial_number": self.coordinator.client.serial_number,
             "model": self.coordinator.device.model,
@@ -391,12 +396,13 @@ class AnthbotVoicePackSelect(
             "requested_voice_md5": requested.get("music_md5"),
             "requested_voice_url": requested.get("music_url"),
             "requested_at": requested.get("requested_at"),
-            "voice_command_status": requested.get("command_status"),
+            "voice_command_status": command_status,
             "voice_command_attempts": requested.get("command_attempts", 0),
             "voice_command_max_attempts": _VOICE_MAX_COMMAND_ATTEMPTS,
             "voice_last_command_at": requested.get("last_command_at"),
             "voice_confirmation_at": requested.get("confirmation_at"),
             "voice_verification_finished_at": requested.get("verification_finished_at"),
+            "voice_last_command_error": requested.get("last_command_error"),
             "voice_install_status": verification["status"],
             "voice_install_exact": verification["exact"],
             "voice_report_matches_slot": verification["slot_match"],
