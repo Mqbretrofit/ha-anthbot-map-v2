@@ -203,6 +203,40 @@ class VoicePackSupportTests(unittest.TestCase):
             voice,
         )
 
+    def test_paid_voices_are_visible_before_purchase_and_locked(self) -> None:
+        select = _read(COMPONENT / "select.py")
+        voice = _read(COMPONENT / "voice_packs.py")
+
+        self.assertIn("/api/anthbot/store/voice-packs", voice)
+        self.assertIn("locked: bool = False", voice)
+        self.assertIn('locked = source == "community" and access == "paid" and music_url is None', voice)
+        self.assertIn('label = f"🔒 {label}', voice)
+        self.assertIn("def merge_community_voice_packs(", voice)
+        self.assertIn("replacement = owned_by_id.get(pack.community_id)", voice)
+        self.assertIn("and not pack.locked", select)
+        self.assertIn('"locked_community_pack_count"', select)
+        self.assertIn("if pack.locked:", select)
+        self.assertIn("must be purchased in the Community voice store", select)
+
+        for path in (
+            ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
+            COMPONENT / "frontend" / "anthbot-map-card.js",
+        ):
+            card = _read(path)
+            self.assertIn('requestedValue.startsWith("🔒 ")', card)
+            self.assertIn('this.t("voicePurchaseRequired")', card)
+            self.assertIn("attrs.locked_community_pack_count", card)
+            self.assertIn('this.t("voiceStorePaidAvailable")', card)
+            self.assertIn("./i18n.js?v=2482-paid-discovery1", card)
+
+        for path in (
+            ROOT / "www" / "anthbot-map" / "i18n.js",
+            COMPONENT / "frontend" / "i18n.js",
+        ):
+            i18n = _read(path)
+            self.assertIn("voiceStorePaidAvailable:", i18n)
+            self.assertIn("voicePurchaseRequired:", i18n)
+
     def test_paid_voice_store_is_linked_anonymously_and_auto_refreshes(self) -> None:
         select = _read(COMPONENT / "select.py")
         voice = _read(COMPONENT / "voice_packs.py")
@@ -243,7 +277,7 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn('window.open(voiceStoreUrl, "_blank", "noopener,noreferrer")', card)
             self.assertIn('this.t("voiceStorePurchasedCount")', card)
             self.assertIn("attrs.voice_store_error", card)
-            self.assertIn("./i18n.js?v=2482-voice-store1", card)
+            self.assertIn("./i18n.js?v=2482-paid-discovery1", card)
 
         for path in (
             ROOT / "www" / "anthbot-map" / "i18n.js",
