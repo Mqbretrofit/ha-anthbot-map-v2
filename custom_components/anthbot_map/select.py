@@ -305,19 +305,15 @@ class AnthbotVoicePackSelect(
             and reported_version.casefold() == requested_version.casefold()
         )
 
-        if requested_source == "community" and slot_match and version_match:
-            # The mower confirms our slot + version metadata, but it does not
-            # report the downloaded file MD5 or Community variant identifier.
-            status = "metadata_confirmed"
-            exact = False
-        elif (
-            requested_source == "community"
-            and slot_match
-            and not version_reported
-        ):
-            # Community audio can reuse an ANTHBOT slot. Slot-only confirmation
-            # proves the target slot, not the exact downloaded audio.
-            status = "slot_confirmed"
+        if requested_source == "community" and slot_match:
+            # Community audio deliberately reuses an ANTHBOT factory slot. Some
+            # mower firmware keeps reporting the factory slot/version (for
+            # example German_girl) after custom audio has been installed, and
+            # it does not expose the downloaded file MD5 or Community variant
+            # identifier. A matching slot therefore confirms the target slot;
+            # matching version metadata is an additional, but not required,
+            # confirmation.
+            status = "metadata_confirmed" if version_match else "slot_confirmed"
             exact = False
         elif (
             requested_source == "anthbot"
