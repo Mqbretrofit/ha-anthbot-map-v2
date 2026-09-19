@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 import re
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 from .api import AnthbotGenieApiError
 
@@ -155,22 +157,41 @@ async def async_start_vendor_firmware_update(
     coordinator: Any,
     firmware: FirmwareInfo,
 ) -> None:
-    """Start the exact manual OTA command used by the ANTHBOT Android app.
+    """Start the manual OTA pipeline used by the ANTHBOT Android app.
 
-    App 2.15.16 builds:
-      {"cmd": "ota_start", "data": {"version": <version>, "url": <fw_url>}}
-
-    The firmware URL comes directly from GET /device/latest/firmware.  Do not
-    add fields or rewrite the URL: the mower protocol is intentionally kept
-    byte-for-field compatible with the app's payload shape.
+    The app first converts the vendor firmware URL into an ANTHBOT presigned
+    download URL, then sends the mower the exact ota_start payload containing
+    category, version, presigned URL and MD5.
     """
     if ota_in_progress(coordinator.reported_state):
         raise AnthbotGenieApiError("A firmware update is already in progress")
+    if firmware.md5 is None:
+        raise AnthbotGenieApiError(
+            "ANTHBOT firmware metadata did not contain a valid MD5"
+        )
+
+    parsed_fw_url = urlparse(firmware.fw_url)
+    filename = PurePosixPath(unquote(parsed_fw_url.path)).name
+    if not filename:
+        raise AnthbotGenieApiError(
+            "ANTHBOT firmware URL did not contain a package filename"
+        )
+
+    presigned_url = (
+        await coordinator.account_client.async_get_presigned_download_url(
+            coordinator.client.serial_number,
+            category="firmware",
+            sub_category="",
+            filename=filename,
+        )
+    )
 
     await coordinator.client.async_publish_service_command(
         cmd="ota_start",
         data={
+            "category": "firmware",
             "version": firmware.version,
-            "url": firmware.fw_url,
+            "url": presigned_url,
+            "md5": firmware.md5,
         },
     )
