@@ -189,11 +189,15 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn("_async_refresh_community_catalog", select)
         self.assertIn("use_fallback=False", select)
         self.assertIn(
-            "free_packs = previous_free if community is None else community",
+            "public_packs = previous_public if community is None else community",
             select,
         )
         self.assertIn(
-            "self._apply_catalog(official + free_packs + paid_packs)",
+            "merged_community = merge_community_voice_packs(",
+            select,
+        )
+        self.assertIn(
+            "self._apply_catalog(official + merged_community)",
             select,
         )
         self.assertIn("self.async_write_ha_state()", select)
@@ -202,6 +206,41 @@ class VoicePackSupportTests(unittest.TestCase):
             "return _verified_community_fallback() if use_fallback else None",
             voice,
         )
+
+    def test_paid_voices_are_visible_before_purchase_and_locked(self) -> None:
+        select = _read(COMPONENT / "select.py")
+        voice = _read(COMPONENT / "voice_packs.py")
+
+        self.assertIn("/api/anthbot/store/voice-packs", voice)
+        self.assertIn("locked: bool = False", voice)
+        self.assertIn('locked = source == "community" and access == "paid" and music_url is None', voice)
+        self.assertIn('label = f"🔒 {label}', voice)
+        self.assertIn("def merge_community_voice_packs(", voice)
+        self.assertIn("replacement = owned_by_id.get(pack.community_id)", voice)
+        self.assertIn("and not pack.locked", select)
+        self.assertIn('"locked_community_pack_count"', select)
+        self.assertIn("if pack.locked:", select)
+        self.assertIn("This Community voice pack must be purchased", select)
+        self.assertIn("Community voice store before it can be installed", select)
+
+        for path in (
+            ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
+            COMPONENT / "frontend" / "anthbot-map-card.js",
+        ):
+            card = _read(path)
+            self.assertIn('requestedValue.startsWith("🔒 ")', card)
+            self.assertIn('this.t("voicePurchaseRequired")', card)
+            self.assertIn("attrs.locked_community_pack_count", card)
+            self.assertIn('this.t("voiceStorePaidAvailable")', card)
+            self.assertIn("./i18n.js?v=2482-paid-discovery1", card)
+
+        for path in (
+            ROOT / "www" / "anthbot-map" / "i18n.js",
+            COMPONENT / "frontend" / "i18n.js",
+        ):
+            i18n = _read(path)
+            self.assertIn("voiceStorePaidAvailable:", i18n)
+            self.assertIn("voicePurchaseRequired:", i18n)
 
     def test_paid_voice_store_is_linked_anonymously_and_auto_refreshes(self) -> None:
         select = _read(COMPONENT / "select.py")
@@ -218,7 +257,10 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn('"voice_store_entitlement_count"', select)
         self.assertIn('"purchased_community_pack_count"', select)
         self.assertIn('pack.access == "paid"', select)
-        self.assertIn("previous_paid if purchased is None else purchased", select)
+        self.assertIn(
+            "previous_purchased if purchased is None else purchased",
+            select,
+        )
 
         self.assertIn("/api/anthbot/store/client/pair", voice)
         self.assertIn("/api/anthbot/store/client/entitlements", voice)
@@ -243,7 +285,7 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn('window.open(voiceStoreUrl, "_blank", "noopener,noreferrer")', card)
             self.assertIn('this.t("voiceStorePurchasedCount")', card)
             self.assertIn("attrs.voice_store_error", card)
-            self.assertIn("./i18n.js?v=2482-voice-store1", card)
+            self.assertIn("./i18n.js?v=2482-paid-discovery1", card)
 
         for path in (
             ROOT / "www" / "anthbot-map" / "i18n.js",

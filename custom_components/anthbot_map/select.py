@@ -10,6 +10,7 @@ import secrets
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_time_interval
@@ -32,6 +33,7 @@ from .voice_packs import (
     async_get_voice_packs,
     async_install_voice_pack,
     installed_voice_identity,
+    merge_community_voice_packs,
     normalize_reported_voice_name,
     reported_voice_verification_key,
     voice_pack_verification_key,
@@ -199,7 +201,11 @@ class AnthbotVoicePackSelect(
             self._voice_store_entitlement_count = sum(
                 1
                 for pack in packs
-                if pack.source == "community" and pack.access == "paid"
+                if (
+                    pack.source == "community"
+                    and pack.access == "paid"
+                    and not pack.locked
+                )
             )
             self._apply_catalog(packs)
 
@@ -240,7 +246,7 @@ class AnthbotVoicePackSelect(
             return True
 
     async def _async_refresh_community_catalog(self, _now) -> None:
-        """Refresh free Community packs and paid entitlements without HA restart."""
+        """Refresh visible Community catalogue and paid entitlements without restart."""
         async with self._catalog_refresh_lock:
             community = await async_get_community_voice_packs(
                 self.coordinator.account_client._session,
@@ -253,29 +259,48 @@ class AnthbotVoicePackSelect(
 
             current = list(self._catalog_by_label.values())
             official = [pack for pack in current if pack.source == "anthbot"]
-            previous_free = [
+            previous_public = [
                 pack
                 for pack in current
-                if pack.source == "community" and pack.access != "paid"
+                if pack.source == "community" and pack.locked
+            ] + [
+                pack
+                for pack in current
+                if pack.source == "community"
+                and pack.access != "paid"
+                and not pack.locked
             ]
-            previous_paid = [
+            previous_purchased = [
                 pack
                 for pack in current
-                if pack.source == "community" and pack.access == "paid"
+                if (
+                    pack.source == "community"
+                    and pack.access == "paid"
+                    and not pack.locked
+                )
             ]
 
-            free_packs = previous_free if community is None else community
-            paid_packs = previous_paid if purchased is None else purchased
+            public_packs = previous_public if community is None else community
+            purchased_packs = (
+                previous_purchased if purchased is None else purchased
+            )
             if purchased is not None:
                 self._voice_store_entitlement_count = len(purchased)
 
-            changed = self._apply_catalog(official + free_packs + paid_packs)
+            merged_community = merge_community_voice_packs(
+                public_packs,
+                purchased_packs,
+            )
+            changed = self._apply_catalog(official + merged_community)
             if changed:
+                locked_count = sum(1 for pack in merged_community if pack.locked)
                 _LOGGER.info(
-                    "Updated Community voice catalogue for %s: %s free, %s purchased",
+                    "Updated Community voice catalogue for %s: %s visible, "
+                    "%s locked, %s purchased",
                     self.coordinator.client.serial_number,
-                    len(free_packs),
-                    len(paid_packs),
+                    len(merged_community),
+                    locked_count,
+                    self._voice_store_entitlement_count,
                 )
 
     def _apply_catalog(self, packs: list[VoicePack]) -> bool:
@@ -283,7 +308,7 @@ class AnthbotVoicePackSelect(
         new_catalog = {pack.label: pack for pack in packs}
         community_keys: dict[str, list[str]] = {}
         for pack in new_catalog.values():
-            if pack.source != "community":
+            if pack.source != "community" or pack.locked:
                 continue
             verification_key = voice_pack_verification_key(pack)
             community_keys.setdefault(verification_key, []).append(pack.label)
@@ -302,11 +327,29 @@ class AnthbotVoicePackSelect(
                 )
 
         old_signature = [
-            (pack.label, pack.key, pack.music_url, pack.music_md5, pack.access)
+            (
+                pack.label,
+                pack.key,
+                pack.music_url,
+                pack.music_md5,
+                pack.access,
+                pack.locked,
+                pack.price_amount,
+                pack.currency,
+            )
             for pack in self._catalog_by_label.values()
         ]
         new_signature = [
-            (pack.label, pack.key, pack.music_url, pack.music_md5, pack.access)
+            (
+                pack.label,
+                pack.key,
+                pack.music_url,
+                pack.music_md5,
+                pack.access,
+                pack.locked,
+                pack.price_amount,
+                pack.currency,
+            )
             for pack in new_catalog.values()
         ]
         changed = (
@@ -408,6 +451,7 @@ class AnthbotVoicePackSelect(
             label
             for label, pack in self._catalog_by_label.items()
             if pack.source == "community"
+            and not pack.locked
             and voice_pack_verification_key(pack) == verification_key
         ]
         return candidates[0] if len(candidates) == 1 else None
@@ -713,7 +757,21 @@ class AnthbotVoicePackSelect(
             "purchased_community_pack_count": sum(
                 1
                 for pack in self._catalog_by_label.values()
+                if (
+                    pack.source == "community"
+                    and pack.access == "paid"
+                    and not pack.locked
+                )
+            ),
+            "paid_community_pack_count": sum(
+                1
+                for pack in self._catalog_by_label.values()
                 if pack.source == "community" and pack.access == "paid"
+            ),
+            "locked_community_pack_count": sum(
+                1
+                for pack in self._catalog_by_label.values()
+                if pack.source == "community" and pack.locked
             ),
             "community_verification_conflict_count": len(
                 self._ambiguous_community_verification_keys
@@ -845,6 +903,11 @@ class AnthbotVoicePackSelect(
             pack = self._catalog_by_label.get(option)
         if pack is None:
             raise ValueError(f"Unknown voice pack: {option}")
+        if pack.locked:
+            raise HomeAssistantError(
+                "This Community voice pack must be purchased in the "
+                "Community voice store before it can be installed"
+            )
 
         factory_cache_used = False
         factory_cache_error: str | None = None
