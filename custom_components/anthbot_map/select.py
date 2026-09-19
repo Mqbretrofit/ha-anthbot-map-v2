@@ -300,6 +300,15 @@ class AnthbotVoicePackSelect(
         ]
         return candidates[0] if len(candidates) == 1 else None
 
+    def _community_id_for_label(self, label: object) -> str | None:
+        """Return the stable registry ID for one resolved Community label."""
+        if not isinstance(label, str):
+            return None
+        pack = self._catalog_by_label.get(label)
+        if pack is None or pack.source != "community":
+            return None
+        return pack.community_id
+
     def _request_age_seconds(self) -> float | None:
         if not self._requested_pack:
             return None
@@ -322,6 +331,7 @@ class AnthbotVoicePackSelect(
         requested = self._requested_pack
         reported_official = self._reported_official_label()
         reported_community = self._reported_community_label(reported)
+        reported_community_id = self._community_id_for_label(reported_community)
 
         if not requested:
             status = "reported" if any(reported.values()) else "unknown"
@@ -331,6 +341,7 @@ class AnthbotVoicePackSelect(
                 "slot_match": False,
                 "reported_official": reported_official,
                 "reported_community": reported_community,
+                "reported_community_id": reported_community_id,
                 "variant_match": False,
             }
 
@@ -351,6 +362,7 @@ class AnthbotVoicePackSelect(
         requested_version = str(requested.get("version") or "").strip()
         requested_source = str(requested.get("source") or "")
         requested_label = str(requested.get("label") or "").strip()
+        requested_community_id = str(requested.get("community_id") or "").strip()
 
         reported_package = reported["music_package"]
         reported_name = reported["name"]
@@ -390,8 +402,19 @@ class AnthbotVoicePackSelect(
         )
         variant_match = (
             requested_source == "community"
-            and bool(requested_label)
-            and reported_community == requested_label
+            and (
+                (
+                    bool(requested_community_id)
+                    and bool(reported_community_id)
+                    and requested_community_id.casefold()
+                    == reported_community_id.casefold()
+                )
+                or (
+                    not requested_community_id
+                    and bool(requested_label)
+                    and reported_community == requested_label
+                )
+            )
         )
 
         if (
@@ -443,6 +466,7 @@ class AnthbotVoicePackSelect(
             "slot_match": slot_match,
             "reported_official": reported_official,
             "reported_community": reported_community,
+            "reported_community_id": reported_community_id,
             "variant_match": variant_match,
         }
 
@@ -500,6 +524,7 @@ class AnthbotVoicePackSelect(
                 or verification.get("reported_official")
             ),
             "reported_community_pack": verification.get("reported_community"),
+            "reported_community_id": verification.get("reported_community_id"),
             "voice_variant_match": verification.get("variant_match", False),
             "installed_voice_verification_key": reported_voice_verification_key(
                 reported["name"],
@@ -507,6 +532,7 @@ class AnthbotVoicePackSelect(
                 reported["version"],
             ),
             "requested_voice_pack": requested.get("label"),
+            "requested_community_id": requested.get("community_id"),
             "requested_voice_variant_id": requested.get("variant_id"),
             "requested_voice_gender": requested.get("voice_gender"),
             "requested_voice_technical_slot": (
@@ -645,6 +671,7 @@ class AnthbotVoicePackSelect(
         self._requested_pack = {
             "label": pack.label,
             "source": pack.source,
+            "community_id": pack.community_id,
             "variant_id": pack.variant_id,
             "voice_gender": pack.voice_gender,
             "verification_key": voice_pack_verification_key(pack),
