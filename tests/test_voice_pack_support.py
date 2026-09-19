@@ -203,7 +203,8 @@ class VoicePackSupportTests(unittest.TestCase):
 
         self.assertIn("secrets.token_urlsafe(32)", select)
         self.assertIn('f"{DOMAIN}.voice_store_client"', select)
-        self.assertIn('{"client_token": store_client_token}', select)
+        self.assertIn("AnthbotVoicePackSelect(coordinator, store_client_token)", select)
+        self.assertIn("self._store_client_token = store_client_token", select)
         self.assertIn("async_create_voice_store_pairing", select)
         self.assertIn("async_get_purchased_voice_packs", select)
         self.assertIn("_VOICE_STORE_PAIR_REFRESH_INTERVAL = timedelta(hours=24)", select)
