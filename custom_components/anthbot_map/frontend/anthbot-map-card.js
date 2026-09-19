@@ -2,7 +2,7 @@ import { AnthbotMapRenderer } from "./renderer.js?v=2474-genie-heading-test2";
 import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=2411";
 import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=2411";
 import { renderAnthbotSchedulePanel, anthbotScheduleText } from "./schedule-panel.js?v=2480-test4";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=2482-voice-ota6";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=2482-voice-ota7";
 import {
   adjustCalibration,
   cardToYaml,
@@ -3116,7 +3116,7 @@ class AnthbotMapCard extends HTMLElement {
     ) ? String(entity.state) : "";
 
     let headline = currentState || reportedPack || robotName || "-";
-    if (["pending", "slot_confirmed", "metadata_confirmed", "community_verified", "verified"].includes(status) && requested) {
+    if (["pending", "download_failed", "slot_confirmed", "metadata_confirmed", "community_verified", "verified"].includes(status) && requested) {
       headline = requested;
     }
 
@@ -3126,6 +3126,7 @@ class AnthbotMapCard extends HTMLElement {
       metadata_confirmed: "voiceInstallMetadataConfirmed",
       slot_confirmed: "voiceInstallSlotConfirmed",
       pending: "voiceInstallPending",
+      download_failed: "voiceInstallDownloadFailed",
       mismatch: "voiceInstallMismatch",
       unconfirmed: "voiceInstallUnconfirmed",
       failed: "voiceInstallFailed",
@@ -3138,6 +3139,7 @@ class AnthbotMapCard extends HTMLElement {
       metadata_confirmed: "#8fdf9f",
       slot_confirmed: "#ffd45c",
       pending: "#ffd45c",
+      download_failed: "#ff6b6b",
       mismatch: "#ff8b6b",
       unconfirmed: "#ffb86b",
       failed: "#ff6b6b",
@@ -3180,6 +3182,7 @@ class AnthbotMapCard extends HTMLElement {
       slot_confirmed: "voiceCommandSlotConfirmed",
       failed: "voiceCommandFailed",
       retry_failed: "voiceCommandRetryFailed",
+      download_failed: "voiceCommandDownloadFailed",
       not_confirmed: "voiceCommandNotConfirmed",
     };
     const commandLine = document.createElement("small");
@@ -3282,7 +3285,7 @@ class AnthbotMapCard extends HTMLElement {
     if (
       requested
       && options.includes(requested)
-      && ["mismatch", "unconfirmed", "failed"].includes(status)
+      && ["download_failed", "mismatch", "unconfirmed", "failed"].includes(status)
     ) {
       retryButton = document.createElement("button");
       retryButton.type = "button";
