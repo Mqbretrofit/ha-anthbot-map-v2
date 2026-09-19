@@ -13,6 +13,49 @@ from .models.capabilities import supports_voice_packages
 
 _LOGGER = logging.getLogger(__name__)
 
+_ROBOT_LANGUAGE_ALIASES: dict[str, str] = {
+    "en": "English",
+    "de": "German",
+    "fr": "French",
+    "it": "Italian",
+    "ru": "Russian",
+    "es": "Spanish",
+}
+_ROBOT_SEX_ALIASES: dict[str, str] = {
+    "girl": "girl",
+    "female": "girl",
+    "woman": "girl",
+    "boy": "boy",
+    "male": "boy",
+    "man": "boy",
+}
+
+
+def normalize_reported_voice_name(name: str | None) -> tuple[str | None, str | None]:
+    """Normalize mower voice IDs such as girl_en/girl_de to catalogue identity."""
+    if not isinstance(name, str) or not name.strip():
+        return None, None
+
+    raw = name.strip()
+    folded = raw.casefold()
+    for english_name in _ROBOT_LANGUAGE_ALIASES.values():
+        if folded == english_name.casefold():
+            return english_name, None
+
+    tokens = [
+        token for token in folded.replace("-", "_").split("_")
+        if token
+    ]
+    language: str | None = None
+    sex: str | None = None
+    for token in tokens:
+        if token in _ROBOT_LANGUAGE_ALIASES:
+            language = _ROBOT_LANGUAGE_ALIASES[token]
+        if token in _ROBOT_SEX_ALIASES:
+            sex = _ROBOT_SEX_ALIASES[token]
+
+    return language, sex
+
 # Community packs are intentionally served separately from ANTHBOT cloud.
 # The endpoint may be empty/unavailable while the registry is being prepared;
 # official ANTHBOT packs remain usable in that case.
