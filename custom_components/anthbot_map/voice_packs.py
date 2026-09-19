@@ -169,21 +169,28 @@ def _verified_community_fallback() -> list[VoicePack]:
     ]
 
 
-async def async_get_community_voice_packs(session: Any) -> list[VoicePack]:
-    """Fetch community voice packs, with a verified offline fallback."""
+async def async_get_community_voice_packs(
+    session: Any,
+    *,
+    use_fallback: bool = True,
+) -> list[VoicePack] | None:
+    """Fetch community voice packs.
+
+    Startup may use the verified Hungarian fallback. Periodic refreshes can
+    disable fallback so a temporary network/server failure never replaces a
+    previously loaded dynamic catalogue with only the fallback entry.
+    """
     try:
         async with session.get(COMMUNITY_VOICE_REGISTRY_URL, timeout=15) as response:
-            if response.status == 404:
-                return _verified_community_fallback()
             if response.status != 200:
                 _LOGGER.debug(
                     "Community voice registry unavailable: HTTP %s", response.status
                 )
-                return _verified_community_fallback()
+                return _verified_community_fallback() if use_fallback else None
             payload = await response.json(content_type=None)
     except (ClientError, TimeoutError, ValueError) as err:
         _LOGGER.debug("Community voice registry unavailable: %s", err)
-        return _verified_community_fallback()
+        return _verified_community_fallback() if use_fallback else None
 
     packs: list[VoicePack] = []
     seen: set[str] = set()
@@ -193,9 +200,7 @@ async def async_get_community_voice_packs(session: Any) -> list[VoicePack]:
             packs.append(pack)
             seen.add(pack.key)
 
-    # An empty/invalid registry should never hide the known-good Hungarian
-    # community package.
-    if not packs:
+    if not packs and use_fallback:
         return _verified_community_fallback()
     return packs
 
@@ -221,7 +226,7 @@ async def async_get_voice_packs(coordinator: Any) -> list[VoicePack]:
     community = await async_get_community_voice_packs(
         coordinator.account_client._session
     )
-    return official + community
+    return official + (community or [])
 
 
 def installed_voice_identity(state: dict[str, Any]) -> tuple[Any, str | None, str | None]:
