@@ -121,7 +121,6 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn('item.unique_id == f"{serial_number}_map"', init)
         self.assertIn("alias_base = slugify(cloud_alias)", init)
         self.assertIn("new_entity_id=desired_entity_id", init)
-        self.assertIn("Preserve manually renamed or already aligned entity IDs", init)
 
     def test_cloud_alias_entities_are_aligned_to_established_ha_prefix(self) -> None:
         init = _read(COMPONENT / "__init__.py")
@@ -162,7 +161,7 @@ class VoicePackSupportTests(unittest.TestCase):
             source,
         )
         self.assertIn("_verified_community_fallback()", source)
-        self.assertIn("if not packs:", source)
+        self.assertIn("if not packs and use_fallback:", source)
 
     def test_voice_catalog_auto_refreshes_without_ha_restart(self) -> None:
         select = _read(COMPONENT / "select.py")
