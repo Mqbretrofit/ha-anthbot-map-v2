@@ -108,7 +108,7 @@ PLATFORMS = [
 _LOGGER = logging.getLogger(__name__)
 VALID_MOW_HEIGHTS = list(range(30, 75, 5))
 FRONTEND_RESOURCE_PATH = "/anthbot-map-v2/anthbot-map-card.js"
-FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.8.2-voice-ota.3"
+FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.8.2-voice-ota.4"
 LEGACY_ENTITY_SUFFIXES: tuple[str, ...] = (
     "enable_custom_mowing_direction",
     "custom_mowing_direction_enable",
@@ -1105,7 +1105,7 @@ def _sync_standalone_frontend(source: Path, destination: Path) -> None:
 
 
 async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
-    """Register the bundled card once in Lovelace storage mode."""
+    """Register exactly one bundled Anthbot Map card resource."""
     lovelace = hass.data.get(LOVELACE_DATA)
     if lovelace is None or getattr(lovelace, "resource_mode", None) != MODE_STORAGE:
         _LOGGER.info(
@@ -1119,20 +1119,31 @@ async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
         _LOGGER.warning("Lovelace resource storage is unavailable")
         return
 
-    # async_get_info() ensures the storage collection is loaded before items
-    # are inspected or created. This preserves every existing dashboard resource.
     await resources.async_get_info()
+
+    known_paths = {
+        FRONTEND_RESOURCE_PATH,
+        f"/local{FRONTEND_RESOURCE_PATH}",
+        "/anthbot-map/anthbot-map-card.js",
+        "/local/anthbot-map/anthbot-map-card.js",
+    }
     matching = [
         item
         for item in resources.async_items()
-        if str(item.get("url", "")).split("?", 1)[0]
-        in {
-            FRONTEND_RESOURCE_PATH,
-            f"/local{FRONTEND_RESOURCE_PATH}",
-        }
+        if str(item.get("url", "")).split("?", 1)[0] in known_paths
     ]
+
     if matching:
-        current = matching[0]
+        # Prefer an already-v2 resource so its storage id remains stable.
+        current = next(
+            (
+                item
+                for item in matching
+                if str(item.get("url", "")).split("?", 1)[0]
+                in {FRONTEND_RESOURCE_PATH, f"/local{FRONTEND_RESOURCE_PATH}"}
+            ),
+            matching[0],
+        )
         if (
             current.get("url") != FRONTEND_RESOURCE_URL
             or current.get("type") != "module"
@@ -1141,11 +1152,18 @@ async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
                 current["id"],
                 {"res_type": "module", "url": FRONTEND_RESOURCE_URL},
             )
-        if len(matching) > 1:
-            _LOGGER.warning(
-                "Multiple Anthbot Map Lovelace resources already exist; keeping "
-                "them unchanged except for the first entry"
+
+        # Older /anthbot-map resources register the same custom element name.
+        # If they load first, the new card cannot redefine it, so voice/OTA UI
+        # can silently disappear. Remove every duplicate/legacy resource.
+        for item in matching:
+            if item["id"] == current["id"]:
+                continue
+            _LOGGER.info(
+                "Removing duplicate/legacy Anthbot Map Lovelace resource: %s",
+                item.get("url"),
             )
+            await resources.async_delete_item(item["id"])
         return
 
     await resources.async_create_item(
