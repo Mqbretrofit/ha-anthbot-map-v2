@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta, timezone
 import logging
+import secrets
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
@@ -24,8 +25,10 @@ from .voice_packs import (
     COMMUNITY_TECHNICAL_SLOT,
     VoicePack,
     async_cache_official_voice_pack,
+    async_create_voice_store_pairing,
     async_get_community_voice_packs,
     async_get_official_voice_packs,
+    async_get_purchased_voice_packs,
     async_get_voice_packs,
     async_install_voice_pack,
     installed_voice_identity,
@@ -51,6 +54,7 @@ _N8_RAW_TO_WORK_MODE = {value: key for key, value in _N8_WORK_MODE_TO_RAW.items(
 _LOGGER = logging.getLogger(__name__)
 
 _VOICE_CATALOG_REFRESH_INTERVAL = timedelta(seconds=60)
+_VOICE_STORE_PAIR_REFRESH_INTERVAL = timedelta(hours=24)
 _VOICE_INSTALL_PENDING_SECONDS = 180
 _VOICE_VERIFY_DELAYS = (2, 8, 20, 45)
 _VOICE_CONFIRM_STATUSES = {"verified", "community_verified"}
@@ -68,12 +72,30 @@ async def async_setup_entry(
         entry.entry_id
     ]
     entities: list[SelectEntity] = []
+
+    # One anonymous high-entropy token identifies this HA installation to the
+    # Community voice store. It contains no ANTHBOT account, mower or email data.
+    store_client = Store(hass, 1, f"{DOMAIN}.voice_store_client")
+    stored_client = await store_client.async_load()
+    store_client_token = (
+        str(stored_client.get("client_token"))
+        if isinstance(stored_client, dict)
+        and isinstance(stored_client.get("client_token"), str)
+        and stored_client.get("client_token")
+        else ""
+    )
+    if not store_client_token:
+        store_client_token = secrets.token_urlsafe(32)
+        await store_client.async_save({"client_token": store_client_token})
+
     for coordinator in coordinators:
         if supports_voice_packages(
             getattr(coordinator.device, "model", None),
             coordinator.reported_state,
         ):
-            entities.append(AnthbotVoicePackSelect(coordinator))
+            entities.append(
+                AnthbotVoicePackSelect(coordinator, store_client_token)
+            )
         if is_n8_model(getattr(coordinator.device, "model", None)):
             entities.append(AnthbotN8WorkModeSelect(coordinator))
         for zone_kind, zones in (
@@ -100,7 +122,11 @@ class AnthbotVoicePackSelect(
     _attr_name = "Voice pack"
     _attr_icon = "mdi:account-voice"
 
-    def __init__(self, coordinator: AnthbotGenieDataUpdateCoordinator) -> None:
+    def __init__(
+        self,
+        coordinator: AnthbotGenieDataUpdateCoordinator,
+        store_client_token: str,
+    ) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.client.serial_number}_voice_pack"
         self._attr_device_info = DeviceInfo(
@@ -115,6 +141,10 @@ class AnthbotVoicePackSelect(
         self._catalog_refresh_lock = asyncio.Lock()
         self._requested_pack: dict[str, object] | None = None
         self._request_store: Store[dict[str, object]] | None = None
+        self._store_client_token = store_client_token
+        self._voice_store_url: str | None = None
+        self._voice_store_error: str | None = None
+        self._voice_store_entitlement_count = 0
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -132,6 +162,10 @@ class AnthbotVoicePackSelect(
             self._async_reload_catalog(),
             f"anthbot_voice_catalog_{serial}",
         )
+        self.hass.async_create_background_task(
+            self._async_refresh_store_pairing(),
+            f"anthbot_voice_store_pair_{serial}",
+        )
         self.async_on_remove(
             async_track_time_interval(
                 self.hass,
@@ -139,11 +173,21 @@ class AnthbotVoicePackSelect(
                 _VOICE_CATALOG_REFRESH_INTERVAL,
             )
         )
+        self.async_on_remove(
+            async_track_time_interval(
+                self.hass,
+                self._async_refresh_store_pairing,
+                _VOICE_STORE_PAIR_REFRESH_INTERVAL,
+            )
+        )
 
     async def _async_reload_catalog(self) -> None:
         async with self._catalog_refresh_lock:
             try:
-                packs = await async_get_voice_packs(self.coordinator)
+                packs = await async_get_voice_packs(
+                    self.coordinator,
+                    store_client_token=self._store_client_token,
+                )
             except AnthbotGenieApiError as err:
                 _LOGGER.warning(
                     "Could not load ANTHBOT voice catalogue for %s: %s",
@@ -152,7 +196,25 @@ class AnthbotVoicePackSelect(
                 )
                 return
 
+            self._voice_store_entitlement_count = sum(
+                1
+                for pack in packs
+                if pack.source == "community" and pack.access == "paid"
+            )
             self._apply_catalog(packs)
+
+    async def _async_refresh_store_pairing(self, _now=None) -> None:
+        """Refresh the temporary browser URL used for automatic purchase linking."""
+        store_url, error = await async_create_voice_store_pairing(
+            self.coordinator.account_client._session,
+            self._store_client_token,
+        )
+        changed = store_url != self._voice_store_url or error != self._voice_store_error
+        if store_url is not None:
+            self._voice_store_url = store_url
+        self._voice_store_error = error
+        if changed:
+            self.async_write_ha_state()
 
     async def _async_refresh_official_catalog(self) -> bool:
         """Refresh expiring ANTHBOT factory voice URLs before installation."""
@@ -178,26 +240,42 @@ class AnthbotVoicePackSelect(
             return True
 
     async def _async_refresh_community_catalog(self, _now) -> None:
-        """Refresh only the dynamic Community portion without restarting HA."""
+        """Refresh free Community packs and paid entitlements without HA restart."""
         async with self._catalog_refresh_lock:
             community = await async_get_community_voice_packs(
                 self.coordinator.account_client._session,
                 use_fallback=False,
             )
-            if community is None:
-                return
+            purchased = await async_get_purchased_voice_packs(
+                self.coordinator.account_client._session,
+                self._store_client_token,
+            )
 
-            official = [
+            current = list(self._catalog_by_label.values())
+            official = [pack for pack in current if pack.source == "anthbot"]
+            previous_free = [
                 pack
-                for pack in self._catalog_by_label.values()
-                if pack.source == "anthbot"
+                for pack in current
+                if pack.source == "community" and pack.access != "paid"
             ]
-            changed = self._apply_catalog(official + community)
+            previous_paid = [
+                pack
+                for pack in current
+                if pack.source == "community" and pack.access == "paid"
+            ]
+
+            free_packs = previous_free if community is None else community
+            paid_packs = previous_paid if purchased is None else purchased
+            if purchased is not None:
+                self._voice_store_entitlement_count = len(purchased)
+
+            changed = self._apply_catalog(official + free_packs + paid_packs)
             if changed:
                 _LOGGER.info(
-                    "Updated Community voice catalogue for %s: %s option(s)",
+                    "Updated Community voice catalogue for %s: %s free, %s purchased",
                     self.coordinator.client.serial_number,
-                    len(community),
+                    len(free_packs),
+                    len(paid_packs),
                 )
 
     def _apply_catalog(self, packs: list[VoicePack]) -> bool:
@@ -224,11 +302,11 @@ class AnthbotVoicePackSelect(
                 )
 
         old_signature = [
-            (pack.label, pack.key, pack.music_url, pack.music_md5)
+            (pack.label, pack.key, pack.music_url, pack.music_md5, pack.access)
             for pack in self._catalog_by_label.values()
         ]
         new_signature = [
-            (pack.label, pack.key, pack.music_url, pack.music_md5)
+            (pack.label, pack.key, pack.music_url, pack.music_md5, pack.access)
             for pack in new_catalog.values()
         ]
         changed = (
@@ -620,6 +698,10 @@ class AnthbotVoicePackSelect(
             "voice_install_status": verification["status"],
             "voice_install_exact": verification["exact"],
             "voice_report_matches_slot": verification["slot_match"],
+            "voice_store_url": self._voice_store_url,
+            "voice_store_connected": bool(self._voice_store_url),
+            "voice_store_entitlement_count": self._voice_store_entitlement_count,
+            "voice_store_error": self._voice_store_error,
             "official_pack_count": sum(
                 1 for pack in self._catalog_by_label.values() if pack.source == "anthbot"
             ),
@@ -627,6 +709,11 @@ class AnthbotVoicePackSelect(
                 1
                 for pack in self._catalog_by_label.values()
                 if pack.source == "community"
+            ),
+            "purchased_community_pack_count": sum(
+                1
+                for pack in self._catalog_by_label.values()
+                if pack.source == "community" and pack.access == "paid"
             ),
             "community_verification_conflict_count": len(
                 self._ambiguous_community_verification_keys
