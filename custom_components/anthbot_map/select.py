@@ -27,6 +27,8 @@ from .voice_packs import (
     async_install_voice_pack,
     installed_voice_identity,
     normalize_reported_voice_name,
+    reported_voice_verification_key,
+    voice_pack_verification_key,
 )
 from .zones import async_update_zone_settings, auto_zones, manual_zones
 
@@ -105,6 +107,7 @@ class AnthbotVoicePackSelect(
             name=coordinator.device.alias,
         )
         self._catalog_by_label: dict[str, VoicePack] = {}
+        self._ambiguous_community_verification_keys: set[str] = set()
         self._attr_options = []
         self._catalog_refresh_lock = asyncio.Lock()
         self._requested_pack: dict[str, object] | None = None
@@ -172,8 +175,28 @@ class AnthbotVoicePackSelect(
                 )
 
     def _apply_catalog(self, packs: list[VoicePack]) -> bool:
-        """Replace the catalogue and write state only when options changed."""
+        """Replace the catalogue and track Community identity collisions."""
         new_catalog = {pack.label: pack for pack in packs}
+        community_keys: dict[str, list[str]] = {}
+        for pack in new_catalog.values():
+            if pack.source != "community":
+                continue
+            verification_key = voice_pack_verification_key(pack)
+            community_keys.setdefault(verification_key, []).append(pack.label)
+
+        ambiguous = {
+            key
+            for key, labels in community_keys.items()
+            if len(labels) > 1
+        }
+        if ambiguous and ambiguous != self._ambiguous_community_verification_keys:
+            for key in sorted(ambiguous):
+                _LOGGER.warning(
+                    "Community voice verification key %s is shared by: %s",
+                    key,
+                    ", ".join(community_keys[key]),
+                )
+
         old_signature = [
             (pack.label, pack.key, pack.music_url, pack.music_md5)
             for pack in self._catalog_by_label.values()
@@ -182,8 +205,12 @@ class AnthbotVoicePackSelect(
             (pack.label, pack.key, pack.music_url, pack.music_md5)
             for pack in new_catalog.values()
         ]
-        changed = old_signature != new_signature
+        changed = (
+            old_signature != new_signature
+            or ambiguous != self._ambiguous_community_verification_keys
+        )
         self._catalog_by_label = new_catalog
+        self._ambiguous_community_verification_keys = ambiguous
         self._attr_options = list(new_catalog)
         if changed:
             self.async_write_ha_state()
@@ -247,6 +274,31 @@ class AnthbotVoicePackSelect(
                 return candidates[0]
         return None
 
+    def _reported_community_label(
+        self,
+        reported: dict[str, object | None] | None = None,
+    ) -> str | None:
+        """Resolve one Community variant from mower-visible slot + version."""
+        current = reported or self._reported_voice()
+        verification_key = reported_voice_verification_key(
+            current.get("name"),
+            current.get("sex"),
+            current.get("version"),
+        )
+        if (
+            verification_key is None
+            or verification_key in self._ambiguous_community_verification_keys
+        ):
+            return None
+
+        candidates = [
+            label
+            for label, pack in self._catalog_by_label.items()
+            if pack.source == "community"
+            and voice_pack_verification_key(pack) == verification_key
+        ]
+        return candidates[0] if len(candidates) == 1 else None
+
     def _request_age_seconds(self) -> float | None:
         if not self._requested_pack:
             return None
@@ -268,6 +320,7 @@ class AnthbotVoicePackSelect(
         reported = self._reported_voice()
         requested = self._requested_pack
         reported_official = self._reported_official_label()
+        reported_community = self._reported_community_label(reported)
 
         if not requested:
             status = "reported" if any(reported.values()) else "unknown"
@@ -276,6 +329,8 @@ class AnthbotVoicePackSelect(
                 "exact": False,
                 "slot_match": False,
                 "reported_official": reported_official,
+                "reported_community": reported_community,
+                "variant_match": False,
             }
 
         command_status = str(requested.get("command_status") or "")
@@ -285,6 +340,8 @@ class AnthbotVoicePackSelect(
                 "exact": False,
                 "slot_match": False,
                 "reported_official": reported_official,
+                "reported_community": reported_community,
+                "variant_match": False,
             }
 
         requested_package = requested.get("music_package")
@@ -292,6 +349,7 @@ class AnthbotVoicePackSelect(
         requested_sex = str(requested.get("sex") or "").strip()
         requested_version = str(requested.get("version") or "").strip()
         requested_source = str(requested.get("source") or "")
+        requested_label = str(requested.get("label") or "").strip()
 
         reported_package = reported["music_package"]
         reported_name = reported["name"]
@@ -329,9 +387,15 @@ class AnthbotVoicePackSelect(
             and isinstance(reported_install_progress, int)
             and reported_install_progress >= 100
         )
+        variant_match = (
+            requested_source == "community"
+            and bool(requested_label)
+            and reported_community == requested_label
+        )
 
         if (
             requested_source == "community"
+            and variant_match
             and slot_match
             and version_match
             and install_success
@@ -377,13 +441,20 @@ class AnthbotVoicePackSelect(
             "exact": exact,
             "slot_match": slot_match,
             "reported_official": reported_official,
+            "reported_community": reported_community,
+            "variant_match": variant_match,
         }
 
     @property
     def current_option(self) -> str | None:
         verification = self._voice_verification()
+
+        reported_community = verification.get("reported_community")
+        if isinstance(reported_community, str):
+            return reported_community
+
         if (
-            verification["status"] in {"verified", "community_verified"}
+            verification["status"] == "verified"
             and self._requested_pack
             and isinstance(self._requested_pack.get("label"), str)
         ):
@@ -423,8 +494,20 @@ class AnthbotVoicePackSelect(
             "installed_voice_progress": reported["install_progress"],
             "installed_voice_time": reported["install_time"],
             "installed_voice_id": reported["install_id"],
-            "reported_voice_pack": verification.get("reported_official"),
+            "reported_voice_pack": (
+                verification.get("reported_community")
+                or verification.get("reported_official")
+            ),
+            "reported_community_pack": verification.get("reported_community"),
+            "voice_variant_match": verification.get("variant_match", False),
+            "installed_voice_verification_key": reported_voice_verification_key(
+                reported["name"],
+                reported["sex"],
+                reported["version"],
+            ),
             "requested_voice_pack": requested.get("label"),
+            "requested_voice_variant_id": requested.get("variant_id"),
+            "requested_voice_verification_key": requested.get("verification_key"),
             "requested_voice_source": requested.get("source"),
             "requested_music_package": requested.get("music_package"),
             "requested_voice_version": requested.get("version"),
@@ -448,6 +531,9 @@ class AnthbotVoicePackSelect(
                 1
                 for pack in self._catalog_by_label.values()
                 if pack.source == "community"
+            ),
+            "community_verification_conflict_count": len(
+                self._ambiguous_community_verification_keys
             ),
         }
 
@@ -481,11 +567,7 @@ class AnthbotVoicePackSelect(
 
             verification = self._voice_verification()
             if verification["status"] in _VOICE_CONFIRM_STATUSES:
-                self._requested_pack["command_status"] = (
-                    "confirmed"
-                    if verification["status"] == "verified"
-                    else "slot_confirmed"
-                )
+                self._requested_pack["command_status"] = "confirmed"
                 self._requested_pack["confirmation_at"] = (
                     datetime.now(timezone.utc).isoformat()
                 )
@@ -556,6 +638,8 @@ class AnthbotVoicePackSelect(
         self._requested_pack = {
             "label": pack.label,
             "source": pack.source,
+            "variant_id": pack.variant_id,
+            "verification_key": voice_pack_verification_key(pack),
             "music_package": pack.music_package,
             "english_name": pack.english_name,
             "sex": pack.sex,
