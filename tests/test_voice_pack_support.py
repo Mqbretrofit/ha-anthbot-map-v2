@@ -197,6 +197,57 @@ class VoicePackSupportTests(unittest.TestCase):
             voice,
         )
 
+    def test_paid_voice_store_is_linked_anonymously_and_auto_refreshes(self) -> None:
+        select = _read(COMPONENT / "select.py")
+        voice = _read(COMPONENT / "voice_packs.py")
+
+        self.assertIn("secrets.token_urlsafe(32)", select)
+        self.assertIn('f"{DOMAIN}.voice_store_client"', select)
+        self.assertIn('{"client_token": store_client_token}', select)
+        self.assertIn("async_create_voice_store_pairing", select)
+        self.assertIn("async_get_purchased_voice_packs", select)
+        self.assertIn("_VOICE_STORE_PAIR_REFRESH_INTERVAL = timedelta(hours=24)", select)
+        self.assertIn('"voice_store_url": self._voice_store_url', select)
+        self.assertIn('"voice_store_entitlement_count"', select)
+        self.assertIn('"purchased_community_pack_count"', select)
+        self.assertIn('pack.access == "paid"', select)
+        self.assertIn("previous_paid if purchased is None else purchased", select)
+
+        self.assertIn("/api/anthbot/store/client/pair", voice)
+        self.assertIn("/api/anthbot/store/client/entitlements", voice)
+        self.assertIn('json={"client_token": client_token}', voice)
+        self.assertIn('access: str = "free"', voice)
+        self.assertIn('access = str(record.get("access") or "free")', voice)
+        self.assertIn('entitlement service could not be reached', voice)
+
+        # Store identity must be independent of ANTHBOT/cloud account identity.
+        self.assertNotIn('CONF_USERNAME', select)
+        self.assertNotIn('serial_number": self._store_client_token', select)
+
+    def test_map_card_opens_linked_store_and_tracks_entitlements(self) -> None:
+        for path in (
+            ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
+            COMPONENT / "frontend" / "anthbot-map-card.js",
+        ):
+            card = _read(path)
+            self.assertIn("attrs.voice_store_url", card)
+            self.assertIn("attrs.voice_store_entitlement_count", card)
+            self.assertIn('this.t("voiceStoreOpen")', card)
+            self.assertIn('window.open(voiceStoreUrl, "_blank", "noopener,noreferrer")', card)
+            self.assertIn('this.t("voiceStorePurchasedCount")', card)
+            self.assertIn("attrs.voice_store_error", card)
+            self.assertIn("./i18n.js?v=2482-voice-store1", card)
+
+        for path in (
+            ROOT / "www" / "anthbot-map" / "i18n.js",
+            COMPONENT / "frontend" / "i18n.js",
+        ):
+            i18n = _read(path)
+            self.assertIn('voiceStoreOpen: "Open Community voice store"', i18n)
+            self.assertIn('voiceStoreOpen: "Community Hangbolt megnyitása"', i18n)
+            self.assertIn("voiceStorePurchasedCount:", i18n)
+            self.assertIn("voiceStoreAutoNote:", i18n)
+
     def test_voice_install_state_tracks_request_and_mower_confirmation(self) -> None:
         select = _read(COMPONENT / "select.py")
         voice = _read(COMPONENT / "voice_packs.py")
