@@ -197,12 +197,14 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn("voice_install_status", select)
         self.assertIn('"metadata_confirmed"', select)
         self.assertIn('"slot_confirmed"', select)
+        self.assertIn("slot_version = cfg.get(name)", voice)
+        self.assertIn('"community_verified"', select)
+        self.assertIn("and version_match", select)
+        self.assertIn("and install_success", select)
+        self.assertIn('reported_install_state.casefold() == "success"', select)
+        self.assertIn("reported_install_progress >= 100", select)
         self.assertIn(
-            'if requested_source == "community" and slot_match:',
-            select,
-        )
-        self.assertIn(
-            'status = "metadata_confirmed" if version_match else "slot_confirmed"',
+            '_VOICE_CONFIRM_STATUSES = {"verified", "community_verified"}',
             select,
         )
         self.assertIn('"verified"', select)
@@ -217,6 +219,8 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn("requested_voice_md5", select)
         self.assertIn("voice_command_attempts", select)
         self.assertIn("voice_verification_finished_at", select)
+        self.assertIn("installed_voice_state", select)
+        self.assertIn("installed_voice_progress", select)
 
     def test_map_card_shows_voice_verification_and_tracks_option_changes(self) -> None:
         for path in (
@@ -232,7 +236,10 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn("attrs.voice_install_status", card)
             self.assertIn("attrs.requested_voice_pack", card)
             self.assertIn("attrs.installed_voice_name", card)
+            self.assertIn('"voiceInstallCommunityVerified"', card)
             self.assertIn('"voiceInstallMetadataConfirmed"', card)
+            self.assertIn("attrs.installed_voice_state", card)
+            self.assertIn("attrs.installed_voice_progress", card)
             self.assertIn('"voiceInstallSlotConfirmed"', card)
             self.assertIn('"voiceSelectPlaceholder"', card)
             self.assertIn("attrs.voice_command_status", card)
@@ -247,6 +254,7 @@ class VoicePackSupportTests(unittest.TestCase):
         ):
             i18n = _read(path)
             self.assertIn('voiceInstallVerified: "✅', i18n)
+            self.assertIn("voiceInstallCommunityVerified:", i18n)
             self.assertIn("voiceInstallMetadataConfirmed:", i18n)
             self.assertIn('voiceRobotReport: "Robot jelentése"', i18n)
             self.assertIn("voiceCommandConfirmed:", i18n)
