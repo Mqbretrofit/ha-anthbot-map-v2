@@ -3366,6 +3366,9 @@ class AnthbotMapCard extends HTMLElement {
         } else {
           this.notify(voiceStoreError || this.t("voiceStoreUnavailable"));
         }
+        select.value = currentState && options.includes(currentState)
+          ? currentState
+          : "";
         window.setTimeout(renderVoiceOptions, 0);
         return;
       }
