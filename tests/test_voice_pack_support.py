@@ -115,6 +115,16 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertGreaterEqual(coordinator.count("supports_voice_volume("), 2)
         self.assertIn("Voice volume is not supported by", init)
 
+    def test_map_card_matches_optional_entities_by_mower_serial(self) -> None:
+        for path in (
+            ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
+            COMPONENT / "frontend" / "anthbot-map-card.js",
+        ):
+            card = _read(path)
+            self.assertIn("const activeSerial = String(", card)
+            self.assertIn("candidateSerial !== activeSerial", card)
+            self.assertIn("state.attributes?.serial_number", card)
+
     def test_map_card_hides_voice_controls_without_voice_entities(self) -> None:
         for path in (
             ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
