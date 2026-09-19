@@ -250,6 +250,12 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn("requested_voice_verification_key", select)
         self.assertIn("installed_voice_verification_key", select)
         self.assertIn("community_verification_conflict_count", select)
+        self.assertIn("async_get_official_voice_packs", select)
+        self.assertIn("def _async_refresh_official_catalog", select)
+        self.assertIn('if pack.source == "anthbot":', select)
+        self.assertIn("Factory pack URLs are signed/temporary", select)
+        self.assertIn("retry_pack = pack", select)
+        self.assertIn("async_install_voice_pack(self.coordinator, retry_pack)", select)
 
     def test_map_card_shows_voice_verification_and_tracks_option_changes(self) -> None:
         for path in (
