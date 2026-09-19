@@ -2,7 +2,7 @@ import { AnthbotMapRenderer } from "./renderer.js?v=2474-genie-heading-test2";
 import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=2411";
 import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=2411";
 import { renderAnthbotSchedulePanel, anthbotScheduleText } from "./schedule-panel.js?v=2480-test4";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=2482-paid-discovery1";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=2482-voice-popup1";
 import {
   adjustCalibration,
   cardToYaml,
@@ -3095,10 +3095,117 @@ class AnthbotMapCard extends HTMLElement {
     }
 
     currentTile.replaceWith(this.createVoicePackControl());
+    if (this.shadowRoot?.querySelector('[data-role="voice-pack-dialog"]')) {
+      this.openVoicePackDialog({ refresh: true });
+    }
     return true;
   }
 
-  createVoicePackControl() {
+  openVoicePackDialog({ refresh = false } = {}) {
+    const root = this.shadowRoot || document.body;
+    const existing = root.querySelector('[data-role="voice-pack-dialog"]');
+    if (existing) {
+      if (!refresh) return;
+      existing.remove();
+    }
+
+    const overlay = document.createElement("div");
+    overlay.className = "mowing-record-detail-overlay";
+    overlay.dataset.role = "voice-pack-dialog";
+
+    const dialog = document.createElement("div");
+    dialog.className = "mowing-record-detail-dialog voice-pack-dialog";
+    dialog.style.cssText = "width:min(760px,94vw);max-width:760px;max-height:min(760px,90vh);overflow:auto";
+    overlay.appendChild(dialog);
+
+    const close = () => overlay.remove();
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) close();
+    });
+
+    const head = document.createElement("div");
+    head.className = "mowing-record-detail-head";
+    head.innerHTML = `
+      <div>
+        <div class="mowing-record-detail-title">${escapeHtml(this.t("voicePack"))}</div>
+        <div style="opacity:.68;font-size:.9em;margin-top:3px">${escapeHtml(this.t("voicePopupSubtitle"))}</div>
+      </div>
+      <button type="button" class="mowing-record-detail-close" aria-label="${escapeHtml(this.t("close"))}">×</button>
+    `;
+    head.querySelector(".mowing-record-detail-close").addEventListener("click", close);
+
+    const control = this.createVoicePackControl({ popup: true });
+    control.style.margin = "12px 0 0";
+    control.style.width = "100%";
+    control.style.maxWidth = "100%";
+    dialog.append(head, control);
+    root.appendChild(overlay);
+  }
+
+  createVoicePackControl({ popup = false } = {}) {
+    if (!popup) {
+      const entityId = this.getSelectEntity("voicePack");
+      const entity = entityId ? this._hass.states[entityId] : null;
+      const attrs = entity?.attributes || {};
+      const status = String(attrs.voice_install_status || "unknown");
+      const currentState = (
+        entity?.state && entity.state !== "unknown" && entity.state !== "unavailable"
+      ) ? String(entity.state) : "";
+      const headline = currentState
+        || String(attrs.reported_voice_pack || "")
+        || String(attrs.installed_voice_display_name || attrs.installed_voice_name || "")
+        || "-";
+      const lockedVoiceCount = Number(attrs.locked_community_pack_count || 0);
+      const purchasedCount = Number(attrs.voice_store_entitlement_count || 0);
+      const shortStatusKeys = {
+        verified: "voiceInstallVerifiedShort",
+        community_verified: "voiceInstallCommunityVerifiedShort",
+        metadata_confirmed: "voiceInstallMetadataConfirmedShort",
+        slot_confirmed: "voiceInstallSlotConfirmedShort",
+        pending: "voiceInstallPendingShort",
+        download_failed: "voiceInstallDownloadFailedShort",
+        mismatch: "voiceInstallMismatchShort",
+        unconfirmed: "voiceInstallUnconfirmedShort",
+        failed: "voiceInstallFailedShort",
+        reported: "voiceInstallReportedShort",
+        unknown: "voiceInstallUnknownShort",
+      };
+
+      const tile = document.createElement("div");
+      tile.className = "panel-tile control-tile voice-pack-tile";
+      tile.style.cssText = "display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;min-width:0;overflow:hidden;padding:11px 13px;box-sizing:border-box";
+
+      const summary = document.createElement("div");
+      summary.style.cssText = "min-width:0;overflow:hidden";
+      const label = document.createElement("span");
+      label.textContent = this.t("voicePack");
+      label.style.cssText = "display:block;opacity:.76;font-size:12px;margin-bottom:2px";
+      const value = document.createElement("strong");
+      value.textContent = headline;
+      value.title = headline;
+      value.style.cssText = "display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px";
+      const meta = document.createElement("small");
+      meta.style.cssText = "display:block;min-width:0;margin-top:3px;opacity:.72;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+      const statusText = this.t(shortStatusKeys[status] || "voiceInstallUnknownShort");
+      const storeText = (lockedVoiceCount > 0 || purchasedCount > 0)
+        ? this.t("voiceStoreCompactSummary")
+            .replace("{locked}", String(lockedVoiceCount))
+            .replace("{owned}", String(purchasedCount))
+        : "";
+      meta.textContent = [statusText, storeText].filter(Boolean).join(" · ");
+      summary.append(label, value, meta);
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "panel-action-button";
+      button.textContent = this.t("voiceManage");
+      button.disabled = !entityId;
+      button.style.cssText = "white-space:nowrap;align-self:center";
+      button.addEventListener("click", () => this.openVoicePackDialog());
+
+      tile.append(summary, button);
+      return tile;
+    }
     const entityId = this.getSelectEntity("voicePack");
     const entity = entityId ? this._hass.states[entityId] : null;
     const attrs = entity?.attributes || {};
