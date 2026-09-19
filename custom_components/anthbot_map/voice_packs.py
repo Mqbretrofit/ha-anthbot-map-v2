@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, replace
 import logging
 from typing import Any
@@ -454,3 +455,170 @@ async def async_install_voice_pack(coordinator: Any, pack: VoicePack) -> None:
         cmd="voice_set",
         data=data,
     )
+
+
+def _factory_english_repair_version(
+    official_version: str,
+    current_version: object,
+) -> str:
+    """Return a temporary version that forces the English slot to be rewritten."""
+    parts = official_version.strip().split(".")
+    if len(parts) != 3 or not all(part.isdigit() for part in parts):
+        raise AnthbotGenieApiError(
+            f"Factory English version is not repairable: {official_version}"
+        )
+
+    major, minor, patch = (int(part) for part in parts)
+    blocked = {
+        official_version.strip().casefold(),
+        str(current_version).strip().casefold() if current_version is not None else "",
+    }
+    candidate_patch = patch + 1
+    while f"{major}.{minor}.{candidate_patch}".casefold() in blocked:
+        candidate_patch += 1
+    return f"{major}.{minor}.{candidate_patch}"
+
+
+async def _async_wait_for_voice_repair_stage(
+    coordinator: Any,
+    *,
+    slot: str,
+    expected_version: str,
+    timeout_seconds: int = 120,
+) -> None:
+    """Wait until the mower reports the exact repaired slot/version as active."""
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
+    while asyncio.get_running_loop().time() < deadline:
+        await asyncio.sleep(3)
+        try:
+            await coordinator.client.async_request_all_properties()
+            await coordinator.async_request_refresh()
+        except AnthbotGenieApiError as err:
+            _LOGGER.debug(
+                "Factory English repair refresh failed for %s: %s",
+                coordinator.client.serial_number,
+                err,
+            )
+
+        state = coordinator.reported_state
+        music_cfg = state.get("music_cfg")
+        cfg = music_cfg if isinstance(music_cfg, dict) else {}
+        voice_status = state.get("voice_status")
+        status = voice_status if isinstance(voice_status, dict) else {}
+
+        status_name = str(status.get("name") or "").strip().casefold()
+        status_state = str(status.get("state") or "").strip().casefold()
+        if (
+            status_name == slot.casefold()
+            and status_state
+            in {"download_failed", "download_fail", "download_error", "failed"}
+        ):
+            raise AnthbotGenieApiError(
+                f"Factory English repair download failed ({expected_version})"
+            )
+
+        slot_version = str(cfg.get(slot) or "").strip()
+        active_slot = str(cfg.get("music_language") or "").strip()
+        progress = status.get("progress")
+        try:
+            progress_value = int(progress) if progress is not None else None
+        except (TypeError, ValueError):
+            progress_value = None
+
+        if (
+            slot_version.casefold() == expected_version.casefold()
+            and active_slot.casefold() == slot.casefold()
+            and (
+                status_name != slot.casefold()
+                or (
+                    status_state == "success"
+                    and (progress_value is None or progress_value >= 100)
+                )
+            )
+        ):
+            return
+
+    raise AnthbotGenieApiError(
+        f"Factory English repair timed out waiting for {slot} {expected_version}"
+    )
+
+
+async def async_repair_factory_english_voice(coordinator: Any) -> dict[str, str]:
+    """Force-rewrite English_girl, then restore the official catalogue version.
+
+    This is intentionally a two-stage repair. The first install uses the exact
+    official English binary with a temporary version so firmware cannot skip a
+    slot that already claims the official version. After that succeeds, the
+    same binary is installed again with the real ANTHBOT version, leaving the
+    mower in a clean factory-compatible state.
+    """
+    model = getattr(coordinator.device, "model", None)
+    if not supports_voice_packages(model, coordinator.reported_state):
+        raise AnthbotGenieApiError(
+            f"Voice packages are not supported by {model or 'this mower'}"
+        )
+
+    official = await async_get_official_voice_packs(coordinator.account_client)
+    english = next(
+        (
+            pack
+            for pack in official
+            if pack.source == "anthbot"
+            and pack.english_name.casefold() == "english"
+            and pack.sex.casefold() == "girl"
+        ),
+        None,
+    )
+    if english is None:
+        raise AnthbotGenieApiError(
+            "Official ANTHBOT English_girl voice pack is unavailable"
+        )
+
+    cached, cache_used, cache_error = await async_cache_official_voice_pack(
+        coordinator.account_client._session,
+        english,
+    )
+    if not cache_used:
+        raise AnthbotGenieApiError(
+            f"Factory English cache is unavailable: {cache_error or 'unknown error'}"
+        )
+
+    state = coordinator.reported_state
+    music_cfg = state.get("music_cfg")
+    cfg = music_cfg if isinstance(music_cfg, dict) else {}
+    current_version = cfg.get("English_girl")
+    temporary_version = _factory_english_repair_version(
+        cached.version,
+        current_version,
+    )
+    temporary = replace(cached, version=temporary_version)
+
+    _LOGGER.warning(
+        "Starting one-time factory English repair for %s: %s -> %s -> %s",
+        coordinator.client.serial_number,
+        current_version,
+        temporary_version,
+        cached.version,
+    )
+
+    await async_install_voice_pack(coordinator, temporary)
+    await _async_wait_for_voice_repair_stage(
+        coordinator,
+        slot="English_girl",
+        expected_version=temporary_version,
+    )
+
+    await async_install_voice_pack(coordinator, cached)
+    await _async_wait_for_voice_repair_stage(
+        coordinator,
+        slot="English_girl",
+        expected_version=cached.version,
+    )
+
+    return {
+        "slot": "English_girl",
+        "temporary_version": temporary_version,
+        "official_version": cached.version,
+        "music_md5": cached.music_md5,
+        "music_url": cached.music_url,
+    }
