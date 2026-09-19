@@ -24,6 +24,11 @@ class LovelaceResourceRegistrationTests(unittest.TestCase):
         self.assertIn('str(item.get("url", "")).split("?", 1)[0]', INIT_SOURCE)
         self.assertIn("await resources.async_update_item(", INIT_SOURCE)
 
+    def test_legacy_anthbot_map_resource_is_removed(self) -> None:
+        self.assertIn('"/anthbot-map/anthbot-map-card.js"', INIT_SOURCE)
+        self.assertIn('"/local/anthbot-map/anthbot-map-card.js"', INIT_SOURCE)
+        self.assertIn("await resources.async_delete_item(item[\"id\"])", INIT_SOURCE)
+
     def test_yaml_mode_is_not_modified(self) -> None:
         self.assertIn(
             'getattr(lovelace, "resource_mode", None) != MODE_STORAGE',
