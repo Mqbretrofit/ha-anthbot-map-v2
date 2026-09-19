@@ -109,6 +109,7 @@ class AnthbotMapCard extends HTMLElement {
     this.customButtonServerConfigured = false;
     this.customButtonSavePending = 0;
     this.customButtonSaveQueue = Promise.resolve();
+    this.optionalEntitySignature = "";
     // Keep a near-complete task at 100% after the mower has accepted it as
     // finished. The cloud may keep a final geometry value such as 98.8%
     // after return/charge transitions into standby.
@@ -194,17 +195,32 @@ class AnthbotMapCard extends HTMLElement {
 
   set hass(hass) {
     const previousLanguage = this.language;
+    const previousOptionalSignature = this.optionalEntitySignature;
     this._hass = hass;
     this._activeEntityId = this.resolveMapEntityId();
     this.entity = hass.states[this._activeEntityId];
+    this.optionalEntitySignature = this.getOptionalEntitySignature();
     const customButtonsChanged = this.syncCustomButtonActionsFromServer();
     this.startRefreshTimer();
     this.startRainCountdownTimer();
-    if (previousLanguage !== this.language || customButtonsChanged) {
+    if (
+      previousLanguage !== this.language
+      || customButtonsChanged
+      || previousOptionalSignature !== this.optionalEntitySignature
+    ) {
       this.render();
     } else {
       this.updateRenderer();
     }
+  }
+
+  getOptionalEntitySignature() {
+    return [
+      this.getUpdateEntity("firmware") || "",
+      this.getSelectEntity("voicePack") || "",
+      this.getNumberEntity("voiceVolume") || "",
+      this.getSwitchEntity("autoFirmwareUpdate") || "",
+    ].join("|");
   }
 
   get language() {
