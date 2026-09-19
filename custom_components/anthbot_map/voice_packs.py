@@ -73,6 +73,12 @@ COMMUNITY_VOICE_REGISTRY_URL = (
 OFFICIAL_VOICE_CACHE_URL = (
     "https://reports.mqbretrofithungary.online/api/anthbot/voice-packs/cache-official"
 )
+VOICE_STORE_PAIR_URL = (
+    "https://reports.mqbretrofithungary.online/api/anthbot/store/client/pair"
+)
+VOICE_STORE_ENTITLEMENTS_URL = (
+    "https://reports.mqbretrofithungary.online/api/anthbot/store/client/entitlements"
+)
 
 # Every custom/Community voice is installed into the same Genie factory slot.
 # These values describe the technical mower slot, not the human speaker.
@@ -127,6 +133,9 @@ class VoicePack:
     variant_name: str | None = None
     voice_gender: str | None = None
     technical_slot: str | None = None
+    access: str = "free"
+    price_amount: int | None = None
+    currency: str | None = None
 
 
 def _technical_voice_slot(name: object, sex: object) -> str | None:
@@ -233,6 +242,18 @@ def normalize_voice_pack(record: dict[str, Any], *, source: str) -> VoicePack | 
         f"{english_name}:{sex}:{version}"
     )
 
+    access = str(record.get("access") or "free").strip().casefold()
+    if access not in {"free", "paid"}:
+        access = "free"
+    price_raw = record.get("price_amount")
+    try:
+        price_amount = int(price_raw) if price_raw is not None else None
+    except (TypeError, ValueError):
+        price_amount = None
+    currency = _first_text(record, "currency")
+    if currency is not None:
+        currency = currency.casefold()
+
     return VoicePack(
         key=key,
         label=label,
@@ -249,6 +270,9 @@ def normalize_voice_pack(record: dict[str, Any], *, source: str) -> VoicePack | 
         variant_name=variant_name,
         voice_gender=voice_gender,
         technical_slot=technical_slot,
+        access=access,
+        price_amount=price_amount,
+        currency=currency,
     )
 
 
@@ -335,6 +359,77 @@ async def async_get_community_voice_packs(
     return packs
 
 
+async def async_create_voice_store_pairing(
+    session: Any,
+    client_token: str,
+) -> tuple[str | None, str | None]:
+    """Return a temporary browser URL linked to one anonymous Map client."""
+    try:
+        async with session.post(
+            VOICE_STORE_PAIR_URL,
+            json={"client_token": client_token},
+            timeout=15,
+        ) as response:
+            if response.status != 200:
+                body = await response.text()
+                return None, f"pair HTTP {response.status}: {body[:180]}"
+            payload = await response.json(content_type=None)
+    except (ClientError, TimeoutError, ValueError) as err:
+        return None, f"pair request failed: {err}"
+
+    if not isinstance(payload, dict):
+        return None, "pair returned invalid payload"
+    store_url = payload.get("store_url")
+    if not isinstance(store_url, str) or not store_url.startswith("https://"):
+        return None, "pair returned invalid store_url"
+    return store_url, None
+
+
+async def async_get_purchased_voice_packs(
+    session: Any,
+    client_token: str,
+) -> list[VoicePack] | None:
+    """Return paid Community packs owned by one anonymous Map client.
+
+    None means the entitlement service could not be reached, so callers should
+    keep the last known paid catalogue instead of dropping purchased voices.
+    """
+    try:
+        async with session.post(
+            VOICE_STORE_ENTITLEMENTS_URL,
+            json={"client_token": client_token},
+            timeout=15,
+        ) as response:
+            if response.status != 200:
+                _LOGGER.debug(
+                    "Voice store entitlement lookup unavailable: HTTP %s",
+                    response.status,
+                )
+                return None
+            payload = await response.json(content_type=None)
+    except (ClientError, TimeoutError, ValueError) as err:
+        _LOGGER.debug("Voice store entitlement lookup unavailable: %s", err)
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    records = payload.get("packs")
+    if not isinstance(records, list):
+        return []
+
+    packs: list[VoicePack] = []
+    seen: set[str] = set()
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        pack = normalize_voice_pack(record, source="community")
+        if pack is not None and pack.key not in seen:
+            packs.append(pack)
+            seen.add(pack.key)
+    return packs
+
+
 async def async_cache_official_voice_pack(
     session: Any,
     pack: VoicePack,
@@ -378,8 +473,12 @@ async def async_cache_official_voice_pack(
     return replace(pack, music_url=cached_url), True, None
 
 
-async def async_get_voice_packs(coordinator: Any) -> list[VoicePack]:
-    """Return official + community voice packs for a voice-capable mower."""
+async def async_get_voice_packs(
+    coordinator: Any,
+    *,
+    store_client_token: str | None = None,
+) -> list[VoicePack]:
+    """Return official, free Community and purchased Community voice packs."""
     if not supports_voice_packages(
         getattr(coordinator.device, "model", None),
         coordinator.reported_state,
@@ -399,7 +498,15 @@ async def async_get_voice_packs(coordinator: Any) -> list[VoicePack]:
     community = await async_get_community_voice_packs(
         coordinator.account_client._session
     )
-    return official + (community or [])
+    purchased: list[VoicePack] = []
+    if store_client_token:
+        owned = await async_get_purchased_voice_packs(
+            coordinator.account_client._session,
+            store_client_token,
+        )
+        if owned is not None:
+            purchased = owned
+    return official + (community or []) + purchased
 
 
 def installed_voice_identity(state: dict[str, Any]) -> tuple[Any, str | None, str | None]:
