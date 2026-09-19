@@ -280,7 +280,7 @@ class AnthbotMapCard extends HTMLElement {
       .join(" ");
     root.innerHTML = `
       <ha-card class="${cardClasses}">
-        <link rel="stylesheet" href="${this.resolveAsset("styles.css?v=2411")}">
+        <link rel="stylesheet" href="${this.resolveAsset("styles.css?v=2482-voice-ota9")}">
         <style>
           .anthbot-menu-toggle { position:absolute; right:14px; bottom:14px; z-index:40; min-height:46px; padding:9px 15px; border:1px solid rgba(255,255,255,.38); border-radius:999px; background:rgba(10,18,26,.66); color:#fff; backdrop-filter:blur(12px); box-shadow:0 8px 28px rgba(0,0,0,.32); font:inherit; font-weight:800; cursor:pointer; }
           .anthbot-glass-panel { display:none; position:absolute; z-index:39; right:12px; bottom:70px; width:min(1100px,calc(100% - 24px)); max-height:calc(100% - 84px); overflow:auto; border:1px solid rgba(255,255,255,.34); border-radius:18px; background:rgba(9,18,27,.16); color:#fff; backdrop-filter:blur(9px) saturate(115%); box-shadow:0 16px 44px rgba(0,0,0,.24); overscroll-behavior:contain; }
@@ -2991,12 +2991,13 @@ class AnthbotMapCard extends HTMLElement {
 
     const tile = document.createElement("div");
     tile.className = "panel-tile control-tile firmware-update-tile";
+    tile.style.cssText = "min-width:0;max-width:100%;box-sizing:border-box;overflow:hidden";
     tile.innerHTML = `
-      <div class="control-head">
-        <span>${escapeHtml(this.t("firmwareUpdate"))}</span>
-        <strong>${escapeHtml(String(installed))} → ${escapeHtml(String(latest))}</strong>
+      <div class="control-head" style="display:grid;grid-template-columns:minmax(0,1fr);gap:3px;min-width:0">
+        <span style="display:block;min-width:0">${escapeHtml(this.t("firmwareUpdate"))}</span>
+        <strong style="display:block;min-width:0;max-width:100%;font-size:14px;line-height:1.2;text-align:left;white-space:normal;overflow-wrap:anywhere">${escapeHtml(String(installed))} → ${escapeHtml(String(latest))}</strong>
       </div>
-      <small style="display:block;opacity:.68;margin:4px 0 10px">
+      <small style="display:block;min-width:0;opacity:.68;margin:4px 0 10px;white-space:normal;overflow-wrap:anywhere">
         ${escapeHtml(
           inProgress
             ? `${this.t("firmwareUpdating")}${hasProgress ? ` ${Math.round(progress)}%` : ""}`
