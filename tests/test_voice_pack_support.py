@@ -195,6 +195,14 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn("voice_install_status", select)
         self.assertIn('"metadata_confirmed"', select)
         self.assertIn('"slot_confirmed"', select)
+        self.assertIn(
+            'if requested_source == "community" and slot_match:',
+            select,
+        )
+        self.assertIn(
+            'status = "metadata_confirmed" if version_match else "slot_confirmed"',
+            select,
+        )
         self.assertIn('"verified"', select)
         self.assertIn('"mismatch"', select)
         self.assertIn('"unconfirmed"', select)
