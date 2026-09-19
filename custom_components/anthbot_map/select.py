@@ -48,7 +48,7 @@ _LOGGER = logging.getLogger(__name__)
 _VOICE_CATALOG_REFRESH_INTERVAL = timedelta(seconds=60)
 _VOICE_INSTALL_PENDING_SECONDS = 180
 _VOICE_VERIFY_DELAYS = (2, 8, 20, 45)
-_VOICE_CONFIRM_STATUSES = {"verified", "slot_confirmed", "metadata_confirmed"}
+_VOICE_CONFIRM_STATUSES = {"verified", "community_verified"}
 _VOICE_MAX_COMMAND_ATTEMPTS = 2
 _VOICE_RETRY_CHECK_INDEX = 2
 
@@ -190,16 +190,30 @@ class AnthbotVoicePackSelect(
         return changed
 
     def _reported_voice(self) -> dict[str, object | None]:
-        package_id, raw_name, version = installed_voice_identity(
-            self.coordinator.reported_state
-        )
+        state = self.coordinator.reported_state
+        package_id, raw_name, version = installed_voice_identity(state)
         normalized_name, normalized_sex = normalize_reported_voice_name(raw_name)
+        voice_status = state.get("voice_status")
+        status = voice_status if isinstance(voice_status, dict) else {}
+        progress = status.get("progress")
+        try:
+            progress_value = int(progress) if progress is not None else None
+        except (TypeError, ValueError):
+            progress_value = None
         return {
             "music_package": package_id,
             "raw_name": raw_name,
             "name": normalized_name or raw_name,
             "sex": normalized_sex,
             "version": version,
+            "install_state": (
+                str(status.get("state")).strip()
+                if status.get("state") is not None
+                else None
+            ),
+            "install_progress": progress_value,
+            "install_time": status.get("time"),
+            "install_id": status.get("id"),
         }
 
     def _reported_official_label(self) -> str | None:
@@ -283,6 +297,8 @@ class AnthbotVoicePackSelect(
         reported_name = reported["name"]
         reported_sex = reported["sex"]
         reported_version = reported["version"]
+        reported_install_state = reported["install_state"]
+        reported_install_progress = reported["install_progress"]
 
         package_match = (
             reported_package is not None
@@ -307,16 +323,33 @@ class AnthbotVoicePackSelect(
             and bool(requested_version)
             and reported_version.casefold() == requested_version.casefold()
         )
+        install_success = (
+            isinstance(reported_install_state, str)
+            and reported_install_state.casefold() == "success"
+            and isinstance(reported_install_progress, int)
+            and reported_install_progress >= 100
+        )
 
-        if requested_source == "community" and slot_match:
-            # Community audio deliberately reuses an ANTHBOT factory slot. Some
-            # mower firmware keeps reporting the factory slot/version (for
-            # example German_girl) after custom audio has been installed, and
-            # it does not expose the downloaded file MD5 or Community variant
-            # identifier. A matching slot therefore confirms the target slot;
-            # matching version metadata is an additional, but not required,
-            # confirmation.
-            status = "metadata_confirmed" if version_match else "slot_confirmed"
+        if (
+            requested_source == "community"
+            and slot_match
+            and version_match
+            and install_success
+        ):
+            # Field testing on Genie 1000 showed that a successful custom
+            # install is reported as:
+            #   music_cfg.<slot> == requested version
+            #   voice_status.state == "success"
+            #   voice_status.progress == 100
+            # The mower still does not report the downloaded MD5, so this
+            # confirms installation metadata/result, not byte-for-byte content.
+            status = "community_verified"
+            exact = False
+        elif requested_source == "community" and slot_match and version_match:
+            status = "metadata_confirmed"
+            exact = False
+        elif requested_source == "community" and slot_match:
+            status = "slot_confirmed"
             exact = False
         elif (
             requested_source == "anthbot"
@@ -350,7 +383,7 @@ class AnthbotVoicePackSelect(
     def current_option(self) -> str | None:
         verification = self._voice_verification()
         if (
-            verification["status"] == "verified"
+            verification["status"] in {"verified", "community_verified"}
             and self._requested_pack
             and isinstance(self._requested_pack.get("label"), str)
         ):
@@ -375,10 +408,8 @@ class AnthbotVoicePackSelect(
         verification = self._voice_verification()
         requested = self._requested_pack or {}
         command_status = requested.get("command_status")
-        if verification["status"] == "verified":
+        if verification["status"] in {"verified", "community_verified"}:
             command_status = "confirmed"
-        elif verification["status"] in {"slot_confirmed", "metadata_confirmed"}:
-            command_status = "slot_confirmed"
         return {
             "serial_number": self.coordinator.client.serial_number,
             "model": self.coordinator.device.model,
@@ -388,6 +419,10 @@ class AnthbotVoicePackSelect(
             "installed_voice_display_name": reported["name"],
             "installed_voice_sex": reported["sex"],
             "installed_voice_version": reported["version"],
+            "installed_voice_state": reported["install_state"],
+            "installed_voice_progress": reported["install_progress"],
+            "installed_voice_time": reported["install_time"],
+            "installed_voice_id": reported["install_id"],
             "reported_voice_pack": verification.get("reported_official"),
             "requested_voice_pack": requested.get("label"),
             "requested_voice_source": requested.get("source"),
