@@ -54,15 +54,11 @@ def test_firmware_presigned_url_request_matches_android_app() -> None:
     assert "self._session.get(" in block
 
 
-def test_automatic_ota_toggle_matches_android_app() -> None:
-    source = _source("api.py")
-    start = source.index("async def async_toggle_auto_upgrade")
-    end = source.index("async def async_get_mowing_records", start)
-    block = source[start:end]
-
-    assert '"/api/v1/device/v2/auto/upgrade"' in block
-    assert "self._session.post(" in block
-    assert 'json={"sn": serial_number}' in block
+def test_unproven_automatic_ota_write_is_not_exposed() -> None:
+    api_source = _source("api.py")
+    switch_source = _source("switch.py")
+    assert "async_toggle_auto_upgrade" not in api_source
+    assert "AnthbotAutomaticFirmwareUpdateSwitch" not in switch_source
 
 
 def test_home_assistant_update_platform_is_registered() -> None:
