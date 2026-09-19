@@ -990,82 +990,88 @@ def _async_align_cloud_alias_entity_ids(
     serial_number: str,
     cloud_alias: str,
 ) -> None:
-    """Align cloud-alias entity IDs to the mower's established HA entity base.
+    """Normalize one mower's historical entity prefixes to its map entity base.
 
-    Home Assistant keeps entity IDs when users rename devices/entities. New
-    entities introduced later can otherwise be created from the current ANTHBOT
-    cloud alias and end up under a different prefix from the mower's existing
-    entities. Prefer the dominant established non-cloud prefix and only rename
-    entries that still use the automatically generated cloud-alias prefix.
+    Home Assistant preserves entity IDs across renames, so a mower that has
+    used multiple cloud/device names can accumulate several prefixes.  The map
+    entity is the stable anchor.  Discover other prefixes from entities whose
+    object IDs still end with their unique-id suffix, then replace only those
+    discovered historical prefixes while preserving the remainder of each
+    entity ID (including translated zone/control names).
     """
     entity_registry = er.async_get(hass)
-    entries = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
-    unique_prefix = f"{serial_number}_"
-    alias_base = slugify(cloud_alias)
-    if not alias_base:
+    entries = [
+        item
+        for item in er.async_entries_for_config_entry(
+            entity_registry, entry.entry_id
+        )
+        if isinstance(item.unique_id, str)
+        and item.unique_id.startswith(f"{serial_number}_")
+    ]
+    if not entries:
         return
 
-    base_votes: dict[str, int] = {}
-    map_base: str | None = None
+    unique_prefix = f"{serial_number}_"
+    map_entry = next(
+        (
+            item
+            for item in entries
+            if item.domain == "sensor"
+            and item.unique_id == f"{serial_number}_map"
+        ),
+        None,
+    )
+    if map_entry is None:
+        return
+
+    map_object_id = map_entry.entity_id.split(".", 1)[1]
+    map_match = re.fullmatch(r"(.+)_map(?:_\d+)?", map_object_id)
+    canonical_base = map_match.group(1) if map_match else map_object_id
+    if not canonical_base:
+        return
+
+    # Infer every historical auto-generated base from entities where the
+    # entity-id tail still directly reflects the unique-id suffix.
+    discovered_bases: set[str] = {canonical_base}
+    alias_base = slugify(cloud_alias)
+    if alias_base:
+        discovered_bases.add(alias_base)
 
     for item in entries:
-        unique_id = item.unique_id
-        if not isinstance(unique_id, str) or not unique_id.startswith(unique_prefix):
-            continue
-
-        suffix = unique_id[len(unique_prefix):]
+        suffix = item.unique_id[len(unique_prefix):]
         if not suffix:
             continue
-
         object_id = item.entity_id.split(".", 1)[1]
-        match = re.fullmatch(
-            rf"(.+)_{re.escape(suffix)}(?:_\\d+)?",
+        suffix_match = re.fullmatch(
+            rf"(.+)_{re.escape(suffix)}(?:_\d+)?",
             object_id,
         )
-        if match is None:
-            continue
+        if suffix_match is not None:
+            discovered_bases.add(suffix_match.group(1))
 
-        base = match.group(1)
-        base_votes[base] = base_votes.get(base, 0) + 1
-        if suffix == "map":
-            map_base = base
-
-    established = {
-        base: count
-        for base, count in base_votes.items()
-        if base != alias_base and count >= 2
-    }
-
-    if established:
-        canonical_base = max(
-            established,
-            key=lambda base: (
-                established[base],
-                1 if base == map_base else 0,
-                base,
-            ),
-        )
-    elif map_base and map_base != alias_base:
-        canonical_base = map_base
-    else:
+    historical_bases = sorted(
+        (base for base in discovered_bases if base and base != canonical_base),
+        key=len,
+        reverse=True,
+    )
+    if not historical_bases:
         return
 
     for item in entries:
-        unique_id = item.unique_id
-        if not isinstance(unique_id, str) or not unique_id.startswith(unique_prefix):
-            continue
-
-        suffix = unique_id[len(unique_prefix):]
-        if not suffix:
-            continue
-
         object_id = item.entity_id.split(".", 1)[1]
-        auto_alias_pattern = rf"{re.escape(alias_base)}_{re.escape(suffix)}(?:_\\d+)?"
-        if re.fullmatch(auto_alias_pattern, object_id) is None:
-            # Preserve manually renamed and already-established entity IDs.
+        old_base = next(
+            (
+                base
+                for base in historical_bases
+                if object_id == base or object_id.startswith(f"{base}_")
+            ),
+            None,
+        )
+        if old_base is None:
             continue
 
-        desired_entity_id = f"{item.domain}.{canonical_base}_{suffix}"
+        remainder = object_id[len(old_base):]
+        desired_entity_id = f"{item.domain}.{canonical_base}{remainder}"
         if desired_entity_id == item.entity_id:
             continue
 
@@ -1079,11 +1085,12 @@ def _async_align_cloud_alias_entity_ids(
             continue
 
         _LOGGER.info(
-            "Aligning ANTHBOT entity ID %s -> %s (serial=%s, cloud_alias=%s)",
+            "Normalizing ANTHBOT entity ID %s -> %s "
+            "(serial=%s, historical_base=%s)",
             item.entity_id,
             desired_entity_id,
             serial_number,
-            cloud_alias,
+            old_base,
         )
         entity_registry.async_update_entity(
             item.entity_id,
