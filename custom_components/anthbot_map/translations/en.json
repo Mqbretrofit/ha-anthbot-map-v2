@@ -122,9 +122,6 @@
       }
     },
     "button": {
-      "repair_factory_english_voice": {
-        "name": "Repair factory English voice"
-      },
       "connect_cloud": {
         "name": "Connect cloud"
       },
