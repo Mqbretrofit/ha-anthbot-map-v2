@@ -232,7 +232,7 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn('this.t("voicePurchaseRequired")', card)
             self.assertIn("attrs.locked_community_pack_count", card)
             self.assertIn('this.t("voiceStorePaidAvailable")', card)
-            self.assertIn("./i18n.js?v=2482-paid-discovery1", card)
+            self.assertIn("./i18n.js?v=2482-voice-popup1", card)
 
         for path in (
             ROOT / "www" / "anthbot-map" / "i18n.js",
@@ -285,7 +285,7 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn('window.open(voiceStoreUrl, "_blank", "noopener,noreferrer")', card)
             self.assertIn('this.t("voiceStorePurchasedCount")', card)
             self.assertIn("attrs.voice_store_error", card)
-            self.assertIn("./i18n.js?v=2482-paid-discovery1", card)
+            self.assertIn("./i18n.js?v=2482-voice-popup1", card)
 
         for path in (
             ROOT / "www" / "anthbot-map" / "i18n.js",
@@ -438,6 +438,36 @@ class VoicePackSupportTests(unittest.TestCase):
             i18n = _read(path)
             self.assertIn("voiceSearchPlaceholder:", i18n)
             self.assertIn("voiceSearchNoResults:", i18n)
+
+    def test_voice_pack_controls_live_in_popup_with_compact_summary_tile(self) -> None:
+        for path in (
+            ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
+            COMPONENT / "frontend" / "anthbot-map-card.js",
+        ):
+            card = _read(path)
+            self.assertIn("openVoicePackDialog({ refresh = false } = {})", card)
+            self.assertIn('overlay.dataset.role = "voice-pack-dialog"', card)
+            self.assertIn('this.createVoicePackControl({ popup: true })', card)
+            self.assertIn('createVoicePackControl({ popup = false } = {})', card)
+            self.assertIn('grid-template-columns:minmax(0,1fr) auto', card)
+            self.assertIn('button.textContent = this.t("voiceManage")', card)
+            self.assertIn('this.t("voiceStoreCompactSummary")', card)
+            self.assertIn('this.t("voicePopupSubtitle")', card)
+            self.assertIn(
+                "this.openVoicePackDialog({ refresh: true })",
+                card,
+            )
+            self.assertIn("./i18n.js?v=2482-voice-popup1", card)
+
+        for path in (
+            ROOT / "www" / "anthbot-map" / "i18n.js",
+            COMPONENT / "frontend" / "i18n.js",
+        ):
+            i18n = _read(path)
+            self.assertIn('voiceManage: "Manage"', i18n)
+            self.assertIn('voiceManage: "Kezelés"', i18n)
+            self.assertIn("voicePopupSubtitle:", i18n)
+            self.assertIn("voiceStoreCompactSummary:", i18n)
 
     def test_voice_pack_tile_is_compact_and_cannot_overflow_grid(self) -> None:
         for path in (
