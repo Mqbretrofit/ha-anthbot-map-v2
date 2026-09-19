@@ -144,6 +144,18 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn("candidateSerial !== activeSerial", card)
             self.assertIn("state.attributes?.serial_number", card)
 
+    def test_verified_hungarian_community_pack_is_built_in_as_fallback(self) -> None:
+        source = _read(COMPONENT / "voice_packs.py")
+        self.assertIn('"language": "Magyar"', source)
+        self.assertIn('"music_package": 3', source)
+        self.assertIn('"version": "1.2.4"', source)
+        self.assertIn(
+            '"music_md5": "74e1955f019aa422d446a0d367232826"',
+            source,
+        )
+        self.assertIn("_verified_community_fallback()", source)
+        self.assertIn("if not packs:", source)
+
     def test_map_card_rerenders_when_optional_entities_appear(self) -> None:
         for path in (
             ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
