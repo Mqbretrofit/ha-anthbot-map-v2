@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import logging
 from typing import Any
 
@@ -69,6 +69,9 @@ def normalize_reported_voice_name(name: str | None) -> tuple[str | None, str | N
 # official ANTHBOT packs remain usable in that case.
 COMMUNITY_VOICE_REGISTRY_URL = (
     "https://reports.mqbretrofithungary.online/api/anthbot/voice-packs"
+)
+OFFICIAL_VOICE_CACHE_URL = (
+    "https://reports.mqbretrofithungary.online/api/anthbot/voice-packs/cache-official"
 )
 
 # Every custom/Community voice is installed into the same Genie factory slot.
@@ -330,6 +333,49 @@ async def async_get_community_voice_packs(
     if not packs and use_fallback:
         return _verified_community_fallback()
     return packs
+
+
+async def async_cache_official_voice_pack(
+    session: Any,
+    pack: VoicePack,
+) -> tuple[VoicePack, bool, str | None]:
+    """Mirror one official ANTHBOT pack behind the stable Reporting Server URL."""
+    if pack.source != "anthbot":
+        return pack, False, None
+
+    try:
+        async with session.post(
+            OFFICIAL_VOICE_CACHE_URL,
+            json={
+                "source_url": pack.music_url,
+                "music_md5": pack.music_md5,
+            },
+            timeout=45,
+        ) as response:
+            if response.status != 200:
+                body = await response.text()
+                return (
+                    pack,
+                    False,
+                    f"cache HTTP {response.status}: {body[:180]}",
+                )
+            payload = await response.json(content_type=None)
+    except (ClientError, TimeoutError, ValueError) as err:
+        return pack, False, f"cache request failed: {err}"
+
+    if not isinstance(payload, dict):
+        return pack, False, "cache returned invalid payload"
+    cached_url = payload.get("music_url")
+    cached_md5 = payload.get("music_md5")
+    if not isinstance(cached_url, str) or not cached_url.startswith("https://"):
+        return pack, False, "cache returned invalid music_url"
+    if (
+        not isinstance(cached_md5, str)
+        or cached_md5.casefold() != pack.music_md5.casefold()
+    ):
+        return pack, False, "cache returned mismatching MD5"
+
+    return replace(pack, music_url=cached_url), True, None
 
 
 async def async_get_voice_packs(coordinator: Any) -> list[VoicePack]:
