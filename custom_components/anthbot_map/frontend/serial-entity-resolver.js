@@ -5,7 +5,7 @@
 // the exact Home Assistant duplicate ordinal of this card's map entity. This
 // keeps Genie / M-series isolated without making valid legacy settings vanish.
 
-const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-05-control-v12";
+const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-19-control-v13";
 
 const disableLegacyCommandRouter = () => {
   if (typeof window === "undefined" || typeof document === "undefined") return;
@@ -64,12 +64,22 @@ if (typeof customElements !== "undefined") {
       };
     };
 
-    // Treat Home Assistant's two no-data states as unavailable capabilities.
-    // Keep valid falsy values such as 0 and "off" visible and usable.
-    const isAvailable = (state) => {
+    // "unknown" normally means no usable capability. Select entities are
+    // different: Home Assistant can legitimately report state=unknown before a
+    // current option is matched while still exposing a complete options list.
+    const isAvailable = (state, allowUnknown = false) => {
       if (!state) return false;
       const value = String(state.state ?? "").trim().toLowerCase();
-      return Boolean(value) && value !== "unavailable" && value !== "unknown";
+      if (!value || value === "unavailable") return false;
+      if (value === "unknown" && !allowUnknown) return false;
+      return true;
+    };
+
+    const isDomainAvailable = (state, domain) => {
+      const allowUnknownSelect = domain === "select"
+        && Array.isArray(state?.attributes?.options)
+        && state.attributes.options.length > 0;
+      return isAvailable(state, allowUnknownSelect);
     };
 
     const exactOrdinalEntity = (card, domain, suffix) => {
@@ -80,7 +90,7 @@ if (typeof customElements !== "undefined") {
       if (!slug) return null;
       const entityId = `${domain}.${identity.base}_${slug}${identity.ordinal ? `_${identity.ordinal}` : ""}`;
       const state = states[entityId];
-      if (!isAvailable(state)) return null;
+      if (!isDomainAvailable(state, domain)) return null;
       const candidateSerial = serialOf(state);
       if (candidateSerial && identity.serial && candidateSerial !== identity.serial) return null;
       return entityId;
@@ -103,7 +113,7 @@ if (typeof customElements !== "undefined") {
           const matches = Object.entries(states)
             .filter(([entityId, state]) =>
               entityId.startsWith(`${domain}.`)
-              && isAvailable(state)
+              && isDomainAvailable(state, domain)
               && serialOf(state) === identity.serial,
             )
             .map(([entityId, state]) => {
