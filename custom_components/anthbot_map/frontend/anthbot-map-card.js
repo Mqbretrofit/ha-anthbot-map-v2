@@ -3076,14 +3076,27 @@ class AnthbotMapCard extends HTMLElement {
 
     const tile = document.createElement("div");
     tile.className = "panel-tile control-tile voice-pack-tile";
+    tile.style.cssText = "min-width:0;overflow:hidden;padding:12px 14px;box-sizing:border-box";
 
     const heading = document.createElement("div");
     heading.className = "control-head";
-    heading.innerHTML = `<span>${escapeHtml(this.t("voicePack"))}</span><strong>${escapeHtml(headline)}</strong>`;
+    heading.style.cssText = "display:block;min-width:0;margin-bottom:5px";
+    const headingLabel = document.createElement("span");
+    headingLabel.textContent = this.t("voicePack");
+    headingLabel.style.cssText = "display:block;margin-bottom:3px";
+    const headingValue = document.createElement("strong");
+    headingValue.textContent = headline;
+    headingValue.title = headline;
+    headingValue.style.cssText = "display:-webkit-box;min-width:0;max-width:100%;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;overflow-wrap:anywhere;line-height:1.15;font-size:14px;text-align:left";
+    heading.append(headingLabel, headingValue);
 
     const statusLine = document.createElement("small");
-    statusLine.style.cssText = `display:block;margin:4px 0 8px;line-height:1.35;color:${statusColors[status] || statusColors.unknown}`;
-    statusLine.textContent = this.t(statusKeys[status] || "voiceInstallUnknown");
+    statusLine.style.cssText = `display:block;min-width:0;margin:2px 0 4px;line-height:1.2;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:${statusColors[status] || statusColors.unknown}`;
+    statusLine.textContent = this.t((statusKeys[status] || "voiceInstallUnknown") + "Short");
+    if (statusLine.textContent.endsWith("Short")) {
+      statusLine.textContent = this.t(statusKeys[status] || "voiceInstallUnknown");
+    }
+    statusLine.title = this.t(statusKeys[status] || "voiceInstallUnknown");
 
     const robotParts = [];
     if (robotName) {
@@ -3099,12 +3112,14 @@ class AnthbotMapCard extends HTMLElement {
     }
 
     const robotLine = document.createElement("small");
-    robotLine.style.cssText = "display:block;opacity:.68;margin:0 0 8px;line-height:1.35";
+    robotLine.style.cssText = "display:block;min-width:0;opacity:.68;margin:0 0 5px;line-height:1.2;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
     robotLine.textContent = robotParts.length
       ? `${this.t("voiceRobotReport")}: ${robotParts.join(" · ")}`
       : `${this.t("voiceRobotReport")}: -`;
+    robotLine.title = robotLine.textContent;
 
     const select = document.createElement("select");
+    select.style.cssText = "display:block;width:100%;max-width:100%;min-width:0;box-sizing:border-box;height:32px;padding:3px 6px";
     select.setAttribute("aria-label", this.t("voicePack"));
     select.disabled = !entityId || options.length === 0;
 
@@ -3130,7 +3145,8 @@ class AnthbotMapCard extends HTMLElement {
       if (!entityId || !select.value) return;
       const requestedValue = select.value;
       select.disabled = true;
-      heading.querySelector("strong").textContent = requestedValue;
+      headingValue.textContent = requestedValue;
+      headingValue.title = requestedValue;
       statusLine.textContent = this.t("voiceInstallPending");
       statusLine.style.color = statusColors.pending;
       try {
