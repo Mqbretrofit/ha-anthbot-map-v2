@@ -150,6 +150,11 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn('if source == "community" and variant_name:', source)
         self.assertIn('display_name = f"{display_name} – {variant_name}"', source)
         self.assertIn("f\"{source}:{variant_id or ''}:{music_package}:\"", source)
+        self.assertIn("def voice_pack_verification_key(", source)
+        self.assertIn("def reported_voice_verification_key(", source)
+        self.assertIn("pack.english_name.strip().casefold()", source)
+        self.assertIn("pack.sex.strip().casefold()", source)
+        self.assertIn("pack.version.strip().casefold()", source)
 
     def test_verified_hungarian_community_pack_is_built_in_as_fallback(self) -> None:
         source = _read(COMPONENT / "voice_packs.py")
@@ -221,6 +226,15 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn("voice_verification_finished_at", select)
         self.assertIn("installed_voice_state", select)
         self.assertIn("installed_voice_progress", select)
+        self.assertIn("_ambiguous_community_verification_keys", select)
+        self.assertIn("voice_pack_verification_key(pack)", select)
+        self.assertIn("reported_voice_verification_key(", select)
+        self.assertIn("reported_community == requested_label", select)
+        self.assertIn("reported_community_pack", select)
+        self.assertIn("requested_voice_variant_id", select)
+        self.assertIn("requested_voice_verification_key", select)
+        self.assertIn("installed_voice_verification_key", select)
+        self.assertIn("community_verification_conflict_count", select)
 
     def test_map_card_shows_voice_verification_and_tracks_option_changes(self) -> None:
         for path in (
@@ -246,6 +260,12 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn("voiceCommandRetrying", card)
             self.assertIn("voiceRetryButton", card)
             self.assertIn("submitVoicePack", card)
+            self.assertIn("attrs.reported_community_pack", card)
+            self.assertIn("attrs.requested_voice_variant_id", card)
+            self.assertIn("attrs.requested_voice_verification_key", card)
+            self.assertIn("attrs.installed_voice_verification_key", card)
+            self.assertIn('status === "community_verified"', card)
+            self.assertIn('voiceInstallCommunityVerifiedShort")}: ${headline}', card)
             self.assertIn("Array.isArray(attrs.options) ? attrs.options : []", card)
 
         for path in (
