@@ -209,8 +209,14 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn('"mismatch"', select)
         self.assertIn('"unconfirmed"', select)
         self.assertIn("_VOICE_VERIFY_DELAYS", select)
-        self.assertIn("_async_verify_requested_pack", select)
+        self.assertIn("_VOICE_MAX_COMMAND_ATTEMPTS = 2", select)
+        self.assertIn("_VOICE_RETRY_CHECK_INDEX = 2", select)
+        self.assertIn('self._requested_pack["command_status"] = "retrying"', select)
+        self.assertIn('self._requested_pack["command_status"] = "not_confirmed"', select)
+        self.assertIn("_async_verify_requested_pack(pack, requested_at)", select)
         self.assertIn("requested_voice_md5", select)
+        self.assertIn("voice_command_attempts", select)
+        self.assertIn("voice_verification_finished_at", select)
 
     def test_map_card_shows_voice_verification_and_tracks_option_changes(self) -> None:
         for path in (
@@ -229,6 +235,10 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn('"voiceInstallMetadataConfirmed"', card)
             self.assertIn('"voiceInstallSlotConfirmed"', card)
             self.assertIn('"voiceSelectPlaceholder"', card)
+            self.assertIn("attrs.voice_command_status", card)
+            self.assertIn("voiceCommandRetrying", card)
+            self.assertIn("voiceRetryButton", card)
+            self.assertIn("submitVoicePack", card)
             self.assertIn("Array.isArray(attrs.options) ? attrs.options : []", card)
 
         for path in (
@@ -239,6 +249,9 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn('voiceInstallVerified: "✅', i18n)
             self.assertIn("voiceInstallMetadataConfirmed:", i18n)
             self.assertIn('voiceRobotReport: "Robot jelentése"', i18n)
+            self.assertIn("voiceCommandConfirmed:", i18n)
+            self.assertIn("voiceCommandRetrying:", i18n)
+            self.assertIn("voiceRetryButton:", i18n)
 
     def test_voice_pack_tile_is_compact_and_cannot_overflow_grid(self) -> None:
         for path in (
