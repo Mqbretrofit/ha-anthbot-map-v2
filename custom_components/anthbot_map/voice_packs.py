@@ -114,6 +114,34 @@ class VoicePack:
     variant_name: str | None = None
 
 
+def voice_pack_verification_key(pack: VoicePack) -> str:
+    """Return the robot-visible Community identity for one catalogue pack."""
+    return (
+        f"{pack.english_name.strip().casefold()}|"
+        f"{pack.sex.strip().casefold()}|"
+        f"{pack.version.strip().casefold()}"
+    )
+
+
+def reported_voice_verification_key(
+    name: object,
+    sex: object,
+    version: object,
+) -> str | None:
+    """Build the same identity from mower-reported slot metadata."""
+    if not isinstance(name, str) or not name.strip():
+        return None
+    if not isinstance(sex, str) or not sex.strip():
+        return None
+    if not isinstance(version, str) or not version.strip():
+        return None
+    return (
+        f"{name.strip().casefold()}|"
+        f"{sex.strip().casefold()}|"
+        f"{version.strip().casefold()}"
+    )
+
+
 def _first_text(record: dict[str, Any], *keys: str) -> str | None:
     for key in keys:
         value = record.get(key)
