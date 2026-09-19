@@ -189,11 +189,15 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn("_async_refresh_community_catalog", select)
         self.assertIn("use_fallback=False", select)
         self.assertIn(
-            "free_packs = previous_free if community is None else community",
+            "public_packs = previous_public if community is None else community",
             select,
         )
         self.assertIn(
-            "self._apply_catalog(official + free_packs + paid_packs)",
+            "merged_community = merge_community_voice_packs(",
+            select,
+        )
+        self.assertIn(
+            "self._apply_catalog(official + merged_community)",
             select,
         )
         self.assertIn("self.async_write_ha_state()", select)
@@ -216,7 +220,8 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn("and not pack.locked", select)
         self.assertIn('"locked_community_pack_count"', select)
         self.assertIn("if pack.locked:", select)
-        self.assertIn("must be purchased in the Community voice store", select)
+        self.assertIn("This Community voice pack must be purchased", select)
+        self.assertIn("Community voice store before it can be installed", select)
 
         for path in (
             ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
@@ -252,7 +257,10 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn('"voice_store_entitlement_count"', select)
         self.assertIn('"purchased_community_pack_count"', select)
         self.assertIn('pack.access == "paid"', select)
-        self.assertIn("previous_paid if purchased is None else purchased", select)
+        self.assertIn(
+            "previous_purchased if purchased is None else purchased",
+            select,
+        )
 
         self.assertIn("/api/anthbot/store/client/pair", voice)
         self.assertIn("/api/anthbot/store/client/entitlements", voice)
