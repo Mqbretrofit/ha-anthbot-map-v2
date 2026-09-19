@@ -48,6 +48,9 @@ _LOGGER = logging.getLogger(__name__)
 _VOICE_CATALOG_REFRESH_INTERVAL = timedelta(seconds=60)
 _VOICE_INSTALL_PENDING_SECONDS = 180
 _VOICE_VERIFY_DELAYS = (2, 8, 20, 45)
+_VOICE_CONFIRM_STATUSES = {"verified", "slot_confirmed", "metadata_confirmed"}
+_VOICE_MAX_COMMAND_ATTEMPTS = 2
+_VOICE_RETRY_CHECK_INDEX = 2
 
 
 async def async_setup_entry(
@@ -326,7 +329,9 @@ class AnthbotVoicePackSelect(
         else:
             age = self._request_age_seconds()
             has_report = any(reported.values())
-            if age is None or age < _VOICE_INSTALL_PENDING_SECONDS:
+            if command_status == "not_confirmed":
+                status = "mismatch" if has_report else "unconfirmed"
+            elif age is None or age < _VOICE_INSTALL_PENDING_SECONDS:
                 status = "pending"
             elif has_report:
                 status = "mismatch"
@@ -387,6 +392,11 @@ class AnthbotVoicePackSelect(
             "requested_voice_url": requested.get("music_url"),
             "requested_at": requested.get("requested_at"),
             "voice_command_status": requested.get("command_status"),
+            "voice_command_attempts": requested.get("command_attempts", 0),
+            "voice_command_max_attempts": _VOICE_MAX_COMMAND_ATTEMPTS,
+            "voice_last_command_at": requested.get("last_command_at"),
+            "voice_confirmation_at": requested.get("confirmation_at"),
+            "voice_verification_finished_at": requested.get("verification_finished_at"),
             "voice_install_status": verification["status"],
             "voice_install_exact": verification["exact"],
             "voice_report_matches_slot": verification["slot_match"],
@@ -404,10 +414,20 @@ class AnthbotVoicePackSelect(
         if self._request_store is not None and self._requested_pack is not None:
             await self._request_store.async_save(self._requested_pack)
 
-    async def _async_verify_requested_pack(self) -> None:
-        """Ask the mower for fresh properties after a voice install command."""
-        for delay in _VOICE_VERIFY_DELAYS:
+    async def _async_verify_requested_pack(
+        self,
+        pack: VoicePack,
+        request_id: str,
+    ) -> None:
+        """Verify a voice install and retry once if the mower did not switch."""
+        for check_index, delay in enumerate(_VOICE_VERIFY_DELAYS):
             await asyncio.sleep(delay)
+            if (
+                not self._requested_pack
+                or self._requested_pack.get("request_id") != request_id
+            ):
+                return
+
             try:
                 await self.coordinator.client.async_request_all_properties()
                 await self.coordinator.async_request_refresh()
@@ -417,9 +437,71 @@ class AnthbotVoicePackSelect(
                     self.coordinator.client.serial_number,
                     err,
                 )
-            self.async_write_ha_state()
-            if self._voice_verification()["status"] == "verified":
+
+            verification = self._voice_verification()
+            if verification["status"] in _VOICE_CONFIRM_STATUSES:
+                self._requested_pack["command_status"] = (
+                    "confirmed"
+                    if verification["status"] == "verified"
+                    else "slot_confirmed"
+                )
+                self._requested_pack["confirmation_at"] = (
+                    datetime.now(timezone.utc).isoformat()
+                )
+                self._requested_pack["verification_finished_at"] = (
+                    self._requested_pack["confirmation_at"]
+                )
+                await self._async_save_requested_pack()
+                self.async_write_ha_state()
                 return
+
+            self.async_write_ha_state()
+
+            attempts = int(self._requested_pack.get("command_attempts") or 1)
+            if (
+                check_index == _VOICE_RETRY_CHECK_INDEX
+                and attempts < _VOICE_MAX_COMMAND_ATTEMPTS
+            ):
+                self._requested_pack["command_attempts"] = attempts + 1
+                self._requested_pack["command_status"] = "retrying"
+                self._requested_pack["last_command_at"] = (
+                    datetime.now(timezone.utc).isoformat()
+                )
+                await self._async_save_requested_pack()
+                self.async_write_ha_state()
+
+                try:
+                    await async_install_voice_pack(self.coordinator, pack)
+                except Exception as err:
+                    self._requested_pack["command_status"] = "retry_failed"
+                    self._requested_pack["last_command_error"] = str(err)[:240]
+                    await self._async_save_requested_pack()
+                    self.async_write_ha_state()
+                    _LOGGER.warning(
+                        "Voice install retry failed for %s: %s",
+                        self.coordinator.client.serial_number,
+                        err,
+                    )
+                else:
+                    self._requested_pack["command_status"] = "sent"
+                    self._requested_pack.pop("last_command_error", None)
+                    await self._async_save_requested_pack()
+                    self.async_write_ha_state()
+
+        if (
+            not self._requested_pack
+            or self._requested_pack.get("request_id") != request_id
+        ):
+            return
+
+        verification = self._voice_verification()
+        if verification["status"] not in _VOICE_CONFIRM_STATUSES:
+            self._requested_pack["command_status"] = "not_confirmed"
+            self._requested_pack["verification_finished_at"] = (
+                datetime.now(timezone.utc).isoformat()
+            )
+            await self._async_save_requested_pack()
+            self.async_write_ha_state()
 
     async def async_select_option(self, option: str) -> None:
         pack = self._catalog_by_label.get(option)
@@ -429,6 +511,7 @@ class AnthbotVoicePackSelect(
         if pack is None:
             raise ValueError(f"Unknown voice pack: {option}")
 
+        requested_at = datetime.now(timezone.utc).isoformat()
         self._requested_pack = {
             "label": pack.label,
             "source": pack.source,
@@ -438,8 +521,13 @@ class AnthbotVoicePackSelect(
             "version": pack.version,
             "music_url": pack.music_url,
             "music_md5": pack.music_md5,
-            "requested_at": datetime.now(timezone.utc).isoformat(),
+            "requested_at": requested_at,
+            "request_id": requested_at,
             "command_status": "sending",
+            "command_attempts": 1,
+            "last_command_at": requested_at,
+            "confirmation_at": None,
+            "verification_finished_at": None,
         }
         await self._async_save_requested_pack()
         self.async_write_ha_state()
@@ -456,11 +544,22 @@ class AnthbotVoicePackSelect(
         await self._async_save_requested_pack()
         self.async_write_ha_state()
 
-        await self.coordinator.client.async_request_all_properties()
-        await asyncio.sleep(1)
-        await self.coordinator.async_request_refresh()
+        try:
+            await self.coordinator.client.async_request_all_properties()
+            await asyncio.sleep(1)
+            await self.coordinator.async_request_refresh()
+        except AnthbotGenieApiError as err:
+            # The voice_set publish already succeeded. A failed immediate read
+            # must not be reported to Home Assistant as a failed install command;
+            # the background verifier will keep checking the mower.
+            _LOGGER.debug(
+                "Initial voice verification refresh failed for %s: %s",
+                self.coordinator.client.serial_number,
+                err,
+            )
+
         self.hass.async_create_background_task(
-            self._async_verify_requested_pack(),
+            self._async_verify_requested_pack(pack, requested_at),
             f"anthbot_voice_verify_{self.coordinator.client.serial_number}",
         )
 
