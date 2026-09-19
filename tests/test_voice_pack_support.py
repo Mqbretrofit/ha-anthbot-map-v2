@@ -183,6 +183,47 @@ class VoicePackSupportTests(unittest.TestCase):
             voice,
         )
 
+    def test_voice_install_state_tracks_request_and_mower_confirmation(self) -> None:
+        select = _read(COMPONENT / "select.py")
+        voice = _read(COMPONENT / "voice_packs.py")
+
+        self.assertIn("normalize_reported_voice_name", voice)
+        self.assertIn('"en": "English"', voice)
+        self.assertIn('"de": "German"', voice)
+        self.assertIn("Store(", select)
+        self.assertIn("requested_voice_pack", select)
+        self.assertIn("voice_install_status", select)
+        self.assertIn('"slot_confirmed"', select)
+        self.assertIn('"verified"', select)
+        self.assertIn('"mismatch"', select)
+        self.assertIn('"unconfirmed"', select)
+        self.assertIn("_VOICE_VERIFY_DELAYS", select)
+        self.assertIn("_async_verify_requested_pack", select)
+        self.assertIn("requested_voice_md5", select)
+
+    def test_map_card_shows_voice_verification_and_tracks_option_changes(self) -> None:
+        for path in (
+            ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
+            COMPONENT / "frontend" / "anthbot-map-card.js",
+        ):
+            card = _read(path)
+            self.assertIn("createVoicePackControl()", card)
+            self.assertIn("getVoicePackSignature()", card)
+            self.assertIn("attrs.voice_install_status", card)
+            self.assertIn("attrs.requested_voice_pack", card)
+            self.assertIn("attrs.installed_voice_name", card)
+            self.assertIn('"voiceInstallSlotConfirmed"', card)
+            self.assertIn('"voiceSelectPlaceholder"', card)
+            self.assertIn("Array.isArray(attrs.options) ? attrs.options : []", card)
+
+        for path in (
+            ROOT / "www" / "anthbot-map" / "i18n.js",
+            COMPONENT / "frontend" / "i18n.js",
+        ):
+            i18n = _read(path)
+            self.assertIn('voiceInstallVerified: "✅', i18n)
+            self.assertIn('voiceRobotReport: "Robot jelentése"', i18n)
+
     def test_map_card_rerenders_when_optional_entities_appear(self) -> None:
         for path in (
             ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
