@@ -145,6 +145,7 @@ class VoicePackSupportTests(unittest.TestCase):
 
     def test_community_voice_variants_have_distinct_labels_and_keys(self) -> None:
         source = _read(COMPONENT / "voice_packs.py")
+        self.assertIn('"community_id": "hu_noemi_standard"', source)
         self.assertIn('"variant_id": "noemi_standard"', source)
         self.assertIn('"variant_name": "Noémi (női) · Standard"', source)
         self.assertIn('if source == "community" and variant_name:', source)
@@ -161,6 +162,8 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn("english_name = COMMUNITY_TECHNICAL_LANGUAGE", source)
         self.assertIn("sex = COMMUNITY_TECHNICAL_SEX", source)
         self.assertIn("voice_gender=voice_gender", source)
+        self.assertIn("community_id=community_id", source)
+        self.assertIn("technical_slot=technical_slot", source)
 
     def test_verified_hungarian_community_pack_is_built_in_as_fallback(self) -> None:
         source = _read(COMPONENT / "voice_packs.py")
@@ -235,8 +238,11 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn("_ambiguous_community_verification_keys", select)
         self.assertIn("voice_pack_verification_key(pack)", select)
         self.assertIn("reported_voice_verification_key(", select)
-        self.assertIn("reported_community == requested_label", select)
+        self.assertIn("reported_community_id.casefold()", select)
+        self.assertIn("requested_community_id.casefold()", select)
         self.assertIn("reported_community_pack", select)
+        self.assertIn("reported_community_id", select)
+        self.assertIn("requested_community_id", select)
         self.assertIn("requested_voice_variant_id", select)
         self.assertIn("requested_voice_gender", select)
         self.assertIn("requested_voice_technical_slot", select)
