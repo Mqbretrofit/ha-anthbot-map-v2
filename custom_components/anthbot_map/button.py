@@ -37,8 +37,6 @@ from .firmware_diagnostics import (
     write_firmware_diagnostics_report,
 )
 from .models.n8_control import is_n8_model
-from .models.capabilities import supports_voice_packages
-from .voice_packs import async_repair_factory_english_voice
 from .zones import active_manual_zone_ids, auto_zones, manual_zones
 
 _LOGGER = logging.getLogger(__name__)
@@ -88,15 +86,6 @@ BUTTONS: tuple[AnthbotButtonDescription, ...] = (
         key="export_firmware_diagnostics",
         name="Export & send firmware diagnostics",
         icon="mdi:file-upload-outline",
-    ),
-)
-
-VOICE_BUTTONS: tuple[AnthbotButtonDescription, ...] = (
-    AnthbotButtonDescription(
-        key="repair_factory_english_voice",
-        translation_key="repair_factory_english_voice",
-        name="Repair factory English voice",
-        icon="mdi:account-voice",
     ),
 )
 
@@ -239,14 +228,6 @@ async def async_setup_entry(
     ]
 
     for coordinator in coordinators:
-        if supports_voice_packages(
-            getattr(coordinator.device, "model", None),
-            coordinator.reported_state,
-        ):
-            entities.extend(
-                AnthbotButtonEntity(coordinator, description, entry)
-                for description in VOICE_BUTTONS
-            )
         if is_n8_model(getattr(coordinator.device, "model", None)):
             entities.extend(
                 AnthbotButtonEntity(coordinator, description, entry)
@@ -310,8 +291,6 @@ class AnthbotButtonEntity(
             name=coordinator.device.alias,
         )
         self._last_diagnostics_export: dict[str, Any] | None = None
-        self._voice_repair_status: dict[str, Any] | None = None
-        self._voice_repair_task: asyncio.Task[None] | None = None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -324,47 +303,7 @@ class AnthbotButtonEntity(
             and isinstance(self._last_diagnostics_export, dict)
         ):
             attrs.update(self._last_diagnostics_export)
-        if (
-            self.entity_description.key == "repair_factory_english_voice"
-            and isinstance(self._voice_repair_status, dict)
-        ):
-            attrs.update(self._voice_repair_status)
         return attrs
-
-    async def _async_repair_factory_english_voice(self) -> None:
-        """Run the one-time two-stage English_girl repair in the background."""
-        self._voice_repair_status = {
-            "repair_status": "running",
-            "repair_started_at": time.time(),
-            "repair_phase": "force_rewrite",
-        }
-        self.async_write_ha_state()
-        try:
-            result = await async_repair_factory_english_voice(self.coordinator)
-        except Exception as err:
-            self._voice_repair_status.update(
-                {
-                    "repair_status": "failed",
-                    "repair_phase": "failed",
-                    "repair_error": str(err)[:240],
-                    "repair_finished_at": time.time(),
-                }
-            )
-            _LOGGER.exception(
-                "Factory English voice repair failed for %s",
-                self.coordinator.client.serial_number,
-            )
-        else:
-            self._voice_repair_status.update(
-                {
-                    "repair_status": "success",
-                    "repair_phase": "complete",
-                    "repair_finished_at": time.time(),
-                    **result,
-                }
-            )
-        finally:
-            self.async_write_ha_state()
 
     async def _async_export_firmware_diagnostics(self) -> None:
         """Write the local JSON report and explicitly upload a privacy-filtered copy."""
@@ -470,13 +409,6 @@ class AnthbotButtonEntity(
         key = self.entity_description.key
         if key == "export_firmware_diagnostics":
             await self._async_export_firmware_diagnostics()
-            return
-        if key == "repair_factory_english_voice":
-            if self._voice_repair_task is not None and not self._voice_repair_task.done():
-                raise AnthbotGenieApiError("Factory English voice repair is already running")
-            self._voice_repair_task = self.hass.async_create_task(
-                self._async_repair_factory_english_voice()
-            )
             return
         if key == "connect_cloud":
             connected = await async_prepare_cloud_connection(
