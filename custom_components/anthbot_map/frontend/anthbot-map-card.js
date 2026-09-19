@@ -111,6 +111,7 @@ class AnthbotMapCard extends HTMLElement {
     this.customButtonSaveQueue = Promise.resolve();
     this.optionalEntitySignature = "";
     this.voicePackSignature = "";
+    this.voiceSearchQuery = "";
     this.nonVoiceOptionalEntitySignature = "";
     // Keep a near-complete task at 100% after the mower has accepted it as
     // finished. The cloud may keep a final geometry value such as 98.8%
@@ -3222,28 +3223,70 @@ class AnthbotMapCard extends HTMLElement {
       : `${this.t("voiceRobotReport")}: -`;
     robotLine.title = robotLine.textContent;
 
+    const searchWrap = document.createElement("div");
+    searchWrap.style.cssText = "display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center;margin:3px 0 6px";
+    const search = document.createElement("input");
+    search.type = "search";
+    search.value = this.voiceSearchQuery || "";
+    search.placeholder = this.t("voiceSearchPlaceholder");
+    search.setAttribute("aria-label", this.t("voiceSearchPlaceholder"));
+    search.autocomplete = "off";
+    search.spellcheck = false;
+    search.style.cssText = "display:block;width:100%;min-width:0;box-sizing:border-box;height:32px;padding:4px 8px;border:1px solid var(--divider-color,#3a4653);border-radius:7px;color:var(--primary-text-color);background:var(--card-background-color)";
+    const searchCount = document.createElement("small");
+    searchCount.style.cssText = "min-width:46px;text-align:right;opacity:.7;white-space:nowrap";
+
     const select = document.createElement("select");
     select.style.cssText = "display:block;width:100%;max-width:100%;min-width:0;box-sizing:border-box;height:32px;padding:3px 6px";
     select.setAttribute("aria-label", this.t("voicePack"));
     select.disabled = !entityId || options.length === 0;
 
-    const hasExactSelection = currentState && options.includes(currentState);
-    if (!hasExactSelection) {
-      const placeholder = document.createElement("option");
-      placeholder.value = "";
-      placeholder.textContent = this.t("voiceSelectPlaceholder");
-      placeholder.selected = true;
-      placeholder.disabled = true;
-      select.appendChild(placeholder);
-    }
+    const normalizeSearch = (value) => String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleLowerCase();
 
-    for (const value of options) {
-      const option = document.createElement("option");
-      option.value = value;
-      option.textContent = value;
-      option.selected = hasExactSelection && value === currentState;
-      select.appendChild(option);
-    }
+    const renderVoiceOptions = () => {
+      const query = normalizeSearch(this.voiceSearchQuery);
+      const filtered = query
+        ? options.filter((value) => normalizeSearch(value).includes(query))
+        : options;
+      const selectedBefore = select.value || currentState;
+      select.replaceChildren();
+
+      const exactVisible = currentState && filtered.includes(currentState);
+      if (!exactVisible) {
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = filtered.length
+          ? this.t("voiceSelectPlaceholder")
+          : this.t("voiceSearchNoResults");
+        placeholder.selected = true;
+        placeholder.disabled = true;
+        select.appendChild(placeholder);
+      }
+
+      for (const value of filtered) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = value;
+        option.selected = (
+          (exactVisible && value === currentState)
+          || (!exactVisible && selectedBefore && value === selectedBefore)
+        );
+        select.appendChild(option);
+      }
+
+      searchCount.textContent = `${filtered.length}/${options.length}`;
+      select.disabled = !entityId || filtered.length === 0;
+    };
+
+    search.addEventListener("input", () => {
+      this.voiceSearchQuery = search.value;
+      renderVoiceOptions();
+    });
+    searchWrap.append(search, searchCount);
+    renderVoiceOptions();
 
     const submitVoicePack = async (requestedValue, trigger) => {
       if (!entityId || !requestedValue) return;
@@ -3297,7 +3340,7 @@ class AnthbotMapCard extends HTMLElement {
       });
     }
 
-    tile.append(heading, statusLine, commandLine, robotLine, select);
+    tile.append(heading, statusLine, commandLine, robotLine, searchWrap, select);
     if (retryButton) tile.appendChild(retryButton);
     return tile;
   }
