@@ -110,6 +110,8 @@ class AnthbotMapCard extends HTMLElement {
     this.customButtonSavePending = 0;
     this.customButtonSaveQueue = Promise.resolve();
     this.optionalEntitySignature = "";
+    this.voicePackSignature = "";
+    this.nonVoiceOptionalEntitySignature = "";
     // Keep a near-complete task at 100% after the mower has accepted it as
     // finished. The cloud may keep a final geometry value such as 98.8%
     // after return/charge transitions into standby.
@@ -196,30 +198,65 @@ class AnthbotMapCard extends HTMLElement {
   set hass(hass) {
     const previousLanguage = this.language;
     const previousOptionalSignature = this.optionalEntitySignature;
+    const previousVoicePackSignature = this.voicePackSignature;
+    const previousNonVoiceOptionalSignature = this.nonVoiceOptionalEntitySignature;
     this._hass = hass;
     this._activeEntityId = this.resolveMapEntityId();
     this.entity = hass.states[this._activeEntityId];
+
+    const nextVoicePackSignature = this.getVoicePackSignature();
+    const nextNonVoiceOptionalSignature = this.getNonVoiceOptionalEntitySignature();
+    this.voicePackSignature = nextVoicePackSignature;
+    this.nonVoiceOptionalEntitySignature = nextNonVoiceOptionalSignature;
     this.optionalEntitySignature = this.getOptionalEntitySignature();
+
     const customButtonsChanged = this.syncCustomButtonActionsFromServer();
     this.startRefreshTimer();
     this.startRainCountdownTimer();
+
+    const optionalEntitiesChanged =
+      previousOptionalSignature !== this.optionalEntitySignature;
+    const onlyVoicePackChanged =
+      Boolean(previousOptionalSignature)
+      && previousVoicePackSignature !== nextVoicePackSignature
+      && previousNonVoiceOptionalSignature === nextNonVoiceOptionalSignature;
+
     if (
       previousLanguage !== this.language
       || customButtonsChanged
-      || previousOptionalSignature !== this.optionalEntitySignature
     ) {
       this.render();
+    } else if (optionalEntitiesChanged) {
+      // Voice installation can publish several HA state updates in quick
+      // succession (pending -> slot/metadata confirmation). Rebuilding the
+      // whole card here closes/resets the floating settings view. When only
+      // the voice entity changed, replace that tile in place instead.
+      if (
+        onlyVoicePackChanged
+        && this.activePanel === "settings"
+        && this.refreshVoicePackControl()
+      ) {
+        this.updateRenderer();
+      } else {
+        this.render();
+      }
     } else {
       this.updateRenderer();
     }
   }
 
-  getOptionalEntitySignature() {
+  getNonVoiceOptionalEntitySignature() {
     return [
       this.getUpdateEntity("firmware") || "",
-      this.getVoicePackSignature(),
       this.getNumberEntity("voiceVolume") || "",
       this.getSwitchEntity("autoFirmwareUpdate") || "",
+    ].join("|");
+  }
+
+  getOptionalEntitySignature() {
+    return [
+      this.getNonVoiceOptionalEntitySignature(),
+      this.getVoicePackSignature(),
     ].join("|");
   }
 
@@ -3027,6 +3064,18 @@ class AnthbotMapCard extends HTMLElement {
       }
     });
     return tile;
+  }
+
+  refreshVoicePackControl() {
+    if (this.activePanel !== "settings") return false;
+    const body = this.shadowRoot?.querySelector('[data-role="panel-body"]');
+    const currentTile = body?.querySelector(".voice-pack-tile");
+    if (!body || !currentTile || !this.getSelectEntity("voicePack")) {
+      return false;
+    }
+
+    currentTile.replaceWith(this.createVoicePackControl());
+    return true;
   }
 
   createVoicePackControl() {
