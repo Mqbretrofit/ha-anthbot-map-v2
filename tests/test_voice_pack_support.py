@@ -150,7 +150,7 @@ class VoicePackSupportTests(unittest.TestCase):
         self.assertIn('"variant_name": "Noémi (női) · Standard"', source)
         self.assertIn('if source == "community" and variant_name:', source)
         self.assertIn('display_name = f"{display_name} – {variant_name}"', source)
-        self.assertIn("f\"{source}:{variant_id or ''}:{music_package}:\"", source)
+        self.assertIn("f\"{source}:{community_id or variant_id or ''}:{music_package}:\"", source)
         self.assertIn("COMMUNITY_TECHNICAL_LANGUAGE = \"German\"", source)
         self.assertIn("COMMUNITY_TECHNICAL_SEX = \"girl\"", source)
         self.assertIn("COMMUNITY_TECHNICAL_SLOT = \"German_girl\"", source)
