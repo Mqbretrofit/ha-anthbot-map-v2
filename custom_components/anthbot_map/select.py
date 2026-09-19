@@ -248,6 +248,12 @@ class AnthbotVoicePackSelect(
         normalized_name, normalized_sex = normalize_reported_voice_name(raw_name)
         voice_status = state.get("voice_status")
         status = voice_status if isinstance(voice_status, dict) else {}
+        install_raw_name = (
+            str(status.get("name")).strip()
+            if status.get("name") is not None
+            else None
+        )
+        install_name, install_sex = normalize_reported_voice_name(install_raw_name)
         progress = status.get("progress")
         try:
             progress_value = int(progress) if progress is not None else None
@@ -259,6 +265,9 @@ class AnthbotVoicePackSelect(
             "name": normalized_name or raw_name,
             "sex": normalized_sex,
             "version": version,
+            "install_raw_name": install_raw_name,
+            "install_name": install_name or install_raw_name,
+            "install_sex": install_sex,
             "install_state": (
                 str(status.get("state")).strip()
                 if status.get("state") is not None
@@ -393,6 +402,8 @@ class AnthbotVoicePackSelect(
         reported_name = reported["name"]
         reported_sex = reported["sex"]
         reported_version = reported["version"]
+        reported_install_name = reported["install_name"]
+        reported_install_sex = reported["install_sex"]
         reported_install_state = reported["install_state"]
         reported_install_progress = reported["install_progress"]
 
@@ -425,8 +436,22 @@ class AnthbotVoicePackSelect(
             and isinstance(reported_install_progress, int)
             and reported_install_progress >= 100
         )
+        install_target_match = (
+            not isinstance(reported_install_name, str)
+            or not reported_install_name
+            or (
+                bool(requested_name)
+                and reported_install_name.casefold() == requested_name.casefold()
+                and (
+                    not isinstance(reported_install_sex, str)
+                    or not requested_sex
+                    or reported_install_sex.casefold() == requested_sex.casefold()
+                )
+            )
+        )
         download_failed = (
-            isinstance(reported_install_state, str)
+            install_target_match
+            and isinstance(reported_install_state, str)
             and reported_install_state.casefold()
             in {"download_failed", "download_fail", "download_error", "failed"}
         )
@@ -550,6 +575,7 @@ class AnthbotVoicePackSelect(
             "installed_voice_display_name": reported["name"],
             "installed_voice_sex": reported["sex"],
             "installed_voice_version": reported["version"],
+            "installed_voice_install_name": reported["install_raw_name"],
             "installed_voice_state": reported["install_state"],
             "installed_voice_progress": reported["install_progress"],
             "installed_voice_time": reported["install_time"],
