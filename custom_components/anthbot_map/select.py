@@ -539,6 +539,8 @@ class AnthbotVoicePackSelect(
         command_status = requested.get("command_status")
         if verification["status"] in {"verified", "community_verified"}:
             command_status = "confirmed"
+        elif verification["status"] == "download_failed":
+            command_status = "download_failed"
         return {
             "serial_number": self.coordinator.client.serial_number,
             "model": self.coordinator.device.model,
@@ -650,7 +652,10 @@ class AnthbotVoicePackSelect(
 
             attempts = int(self._requested_pack.get("command_attempts") or 1)
             if (
-                check_index == _VOICE_RETRY_CHECK_INDEX
+                (
+                    verification["status"] == "download_failed"
+                    or check_index == _VOICE_RETRY_CHECK_INDEX
+                )
                 and attempts < _VOICE_MAX_COMMAND_ATTEMPTS
             ):
                 self._requested_pack["command_attempts"] = attempts + 1
