@@ -1080,6 +1080,69 @@ class AnthbotCloudApiClient:
             "Firmware-check response did not contain version/fw_url"
         )
 
+    async def async_get_presigned_download_url(
+        self,
+        serial_number: str,
+        *,
+        category: str,
+        sub_category: str,
+        filename: str,
+    ) -> str:
+        """Return an app-style presigned download URL for a mower resource."""
+        self._require_token()
+        if not filename:
+            raise AnthbotGenieApiError("Presigned URL filename is empty")
+
+        url = f"https://{self._host}/api/v1/device/v2/presigned_url"
+        params = {
+            "sn": serial_number,
+            "category": category,
+            "sub_category": sub_category,
+            "filename": filename,
+            "verification_token": self.build_verification_token(serial_number),
+        }
+        try:
+            async with self._session.get(
+                url,
+                headers=self._auth_headers,
+                params=params,
+                timeout=15,
+            ) as resp:
+                if resp.status != 200:
+                    body = await resp.text()
+                    raise AnthbotGenieApiError(
+                        f"Presigned URL failed ({resp.status}): {body[:300]}",
+                        status_code=resp.status,
+                        temporary=resp.status in _RETRYABLE_HTTP_STATUS_CODES,
+                    )
+                payload = await resp.json(content_type=None)
+        except ClientError as err:
+            raise AnthbotGenieApiError(
+                f"Presigned URL network error: {err}", temporary=True
+            ) from err
+        except TimeoutError as err:
+            raise AnthbotGenieApiError(
+                "Presigned URL request timed out", temporary=True
+            ) from err
+
+        if not isinstance(payload, dict):
+            raise AnthbotGenieApiError("Invalid presigned URL payload type")
+        if payload.get("code") != 0:
+            raise AnthbotGenieApiError(
+                f"Presigned URL returned code={payload.get('code')}"
+            )
+
+        data = payload.get("data")
+        if not isinstance(data, dict):
+            raise AnthbotGenieApiError("Presigned URL payload missing data object")
+        presigned_url = data.get("presigned_url")
+        if not isinstance(presigned_url, str) or not presigned_url.strip():
+            raise AnthbotGenieApiError("Presigned URL payload missing presigned_url")
+        presigned_url = presigned_url.strip()
+        if not presigned_url.lower().startswith("https://"):
+            raise AnthbotGenieApiError("Presigned download URL is not HTTPS")
+        return presigned_url
+
     async def async_toggle_auto_upgrade(self, serial_number: str) -> None:
         """Toggle vendor automatic firmware update exactly like the Android app.
 
