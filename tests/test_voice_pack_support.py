@@ -227,6 +227,27 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn("voiceInstallMetadataConfirmed:", i18n)
             self.assertIn('voiceRobotReport: "Robot jelentése"', i18n)
 
+    def test_voice_pack_tile_is_compact_and_cannot_overflow_grid(self) -> None:
+        for path in (
+            ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
+            COMPONENT / "frontend" / "anthbot-map-card.js",
+        ):
+            card = _read(path)
+            self.assertIn('tile.style.cssText = "min-width:0;overflow:hidden;', card)
+            self.assertIn("-webkit-line-clamp:2", card)
+            self.assertIn("overflow-wrap:anywhere", card)
+            self.assertIn("white-space:nowrap;overflow:hidden;text-overflow:ellipsis", card)
+            self.assertIn('select.style.cssText = "display:block;width:100%;max-width:100%;min-width:0;', card)
+            self.assertIn('(statusKeys[status] || "voiceInstallUnknown") + "Short"', card)
+
+        for path in (
+            ROOT / "www" / "anthbot-map" / "i18n.js",
+            COMPONENT / "frontend" / "i18n.js",
+        ):
+            i18n = _read(path)
+            self.assertIn('voiceInstallPendingShort: "⏳ Visszaigazolásra vár"', i18n)
+            self.assertIn('voiceInstallVerifiedShort: "✅ Visszaigazolva"', i18n)
+
     def test_map_card_rerenders_when_optional_entities_appear(self) -> None:
         for path in (
             ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
