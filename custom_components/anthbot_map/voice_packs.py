@@ -129,6 +129,7 @@ class VoicePack:
     music_md5: str
     language: str | None = None
     community_id: str | None = None
+    store_pack_id: str | None = None
     variant_id: str | None = None
     variant_name: str | None = None
     voice_gender: str | None = None
@@ -222,6 +223,11 @@ def normalize_voice_pack(record: dict[str, Any], *, source: str) -> VoicePack | 
     ) or "Voice"
     language = _first_text(record, "language", "language_name", "name")
     community_id = _first_text(record, "community_id", "community_voice_id")
+    store_pack_id = (
+        _first_text(record, "id", "pack_id")
+        if source == "community"
+        else None
+    )
     variant_id = _first_text(record, "variant_id", "variant", "voice_variant")
     variant_name = _first_text(
         record, "variant_name", "variant_label", "voice_variant_name"
@@ -287,6 +293,7 @@ def normalize_voice_pack(record: dict[str, Any], *, source: str) -> VoicePack | 
         music_md5=music_md5,
         language=language,
         community_id=community_id,
+        store_pack_id=store_pack_id,
         variant_id=variant_id,
         variant_name=variant_name,
         voice_gender=voice_gender,
