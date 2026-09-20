@@ -3482,15 +3482,29 @@ class AnthbotMapCard extends HTMLElement {
       }
     };
 
-    const refreshVoiceStoreEntitlements = async (lockedLabel) => {
+    const voicePurchaseIsUnlocked = (lockedLabel) => {
       if (!entityId) return true;
       const latest = this._hass.states[entityId];
       const locked = latest?.attributes?.voice_store_locked_voice_ids;
-      if (
+      return Boolean(
         locked
         && typeof locked === "object"
         && !Object.prototype.hasOwnProperty.call(locked, lockedLabel)
-      ) {
+      );
+    };
+
+    const refreshUnlockedVoiceUi = () => {
+      this.scheduleRefresh(50);
+      window.setTimeout(() => {
+        if (this.activePanel === "settings") {
+          this.refreshVoicePackControl();
+        }
+      }, 100);
+    };
+
+    const refreshVoiceStoreEntitlements = async (lockedLabel) => {
+      if (voicePurchaseIsUnlocked(lockedLabel)) {
+        refreshUnlockedVoiceUi();
         return true;
       }
       try {
@@ -3500,21 +3514,29 @@ class AnthbotMapCard extends HTMLElement {
       } catch (_error) {
         return false;
       }
-      const refreshed = this._hass.states[entityId];
-      const refreshedLocked = refreshed?.attributes?.voice_store_locked_voice_ids;
-      return Boolean(
-        refreshedLocked
-        && typeof refreshedLocked === "object"
-        && !Object.prototype.hasOwnProperty.call(refreshedLocked, lockedLabel)
-      );
+
+      // update_entity may finish just before the HA websocket state event reaches
+      // this card. Give that event a short grace period so the purchased voice
+      // unlocks immediately instead of waiting for the next multi-second poll.
+      for (const delay of [0, 150, 350, 700]) {
+        if (delay) {
+          await new Promise((resolve) => window.setTimeout(resolve, delay));
+        }
+        if (voicePurchaseIsUnlocked(lockedLabel)) {
+          refreshUnlockedVoiceUi();
+          return true;
+        }
+      }
+      return false;
     };
 
     const startVoicePurchaseWatch = (lockedLabel) => {
       stopVoicePurchaseWatch();
       const startedAt = Date.now();
-      const fastWindowMs = 90 * 1000;
+      const fastWindowMs = 60 * 1000;
       const maxWindowMs = 10 * 60 * 1000;
       let refreshing = false;
+      let slowMode = false;
 
       const refresh = async () => {
         if (refreshing) return;
@@ -3534,23 +3556,28 @@ class AnthbotMapCard extends HTMLElement {
 
       this.voicePurchaseFocusHandler = () => {
         void refresh();
+        window.setTimeout(() => void refresh(), 600);
       };
       window.addEventListener("focus", this.voicePurchaseFocusHandler);
 
       this.voicePurchaseWatchInterval = window.setInterval(() => {
-        if (Date.now() - startedAt >= fastWindowMs) {
+        if (!slowMode && Date.now() - startedAt >= fastWindowMs) {
           window.clearInterval(this.voicePurchaseWatchInterval);
-          this.voicePurchaseWatchInterval = null;
+          slowMode = true;
+          this.voicePurchaseWatchInterval = window.setInterval(
+            () => void refresh(),
+            10000,
+          );
           return;
         }
         void refresh();
-      }, 5000);
+      }, 2000);
 
       this.voicePurchaseWatchTimeout = window.setTimeout(
         stopVoicePurchaseWatch,
         maxWindowMs,
       );
-      window.setTimeout(() => void refresh(), 3000);
+      window.setTimeout(() => void refresh(), 1200);
     };
 
     select.addEventListener("change", async () => {
