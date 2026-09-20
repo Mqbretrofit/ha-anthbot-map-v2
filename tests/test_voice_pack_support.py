@@ -250,7 +250,7 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn("window.open(checkoutUrl", card)
             self.assertIn("attrs.locked_community_pack_count", card)
             self.assertIn('this.t("voiceStorePaidAvailable")', card)
-            self.assertIn("./i18n.js?v=2482-voice-popup3", card)
+            self.assertIn("./i18n.js?v=2482-voice-popup4", card)
 
         for path in (
             ROOT / "www" / "anthbot-map" / "i18n.js",
@@ -305,7 +305,7 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn('window.open(voiceStoreUrl, "_blank", "noopener,noreferrer")', card)
             self.assertIn('this.t("voiceStorePurchasedCount")', card)
             self.assertIn("attrs.voice_store_error", card)
-            self.assertIn("./i18n.js?v=2482-voice-popup3", card)
+            self.assertIn("./i18n.js?v=2482-voice-popup4", card)
 
         for path in (
             ROOT / "www" / "anthbot-map" / "i18n.js",
@@ -495,16 +495,51 @@ class VoicePackSupportTests(unittest.TestCase):
                     f"{key} must be translated in all 23 languages",
                 )
 
-    def test_voice_popup_detail_strings_are_translated_to_german(self) -> None:
-        expected = (
-            'voicePack: "Sprachpaket"',
-            'voiceInstallMetadataConfirmedShort: "✅ Speicherplatz + Version bestätigt"',
-            'voiceCommandConfirmed: "✅ Installation erfolgreich — vom Mäher bestätigt"',
-            'voiceCommandAttempt: "Versuch"',
-            'voiceRobotReport: "Mähermeldung"',
-            'voiceSelectPlaceholder: "— Sprachpaket auswählen —"',
-            'voiceSearchPlaceholder: "Sprache oder Stimme suchen…"',
-            'voiceSearchNoResults: "Keine passende Stimme"',
+    def test_voice_popup_detail_strings_are_translated_in_all_23_languages(self) -> None:
+        expected_languages = (
+            "en", "hu", "de", "fr", "es", "it", "pt", "nl", "pl", "cs", "sk",
+            "ro", "da", "sv", "no", "fi", "zh-CN", "zh-TW", "tr", "th", "vi",
+            "ko", "km",
+        )
+        keys = (
+            "voicePack",
+            "voiceInstallVerified",
+            "voiceInstallVerifiedShort",
+            "voiceInstallCommunityVerified",
+            "voiceInstallCommunityVerifiedShort",
+            "voiceInstallMetadataConfirmed",
+            "voiceInstallMetadataConfirmedShort",
+            "voiceInstallSlotConfirmed",
+            "voiceInstallSlotConfirmedShort",
+            "voiceInstallPending",
+            "voiceInstallPendingShort",
+            "voiceInstallDownloadFailed",
+            "voiceInstallDownloadFailedShort",
+            "voiceInstallMismatch",
+            "voiceInstallMismatchShort",
+            "voiceInstallUnconfirmed",
+            "voiceInstallUnconfirmedShort",
+            "voiceInstallFailed",
+            "voiceInstallFailedShort",
+            "voiceInstallReported",
+            "voiceInstallReportedShort",
+            "voiceInstallUnknown",
+            "voiceInstallUnknownShort",
+            "voiceRobotReport",
+            "voiceSelectPlaceholder",
+            "voiceSearchPlaceholder",
+            "voiceSearchNoResults",
+            "voiceCommandSending",
+            "voiceCommandSent",
+            "voiceCommandRetrying",
+            "voiceCommandConfirmed",
+            "voiceCommandSlotConfirmed",
+            "voiceCommandFailed",
+            "voiceCommandRetryFailed",
+            "voiceCommandDownloadFailed",
+            "voiceCommandNotConfirmed",
+            "voiceCommandAttempt",
+            "voiceRetryButton",
         )
         for path in (
             ROOT / "www" / "anthbot-map" / "i18n.js",
@@ -512,13 +547,29 @@ class VoicePackSupportTests(unittest.TestCase):
         ):
             i18n = _read(path)
             block = i18n.split("const voicePopupDetailTranslations = {", 1)[1].split(
-                "Object.assign(translations.de", 1,
+                "for (const [language, values] of Object.entries(voicePopupDetailTranslations))",
+                1,
             )[0]
-            for translated in expected:
-                self.assertIn(translated, block)
-            self.assertNotIn('voicePack: "Voice pack"', block)
-            self.assertNotIn('voiceRobotReport: "Mower report"', block)
-            self.assertNotIn('voiceSelectPlaceholder: "— Select a voice pack —"', block)
+            for language in expected_languages:
+                self.assertIn(
+                    f'"{language}":',
+                    block,
+                    f"{language} must have Voice Pack popup translations",
+                )
+            for key in keys:
+                self.assertEqual(
+                    block.count(f'"{key}":'),
+                    23,
+                    f"{key} must be translated in all 23 languages",
+                )
+
+            # Spot-check Latin and non-Latin locales so English fallback cannot
+            # accidentally satisfy only the structural parity assertion.
+            self.assertIn('"voicePack": "Sprachpaket"', block)
+            self.assertIn('"voiceSelectPlaceholder": "— Sprachpaket auswählen —"', block)
+            self.assertIn('"voicePack": "语音包"', block)
+            self.assertIn('"voicePack": "음성 팩"', block)
+            self.assertIn('"voicePack": "កញ្ចប់សំឡេង"', block)
 
     def test_voice_pack_controls_live_in_popup_with_compact_summary_tile(self) -> None:
         for path in (
@@ -538,7 +589,7 @@ class VoicePackSupportTests(unittest.TestCase):
                 "this.openVoicePackDialog({ refresh: true })",
                 card,
             )
-            self.assertIn("./i18n.js?v=2482-voice-popup3", card)
+            self.assertIn("./i18n.js?v=2482-voice-popup4", card)
 
         for path in (
             ROOT / "www" / "anthbot-map" / "i18n.js",
@@ -601,7 +652,7 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn('placeholder.style.color = "#fff"', card)
 
         init = _read(COMPONENT / "__init__.py")
-        self.assertIn("2.4.8.2-voice-popup.8", init)
+        self.assertIn("2.4.8.2-voice-popup.9", init)
 
     def test_voice_pack_tile_is_compact_and_cannot_overflow_grid(self) -> None:
         for path in (
