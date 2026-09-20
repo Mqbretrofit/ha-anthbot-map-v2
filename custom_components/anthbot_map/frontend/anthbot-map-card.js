@@ -112,6 +112,9 @@ class AnthbotMapCard extends HTMLElement {
     this.optionalEntitySignature = "";
     this.voicePackSignature = "";
     this.voiceSearchQuery = "";
+    this.voiceDialogInteractionActive = false;
+    this.voiceDialogRefreshPending = false;
+    this.voiceDialogInteractionTimer = null;
     this.nonVoiceOptionalEntitySignature = "";
     // Keep a near-complete task at 100% after the mower has accepted it as
     // finished. The cloud may keep a final geometry value such as 98.8%
@@ -310,6 +313,7 @@ class AnthbotMapCard extends HTMLElement {
     this.stopRainCountdownTimer();
     window.clearTimeout(this.pendingRefreshTimer);
     window.clearTimeout(this.commandFeedbackTimer);
+    window.clearTimeout(this.voiceDialogInteractionTimer);
     document.getElementById(this.feedbackToastId)?.remove();
     this.resizeObserver?.disconnect();
     this.mapLiveStatusResizeObserver?.disconnect();
@@ -3095,8 +3099,22 @@ class AnthbotMapCard extends HTMLElement {
     }
 
     currentTile.replaceWith(this.createVoicePackControl());
-    if (this.shadowRoot?.querySelector('[data-role="voice-pack-dialog"]')) {
-      this.openVoicePackDialog({ refresh: true });
+    const voiceDialog = this.shadowRoot?.querySelector('[data-role="voice-pack-dialog"]');
+    if (voiceDialog) {
+      const activeElement = this.shadowRoot?.activeElement;
+      const dialogControlFocused = Boolean(
+        activeElement
+        && voiceDialog.contains(activeElement)
+        && activeElement.matches?.("select,input,textarea")
+      );
+      if (this.voiceDialogInteractionActive || dialogControlFocused) {
+        // Do not rebuild the popup while the native voice selector is open or
+        // while the user is typing in the popup search field. Replacing the
+        // dialog destroys the focused <select>, which closes its native menu.
+        this.voiceDialogRefreshPending = true;
+      } else {
+        this.openVoicePackDialog({ refresh: true });
+      }
     }
     return true;
   }
@@ -3380,12 +3398,12 @@ class AnthbotMapCard extends HTMLElement {
     search.setAttribute("aria-label", this.t("voiceSearchPlaceholder"));
     search.autocomplete = "off";
     search.spellcheck = false;
-    search.style.cssText = "display:block;width:100%;min-width:0;box-sizing:border-box;height:32px;padding:4px 8px;border:1px solid var(--divider-color,#3a4653);border-radius:7px;color:var(--primary-text-color);background:var(--card-background-color)";
+    search.style.cssText = "display:block;width:100%;min-width:0;box-sizing:border-box;height:32px;padding:4px 8px;border:1px solid #4b5563;border-radius:7px;color:#fff;background:#000;caret-color:#fff;color-scheme:dark";
     const searchCount = document.createElement("small");
     searchCount.style.cssText = "min-width:46px;text-align:right;opacity:.7;white-space:nowrap";
 
     const select = document.createElement("select");
-    select.style.cssText = "display:block;width:100%;max-width:100%;min-width:0;box-sizing:border-box;height:32px;padding:3px 6px";
+    select.style.cssText = "display:block;width:100%;max-width:100%;min-width:0;box-sizing:border-box;height:32px;padding:3px 6px;border:1px solid #4b5563;border-radius:7px;background:#000;color:#fff;color-scheme:dark";
     select.setAttribute("aria-label", this.t("voicePack"));
     select.disabled = !entityId || options.length === 0;
 
@@ -3411,6 +3429,8 @@ class AnthbotMapCard extends HTMLElement {
           : this.t("voiceSearchNoResults");
         placeholder.selected = true;
         placeholder.disabled = true;
+        placeholder.style.backgroundColor = "#000";
+        placeholder.style.color = "#fff";
         select.appendChild(placeholder);
       }
 
@@ -3418,6 +3438,8 @@ class AnthbotMapCard extends HTMLElement {
         const option = document.createElement("option");
         option.value = value;
         option.textContent = value;
+        option.style.backgroundColor = "#000";
+        option.style.color = "#fff";
         option.selected = (
           (exactVisible && value === currentState)
           || (!exactVisible && selectedBefore && value === selectedBefore)
@@ -3428,6 +3450,37 @@ class AnthbotMapCard extends HTMLElement {
       searchCount.textContent = `${filtered.length}/${options.length}`;
       select.disabled = !entityId || filtered.length === 0;
     };
+
+    const beginVoiceDialogInteraction = () => {
+      if (!popup) return;
+      window.clearTimeout(this.voiceDialogInteractionTimer);
+      this.voiceDialogInteractionActive = true;
+    };
+    const endVoiceDialogInteraction = () => {
+      if (!popup) return;
+      window.clearTimeout(this.voiceDialogInteractionTimer);
+      this.voiceDialogInteractionTimer = window.setTimeout(() => {
+        const activeElement = this.shadowRoot?.activeElement;
+        const dialog = this.shadowRoot?.querySelector('[data-role="voice-pack-dialog"]');
+        const stillFocused = Boolean(
+          activeElement
+          && dialog?.contains(activeElement)
+          && activeElement.matches?.("select,input,textarea")
+        );
+        if (stillFocused) return;
+        this.voiceDialogInteractionActive = false;
+        if (this.voiceDialogRefreshPending && dialog?.isConnected) {
+          this.voiceDialogRefreshPending = false;
+          this.openVoicePackDialog({ refresh: true });
+        }
+      }, 180);
+    };
+
+    search.addEventListener("focus", beginVoiceDialogInteraction);
+    search.addEventListener("blur", endVoiceDialogInteraction);
+    select.addEventListener("pointerdown", beginVoiceDialogInteraction);
+    select.addEventListener("focus", beginVoiceDialogInteraction);
+    select.addEventListener("blur", endVoiceDialogInteraction);
 
     search.addEventListener("input", () => {
       this.voiceSearchQuery = search.value;
