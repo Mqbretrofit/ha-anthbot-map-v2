@@ -3217,10 +3217,10 @@ class AnthbotMapCard extends HTMLElement {
     const requested = String(attrs.requested_voice_pack || "");
     const reportedPack = String(attrs.reported_voice_pack || "");
     const voiceStoreUrl = String(attrs.voice_store_url || "");
-    const voiceStoreLockedPackIds = (
-      attrs.voice_store_locked_pack_ids
-      && typeof attrs.voice_store_locked_pack_ids === "object"
-    ) ? attrs.voice_store_locked_pack_ids : {};
+    const voiceStoreLockedVoiceIds = (
+      attrs.voice_store_locked_voice_ids
+      && typeof attrs.voice_store_locked_voice_ids === "object"
+    ) ? attrs.voice_store_locked_voice_ids : {};
     const voiceStoreEntitlementCount = Number(attrs.voice_store_entitlement_count || 0);
     const lockedVoiceCount = Number(attrs.locked_community_pack_count || 0);
     const voiceStoreError = String(attrs.voice_store_error || "");
@@ -3471,9 +3471,9 @@ class AnthbotMapCard extends HTMLElement {
       if (!select.value) return;
       const requestedValue = select.value;
       if (requestedValue.startsWith("🔒 ")) {
-        const packId = String(voiceStoreLockedPackIds[requestedValue] || "");
+        const voiceId = String(voiceStoreLockedVoiceIds[requestedValue] || "");
         let checkoutUrl = "";
-        if (voiceStoreUrl && packId) {
+        if (voiceStoreUrl && voiceId) {
           try {
             const storeUrl = new URL(voiceStoreUrl);
             const pairCode = storeUrl.searchParams.get("pair") || "";
@@ -3485,20 +3485,16 @@ class AnthbotMapCard extends HTMLElement {
               );
               directUrl.search = "";
               directUrl.searchParams.set("pair", pairCode);
-              directUrl.searchParams.set("pack_id", packId);
+              directUrl.searchParams.set("voice_id", voiceId);
               checkoutUrl = directUrl.toString();
             }
           } catch (_error) {
             checkoutUrl = "";
           }
         }
-        if (voiceStoreUrl) {
+        if (checkoutUrl) {
           this.notify(this.t("voicePurchaseRequired"));
-          window.open(
-            checkoutUrl || voiceStoreUrl,
-            "_blank",
-            "noopener,noreferrer",
-          );
+          window.open(checkoutUrl, "_blank", "noopener,noreferrer");
         } else {
           this.notify(voiceStoreError || this.t("voiceStoreUnavailable"));
         }
