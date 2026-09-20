@@ -525,6 +525,59 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn("voicePopupSubtitle:", i18n)
             self.assertIn("voiceStoreCompactSummary:", i18n)
 
+    def test_voice_popup_selector_stays_open_and_uses_dark_options(self) -> None:
+        for path in (
+            ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
+            COMPONENT / "frontend" / "anthbot-map-card.js",
+        ):
+            card = _read(path)
+            self.assertIn("this.voiceDialogInteractionActive = false", card)
+            self.assertIn("this.voiceDialogRefreshPending = false", card)
+            self.assertIn(
+                'activeElement.matches?.("select,input,textarea")',
+                card,
+            )
+            self.assertIn(
+                "this.voiceDialogRefreshPending = true",
+                card,
+            )
+            self.assertIn(
+                "select.addEventListener(\"pointerdown\", "
+                "beginVoiceDialogInteraction)",
+                card,
+            )
+            self.assertIn(
+                "select.addEventListener(\"focus\", "
+                "beginVoiceDialogInteraction)",
+                card,
+            )
+            self.assertIn(
+                "select.addEventListener(\"blur\", "
+                "endVoiceDialogInteraction)",
+                card,
+            )
+            self.assertIn(
+                "this.openVoicePackDialog({ refresh: true })",
+                card,
+            )
+            self.assertIn(
+                "background:#000;color:#fff;color-scheme:dark",
+                card,
+            )
+            self.assertIn(
+                'option.style.backgroundColor = "#000"',
+                card,
+            )
+            self.assertIn('option.style.color = "#fff"', card)
+            self.assertIn(
+                'placeholder.style.backgroundColor = "#000"',
+                card,
+            )
+            self.assertIn('placeholder.style.color = "#fff"', card)
+
+        init = _read(COMPONENT / "__init__.py")
+        self.assertIn("2.4.8.2-voice-popup.7", init)
+
     def test_voice_pack_tile_is_compact_and_cannot_overflow_grid(self) -> None:
         for path in (
             ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
