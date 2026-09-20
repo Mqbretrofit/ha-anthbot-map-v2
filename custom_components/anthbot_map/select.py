@@ -183,6 +183,10 @@ class AnthbotVoicePackSelect(
             )
         )
 
+    async def async_update(self) -> None:
+        """Refresh Community voices and paid entitlements on explicit HA request."""
+        await self._async_refresh_community_catalog(None)
+
     async def _async_reload_catalog(self) -> None:
         async with self._catalog_refresh_lock:
             try:
