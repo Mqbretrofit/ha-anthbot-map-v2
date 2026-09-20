@@ -3467,6 +3467,92 @@ class AnthbotMapCard extends HTMLElement {
       }
     };
 
+    const stopVoicePurchaseWatch = () => {
+      if (this.voicePurchaseWatchInterval) {
+        window.clearInterval(this.voicePurchaseWatchInterval);
+        this.voicePurchaseWatchInterval = null;
+      }
+      if (this.voicePurchaseWatchTimeout) {
+        window.clearTimeout(this.voicePurchaseWatchTimeout);
+        this.voicePurchaseWatchTimeout = null;
+      }
+      if (this.voicePurchaseFocusHandler) {
+        window.removeEventListener("focus", this.voicePurchaseFocusHandler);
+        this.voicePurchaseFocusHandler = null;
+      }
+    };
+
+    const refreshVoiceStoreEntitlements = async (lockedLabel) => {
+      if (!entityId) return true;
+      const latest = this._hass.states[entityId];
+      const locked = latest?.attributes?.voice_store_locked_voice_ids;
+      if (
+        locked
+        && typeof locked === "object"
+        && !Object.prototype.hasOwnProperty.call(locked, lockedLabel)
+      ) {
+        return true;
+      }
+      try {
+        await this._hass.callService("homeassistant", "update_entity", {
+          entity_id: entityId,
+        });
+      } catch (_error) {
+        return false;
+      }
+      const refreshed = this._hass.states[entityId];
+      const refreshedLocked = refreshed?.attributes?.voice_store_locked_voice_ids;
+      return Boolean(
+        refreshedLocked
+        && typeof refreshedLocked === "object"
+        && !Object.prototype.hasOwnProperty.call(refreshedLocked, lockedLabel)
+      );
+    };
+
+    const startVoicePurchaseWatch = (lockedLabel) => {
+      stopVoicePurchaseWatch();
+      const startedAt = Date.now();
+      const fastWindowMs = 90 * 1000;
+      const maxWindowMs = 10 * 60 * 1000;
+      let refreshing = false;
+
+      const refresh = async () => {
+        if (refreshing) return;
+        if (Date.now() - startedAt >= maxWindowMs) {
+          stopVoicePurchaseWatch();
+          return;
+        }
+        refreshing = true;
+        try {
+          if (await refreshVoiceStoreEntitlements(lockedLabel)) {
+            stopVoicePurchaseWatch();
+          }
+        } finally {
+          refreshing = false;
+        }
+      };
+
+      this.voicePurchaseFocusHandler = () => {
+        void refresh();
+      };
+      window.addEventListener("focus", this.voicePurchaseFocusHandler);
+
+      this.voicePurchaseWatchInterval = window.setInterval(() => {
+        if (Date.now() - startedAt >= fastWindowMs) {
+          window.clearInterval(this.voicePurchaseWatchInterval);
+          this.voicePurchaseWatchInterval = null;
+          return;
+        }
+        void refresh();
+      }, 5000);
+
+      this.voicePurchaseWatchTimeout = window.setTimeout(
+        stopVoicePurchaseWatch,
+        maxWindowMs,
+      );
+      window.setTimeout(() => void refresh(), 3000);
+    };
+
     select.addEventListener("change", async () => {
       if (!select.value) return;
       const requestedValue = select.value;
@@ -3494,6 +3580,7 @@ class AnthbotMapCard extends HTMLElement {
         }
         if (checkoutUrl) {
           this.notify(this.t("voicePurchaseRequired"));
+          startVoicePurchaseWatch(requestedValue);
           window.open(checkoutUrl, "_blank", "noopener,noreferrer");
         } else {
           this.notify(voiceStoreError || this.t("voiceStoreUnavailable"));
