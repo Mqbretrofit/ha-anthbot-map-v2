@@ -250,7 +250,7 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn("window.open(checkoutUrl", card)
             self.assertIn("attrs.locked_community_pack_count", card)
             self.assertIn('this.t("voiceStorePaidAvailable")', card)
-            self.assertIn("./i18n.js?v=2482-voice-popup2", card)
+            self.assertIn("./i18n.js?v=2482-voice-popup3", card)
 
         for path in (
             ROOT / "www" / "anthbot-map" / "i18n.js",
@@ -495,6 +495,31 @@ class VoicePackSupportTests(unittest.TestCase):
                     f"{key} must be translated in all 23 languages",
                 )
 
+    def test_voice_popup_detail_strings_are_translated_to_german(self) -> None:
+        expected = (
+            'voicePack: "Sprachpaket"',
+            'voiceInstallMetadataConfirmedShort: "✅ Speicherplatz + Version bestätigt"',
+            'voiceCommandConfirmed: "✅ Installation erfolgreich — vom Mäher bestätigt"',
+            'voiceCommandAttempt: "Versuch"',
+            'voiceRobotReport: "Mähermeldung"',
+            'voiceSelectPlaceholder: "— Sprachpaket auswählen —"',
+            'voiceSearchPlaceholder: "Sprache oder Stimme suchen…"',
+            'voiceSearchNoResults: "Keine passende Stimme"',
+        )
+        for path in (
+            ROOT / "www" / "anthbot-map" / "i18n.js",
+            COMPONENT / "frontend" / "i18n.js",
+        ):
+            i18n = _read(path)
+            block = i18n.split("const voicePopupDetailTranslations = {", 1)[1].split(
+                "Object.assign(translations.de", 1,
+            )[0]
+            for translated in expected:
+                self.assertIn(translated, block)
+            self.assertNotIn('voicePack: "Voice pack"', block)
+            self.assertNotIn('voiceRobotReport: "Mower report"', block)
+            self.assertNotIn('voiceSelectPlaceholder: "— Select a voice pack —"', block)
+
     def test_voice_pack_controls_live_in_popup_with_compact_summary_tile(self) -> None:
         for path in (
             ROOT / "www" / "anthbot-map" / "anthbot-map-card.js",
@@ -576,7 +601,7 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn('placeholder.style.color = "#fff"', card)
 
         init = _read(COMPONENT / "__init__.py")
-        self.assertIn("2.4.8.2-voice-popup.7", init)
+        self.assertIn("2.4.8.2-voice-popup.8", init)
 
     def test_voice_pack_tile_is_compact_and_cannot_overflow_grid(self) -> None:
         for path in (
