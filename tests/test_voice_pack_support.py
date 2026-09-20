@@ -250,7 +250,7 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn("window.open(checkoutUrl", card)
             self.assertIn("attrs.locked_community_pack_count", card)
             self.assertIn('this.t("voiceStorePaidAvailable")', card)
-            self.assertIn("./i18n.js?v=2482-voice-popup4", card)
+            self.assertIn("./i18n.js?v=2482-voice-popup5", card)
 
         for path in (
             ROOT / "www" / "anthbot-map" / "i18n.js",
@@ -305,7 +305,7 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn('window.open(voiceStoreUrl, "_blank", "noopener,noreferrer")', card)
             self.assertIn('this.t("voiceStorePurchasedCount")', card)
             self.assertIn("attrs.voice_store_error", card)
-            self.assertIn("./i18n.js?v=2482-voice-popup4", card)
+            self.assertIn("./i18n.js?v=2482-voice-popup5", card)
 
         for path in (
             ROOT / "www" / "anthbot-map" / "i18n.js",
@@ -589,7 +589,7 @@ class VoicePackSupportTests(unittest.TestCase):
                 "this.openVoicePackDialog({ refresh: true })",
                 card,
             )
-            self.assertIn("./i18n.js?v=2482-voice-popup4", card)
+            self.assertIn("./i18n.js?v=2482-voice-popup5", card)
 
         for path in (
             ROOT / "www" / "anthbot-map" / "i18n.js",
@@ -652,7 +652,7 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn('placeholder.style.color = "#fff"', card)
 
         init = _read(COMPONENT / "__init__.py")
-        self.assertIn("2.4.8.2-voice-popup.9", init)
+        self.assertIn("2.4.8.2-voice-popup.10", init)
 
     def test_voice_pack_tile_is_compact_and_cannot_overflow_grid(self) -> None:
         for path in (
