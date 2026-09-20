@@ -746,6 +746,15 @@ class AnthbotVoicePackSelect(
             "voice_store_connected": bool(self._voice_store_url),
             "voice_store_entitlement_count": self._voice_store_entitlement_count,
             "voice_store_error": self._voice_store_error,
+            "voice_store_locked_pack_ids": {
+                pack.label: pack.store_pack_id
+                for pack in self._catalog_by_label.values()
+                if (
+                    pack.source == "community"
+                    and pack.locked
+                    and pack.store_pack_id
+                )
+            },
             "official_pack_count": sum(
                 1 for pack in self._catalog_by_label.values() if pack.source == "anthbot"
             ),
