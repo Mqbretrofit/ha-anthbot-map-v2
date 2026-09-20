@@ -1093,6 +1093,50 @@ for (const [language, values] of Object.entries(voiceStoreTranslations)) {
   Object.assign(translations[language] || (translations[language] = {}), values);
 }
 
+const voicePopupDetailTranslations = {
+  de: {
+    voicePack: "Sprachpaket",
+    voiceInstallVerified: "✅ Der Roboter hat das installierte Sprachpaket bestätigt",
+    voiceInstallVerifiedShort: "✅ Bestätigt",
+    voiceInstallCommunityVerified: "✅ Installation erfolgreich — der Mäher meldet den erwarteten Speicherplatz/die erwartete Version und 100 % Erfolg",
+    voiceInstallCommunityVerifiedShort: "✅ Installation erfolgreich",
+    voiceInstallMetadataConfirmed: "✅ Der Mäher meldet den erwarteten Speicherplatz und die Version; die genaue Community-Audiodatei kann nicht zurückgelesen werden",
+    voiceInstallMetadataConfirmedShort: "✅ Speicherplatz + Version bestätigt",
+    voiceInstallSlotConfirmed: "⚠ Der Mäher meldet den erwarteten Sprachspeicherplatz; die genaue Community-Audiodatei kann nicht zurückgelesen werden",
+    voiceInstallSlotConfirmedShort: "⚠ Sprachspeicherplatz bestätigt",
+    voiceInstallPending: "⏳ Installationsbefehl gesendet; warte auf Bestätigung durch den Mäher",
+    voiceInstallPendingShort: "⏳ Warte auf Bestätigung",
+    voiceInstallDownloadFailed: "❌ Der Mäher konnte das Sprachpaket nicht herunterladen",
+    voiceInstallDownloadFailedShort: "❌ Download fehlgeschlagen",
+    voiceInstallMismatch: "⚠ Der Mäher meldet eine andere Stimme",
+    voiceInstallMismatchShort: "⚠ Andere Stimme gemeldet",
+    voiceInstallUnconfirmed: "⚠ Der Mäher hat nicht genügend Daten gemeldet, um die Installation zu bestätigen",
+    voiceInstallUnconfirmedShort: "⚠ Nicht bestätigt",
+    voiceInstallFailed: "❌ Installationsbefehl für das Sprachpaket fehlgeschlagen",
+    voiceInstallFailedShort: "❌ Installation fehlgeschlagen",
+    voiceInstallReported: "ℹ Vom Mäher gemeldete Stimme",
+    voiceInstallReportedShort: "ℹ Vom Mäher gemeldete Stimme",
+    voiceInstallUnknown: "Die Sprachidentität wird vom Mäher nicht gemeldet",
+    voiceInstallUnknownShort: "Keine Sprach-ID gemeldet",
+    voiceRobotReport: "Mähermeldung",
+    voiceSelectPlaceholder: "— Sprachpaket auswählen —",
+    voiceSearchPlaceholder: "Sprache oder Stimme suchen…",
+    voiceSearchNoResults: "Keine passende Stimme",
+    voiceCommandSending: "Installationsbefehl wird gesendet…",
+    voiceCommandSent: "Installationsbefehl gesendet; der Mäher wird geprüft",
+    voiceCommandRetrying: "Der Mäher hat noch nicht umgeschaltet; automatischer neuer Versuch…",
+    voiceCommandConfirmed: "✅ Installation erfolgreich — vom Mäher bestätigt",
+    voiceCommandSlotConfirmed: "Befehl gesendet — erwarteter Sprachspeicherplatz vom Mäher gemeldet",
+    voiceCommandFailed: "❌ Installationsbefehl konnte nicht gesendet werden",
+    voiceCommandRetryFailed: "⚠ Automatischer neuer Versuch konnte nicht gesendet werden",
+    voiceCommandDownloadFailed: "❌ Der Mäher hat einen Downloadfehler des Sprachpakets gemeldet",
+    voiceCommandNotConfirmed: "❌ Der Sprachwechsel wurde vom Mäher nicht bestätigt",
+    voiceCommandAttempt: "Versuch",
+    voiceRetryButton: "Sprachinstallation erneut versuchen",
+  },
+};
+Object.assign(translations.de || (translations.de = {}), voicePopupDetailTranslations.de);
+
 export function normalizeLanguage(value) {
   const raw = String(value || "en").replace("_", "-");
   const lower = raw.toLowerCase();
