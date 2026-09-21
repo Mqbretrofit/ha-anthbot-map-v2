@@ -29,13 +29,13 @@ Latest release: [Anthbot Map v2.4.9.0](https://github.com/Mqbretrofit/ha-anthbot
 
 ### Highlights in 2.4.9.0
 
-- Adds model-aware **voice-pack management** and the ANTHBOT Community Voice Store.
+- Adds **voice-pack management for speech-capable ANTHBOT Genie models** and the ANTHBOT Community Voice Store. M9/M9 Pro do not support spoken voice packs; their existing volume control remains available.
 - Adds Stripe-backed paid voice purchases with automatic entitlement recognition and unlock refresh without manually reloading the Anthbot Map page.
-- Installs purchased community voices on supported mowers through the ANTHBOT voice OTA path with status and verification feedback.
+- Installs purchased community voices on compatible **Genie** mowers through the ANTHBOT voice OTA path with status and verification feedback.
 - Adds a native Home Assistant **Firmware Update** entity using ANTHBOT vendor metadata, presigned package URLs, MD5 validation, manual installation and progress reporting.
 - Keeps unverified automatic firmware-update writes disabled.
 - Moves project-controlled voice-store, diagnostics and developer API traffic to `anthbotmap.com`.
-- Real-device validation completed for the full Voice Store → Stripe payment → automatic unlock → purchased voice installation flow.
+- Real-device validation completed on **Genie 1000** for the full Voice Store → Stripe payment → automatic unlock → purchased voice installation flow.
 
 ### Highlights in 2.4.8.2
 
