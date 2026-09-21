@@ -21,6 +21,16 @@ Stabil verzió: **2.4.9.0**
 
 Legfrissebb kiadás: [Anthbot Map v2.4.9.0](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.9.0)
 
+### A 2.4.9.0 legfontosabb változásai
+
+- Új **hangcsomag-kezelés a beszédképes ANTHBOT Genie modellekhez** és ANTHBOT Community Hangbolt. Az M9/M9 Pro nem támogat beszédhangcsomagokat; a meglévő hangerőkezelésük továbbra is elérhető.
+- Fizetős hangok Stripe-vásárlása, automatikus jogosultság-felismerése és oldalfrissítés nélküli feloldása.
+- Megvásárolt közösségi hangok telepítése a kompatibilis **Genie** robotokra az ANTHBOT voice OTA útvonalán, állapot- és ellenőrzési visszajelzéssel.
+- Új natív Home Assistant **Firmware Update** entitás az ANTHBOT gyári firmware-metaadataival, presigned letöltési URL-lel, MD5-ellenőrzéssel, kézi telepítéssel és folyamatjelzéssel.
+- A nem igazolt automatikus firmware-frissítési írás továbbra sincs engedélyezve.
+- A projekt által kezelt hangbolt-, diagnosztikai és fejlesztői API-k az `anthbotmap.com` végpontokat használják.
+- Valós eszközös ellenőrzés **Genie 1000** roboton: a Hangbolt → Stripe fizetés → automatikus feloldás → megvásárolt hang robotra telepítése teljes folyamat sikeresen működik.
+
 ### A 2.4.8.2 legfontosabb változásai
 
 - Külön **Pion / MGC** modellcsalád került be az `MGC500`, `MGC750` és `MGC1000` azonosítókhoz; ezek a robotok már nem a Genie-specifikus ágra esnek vissza.
