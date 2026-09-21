@@ -36,16 +36,16 @@ DEFAULT_DEVELOPER_AGENT_ENABLED = False
 # Project-controlled developer-reporting endpoints. These remain opt-in and
 # are intentionally separate from ANTHBOT/TMT vendor infrastructure.
 DEVELOPER_TELEMETRY_ENDPOINT = (
-    "https://reports.mqbretrofithungary.online/api/anthbot/telemetry"
+    "https://anthbotmap.com/api/anthbot/telemetry"
 )
 DEVELOPER_DIAGNOSTICS_ENDPOINT = (
-    "https://reports.mqbretrofithungary.online/api/anthbot/diagnostics"
+    "https://anthbotmap.com/api/anthbot/diagnostics"
 )
 DEVELOPER_AGENT_POLL_ENDPOINT = (
-    "https://reports.mqbretrofithungary.online/api/anthbot/developer-agent/poll"
+    "https://anthbotmap.com/api/anthbot/developer-agent/poll"
 )
 DEVELOPER_AGENT_RESULT_ENDPOINT = (
-    "https://reports.mqbretrofithungary.online/api/anthbot/developer-agent/result"
+    "https://anthbotmap.com/api/anthbot/developer-agent/result"
 )
 
 # Known category_id values (as reported by /api/v1.8.2/device/bindList).
