@@ -9,6 +9,7 @@ import secrets
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import MATCH_ALL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -123,6 +124,11 @@ class AnthbotVoicePackSelect(
     _attr_has_entity_name = True
     _attr_name = "Voice pack"
     _attr_icon = "mdi:account-voice"
+    # The Voice Pack entity exposes a large, frequently changing catalogue and
+    # store/install diagnostics for the live UI. They are useful at runtime but
+    # not as historical Recorder attributes; keeping them out of the database
+    # also prevents the 16 KiB state-attribute limit from being exceeded.
+    _unrecorded_attributes = frozenset({MATCH_ALL})
 
     def __init__(
         self,

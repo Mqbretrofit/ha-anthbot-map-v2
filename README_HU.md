@@ -21,6 +21,12 @@ Stabil verzió: **2.4.9.0**
 
 Legfrissebb kiadás: [Anthbot Map v2.4.9.0](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.9.0)
 
+### A 2.4.9.1 legfontosabb változásai
+
+- Javítja a `Next mow` szenzor időzített frissítéséből származó Home Assistant thread-safety RuntimeErrort.
+- A percenkénti `Next mow` frissítés megmarad, de már biztonságosan a Home Assistant event loopon fut.
+- Megszünteti a Voice Pack select 16 KiB-os Recorder attribútumlimit-túllépését: a nagy, élő hangkatalógus-/hangbolt-/telepítési diagnosztikai attribútumok nem kerülnek adatbázis-előzménybe, miközben az aktuális állapotban és a felületen továbbra is elérhetők.
+
 ### A 2.4.9.0 legfontosabb változásai
 
 - Új **hangcsomag-kezelés a beszédképes ANTHBOT Genie modellekhez** és ANTHBOT Community Hangbolt. Az M9/M9 Pro nem támogat beszédhangcsomagokat; a meglévő hangerőkezelésük továbbra is elérhető.

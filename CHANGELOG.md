@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.4.9.1 — 2026-09-21
+
+- Fixes Home Assistant thread-safety error #61 in the `Next mow` timestamp sensor: its one-minute refresh now runs as an event-loop callback instead of calling `async_write_ha_state()` from an executor thread.
+- Keeps the existing one-minute `Next mow` refresh behavior, so time-dependent schedule state continues to update without waiting for new mower data.
+- Prevents Recorder warnings for the Voice Pack select exceeding Home Assistant's 16 KiB state-attribute limit by keeping its large live catalogue/store/install diagnostics out of Recorder history while leaving them available to the current-state UI.
+- Adds regression coverage for both the event-loop-safe `Next mow` refresh and the Voice Pack Recorder exclusion.
+
 ## 2.4.9.0 — 2026-09-21
 
 - Adds **voice-pack management for speech-capable ANTHBOT Genie models**. M9/M9 Pro do not support spoken voice packs and therefore do not expose voice-pack selection or installation; their existing volume control remains available.
