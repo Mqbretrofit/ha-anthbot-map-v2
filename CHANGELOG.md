@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.4.9.0 — 2026-09-21
+
+- Adds model-aware **voice-pack management** for supported ANTHBOT mowers. Genie-family mowers can browse and install spoken voice packs, while M9/M9 Pro keep voice-volume support without exposing unsupported spoken packs.
+- Adds the **ANTHBOT Community Voice Store** flow, including free/paid catalogue entries, anonymous client pairing, Stripe-backed entitlement recognition, locked/unlocked states, and automatic entitlement refresh after returning from checkout.
+- Uses the project-controlled `anthbotmap.com` endpoints for the voice catalogue, store pairing/entitlements, telemetry, diagnostics and read-only Developer Agent traffic.
+- Adds verified custom/community voice installation through the ANTHBOT `voice_set` OTA path, with request state, progress, retry handling and mower-side confirmation metadata.
+- Adds a built-in verified Hungarian community voice fallback and preserves model/capability guards so unsupported mowers are not offered spoken voice packages.
+- Adds native Home Assistant **firmware Update entities** backed by ANTHBOT's vendor firmware metadata, presigned package URL flow, MD5 validation, manual install command, progress and release notes.
+- Keeps unverified automatic firmware-update writes disabled; the robot-reported automatic-update flag remains read-only.
+- Hardware validation: Community Voice Store purchase, entitlement unlock and purchased voice installation were verified end-to-end on a real supported mower. Existing mower functions were regression-checked on the OTA test build, and firmware metadata correctly reports an up-to-date mower when no newer vendor package is offered.
+- Adds dedicated regression coverage for firmware OTA, model-aware voice support, paid voice-store entitlements, install verification and frontend refresh behavior.
+
 ## 2.4.8.2 — 2026-09-18
 
 - Adds an isolated **Pion / MGC** model family and recognizes cloud model identifiers such as `MGC500`, `MGC750` and `MGC1000` instead of routing them through Genie-only behavior.
