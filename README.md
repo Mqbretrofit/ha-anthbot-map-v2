@@ -27,6 +27,12 @@ Stable version: **2.4.9.0**
 
 Latest release: [Anthbot Map v2.4.9.0](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.9.0)
 
+### Highlights in 2.4.9.1
+
+- Fixes the Home Assistant thread-safety RuntimeError from the `Next mow` sensor's periodic refresh.
+- Keeps the one-minute `Next mow` refresh, but executes it safely on the Home Assistant event loop.
+- Stops the Voice Pack select from overflowing Recorder's 16 KiB attribute limit by excluding its large live diagnostics from database history; the live UI still receives them.
+
 ### Highlights in 2.4.9.0
 
 - Adds **voice-pack management for speech-capable ANTHBOT Genie models** and the ANTHBOT Community Voice Store. M9/M9 Pro do not support spoken voice packs; their existing volume control remains available.
