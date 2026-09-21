@@ -68,16 +68,16 @@ def normalize_reported_voice_name(name: str | None) -> tuple[str | None, str | N
 # The endpoint may be empty/unavailable while the registry is being prepared;
 # official ANTHBOT packs remain usable in that case.
 COMMUNITY_VOICE_REGISTRY_URL = (
-    "https://reports.mqbretrofithungary.online/api/anthbot/store/voice-packs"
+    "https://anthbotmap.com/api/anthbot/store/voice-packs"
 )
 OFFICIAL_VOICE_CACHE_URL = (
-    "https://reports.mqbretrofithungary.online/api/anthbot/voice-packs/cache-official"
+    "https://anthbotmap.com/api/anthbot/voice-packs/cache-official"
 )
 VOICE_STORE_PAIR_URL = (
-    "https://reports.mqbretrofithungary.online/api/anthbot/store/client/pair"
+    "https://anthbotmap.com/api/anthbot/store/client/pair"
 )
 VOICE_STORE_ENTITLEMENTS_URL = (
-    "https://reports.mqbretrofithungary.online/api/anthbot/store/client/entitlements"
+    "https://anthbotmap.com/api/anthbot/store/client/entitlements"
 )
 
 # Every custom/Community voice is installed into the same Genie factory slot.
