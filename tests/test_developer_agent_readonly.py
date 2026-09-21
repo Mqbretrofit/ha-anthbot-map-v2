@@ -124,8 +124,8 @@ class DeveloperAgentReadonlyTests(unittest.TestCase):
 
     def test_agent_endpoints_are_project_controlled(self) -> None:
         const = (PACKAGE / "const.py").read_text(encoding="utf-8")
-        self.assertIn("reports.mqbretrofithungary.online/api/anthbot/developer-agent/poll", const)
-        self.assertIn("reports.mqbretrofithungary.online/api/anthbot/developer-agent/result", const)
+        self.assertIn("anthbotmap.com/api/anthbot/developer-agent/poll", const)
+        self.assertIn("anthbotmap.com/api/anthbot/developer-agent/result", const)
         self.assertNotIn("installer.tmt-automation.com/api/anthbot/developer-agent", const)
 
 
