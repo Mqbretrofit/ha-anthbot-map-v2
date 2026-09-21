@@ -2,7 +2,7 @@
 
 [English](README.md) | [Magyar](README_HU.md)
 
-[![Release](https://img.shields.io/badge/release-v2.4.8.2-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.8.2)
+[![Release](https://img.shields.io/badge/release-v2.4.9.0-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.9.0)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
 [![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Mqbretrofit&repository=ha-anthbot-map-v2&category=integration)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -23,9 +23,19 @@ If this integration is useful to you, you can support continued development thro
 
 ## Current version
 
-Stable version: **2.4.8.2**
+Stable version: **2.4.9.0**
 
-Latest release: [Anthbot Map v2.4.8.2](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.8.2)
+Latest release: [Anthbot Map v2.4.9.0](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.9.0)
+
+### Highlights in 2.4.9.0
+
+- Adds model-aware **voice-pack management** and the ANTHBOT Community Voice Store.
+- Adds Stripe-backed paid voice purchases with automatic entitlement recognition and unlock refresh without manually reloading the Anthbot Map page.
+- Installs purchased community voices on supported mowers through the ANTHBOT voice OTA path with status and verification feedback.
+- Adds a native Home Assistant **Firmware Update** entity using ANTHBOT vendor metadata, presigned package URLs, MD5 validation, manual installation and progress reporting.
+- Keeps unverified automatic firmware-update writes disabled.
+- Moves project-controlled voice-store, diagnostics and developer API traffic to `anthbotmap.com`.
+- Real-device validation completed for the full Voice Store → Stripe payment → automatic unlock → purchased voice installation flow.
 
 ### Highlights in 2.4.8.2
 
@@ -201,7 +211,7 @@ Resource type: **JavaScript module**.
 If it must be added manually, use:
 
 ```text
-/anthbot-map-v2/anthbot-map-card.js?v=2.4.7.3
+/anthbot-map-v2/anthbot-map-card.js?v=2.4.9.0
 ```
 
 Only one Anthbot Map Card resource should be enabled at a time.
@@ -311,7 +321,7 @@ When using HACS:
 In YAML resource mode, update the cache-busting query to the installed version, for example:
 
 ```text
-/anthbot-map-v2/anthbot-map-card.js?v=2.4.7.3
+/anthbot-map-v2/anthbot-map-card.js?v=2.4.9.0
 ```
 
 # Troubleshooting
