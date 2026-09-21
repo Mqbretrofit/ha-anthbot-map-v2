@@ -2,7 +2,7 @@
 
 [English](README.md) | Magyar
 
-[![Kiadás](https://img.shields.io/badge/release-v2.4.8.2-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.8.2)
+[![Kiadás](https://img.shields.io/badge/release-v2.4.9.0-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.9.0)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
 [![Megnyitás HACS-ban](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Mqbretrofit&repository=ha-anthbot-map-v2&category=integration)
 [![Licenc: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -17,9 +17,9 @@ Az Anthbot Map összekapcsolja a Home Assistantot az ANTHBOT felhővel, modellen
 
 ## Aktuális verzió
 
-Stabil verzió: **2.4.8.2**
+Stabil verzió: **2.4.9.0**
 
-Legfrissebb kiadás: [Anthbot Map v2.4.8.2](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.8.2)
+Legfrissebb kiadás: [Anthbot Map v2.4.9.0](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.9.0)
 
 ### A 2.4.8.2 legfontosabb változásai
 
@@ -195,7 +195,7 @@ Típus: **JavaScript module**.
 Ha kézzel kell felvenni, ezt használd:
 
 ```text
-/anthbot-map-v2/anthbot-map-card.js?v=2.4.7.3
+/anthbot-map-v2/anthbot-map-card.js?v=2.4.9.0
 ```
 
 Egyszerre csak egy Anthbot Map Card resource legyen engedélyezve.
@@ -305,7 +305,7 @@ HACS használatakor:
 YAML resource módban a cache-busting verziót is állítsd az aktuális verzióra, például:
 
 ```text
-/anthbot-map-v2/anthbot-map-card.js?v=2.4.7.3
+/anthbot-map-v2/anthbot-map-card.js?v=2.4.9.0
 ```
 
 # Hibakeresés
