@@ -207,6 +207,16 @@ class VoicePackSupportTests(unittest.TestCase):
             voice,
         )
 
+    def test_voice_pack_large_attributes_are_not_recorded(self) -> None:
+        select = _read(COMPONENT / "select.py")
+        self.assertIn("from homeassistant.const import MATCH_ALL", select)
+        self.assertIn(
+            "_unrecorded_attributes = frozenset({MATCH_ALL})",
+            select,
+        )
+        self.assertIn('"voice_store_locked_voice_ids"', select)
+        self.assertIn('"requested_voice_url"', select)
+
     def test_paid_voices_are_visible_before_purchase_and_locked(self) -> None:
         select = _read(COMPONENT / "select.py")
         voice = _read(COMPONENT / "voice_packs.py")
