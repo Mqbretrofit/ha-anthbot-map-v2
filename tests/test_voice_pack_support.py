@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 import sys
 import types
@@ -661,8 +662,9 @@ class VoicePackSupportTests(unittest.TestCase):
             )
             self.assertIn('placeholder.style.color = "#fff"', card)
 
+        manifest = json.loads(_read(COMPONENT / "manifest.json"))
         init = _read(COMPONENT / "__init__.py")
-        self.assertIn("2.4.9.0", init)
+        self.assertIn(f'?v={manifest["version"]}', init)
 
     def test_voice_pack_tile_is_compact_and_cannot_overflow_grid(self) -> None:
         for path in (
