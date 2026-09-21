@@ -3531,6 +3531,8 @@ class AnthbotMapCard extends HTMLElement {
       }
       if (this.voicePurchaseFocusHandler) {
         window.removeEventListener("focus", this.voicePurchaseFocusHandler);
+        window.removeEventListener("pageshow", this.voicePurchaseFocusHandler);
+        document.removeEventListener("visibilitychange", this.voicePurchaseFocusHandler);
         this.voicePurchaseFocusHandler = null;
       }
     };
@@ -3608,10 +3610,14 @@ class AnthbotMapCard extends HTMLElement {
       };
 
       this.voicePurchaseFocusHandler = () => {
+        if (document.visibilityState === "hidden") return;
         void refresh();
         window.setTimeout(() => void refresh(), 600);
+        window.setTimeout(() => void refresh(), 1800);
       };
       window.addEventListener("focus", this.voicePurchaseFocusHandler);
+      window.addEventListener("pageshow", this.voicePurchaseFocusHandler);
+      document.addEventListener("visibilitychange", this.voicePurchaseFocusHandler);
 
       this.voicePurchaseWatchInterval = window.setInterval(() => {
         if (!slowMode && Date.now() - startedAt >= fastWindowMs) {
