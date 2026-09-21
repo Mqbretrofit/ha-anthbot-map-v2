@@ -52,6 +52,13 @@ class ScheduleOverrideSourceTests(unittest.TestCase):
         self.assertIn('"zones": "zones"', calendar)
         self.assertIn('"height": "mow_height"', calendar)
 
+    def test_next_mow_periodic_refresh_is_event_loop_safe(self) -> None:
+        sensor = (INTEGRATION / "sensor.py").read_text(encoding="utf-8")
+        self.assertIn("from homeassistant.core import HomeAssistant, callback", sensor)
+        self.assertIn("@callback\n    def _handle_time_update", sensor)
+        self.assertIn("self._handle_time_update,", sensor)
+        self.assertNotIn("lambda _now: self.async_write_ha_state()", sensor)
+
     def test_weather_guard_delays_and_retries_safely(self) -> None:
         schedule = (INTEGRATION / "schedule_engine.py").read_text(encoding="utf-8")
         services = (INTEGRATION / "services.yaml").read_text(encoding="utf-8")
