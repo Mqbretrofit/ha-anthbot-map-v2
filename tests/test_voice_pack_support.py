@@ -84,7 +84,7 @@ class VoicePackSupportTests(unittest.TestCase):
         voice = _read(COMPONENT / "voice_packs.py")
         self.assertIn("/api/v1/voice/package/language", voice)
         self.assertIn(
-            "reports.mqbretrofithungary.online/api/anthbot/voice-packs",
+            "anthbotmap.com/api/anthbot/voice-packs",
             voice,
         )
         self.assertIn('cmd="voice_set"', voice)
