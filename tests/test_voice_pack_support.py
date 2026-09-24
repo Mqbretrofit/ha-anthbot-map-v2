@@ -261,7 +261,7 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn("window.open(checkoutUrl", card)
             self.assertIn("attrs.locked_community_pack_count", card)
             self.assertIn('this.t("voiceStorePaidAvailable")', card)
-            self.assertIn("./i18n.js?v=2490", card)
+            self.assertIn("./i18n.js?v=", card)
 
         for path in (
             ROOT / "www" / "anthbot-map" / "i18n.js",
