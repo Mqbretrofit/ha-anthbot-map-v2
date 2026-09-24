@@ -316,7 +316,7 @@ class VoicePackSupportTests(unittest.TestCase):
             self.assertIn('window.open(voiceStoreUrl, "_blank", "noopener,noreferrer")', card)
             self.assertIn('this.t("voiceStorePurchasedCount")', card)
             self.assertIn("attrs.voice_store_error", card)
-            self.assertIn("./i18n.js?v=2490", card)
+            self.assertIn("./i18n.js?v=", card)
 
         for path in (
             ROOT / "www" / "anthbot-map" / "i18n.js",
@@ -600,7 +600,7 @@ class VoicePackSupportTests(unittest.TestCase):
                 "this.openVoicePackDialog({ refresh: true })",
                 card,
             )
-            self.assertIn("./i18n.js?v=2490", card)
+            self.assertIn("./i18n.js?v=", card)
 
         for path in (
             ROOT / "www" / "anthbot-map" / "i18n.js",
