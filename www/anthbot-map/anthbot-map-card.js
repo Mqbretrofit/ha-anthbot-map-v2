@@ -520,6 +520,7 @@ class AnthbotMapCard extends HTMLElement {
           <div class="frontend-info-row"><span>Cloud / MQTT</span><strong data-role="info-cloud">–</strong></div>
           <div class="frontend-info-row"><span>${this.t("charging")}</span><strong data-role="info-charging">–</strong></div>
           <div class="frontend-info-row frontend-info-height"><span>${this.t("cutHeight")}</span><strong data-role="info-cut-height">–</strong></div>
+          <div class="frontend-info-row next-mow-line" data-role="next-mow-line" hidden><span>${anthbotScheduleText(this, "nextMow")}</span><strong data-role="info-next-mow">–</strong></div>
         </div>
       </div>`;
   }
@@ -3518,9 +3519,16 @@ class AnthbotMapCard extends HTMLElement {
     const raw = String(entity?.state || "").toLowerCase();
     const hasNextMow = Boolean(entity) && !["", "unknown", "unavailable", "none"].includes(raw);
     line.hidden = !hasNextMow;
-    line.textContent = hasNextMow
-      ? `${anthbotScheduleText(this, "nextMow")}: ${this.formatLocalDateTime(entity.state)}`
-      : "";
+    if (line.classList?.contains("frontend-info-row")) {
+      const label = line.querySelector("span");
+      const value = line.querySelector("strong");
+      if (label) label.textContent = anthbotScheduleText(this, "nextMow");
+      if (value) value.textContent = hasNextMow ? this.formatLocalDateTime(entity.state) : "–";
+    } else {
+      line.textContent = hasNextMow
+        ? `${anthbotScheduleText(this, "nextMow")}: ${this.formatLocalDateTime(entity.state)}`
+        : "";
+    }
   }
 
   mowingCompletionStorageKey() {
