@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.4.9.2-beta.1 — 2026-09-24
+
+- Uses **2.4.9.1 as the exact base**, preserving its Home Assistant thread-safety fix, Voice Pack Recorder protection, voice-store support and existing mower/model behavior.
+- Adds four browser-local map frontends: **Classic, Modern, Compact and Fullscreen**, without changing the shared backend command path.
+- Fixes responsive sizing so the lower action bar remains reachable on laptop/tablet layouts and the Fullscreen frontend uses the available map area instead of reserving excessive empty space.
+- Reworks **Classic mobile** behavior: portrait mode keeps the map visible with compact controls, while landscape mode exposes a compact **Mowing area** selector instead of relying on a long, hard-to-scroll target list.
+- Adds multi-zone selection and explicit mowing order editing for Classic mobile landscape without removing the existing manual/automatic zone handling.
+- Keeps the frontend selection browser/device-local and preserves the existing calibration, status/info and command functions.
+- Preserves all **23 supported UI languages** and adds localized text for the new Classic mobile area/zone-order controls in every supported language.
+- Adds regression coverage for the mirrored frontend bundle and the 23-language Classic mobile controls.
+
 ## 2.4.9.1 — 2026-09-21
 
 - Fixes Home Assistant thread-safety error #61 in the `Next mow` timestamp sensor: its one-minute refresh now runs as an event-loop callback instead of calling `async_write_ha_state()` from an executor thread.
