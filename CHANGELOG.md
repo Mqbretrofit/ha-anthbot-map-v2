@@ -10,6 +10,7 @@
 - Keeps the frontend selection browser/device-local and preserves the existing calibration, status/info and command functions.
 - Preserves all **23 supported UI languages** and adds localized text for the new Classic mobile area/zone-order controls in every supported language.
 - Adds regression coverage for the mirrored frontend bundle and the 23-language Classic mobile controls.
+- Updates source-level regression checks for generated frontend markup and prerelease manifest versioning without weakening the underlying behavior checks.
 
 ## 2.4.9.1 — 2026-09-21
 
