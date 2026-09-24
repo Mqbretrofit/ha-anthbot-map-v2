@@ -1,8 +1,9 @@
 # Changelog
 
-## 2.4.9.2-beta.1 — 2026-09-24
+## 2.4.9.2-beta1 — 2026-09-24
 
 - Uses **2.4.9.1 as the exact base**, preserving its Home Assistant thread-safety fix, Voice Pack Recorder protection, voice-store support and existing mower/model behavior.
+- Uses the Home Assistant/AwesomeVersion-compatible prerelease string **2.4.9.2-beta1** for this Beta 1 build.
 - Adds four browser-local map frontends: **Classic, Modern, Compact and Fullscreen**, without changing the shared backend command path.
 - Fixes responsive sizing so the lower action bar remains reachable on laptop/tablet layouts and the Fullscreen frontend uses the available map area instead of reserving excessive empty space.
 - Reworks **Classic mobile** behavior: portrait mode keeps the map visible with compact controls, while landscape mode exposes a compact **Mowing area** selector instead of relying on a long, hard-to-scroll target list.
