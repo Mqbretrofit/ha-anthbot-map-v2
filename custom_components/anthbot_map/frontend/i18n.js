@@ -2020,6 +2020,219 @@ for (const [language, values] of Object.entries(voicePopupDetailTranslations)) {
 }
 
 
+const classicMobileTranslations = {
+  "en": {
+    "classicMowingArea": "Mowing area",
+    "classicZonesOrder": "Zones / order",
+    "classicAll": "all",
+    "classicBack": "Back",
+    "classicZonesAndOrder": "Zones and order",
+    "classicDone": "Done",
+    "classicSelected": "Selected"
+  },
+  "hu": {
+    "classicMowingArea": "Nyírási terület",
+    "classicZonesOrder": "Zónák / sorrend",
+    "classicAll": "összes",
+    "classicBack": "Vissza",
+    "classicZonesAndOrder": "Zónák és sorrend",
+    "classicDone": "Kész",
+    "classicSelected": "Kijelölve"
+  },
+  "de": {
+    "classicMowingArea": "Mähbereich",
+    "classicZonesOrder": "Zonen / Reihenfolge",
+    "classicAll": "alle",
+    "classicBack": "Zurück",
+    "classicZonesAndOrder": "Zonen und Reihenfolge",
+    "classicDone": "Fertig",
+    "classicSelected": "Ausgewählt"
+  },
+  "fr": {
+    "classicMowingArea": "Zone de tonte",
+    "classicZonesOrder": "Zones / ordre",
+    "classicAll": "toutes",
+    "classicBack": "Retour",
+    "classicZonesAndOrder": "Zones et ordre",
+    "classicDone": "Terminé",
+    "classicSelected": "Sélectionnées"
+  },
+  "es": {
+    "classicMowingArea": "Área de corte",
+    "classicZonesOrder": "Zonas / orden",
+    "classicAll": "todas",
+    "classicBack": "Atrás",
+    "classicZonesAndOrder": "Zonas y orden",
+    "classicDone": "Listo",
+    "classicSelected": "Seleccionadas"
+  },
+  "it": {
+    "classicMowingArea": "Area di taglio",
+    "classicZonesOrder": "Zone / ordine",
+    "classicAll": "tutte",
+    "classicBack": "Indietro",
+    "classicZonesAndOrder": "Zone e ordine",
+    "classicDone": "Fatto",
+    "classicSelected": "Selezionate"
+  },
+  "pt": {
+    "classicMowingArea": "Área de corte",
+    "classicZonesOrder": "Zonas / ordem",
+    "classicAll": "todas",
+    "classicBack": "Voltar",
+    "classicZonesAndOrder": "Zonas e ordem",
+    "classicDone": "Concluído",
+    "classicSelected": "Selecionadas"
+  },
+  "nl": {
+    "classicMowingArea": "Maaigebied",
+    "classicZonesOrder": "Zones / volgorde",
+    "classicAll": "alle",
+    "classicBack": "Terug",
+    "classicZonesAndOrder": "Zones en volgorde",
+    "classicDone": "Klaar",
+    "classicSelected": "Geselecteerd"
+  },
+  "pl": {
+    "classicMowingArea": "Obszar koszenia",
+    "classicZonesOrder": "Strefy / kolejność",
+    "classicAll": "wszystkie",
+    "classicBack": "Wstecz",
+    "classicZonesAndOrder": "Strefy i kolejność",
+    "classicDone": "Gotowe",
+    "classicSelected": "Wybrane"
+  },
+  "cs": {
+    "classicMowingArea": "Oblast sečení",
+    "classicZonesOrder": "Zóny / pořadí",
+    "classicAll": "všechny",
+    "classicBack": "Zpět",
+    "classicZonesAndOrder": "Zóny a pořadí",
+    "classicDone": "Hotovo",
+    "classicSelected": "Vybráno"
+  },
+  "sk": {
+    "classicMowingArea": "Oblasť kosenia",
+    "classicZonesOrder": "Zóny / poradie",
+    "classicAll": "všetky",
+    "classicBack": "Späť",
+    "classicZonesAndOrder": "Zóny a poradie",
+    "classicDone": "Hotovo",
+    "classicSelected": "Vybrané"
+  },
+  "ro": {
+    "classicMowingArea": "Zonă de tundere",
+    "classicZonesOrder": "Zone / ordine",
+    "classicAll": "toate",
+    "classicBack": "Înapoi",
+    "classicZonesAndOrder": "Zone și ordine",
+    "classicDone": "Gata",
+    "classicSelected": "Selectate"
+  },
+  "da": {
+    "classicMowingArea": "Klippeområde",
+    "classicZonesOrder": "Zoner / rækkefølge",
+    "classicAll": "alle",
+    "classicBack": "Tilbage",
+    "classicZonesAndOrder": "Zoner og rækkefølge",
+    "classicDone": "Færdig",
+    "classicSelected": "Valgte"
+  },
+  "sv": {
+    "classicMowingArea": "Klipområde",
+    "classicZonesOrder": "Zoner / ordning",
+    "classicAll": "alla",
+    "classicBack": "Tillbaka",
+    "classicZonesAndOrder": "Zoner och ordning",
+    "classicDone": "Klar",
+    "classicSelected": "Valda"
+  },
+  "no": {
+    "classicMowingArea": "Klippeområde",
+    "classicZonesOrder": "Soner / rekkefølge",
+    "classicAll": "alle",
+    "classicBack": "Tilbake",
+    "classicZonesAndOrder": "Soner og rekkefølge",
+    "classicDone": "Ferdig",
+    "classicSelected": "Valgte"
+  },
+  "fi": {
+    "classicMowingArea": "Leikkuualue",
+    "classicZonesOrder": "Alueet / järjestys",
+    "classicAll": "kaikki",
+    "classicBack": "Takaisin",
+    "classicZonesAndOrder": "Alueet ja järjestys",
+    "classicDone": "Valmis",
+    "classicSelected": "Valittu"
+  },
+  "zh-CN": {
+    "classicMowingArea": "割草区域",
+    "classicZonesOrder": "区域 / 顺序",
+    "classicAll": "全部",
+    "classicBack": "返回",
+    "classicZonesAndOrder": "区域和顺序",
+    "classicDone": "完成",
+    "classicSelected": "已选择"
+  },
+  "zh-TW": {
+    "classicMowingArea": "割草區域",
+    "classicZonesOrder": "區域 / 順序",
+    "classicAll": "全部",
+    "classicBack": "返回",
+    "classicZonesAndOrder": "區域與順序",
+    "classicDone": "完成",
+    "classicSelected": "已選擇"
+  },
+  "tr": {
+    "classicMowingArea": "Biçme alanı",
+    "classicZonesOrder": "Bölgeler / sıra",
+    "classicAll": "tümü",
+    "classicBack": "Geri",
+    "classicZonesAndOrder": "Bölgeler ve sıra",
+    "classicDone": "Bitti",
+    "classicSelected": "Seçili"
+  },
+  "th": {
+    "classicMowingArea": "พื้นที่ตัดหญ้า",
+    "classicZonesOrder": "โซน / ลำดับ",
+    "classicAll": "ทั้งหมด",
+    "classicBack": "กลับ",
+    "classicZonesAndOrder": "โซนและลำดับ",
+    "classicDone": "เสร็จ",
+    "classicSelected": "เลือกแล้ว"
+  },
+  "vi": {
+    "classicMowingArea": "Khu vực cắt",
+    "classicZonesOrder": "Khu vực / thứ tự",
+    "classicAll": "tất cả",
+    "classicBack": "Quay lại",
+    "classicZonesAndOrder": "Khu vực và thứ tự",
+    "classicDone": "Xong",
+    "classicSelected": "Đã chọn"
+  },
+  "ko": {
+    "classicMowingArea": "잔디 깎기 구역",
+    "classicZonesOrder": "구역 / 순서",
+    "classicAll": "전체",
+    "classicBack": "뒤로",
+    "classicZonesAndOrder": "구역 및 순서",
+    "classicDone": "완료",
+    "classicSelected": "선택됨"
+  },
+  "km": {
+    "classicMowingArea": "តំបន់កាត់ស្មៅ",
+    "classicZonesOrder": "តំបន់ / លំដាប់",
+    "classicAll": "ទាំងអស់",
+    "classicBack": "ត្រឡប់ក្រោយ",
+    "classicZonesAndOrder": "តំបន់ និងលំដាប់",
+    "classicDone": "រួចរាល់",
+    "classicSelected": "បានជ្រើស"
+  }
+};
+for (const [language, values] of Object.entries(classicMobileTranslations)) {
+  Object.assign(translations[language] || (translations[language] = {}), values);
+}
+
 export function normalizeLanguage(value) {
   const raw = String(value || "en").replace("_", "-");
   const lower = raw.toLowerCase();
