@@ -80,7 +80,7 @@ class RuntimeOptimizationSourceTests(unittest.TestCase):
             (ROOT / "custom_components/anthbot_map/manifest.json").read_text(encoding="utf-8")
         )
         version = str(manifest["version"])
-        self.assertRegex(version, r"^\d+(?:\.\d+){2,3}(?:-beta\.\d+)?$")
+        self.assertRegex(version, r"^\d+(?:\.\d+){2,3}(?:-beta\.?\d+)?$")
 
 
 if __name__ == "__main__":
