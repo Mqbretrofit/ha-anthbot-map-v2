@@ -82,7 +82,7 @@ class ScheduleOverrideSourceTests(unittest.TestCase):
             encoding="utf-8"
         )
         sensor = (INTEGRATION / "sensor.py").read_text(encoding="utf-8")
-        self.assertIn('data-panel="schedule"', card)
+        self.assertIn('item("schedule", anthbotScheduleText(this, "schedule"), "mdi:calendar-clock")', card)
         self.assertIn("renderAnthbotSchedulePanel(this, body)", card)
         self.assertIn('nextMow: ["sensor", ["next_mow"]]', card)
         self.assertIn('data-role="next-mow-line" hidden', card)
