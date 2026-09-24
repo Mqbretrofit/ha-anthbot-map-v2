@@ -4029,7 +4029,6 @@ class AnthbotMapCard extends HTMLElement {
     }
     actionGrid.append(
       this.createPrimaryMowingTile(action),
-      this.createCommandTile(this.t("pauseTask"), this.t("pauseTaskSub"), "pause"),
       this.createCommandTile(this.t("stopLabel"), this.t("stopSub"), "stop"),
       this.createCommandTile(this.t("homeLabel"), this.t("homeSub"), "dock"),
     );
