@@ -166,7 +166,7 @@ class AnthbotMapCard extends HTMLElement {
         : { "zone-set": true, "auto-zone-set": false };
     const savedInterface = this.readInterfaceSettings(config.entity);
     const savedFrontendLayout = String(savedInterface.frontendLayout || "modern").trim().toLowerCase();
-    this.frontendLayout = new Set(["classic", "modern", "compact", "fullscreen"]).has(savedFrontendLayout)
+    this.frontendLayout = new Set(["origin", "classic", "modern", "compact", "fullscreen"]).has(savedFrontendLayout)
       ? savedFrontendLayout
       : "modern";
     const configuredButtonActions = config.button_actions || config.buttonActions || {};
@@ -452,6 +452,19 @@ class AnthbotMapCard extends HTMLElement {
 
 
   frontendTabsMarkup() {
+    if (this.frontendLayout === "origin") {
+      const item = (panel, label) => `<button type="button" data-panel="${panel}">${escapeHtml(label)}</button>`;
+      return [
+        item("control", this.t("control")),
+        item("schedule", anthbotScheduleText(this, "schedule")),
+        item("settings", this.t("robotSettings")),
+        item("interface", this.t("interfaceSettings")),
+        item("status", this.t("status")),
+        item("maintenance", this.t("maintenance")),
+        item("diagnostics", this.t("diagnostics")),
+        item("calibration", this.t("calibration")),
+      ].join("");
+    }
     const icon = (name) => `<ha-icon icon="${name}"></ha-icon>`;
     const item = (panel, label, mdi) => `<button type="button" data-panel="${panel}" title="${escapeHtml(label)}">${icon(mdi)}<span class="tab-label">${escapeHtml(label)}</span></button>`;
     return [
@@ -580,6 +593,33 @@ class AnthbotMapCard extends HTMLElement {
 
     const prepare = (button) => {
       if (!button) return "";
+
+      // A text-labelled button already explains itself in every layout.
+      // Suppress the duplicate hover tooltip globally; keep tooltips only for
+      // icon-only controls (close, zoom, calibration icons, etc.).
+      // Only count text that is actually visible. Several layouts intentionally
+      // hide .quick-label and show just the icon; those controls still need a
+      // tooltip even though button.textContent contains the hidden label.
+      const visibleTextParts = [];
+      const walker = document.createTreeWalker(button, NodeFilter.SHOW_TEXT);
+      let textNode;
+      while ((textNode = walker.nextNode())) {
+        const text = String(textNode.nodeValue || "").replace(/\s+/g, " ").trim();
+        if (!text || !/\p{L}/u.test(text)) continue;
+        const parent = textNode.parentElement;
+        if (!parent) continue;
+        const style = getComputedStyle(parent);
+        if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) continue;
+        if (!parent.getClientRects().length) continue;
+        visibleTextParts.push(text);
+      }
+      const visibleText = visibleTextParts.join(" ");
+      if (/\p{L}/u.test(visibleText)) {
+        button.removeAttribute("title");
+        delete button.dataset.tooltip;
+        return "";
+      }
+
       if (!button.dataset.tooltip) {
         const label =
           String(button.getAttribute("title") || "").trim()
@@ -794,6 +834,7 @@ class AnthbotMapCard extends HTMLElement {
     wrapper.innerHTML = `<div class="frontend-layout-picker-head"><strong>${this.t("interfaceSettings")}</strong></div><div class="frontend-layout-options" role="group" aria-label="${this.t("interfaceSettings")}"></div>`;
     const options = wrapper.querySelector(".frontend-layout-options");
     const layouts = [
+      ["origin", "Origin", "mdi:history"],
       ["classic", "Classic", "mdi:view-dashboard-outline"],
       ["modern", "Modern", "mdi:map-outline"],
       ["compact", "Compact", "mdi:view-grid-outline"],
@@ -816,7 +857,7 @@ class AnthbotMapCard extends HTMLElement {
 
   setFrontendLayout(layout) {
     const normalized = String(layout || "").trim().toLowerCase();
-    if (!["classic", "modern", "compact", "fullscreen"].includes(normalized)) return;
+    if (!["origin", "classic", "modern", "compact", "fullscreen"].includes(normalized)) return;
 
     // Fullscreen is a real browser fullscreen mode, not only a wide card layout.
     // This call happens directly from a user click in the layout picker, so browsers
@@ -1064,12 +1105,13 @@ class AnthbotMapCard extends HTMLElement {
           .frontend-layout-picker-head { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; margin-bottom:11px; }
           .frontend-layout-picker-head strong { font-size:15px; }
           .frontend-layout-picker-head span { font-size:11px; text-align:right; opacity:.68; }
-          .frontend-layout-options { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:9px; }
+          .frontend-layout-options { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:9px; }
           .frontend-layout-option { position:relative; min-width:0; min-height:108px; padding:12px 8px 10px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:9px; font:inherit; cursor:pointer; }
           .frontend-layout-option.active::after { content:"✓"; position:absolute; top:7px; right:7px; width:21px; height:21px; display:grid; place-items:center; border-radius:50%; font-size:12px; font-weight:1000; }
           .frontend-layout-icon { width:52px; height:52px; display:grid; place-items:center; border-radius:16px; border:1px solid rgba(127,127,127,.24); transition:transform .16s ease, box-shadow .16s ease; }
           .frontend-layout-icon ha-icon { --mdc-icon-size:28px; }
           .frontend-layout-option:hover .frontend-layout-icon { transform:translateY(-2px); }
+          .frontend-layout-icon.origin { background:linear-gradient(145deg,#12212d,#08121a); color:#55e58a; border-color:#355267; }
           .frontend-layout-icon.classic { background:linear-gradient(145deg,#24292d,#171a1d); color:#77e68c; border-color:#394147; }
           .frontend-layout-icon.modern { background:linear-gradient(145deg,#f5faf7,#dfece5); color:#168f5d; border-color:#cedfd5; }
           .frontend-layout-icon.compact { background:linear-gradient(145deg,#18304a,#0e2033); color:#5a9ff2; border-color:#294a69; }
@@ -1077,6 +1119,62 @@ class AnthbotMapCard extends HTMLElement {
           .frontend-layout-option.active .frontend-layout-icon { box-shadow:0 0 0 2px var(--mf-accent),0 8px 18px rgba(0,0,0,.16); }
           .frontend-layout-option strong { display:block; text-align:center; font-size:12px; line-height:1.15; }
           .frontend-layout-device-note { margin-top:10px; font-size:11px; line-height:1.35; opacity:.7; }
+
+          /* ========== ORIGIN / exact 2.4.9.1-style map-first glass UI ========== */
+          ha-card.layout-origin { position:relative; overflow:hidden; }
+          .layout-origin .frontend-main { display:block !important; padding:0 !important; }
+          .layout-origin .frontend-map-slot { width:100% !important; }
+          .layout-origin .frontend-side-slot, .layout-origin .frontend-top-slot, .layout-origin .frontend-bottom-slot { display:none !important; }
+          .layout-origin .canvas-wrap { width:100%; }
+          .layout-origin .frontend-info-control { display:none !important; }
+          .layout-origin .origin-menu-toggle { display:block !important; }
+          .layout-origin .frontend-drawer {
+            display:none; position:absolute; z-index:39; right:12px; bottom:70px;
+            width:min(1100px,calc(100% - 24px)); max-height:calc(100% - 84px); overflow:auto;
+            border:1px solid rgba(255,255,255,.34); border-radius:18px;
+            background:rgba(9,18,27,.16); color:#fff; backdrop-filter:blur(9px) saturate(115%);
+            box-shadow:0 16px 44px rgba(0,0,0,.24); overscroll-behavior:contain;
+          }
+          .layout-origin .frontend-drawer.open { display:block !important; }
+          .layout-origin .frontend-drawer-close { position:sticky; top:7px; float:right; z-index:8; margin:7px 7px 0 0; width:36px; height:36px; border:0; border-radius:50%; background:rgba(255,255,255,.12); color:#fff; font-size:22px; }
+          .layout-origin .app-shell, .layout-origin .app-panel { background:transparent !important; border:0 !important; }
+          .layout-origin .top-menu { background:rgba(255,255,255,.07) !important; border-radius:14px; margin:0 10px; }
+          .layout-origin .panel-tabs { display:grid !important; grid-template-columns:repeat(8,minmax(0,1fr)) !important; padding-inline:10px; gap:9px; }
+          .layout-origin .panel-tabs button { min-width:0; min-height:40px; padding:8px 4px !important; font-size:13px !important; line-height:1.15; overflow:hidden; }
+          .layout-origin .panel-tabs button .tab-label { display:block; width:100%; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center; }
+          .layout-origin .app-panel { padding:0 10px 10px !important; }
+          .layout-origin .mowing-target-tile > span { display:none !important; }
+          .layout-origin .calibration-overlay { right:12px; bottom:70px; }
+          /* Origin responsive sizing v3 — use the same measured visible-height contract
+             as the other layouts.  The map fills the available HA viewport in both
+             portrait and landscape; overlays stay inside the map. */
+          @media (max-width:900px), (max-height:720px) {
+            ha-card.layout-origin {
+              height:var(--anthbot-viewport-fill-height,calc(100dvh - 8px)) !important;
+              min-height:var(--anthbot-viewport-fill-min-height,240px) !important;
+              max-height:var(--anthbot-viewport-fill-max-height,none) !important;
+              overflow:hidden !important;
+            }
+            ha-card.layout-origin .frontend-frame,
+            ha-card.layout-origin .frontend-main,
+            ha-card.layout-origin .frontend-map-slot,
+            ha-card.layout-origin .canvas-wrap,
+            ha-card.layout-origin .canvas-wrap.auto-map-size {
+              width:100% !important;
+              height:100% !important;
+              min-height:0 !important;
+              max-height:100% !important;
+              aspect-ratio:auto !important;
+            }
+            ha-card.layout-origin .frontend-main { position:relative !important; }
+            ha-card.layout-origin .frontend-drawer { left:8px; right:8px; bottom:60px; width:auto; max-height:76%; }
+            ha-card.layout-origin .map-live-status:not([data-user-positioned="true"]) { top:8px !important; right:8px !important; max-width:calc(100% - 16px) !important; }
+            ha-card.layout-origin .preview-hint { display:block !important; left:10px !important; bottom:10px !important; max-width:48% !important; }
+            ha-card.layout-origin .origin-menu-toggle { display:block !important; right:9px !important; bottom:9px !important; }
+          }
+          @media (max-width:700px) and (orientation:portrait) {
+            ha-card.layout-origin .panel-tabs { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+          }
 
           /* ========== CLASSIC / control-first: status dashboard, dark graphite ========== */
           ha-card.layout-classic { --mf-accent:#68e07e; --mf-accent2:#9ce6ff; --mf-bg:#101214; --mf-panel:#191c1f; --mf-text:#f5f7f8; --mf-muted:#9ca6ae; background:#101214 !important; color:var(--mf-text) !important; border:1px solid #2c3135 !important; border-radius:20px !important; box-shadow:0 16px 34px rgba(0,0,0,.28) !important; }
@@ -1727,6 +1825,8 @@ class AnthbotMapCard extends HTMLElement {
 
           /* v7: the old floating status card is replaced by a single Information button. */
           .map-live-status { display:none !important; }
+          /* Origin preserves the original 2.4.9.1 floating live-status card. */
+          .layout-origin .map-live-status { display:flex !important; }
 
           .frontend-info-control { position:absolute; z-index:43; top:14px; right:14px; }
           .frontend-info-button {
@@ -1885,6 +1985,7 @@ class AnthbotMapCard extends HTMLElement {
 
 
           /* v27 — single cross-layout sizing contract. No stacked v22/v23/v25/v26 patches. */
+          ha-card.layout-origin,
           ha-card.layout-classic,
           ha-card.layout-modern,
           ha-card.layout-compact,
@@ -1897,6 +1998,7 @@ class AnthbotMapCard extends HTMLElement {
             overflow:hidden !important;
           }
 
+          ha-card.layout-origin .frontend-frame,
           ha-card.layout-classic .frontend-frame,
           ha-card.layout-modern .frontend-frame,
           ha-card.layout-compact .frontend-frame,
@@ -1911,6 +2013,7 @@ class AnthbotMapCard extends HTMLElement {
             box-sizing:border-box !important;
           }
 
+          ha-card.layout-origin .frontend-main,
           ha-card.layout-classic .frontend-main,
           ha-card.layout-modern .frontend-main,
           ha-card.layout-compact .frontend-main,
@@ -1923,6 +2026,9 @@ class AnthbotMapCard extends HTMLElement {
             overflow:hidden !important;
           }
 
+          ha-card.layout-origin .frontend-map-slot,
+          ha-card.layout-origin .canvas-wrap,
+          ha-card.layout-origin .canvas-wrap.auto-map-size,
           ha-card.layout-classic .frontend-map-slot,
           ha-card.layout-modern .frontend-map-slot,
           ha-card.layout-compact .frontend-map-slot,
@@ -1941,7 +2047,47 @@ class AnthbotMapCard extends HTMLElement {
             aspect-ratio:auto !important;
           }
 
-          /* The telemetry-chip row is redundant in every frontend; the i button owns this information. */
+          
+          /* Origin v4: use the exact same viewport-fill geometry as the other four layouts. */
+          @media (max-width:900px), (max-height:720px) {
+            ha-card.layout-origin {
+              box-sizing:border-box !important;
+              width:100% !important;
+              height:var(--anthbot-viewport-fill-height) !important;
+              min-height:var(--anthbot-viewport-fill-height) !important;
+              max-height:var(--anthbot-viewport-fill-height) !important;
+              overflow:hidden !important;
+            }
+            ha-card.layout-origin .frontend-frame {
+              position:relative !important;
+              display:grid !important;
+              grid-template-rows:minmax(0,1fr) !important;
+              width:100% !important; height:100% !important; min-height:0 !important;
+            }
+            ha-card.layout-origin .frontend-top-slot,
+            ha-card.layout-origin .frontend-bottom-slot { display:none !important; }
+            ha-card.layout-origin .frontend-main,
+            ha-card.layout-origin .frontend-map-slot,
+            ha-card.layout-origin .canvas-wrap,
+            ha-card.layout-origin .canvas-wrap.auto-map-size {
+              position:relative !important;
+              box-sizing:border-box !important;
+              width:100% !important;
+              height:100% !important;
+              min-height:0 !important;
+              max-height:none !important;
+              aspect-ratio:auto !important;
+              overflow:hidden !important;
+            }
+            ha-card.layout-origin .canvas-wrap > canvas {
+              display:block !important;
+              width:100% !important;
+              height:100% !important;
+              max-width:none !important;
+              max-height:none !important;
+            }
+          }
+/* The telemetry-chip row is redundant in every frontend; the i button owns this information. */
           ha-card.layout-classic .map-badges,
           ha-card.layout-modern .map-badges,
           ha-card.layout-compact .map-badges,
@@ -2783,6 +2929,19 @@ class AnthbotMapCard extends HTMLElement {
             <div class="frontend-map-slot">
               <div class="canvas-wrap">
                 <canvas></canvas>
+                ${this.frontendLayout === "origin" ? `<div class="map-live-status" data-role="map-live-status">
+                  <div class="battery-ring" data-role="battery-ring"><span data-role="battery-value">--</span></div>
+                  <div class="status-copy">
+                    <span class="status-label">${this.t("status")}</span>
+                    <strong data-role="mower-status">-</strong>
+                    <span class="rain-hold-line" data-role="rain-hold-line" hidden></span>
+                    <span class="next-mow-line" data-role="next-mow-line" hidden></span>
+                    <span class="mowing-live-line" data-role="mowing-live-line" hidden>
+                      <span class="mowing-live-target" data-role="mowing-live-target">-</span>
+                      <strong class="mowing-live-progress" data-role="mowing-live-progress">--%</strong>
+                    </span>
+                  </div>
+                </div>` : ""}
                 ${this.frontendInfoMarkup()}
                 ${this.frontendFullscreenControlMarkup()}
                 <div class="map-overlay map-title"><div class="name">${this.config.name || "Anthbot Map"}</div><div class="state" data-role="map-state">${this.t("waiting")}</div></div>
@@ -2791,6 +2950,7 @@ class AnthbotMapCard extends HTMLElement {
                 <div class="map-overlay map-actions"><button type="button" data-action="zoom-in" title="${this.t("zoomIn")}">+</button><button type="button" data-action="zoom-out" title="${this.t("zoomOut")}">-</button></div>
                 <div class="map-overlay map-badges"><span data-role="zone-count">${this.t("zones")}: -</span><span data-role="pose">${this.t("position")}: -</span><span data-role="heading">${this.t("heading")}: -</span><span class="cloud-status" data-role="map-cloud-status">${this.t("cloudChecking")}</span></div>
                 ${this.calibrationOverlayMarkup()}
+                ${this.frontendLayout === "origin" ? `<button type="button" class="anthbot-menu-toggle origin-menu-toggle" data-floating-menu="toggle">&#9776; ${this.t("menu")}</button>` : ""}
               </div>
             </div>
             <aside class="frontend-side-slot">${this.frontendLayout === "classic" ? `<button type="button" class="classic-mobile-sheet-close" data-classic-mobile-close title="${this.t("close")}" aria-label="${this.t("close")}"><ha-icon icon="mdi:close"></ha-icon></button><div class="classic-landscape-scroll-controls" data-classic-landscape-scroll-controls hidden><button type="button" data-classic-landscape-scroll="up" title="${this.t("up")}" aria-label="${this.t("up")}"><ha-icon icon="mdi:chevron-up"></ha-icon></button><button type="button" data-classic-landscape-scroll="down" title="${this.t("down")}" aria-label="${this.t("down")}"><ha-icon icon="mdi:chevron-down"></ha-icon></button></div>` : ""}</aside>
@@ -2799,7 +2959,22 @@ class AnthbotMapCard extends HTMLElement {
           <section class="frontend-drawer"><button type="button" class="frontend-drawer-close" data-floating-menu="close">×</button></section>
         </div>
 
-        <section class="app-shell compact-nav-only">
+        <section class="app-shell ${this.frontendLayout === "origin" ? "" : "compact-nav-only"}">
+          ${this.frontendLayout === "origin" ? `<div class="top-menu">
+            <div>
+              <div class="menu-title">${this.config.name || "Anthbot Map"}</div>
+              <div class="menu-subtitle" data-role="state">${this.t("waiting")}</div>
+            </div>
+            <div class="mini-status">
+              <div class="battery-ring" data-role="battery-ring"><span data-role="battery-value">--</span></div>
+              <div class="status-copy">
+                <span class="status-label">${this.t("status")}</span>
+                <strong data-role="mower-status">-</strong>
+                <span class="mowing-live-line" data-role="mowing-live-line" hidden><span class="mowing-live-target" data-role="mowing-live-target">-</span><strong class="mowing-live-progress" data-role="mowing-live-progress">--%</strong></span>
+                <span class="cloud-status" data-role="cloud-status">${this.t("cloudChecking")}</span>
+              </div>
+            </div>
+          </div>` : ""}
           <div class="panel-tabs">${this.frontendTabsMarkup()}</div>
         </section>
         <section class="app-panel"><div class="panel-body" data-role="panel-body"></div></section>
@@ -2825,7 +3000,10 @@ class AnthbotMapCard extends HTMLElement {
       slot?.querySelectorAll('button[data-panel="more"], button[data-open-panel="more"], button[data-floating-menu]').forEach((button) => button.remove());
     }
 
-    if (this.frontendLayout === "classic") {
+    if (this.frontendLayout === "origin") {
+      drawer?.appendChild(appShell);
+      drawer?.appendChild(appPanel);
+    } else if (this.frontendLayout === "classic") {
       topSlot?.appendChild(appShell);
       sideSlot?.appendChild(appPanel);
       if (this.isClassicMobilePortrait()) this.classicMobileSheetOpen = false;
@@ -2840,7 +3018,7 @@ class AnthbotMapCard extends HTMLElement {
       mapSlot?.appendChild(appShell);
       drawer?.appendChild(appPanel);
     }
-    drawer?.classList.toggle("open", this.floatingMenuOpen && ["modern", "compact", "fullscreen"].includes(this.frontendLayout));
+    drawer?.classList.toggle("open", this.floatingMenuOpen && ["origin", "modern", "compact", "fullscreen"].includes(this.frontendLayout));
 
     root.querySelectorAll("button[data-action]").forEach((button) => button.addEventListener("click", () => this.handleAction(button.dataset.action)));
     root.querySelectorAll("button[data-command]").forEach((button) => button.addEventListener("click", () => this.handleCommand(button.dataset.command)));
@@ -4044,7 +4222,7 @@ class AnthbotMapCard extends HTMLElement {
     const fullTile = document.createElement("button");
     fullTile.type = "button";
     fullTile.className = `panel-tile mowing-target-tile ${this.selectedMowingTarget?.type === "full" ? "active" : ""}`;
-    fullTile.innerHTML = `<strong>${this.t("fullArea")}</strong><span>${this.t("selectMowingTarget")}</span>`;
+    fullTile.innerHTML = this.frontendLayout === "origin" ? `<strong>${this.t("fullArea")}</strong>` : `<strong>${this.t("fullArea")}</strong><span>${this.t("selectMowingTarget")}</span>`;
     fullTile.addEventListener("click", () => {
       this.selectedMowingTarget = { type: "full" };
       this.renderControlPanel(body);
@@ -4054,7 +4232,7 @@ class AnthbotMapCard extends HTMLElement {
     const edgeTile = document.createElement("button");
     edgeTile.type = "button";
     edgeTile.className = `panel-tile mowing-target-tile ${this.selectedMowingTarget?.type === "edge" ? "active" : ""}`;
-    edgeTile.innerHTML = `<strong>${this.t("commandOuterEdge")}</strong><span>${this.t("selectMowingTarget")}</span>`;
+    edgeTile.innerHTML = this.frontendLayout === "origin" ? `<strong>${this.t("commandOuterEdge")}</strong>` : `<strong>${this.t("commandOuterEdge")}</strong><span>${this.t("selectMowingTarget")}</span>`;
     edgeTile.addEventListener("click", () => {
       this.selectedMowingTarget = { type: "edge" };
       this.renderControlPanel(body);
@@ -4064,7 +4242,7 @@ class AnthbotMapCard extends HTMLElement {
     const dockEdgeTile = document.createElement("button");
     dockEdgeTile.type = "button";
     dockEdgeTile.className = `panel-tile mowing-target-tile ${this.selectedMowingTarget?.type === "dock-edge" ? "active" : ""}`;
-    dockEdgeTile.innerHTML = `<strong>${this.t("dockEdgeLabel")}</strong><span>${this.t("selectMowingTarget")}</span>`;
+    dockEdgeTile.innerHTML = this.frontendLayout === "origin" ? `<strong>${this.t("dockEdgeLabel")}</strong>` : `<strong>${this.t("dockEdgeLabel")}</strong><span>${this.t("selectMowingTarget")}</span>`;
     dockEdgeTile.addEventListener("click", () => {
       this.selectedMowingTarget = { type: "dock-edge" };
       this.renderControlPanel(body);
@@ -4096,7 +4274,7 @@ class AnthbotMapCard extends HTMLElement {
       tile.type = "button";
       const isSelected = selected.some((item) => String(item.id) === String(zone.id));
       tile.className = `panel-tile mowing-target-tile ${isSelected ? "active" : ""}`;
-      tile.innerHTML = `<strong>${zone.name || `${type === "auto-zone-set" ? this.t("autoZone") : this.t("zone")} ${zone.id}`}</strong><span>${this.t("selectMowingTarget")}</span>`;
+      tile.innerHTML = this.frontendLayout === "origin" ? `<strong>${zone.name || `${type === "auto-zone-set" ? this.t("autoZone") : this.t("zone")} ${zone.id}`}</strong>` : `<strong>${zone.name || `${type === "auto-zone-set" ? this.t("autoZone") : this.t("zone")} ${zone.id}`}</strong><span>${this.t("selectMowingTarget")}</span>`;
       tile.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -7019,11 +7197,21 @@ class AnthbotMapCard extends HTMLElement {
 
   rendererOptions() {
     const mobileViewport = typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches;
-    const mobileRotation = mobileViewport ? Number(this.config.mobile_map_rotation ?? this.config.mobileMapRotation ?? 90) || 0 : 0;
+    // Origin: on a phone held upright rotate the map 90 degrees so the
+    // landscape garden fills the portrait viewport. In landscape keep the
+    // original orientation. Other layouts retain their existing mobile rule.
+    const originLayout = this.frontendLayout === "origin";
+    const portraitViewport = typeof window !== "undefined" && window.matchMedia("(orientation: portrait)").matches;
+    const mobileRotation = originLayout
+      ? (mobileViewport && portraitViewport ? 90 : 0)
+      : (mobileViewport ? Number(this.config.mobile_map_rotation ?? this.config.mobileMapRotation ?? 90) || 0 : 0);
+    const mapFit = originLayout
+      ? (mobileViewport ? "cover" : (this.config.fit || "contain"))
+      : (mobileViewport ? this.config.mobile_map_fit || this.config.mobileMapFit || "contain" : this.config.fit || "cover");
     return {
       image: this.config.image,
       bounds: this.config.bounds,
-      fit: mobileViewport ? this.config.mobile_map_fit || this.config.mobileMapFit || "contain" : this.config.fit || "cover",
+      fit: mapFit,
       rotation: degreesToRadians((Number(this.config.rotation) || 0) + mobileRotation),
       calibration: this.calibration,
       robotCalibration: this.robotCalibration,
