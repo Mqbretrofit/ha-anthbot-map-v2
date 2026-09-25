@@ -8,6 +8,7 @@ from .genie_path_diagnostics import install_genie_path_diagnostics
 from .genie_progress_posttrim import install_genie_progress_posttrim
 from .genie_progress_presentation import install_genie_progress_presentation
 from .genie_status import install_genie_live_status_support
+from .issue64_cpu_hotpath import install_issue64_cpu_hotpath_fix
 from .live_task_events import install_live_task_event_refresh
 from .m5_lidar_live_map_v2475 import install_m5_lidar_live_map_fix
 from .m_series_legacy import install_m_series_compat as _install_legacy
@@ -47,40 +48,26 @@ def install_m_series_compat() -> None:
     if _INSTALLED:
         return
     _INSTALLED = True
-    # Install vendor-cloud resilience before any model-specific layer can start
-    # polling task events or creating the live AWS IoT transport.
     install_cloud_api_resilience()
     install_setting_entity_identity()
     _install_legacy()
     install_m_series_control_support()
-    # N8 has its own command transport and only intercepts N8 model strings.
     install_n8_control_support()
     install_m_series_path_support()
-    # Reuse the proven MGS absolute-index assembler through an N8-only wrapper;
-    # do not widen the M-series path model guard.
     install_n8_path_support()
     install_m_series_map_support()
     install_m_series_zone_support()
-    # N8 uses the same MGS map-manager archive family but remains on its own
-    # activation guard. The shared downloader also caches area_setting.json.
     install_n8_map_support()
-    # Keep the proven M-series status/history layer untouched, then add an N8
-    # wrapper that reuses only the confirmed common v3 record/task helpers.
     install_m_series_status_support()
     install_n8_status_support()
-    # Pion/MGC has a flat property shadow; normalize only its confirmed fields
-    # without widening the proven Genie/M-series/N8 model guards.
     install_pion_status_support()
     install_m_series_history_support()
     install_genie_live_status_support()
     install_genie_path_diagnostics()
-    # Genie path files are uploaded on demand. Keep their high-frequency path
-    # refresh isolated from the five-minute ancillary coordinator cadence and
-    # from every M-series/N8 absolute-index assembler.
     install_genie_live_path_refresh()
-    # Match M9/M9 Pro presentation semantics through the whole motion cycle:
-    # keep requesting/publishing the Genie path while returning to the dock and
-    # promote camelCase live pose aliases without widening shared model guards.
+    # Issue #64: patch only lookup/diagnostic CPU hot paths after the model
+    # modules have installed their proven behavior wrappers.
+    install_issue64_cpu_hotpath_fix()
     install_genie_live_motion_support()
     install_live_task_event_refresh()
     install_rain_battery_saver_safety()
@@ -88,35 +75,14 @@ def install_m_series_compat() -> None:
     install_runtime_optimizations()
     install_performance_diagnostics()
     install_runtime_optimization_diagnostics()
-    # Reliability layers are deliberately installed after all mower/model
-    # adapters. 2.4.6.5 only changes diagnostics/Recorder behavior and the
-    # M-series map decoder fallback; model control/path routing stays isolated.
     install_runtime_reliability_fixes()
     install_report_identity_suffix()
     install_v2465_reliability_fixes()
-    # M9-only last resort: if the current map-manager archive is valid but the
-    # iot_map payload is an unknown encoding, reuse its area_setting zone hull
-    # instead of requesting the known-missing multi_maps/<serial>_0 object.
     install_m9_map_rescue_v2465()
-    # Install the M5 LiDAR live-map preference last among map adapters so every
-    # existing M5/M9/N8 fallback remains available underneath it unchanged.
     install_m5_lidar_live_map_fix()
     install_recorder_v2465()
-    # v2.4.6.7 wraps the final v2.4.6.5 Map-state throttle. This order lets the
-    # semantic filter suppress unchanged writes while preserving the proven
-    # five-second limiter for genuine live pose/path/status changes. It also
-    # refreshes Home Assistant's cached unrecorded set after diagnostics exist.
     install_recorder_v2467()
-    # Field probe: map_time and its derived archive diagnostics rotate while
-    # idle, and event-only history can also churn. Refine only the semantic
-    # write classifier after the v2.4.6.7 filter itself is installed.
     install_recorder_idle_semantics_v2467()
-    # v2.4.6.4 exposed the small target-identifying progress attributes that
-    # let the card keep "Full area / Zone N" after a task. Later reliability
-    # trimming removed them. Genie additionally resets its raw percentage in
-    # standby, so keep its session latch; M9/M9 Pro only need target metadata.
-    # Both post-trim wrappers are scheduled around coordinator __init__ so they
-    # run after reliability_v2465 installs its deferred sensor filter.
     install_genie_progress_presentation()
     install_genie_progress_posttrim()
     install_m9_progress_posttrim()
