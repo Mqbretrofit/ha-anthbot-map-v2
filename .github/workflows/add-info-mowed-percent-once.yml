@@ -1,0 +1,51 @@
+name: Add info mowed percentage once
+
+on:
+  push:
+    branches:
+      - release/v2.4.9.2-beta2
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ !contains(github.event.head_commit.message, '[info-mowed-percent-applied]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch both frontend copies
+        shell: python
+        run: |
+          from pathlib import Path
+          paths = [Path('custom_components/anthbot_map/frontend/anthbot-map-card.js'), Path('www/anthbot-map/anthbot-map-card.js')]
+          row = '          <div class="frontend-info-row"><span>${this.t("charging")}</span><strong data-role="info-charging">–</strong></div>\n'
+          added = row + '          <div class="frontend-info-row"><span>${this.t("mowedArea")}</span><strong data-role="info-mowing-progress">–</strong></div>\n'
+          anchor = '    const cuttingHeight = this.getRelatedEntity("cuttingHeight");\n'
+          block = '''    const mowingProgressEntity = this.getRelatedEntity("mowingProgress");
+    const mowingProgress = Number(mowingProgressEntity?.state);
+    setText(
+      "info-mowing-progress",
+      Number.isFinite(mowingProgress) ? `${Math.max(0, Math.min(100, mowingProgress)).toFixed(1)}%` : "–",
+    );
+
+'''
+          marker = '  updateFrontendInfo(attributes = this.entity?.attributes || {}) {'
+          for path in paths:
+              text = path.read_text(encoding='utf-8')
+              if 'data-role="info-mowing-progress"' in text: continue
+              if text.count(row) != 1: raise SystemExit(f'{path}: row anchor mismatch')
+              text = text.replace(row, added, 1)
+              start = text.index(marker)
+              pos = text.index(anchor, start)
+              text = text[:pos] + block + text[pos:]
+              path.write_text(text, encoding='utf-8')
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/anthbot_map/frontend/anthbot-map-card.js www/anthbot-map/anthbot-map-card.js
+          git diff --cached --quiet && exit 0
+          git commit -m "feat: show mowed percentage in info popover [info-mowed-percent-applied]"
+          git push
