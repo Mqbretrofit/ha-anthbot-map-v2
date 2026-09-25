@@ -27,6 +27,13 @@ Stable version: **2.4.9.2-beta4**
 
 Latest release: [Anthbot Map v2.4.9.2-beta4](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.9.2-beta4)
 
+### Highlights in 2.4.9.2
+
+- **Major CPU/performance fix** for the geometry/path hot path reported in issue #64, reducing repeated live-map zone/path work and Home Assistant CPU load.
+- Adds **four new map views** — Classic, Modern, Compact and Fullscreen — while keeping the original 2.4.9.1 layout as **Origin**: **five selectable views in total**.
+- Keeps calibration, the top and floating status displays, responsive mobile Origin behavior, improved tooltips and mowed-area percentage in the information panel.
+- Adds a minimal privacy-conscious presence heartbeat for aggregate install/activity/version/model statistics; detailed Reports remain opt-in.
+
 ### Highlights in 2.4.9.1
 
 - Fixes the Home Assistant thread-safety RuntimeError from the `Next mow` sensor's periodic refresh.
