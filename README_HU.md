@@ -21,6 +21,13 @@ Stabil verzió: **2.4.9.2-beta4**
 
 Legfrissebb kiadás: [Anthbot Map v2.4.9.2-beta4](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.9.2-beta4)
 
+### A 2.4.9.2 legfontosabb változásai
+
+- **Jelentős CPU/teljesítmény javítás** az #64 issue geometriát/útvonalat érintő hot path-jára, kevesebb ismételt zóna/útvonal-számítással és kisebb Home Assistant CPU-terheléssel.
+- **Négy új térképnézet** — Classic, Modern, Compact és Fullscreen — az eredeti 2.4.9.1 felület pedig **Origin** néven megmarad: összesen **öt választható nézet**.
+- Megmarad a kalibráció, a felső és lebegő állapotkijelző, az Origin mobilos viselkedése, javulnak a tooltip-ek, és az információs panelen megjelenik a lenyírt terület százaléka.
+- Minimális, adatvédelmi szempontból szűk presence heartbeat került be az összesített telepítés/aktivitás/verzió/modell statisztikához; a részletes Reports továbbra is opt-in.
+
 ### A 2.4.9.1 legfontosabb változásai
 
 - Javítja a `Next mow` szenzor időzített frissítéséből származó Home Assistant thread-safety RuntimeErrort.
