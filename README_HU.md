@@ -2,7 +2,7 @@
 
 [English](README.md) | Magyar
 
-[![Kiadás](https://img.shields.io/badge/release-v2.4.9.1-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.9.1)
+[![Kiadás](https://img.shields.io/badge/release-v2.4.9.2-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.9.2)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
 [![Megnyitás HACS-ban](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Mqbretrofit&repository=ha-anthbot-map-v2&category=integration)
 [![Licenc: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -17,9 +17,16 @@ Az Anthbot Map összekapcsolja a Home Assistantot az ANTHBOT felhővel, modellen
 
 ## Aktuális verzió
 
-Stabil verzió: **2.4.9.1**
+Stabil verzió: **2.4.9.2**
 
-Legfrissebb kiadás: [Anthbot Map v2.4.9.1](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.9.1)
+Legfrissebb kiadás: [Anthbot Map v2.4.9.2](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.9.2)
+
+### A 2.4.9.2 legfontosabb változásai
+
+- **Jelentős CPU/teljesítmény javítás** az #64 issue geometriát/útvonalat érintő hot path-jára, kevesebb ismételt zóna/útvonal-számítással és kisebb Home Assistant CPU-terheléssel.
+- **Négy új térképnézet** — Classic, Modern, Compact és Fullscreen — az eredeti 2.4.9.1 felület pedig **Origin** néven megmarad: összesen **öt választható nézet**.
+- Megmarad a kalibráció, a felső és lebegő állapotkijelző, az Origin mobilos viselkedése, javulnak a tooltip-ek, és az információs panelen megjelenik a lenyírt terület százaléka.
+- Minimális, adatvédelmi szempontból szűk presence heartbeat került be az összesített telepítés/aktivitás/verzió/modell statisztikához; a részletes Reports továbbra is opt-in.
 
 ### A 2.4.9.1 legfontosabb változásai
 

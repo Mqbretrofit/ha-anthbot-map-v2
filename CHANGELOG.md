@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.4.9.2 — 2026-09-25
+
+- **Major CPU/performance fix:** removes the geometry/path hot path behind issue #64 and avoids repeated expensive zone/path checks during live operation, dramatically reducing call volume and Home Assistant CPU load in the profiled mower workload.
+- Adds **four new map-card layouts** — Classic, Modern, Compact and Fullscreen — while preserving the original 2.4.9.1 layout as **Origin**, for a total of **five selectable views**.
+- Keeps the view selection browser/device-local so different dashboards can use different layouts without changing mower configuration.
+- Restores the 2.4.9.1 Origin mobile behavior, including full-screen landscape usage and 90° rotation in portrait, while preserving calibration, the top status bar and the floating status display.
+- Refines responsive layout spacing and hover labels: buttons that already contain text no longer duplicate it in tooltips, while icon-only controls retain explanatory tooltips.
+- Adds mowed-area percentage to the information/status details in the new views.
+- Adds the minimal privacy-conscious installation presence heartbeat used for aggregate installation/activity/version/model statistics. It sends only a stable random installation ID, the Anthbot Map version and mower model; detailed Reports remain opt-in.
+- Preserves the 2.4.9.1 thread-safety, Voice Pack Recorder protection, voice-store and model-specific mower behavior.
+
+## 2.4.9.2-beta1 — 2026-09-24
+
+- Uses **2.4.9.1 as the exact base**, preserving its Home Assistant thread-safety fix, Voice Pack Recorder protection, voice-store support and existing mower/model behavior.
+- Uses the Home Assistant/AwesomeVersion-compatible prerelease string **2.4.9.2-beta1** for this Beta 1 build.
+- Adds four browser-local map frontends: **Classic, Modern, Compact and Fullscreen**, without changing the shared backend command path.
+- Fixes responsive sizing so the lower action bar remains reachable on laptop/tablet layouts and the Fullscreen frontend uses the available map area instead of reserving excessive empty space.
+- Reworks **Classic mobile** behavior: portrait mode keeps the map visible with compact controls, while landscape mode exposes a compact **Mowing area** selector instead of relying on a long, hard-to-scroll target list.
+- Adds multi-zone selection and explicit mowing order editing for Classic mobile landscape without removing the existing manual/automatic zone handling.
+- Keeps the frontend selection browser/device-local and preserves the existing calibration, status/info and command functions.
+- Preserves all **23 supported UI languages** and adds localized text for the new Classic mobile area/zone-order controls in every supported language.
+- Adds regression coverage for the mirrored frontend bundle and the 23-language Classic mobile controls.
+- Updates source-level regression checks for generated frontend markup and prerelease manifest versioning without weakening the underlying behavior checks.
+
 ## 2.4.9.1 — 2026-09-21
 
 - Fixes Home Assistant thread-safety error #61 in the `Next mow` timestamp sensor: its one-minute refresh now runs as an event-loop callback instead of calling `async_write_ha_state()` from an executor thread.

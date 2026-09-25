@@ -2,7 +2,7 @@
 
 [English](README.md) | [Magyar](README_HU.md)
 
-[![Release](https://img.shields.io/badge/release-v2.4.9.1-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.9.1)
+[![Release](https://img.shields.io/badge/release-v2.4.9.2-blue)](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.9.2)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
 [![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Mqbretrofit&repository=ha-anthbot-map-v2&category=integration)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -23,9 +23,16 @@ If this integration is useful to you, you can support continued development thro
 
 ## Current version
 
-Stable version: **2.4.9.1**
+Stable version: **2.4.9.2**
 
-Latest release: [Anthbot Map v2.4.9.1](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.9.1)
+Latest release: [Anthbot Map v2.4.9.2](https://github.com/Mqbretrofit/ha-anthbot-map-v2/releases/tag/v2.4.9.2)
+
+### Highlights in 2.4.9.2
+
+- **Major CPU/performance fix** for the geometry/path hot path reported in issue #64, reducing repeated live-map zone/path work and Home Assistant CPU load.
+- Adds **four new map views** — Classic, Modern, Compact and Fullscreen — while keeping the original 2.4.9.1 layout as **Origin**: **five selectable views in total**.
+- Keeps calibration, the top and floating status displays, responsive mobile Origin behavior, improved tooltips and mowed-area percentage in the information panel.
+- Adds a minimal privacy-conscious presence heartbeat for aggregate install/activity/version/model statistics; detailed Reports remain opt-in.
 
 ### Highlights in 2.4.9.1
 

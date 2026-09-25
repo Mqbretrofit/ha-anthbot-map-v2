@@ -34,6 +34,7 @@ from .developer_agent_optin import async_register_developer_agent_optin
 from .developer_optin import async_register_developer_optin
 from .developer_reporting import async_send_anonymous_usage_report
 from .location_recorder import location_snapshot, should_write_location_state
+from .presence import async_start_presence_heartbeat
 from .robot_error_reporting import async_register_robot_error_reporting
 
 
@@ -117,6 +118,7 @@ async def async_setup_entry(
     await async_register_developer_optin(hass)
     await async_register_developer_agent_optin(hass)
     await async_register_developer_agent(hass, entry)
+    await async_start_presence_heartbeat(hass)
 
     coordinators: list[AnthbotGenieDataUpdateCoordinator] = hass.data[DOMAIN][
         entry.entry_id

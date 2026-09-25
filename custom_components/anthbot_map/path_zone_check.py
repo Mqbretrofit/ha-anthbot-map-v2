@@ -11,12 +11,8 @@ import math
 from typing import Any
 
 _NO_GO_KEYS = (
-    "forbid_areas",
-    "forbidAreas",
-    "remote_forbid_areas",
-    "remoteForbidAreas",
-    "no_go_areas",
-    "noGoAreas",
+    "forbid_areas", "forbidAreas", "remote_forbid_areas", "remoteForbidAreas",
+    "no_go_areas", "noGoAreas",
 )
 _POINT_KEYS = ("vertexs", "vertices", "points", "path", "polygon")
 _EPSILON = 1e-9
@@ -41,25 +37,20 @@ def _polygon_points(value: Any) -> list[tuple[float, float]]:
                 break
     if not isinstance(candidate, (list, tuple)) or not candidate:
         return []
-
     points: list[tuple[float, float]] = []
     if all(isinstance(item, (int, float, str)) for item in candidate):
         if len(candidate) % 2:
             return []
         for index in range(0, len(candidate), 2):
-            x = _finite_float(candidate[index])
-            y = _finite_float(candidate[index + 1])
+            x = _finite_float(candidate[index]); y = _finite_float(candidate[index + 1])
             if x is not None and y is not None:
                 points.append((x, y))
         return points
-
     for item in candidate:
         if isinstance(item, dict):
-            x = _finite_float(item.get("x"))
-            y = _finite_float(item.get("y"))
+            x = _finite_float(item.get("x")); y = _finite_float(item.get("y"))
         elif isinstance(item, (list, tuple)) and len(item) >= 2:
-            x = _finite_float(item[0])
-            y = _finite_float(item[1])
+            x = _finite_float(item[0]); y = _finite_float(item[1])
         else:
             continue
         if x is not None and y is not None:
@@ -72,7 +63,6 @@ def _find_area_definition(data: dict[str, Any]) -> dict[str, Any] | None:
         direct = data.get(key)
         if isinstance(direct, dict):
             return direct
-
     stack: list[tuple[Any, int]] = [(data, 0)]
     seen: set[int] = set()
     while stack:
@@ -98,7 +88,6 @@ def no_go_zones(data: dict[str, Any]) -> list[dict[str, Any]]:
     definition = _find_area_definition(data)
     if not isinstance(definition, dict):
         return []
-
     zones: list[dict[str, Any]] = []
     signatures: set[tuple[Any, tuple[tuple[float, float], ...]]] = set()
     for key in _NO_GO_KEYS:
@@ -120,53 +109,52 @@ def no_go_zones(data: dict[str, Any]) -> list[dict[str, Any]]:
             if signature in signatures:
                 continue
             signatures.add(signature)
-            zones.append(
-                {
-                    "id": zone_id,
-                    "name": zone.get("name"),
-                    "source_key": key,
-                    "points": points,
-                }
-            )
+            zones.append({"id": zone_id, "name": zone.get("name"), "source_key": key, "points": points})
     return zones
 
 
 def no_go_geometry_signature(data: dict[str, Any]) -> tuple[Any, ...]:
     """Return a stable, compact signature for no-go geometry cache invalidation."""
-    return tuple(
-        (
-            zone.get("id"),
-            zone.get("name"),
-            zone.get("source_key"),
-            tuple(zone.get("points", ())),
-        )
-        for zone in no_go_zones(data)
+    return tuple((zone.get("id"), zone.get("name"), zone.get("source_key"), tuple(zone.get("points", ()))) for zone in no_go_zones(data))
+
+
+def _polygon_bounds(polygon: list[tuple[float, float]]) -> tuple[float, float, float, float]:
+    """Return polygon AABB once so hot path tests can reject distant geometry cheaply."""
+    xs = [point[0] for point in polygon]
+    ys = [point[1] for point in polygon]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _point_in_bounds(point: tuple[float, float], bounds: tuple[float, float, float, float]) -> bool:
+    x, y = point
+    min_x, min_y, max_x, max_y = bounds
+    return min_x - _EPSILON <= x <= max_x + _EPSILON and min_y - _EPSILON <= y <= max_y + _EPSILON
+
+
+def _segment_overlaps_bounds(first: tuple[float, float], second: tuple[float, float], bounds: tuple[float, float, float, float]) -> bool:
+    min_x, min_y, max_x, max_y = bounds
+    return not (
+        max(first[0], second[0]) < min_x - _EPSILON
+        or min(first[0], second[0]) > max_x + _EPSILON
+        or max(first[1], second[1]) < min_y - _EPSILON
+        or min(first[1], second[1]) > max_y + _EPSILON
     )
 
 
-def _point_on_segment(
-    point: tuple[float, float],
-    first: tuple[float, float],
-    second: tuple[float, float],
-) -> bool:
-    px, py = point
-    ax, ay = first
-    bx, by = second
+def _point_on_segment(point: tuple[float, float], first: tuple[float, float], second: tuple[float, float]) -> bool:
+    px, py = point; ax, ay = first; bx, by = second
     cross = (px - ax) * (by - ay) - (py - ay) * (bx - ax)
     scale = max(1.0, abs(bx - ax), abs(by - ay))
     if abs(cross) > _EPSILON * scale:
         return False
-    return (
-        min(ax, bx) - _EPSILON <= px <= max(ax, bx) + _EPSILON
-        and min(ay, by) - _EPSILON <= py <= max(ay, by) + _EPSILON
-    )
+    return min(ax, bx) - _EPSILON <= px <= max(ax, bx) + _EPSILON and min(ay, by) - _EPSILON <= py <= max(ay, by) + _EPSILON
 
 
-def point_in_polygon(
-    point: tuple[float, float], polygon: list[tuple[float, float]]
-) -> bool:
-    """Return whether point is inside or on the boundary of polygon."""
+def point_in_polygon(point: tuple[float, float], polygon: list[tuple[float, float]], *, bounds: tuple[float, float, float, float] | None = None) -> bool:
+    """Return whether point is inside or on boundary; AABB rejects distant points."""
     if len(polygon) < 3:
+        return False
+    if bounds is not None and not _point_in_bounds(point, bounds):
         return False
     x, y = point
     inside = False
@@ -174,8 +162,7 @@ def point_in_polygon(
     for current in polygon:
         if _point_on_segment(point, previous, current):
             return True
-        x1, y1 = previous
-        x2, y2 = current
+        x1, y1 = previous; x2, y2 = current
         if (y1 > y) != (y2 > y):
             crossing_x = (x2 - x1) * (y - y1) / (y2 - y1) + x1
             if x < crossing_x:
@@ -184,21 +171,11 @@ def point_in_polygon(
     return inside
 
 
-def _segment_intersection_t(
-    first: tuple[float, float],
-    second: tuple[float, float],
-    edge_first: tuple[float, float],
-    edge_second: tuple[float, float],
-) -> float | None:
-    ax, ay = first
-    bx, by = second
-    cx, cy = edge_first
-    dx, dy = edge_second
-    rx, ry = bx - ax, by - ay
-    sx, sy = dx - cx, dy - cy
+def _segment_intersection_t(first: tuple[float, float], second: tuple[float, float], edge_first: tuple[float, float], edge_second: tuple[float, float]) -> float | None:
+    ax, ay = first; bx, by = second; cx, cy = edge_first; dx, dy = edge_second
+    rx, ry = bx - ax, by - ay; sx, sy = dx - cx, dy - cy
     denominator = rx * sy - ry * sx
     if abs(denominator) <= _EPSILON:
-        # Collinear travel along a boundary is not an entry/exit crossing.
         return None
     qx, qy = cx - ax, cy - ay
     t = (qx * sy - qy * sx) / denominator
@@ -208,11 +185,9 @@ def _segment_intersection_t(
     return None
 
 
-def _segment_polygon_intersections(
-    first: tuple[float, float],
-    second: tuple[float, float],
-    polygon: list[tuple[float, float]],
-) -> list[tuple[float, tuple[float, float]]]:
+def _segment_polygon_intersections(first: tuple[float, float], second: tuple[float, float], polygon: list[tuple[float, float]], *, bounds: tuple[float, float, float, float] | None = None) -> list[tuple[float, tuple[float, float]]]:
+    if bounds is not None and not _segment_overlaps_bounds(first, second, bounds):
+        return []
     values: list[tuple[float, tuple[float, float]]] = []
     previous = polygon[-1]
     for current in polygon:
@@ -234,120 +209,65 @@ def _path_runs(path_points: Any) -> list[list[tuple[int, tuple[float, float]]]]:
     current: list[tuple[int, tuple[float, float]]] = []
     for index, raw in enumerate(path_points):
         if not isinstance(raw, dict):
-            if current:
-                runs.append(current)
-                current = []
+            if current: runs.append(current); current = []
             continue
-        x = _finite_float(raw.get("x"))
-        y = _finite_float(raw.get("y"))
+        x = _finite_float(raw.get("x")); y = _finite_float(raw.get("y"))
         if x is None or y is None:
-            if current:
-                runs.append(current)
-                current = []
+            if current: runs.append(current); current = []
             continue
         if raw.get("break_before") is True and current:
-            runs.append(current)
-            current = []
+            runs.append(current); current = []
         current.append((index, (x, y)))
-    if current:
-        runs.append(current)
+    if current: runs.append(current)
     return runs
 
 
-def evaluate_path_no_go(
-    path_points: Any,
-    data: dict[str, Any],
-    *,
-    path_id: Any = None,
-) -> dict[str, Any]:
+def evaluate_path_no_go(path_points: Any, data: dict[str, Any], *, path_id: Any = None) -> dict[str, Any]:
     """Measure no-go crossings without modifying the supplied trajectory."""
     zones = no_go_zones(data)
     runs = _path_runs(path_points)
     valid_point_count = sum(len(run) for run in runs)
     segment_count = sum(max(0, len(run) - 1) for run in runs)
-
     inside_path_indices: set[int] = set()
-    boundary_crossings = 0
-    traversals = 0
-    affected_zone_ids: list[Any] = []
-    zone_results: list[dict[str, Any]] = []
+    boundary_crossings = 0; traversals = 0
+    affected_zone_ids: list[Any] = []; zone_results: list[dict[str, Any]] = []
     last_crossing: dict[str, Any] | None = None
 
     for zone_index, zone in enumerate(zones):
         polygon = zone["points"]
+        bounds = _polygon_bounds(polygon)
         zone_inside_indices: set[int] = set()
-        zone_crossings = 0
-        zone_traversals = 0
+        zone_crossings = 0; zone_traversals = 0
         zone_last_crossing: dict[str, Any] | None = None
-
         for run in runs:
-            if not run:
-                continue
-            start_inside = point_in_polygon(run[0][1], polygon)
-            end_inside = point_in_polygon(run[-1][1], polygon)
+            if not run: continue
+            start_inside = point_in_polygon(run[0][1], polygon, bounds=bounds)
+            end_inside = point_in_polygon(run[-1][1], polygon, bounds=bounds)
             for point_index, point in run:
-                if point_in_polygon(point, polygon):
-                    zone_inside_indices.add(point_index)
-                    inside_path_indices.add(point_index)
-
+                if point_in_polygon(point, polygon, bounds=bounds):
+                    zone_inside_indices.add(point_index); inside_path_indices.add(point_index)
             run_crossings = 0
             for segment_index in range(len(run) - 1):
-                path_index, first = run[segment_index]
-                _, second = run[segment_index + 1]
-                intersections = _segment_polygon_intersections(first, second, polygon)
-                run_crossings += len(intersections)
-                zone_crossings += len(intersections)
-                boundary_crossings += len(intersections)
+                path_index, first = run[segment_index]; _, second = run[segment_index + 1]
+                intersections = _segment_polygon_intersections(first, second, polygon, bounds=bounds)
+                count = len(intersections)
+                run_crossings += count; zone_crossings += count; boundary_crossings += count
                 for t, crossing in intersections:
-                    crossing_info = {
-                        "x": crossing[0],
-                        "y": crossing[1],
-                        "zone_id": zone.get("id"),
-                        "zone_name": zone.get("name"),
-                        "path_segment_start_index": path_index,
-                        "segment_t": t,
-                    }
-                    zone_last_crossing = crossing_info
-                    last_crossing = crossing_info
-
-            # Number of inside trajectory intervals in this continuous run.
-            # This handles outside->outside crossings (2 => 1 traversal),
-            # outside->inside / inside->outside (1 => 1), paths starting or
-            # ending inside, and paths entirely inside (0 + 1 + 1 => 1).
-            zone_traversals += (
-                run_crossings + int(start_inside) + int(end_inside)
-            ) // 2
-
+                    crossing_info = {"x": crossing[0], "y": crossing[1], "zone_id": zone.get("id"), "zone_name": zone.get("name"), "path_segment_start_index": path_index, "segment_t": t}
+                    zone_last_crossing = crossing_info; last_crossing = crossing_info
+            zone_traversals += (run_crossings + int(start_inside) + int(end_inside)) // 2
         affected = bool(zone_inside_indices or zone_crossings)
         zone_id = zone.get("id")
         if affected:
-            identifier = zone_id if zone_id is not None else f"index:{zone_index}"
-            affected_zone_ids.append(identifier)
+            affected_zone_ids.append(zone_id if zone_id is not None else f"index:{zone_index}")
         traversals += zone_traversals
-        zone_results.append(
-            {
-                "zone_id": zone_id,
-                "zone_name": zone.get("name"),
-                "source_key": zone.get("source_key"),
-                "points_inside": len(zone_inside_indices),
-                "boundary_crossings": zone_crossings,
-                "traversals": zone_traversals,
-                "last_crossing": zone_last_crossing,
-            }
-        )
+        zone_results.append({"zone_id": zone_id, "zone_name": zone.get("name"), "source_key": zone.get("source_key"), "points_inside": len(zone_inside_indices), "boundary_crossings": zone_crossings, "traversals": zone_traversals, "last_crossing": zone_last_crossing})
 
-    crossing_detected = bool(inside_path_indices or boundary_crossings)
     return {
-        "source": "m_series_assembled_path",
-        "path_id": path_id,
-        "crossing_detected": crossing_detected,
-        "checked_point_count": valid_point_count,
-        "checked_segment_count": segment_count,
-        "no_go_zone_count": len(zones),
-        "points_inside": len(inside_path_indices),
-        "boundary_crossings": boundary_crossings,
-        "traversals": traversals,
-        "zone_ids": affected_zone_ids,
-        "last_crossing": last_crossing,
-        "zones": zone_results,
+        "source": "m_series_assembled_path", "path_id": path_id,
+        "crossing_detected": bool(inside_path_indices or boundary_crossings),
+        "checked_point_count": valid_point_count, "checked_segment_count": segment_count,
+        "no_go_zone_count": len(zones), "points_inside": len(inside_path_indices),
+        "boundary_crossings": boundary_crossings, "traversals": traversals,
+        "zone_ids": affected_zone_ids, "last_crossing": last_crossing, "zones": zone_results,
     }

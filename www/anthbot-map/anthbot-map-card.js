@@ -2,7 +2,7 @@ import { AnthbotMapRenderer } from "./renderer.js?v=2474-genie-heading-test2";
 import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=2411";
 import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=2411";
 import { renderAnthbotSchedulePanel, anthbotScheduleText } from "./schedule-panel.js?v=2480-test4";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=2490";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=2492b1";
 import {
   adjustCalibration,
   cardToYaml,
@@ -67,6 +67,7 @@ const SWITCH_MAP = {
 };
 
 class AnthbotMapCard extends HTMLElement {
+  // Multi-Frontend v40: Classic phone-landscape inline zone/order editor.
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
@@ -92,6 +93,9 @@ class AnthbotMapCard extends HTMLElement {
     this.themeBackground = false;
     this.transparentBackground = false;
     this.glassBackground = false;
+    // Browser-local frontend selection. Deliberately not stored in YAML or HA entities,
+    // so phone/tablet/desktop can each use a different dashboard layout.
+    this.frontendLayout = "modern";
     this.optimisticSettings = new Map();
     this.commandConfirmationToken = 0;
     this.commandFeedbackTimer = null;
@@ -100,6 +104,10 @@ class AnthbotMapCard extends HTMLElement {
     this.selectedLanguage = "auto";
     this.languageOverride = false;
     this.floatingMenuOpen = false;
+    this.classicMobileSheetOpen = false;
+    this.classicLandscapeZoneEditorOpen = false;
+    this.classicLandscapeZoneEditorType = "zone-set";
+    this.classicLandscapeZoneDrafts = null;
     this.defaultSubmenu = "";
     this.selectedMowingTarget = { type: "full" };
     this.mowingZoneGroupsOpen = { "zone-set": true, "auto-zone-set": false };
@@ -120,6 +128,22 @@ class AnthbotMapCard extends HTMLElement {
     // finished. The cloud may keep a final geometry value such as 98.8%
     // after return/charge transitions into standby.
     this.mowingCompletionLatched = null;
+    // Keep UI and canvas stable across frequent Home Assistant state pushes.
+    this.lastRendererOptionsSignature = "";
+    this.lastRendererVisualSignature = "";
+    this.optionalPanelStructureDirty = false;
+    this.fullscreenChangeHandler = () => {
+      this.updateTrueFullscreenButton();
+      this.scheduleViewportFillSync();
+      requestAnimationFrame(() => this.renderer?.resize());
+    };
+    this.viewportFillSyncHandler = () => this.scheduleViewportFillSync();
+    document.addEventListener("fullscreenchange", this.fullscreenChangeHandler);
+    window.addEventListener("resize", this.viewportFillSyncHandler, { passive: true });
+    window.addEventListener("scroll", this.viewportFillSyncHandler, { passive: true });
+    window.addEventListener("orientationchange", this.viewportFillSyncHandler, { passive: true });
+    window.visualViewport?.addEventListener("resize", this.viewportFillSyncHandler, { passive: true });
+    window.visualViewport?.addEventListener("scroll", this.viewportFillSyncHandler, { passive: true });
   }
 
   setConfig(config) {
@@ -128,7 +152,7 @@ class AnthbotMapCard extends HTMLElement {
     }
 
     this.config = config;
-    const validPanels = new Set(["control", "schedule", "settings", "interface", "status", "maintenance", "diagnostics"]);
+    const validPanels = new Set(["control", "schedule", "settings", "more", "interface", "status", "maintenance", "diagnostics", "calibration"]);
     const configuredPanel = String(config.default_panel ?? config.defaultPanel ?? "control").trim();
     this.activePanel = validPanels.has(configuredPanel) ? configuredPanel : "control";
     this.floatingMenuOpen = typeof config.menu_open === "boolean"
@@ -141,6 +165,10 @@ class AnthbotMapCard extends HTMLElement {
         ? { "zone-set": true, "auto-zone-set": false }
         : { "zone-set": true, "auto-zone-set": false };
     const savedInterface = this.readInterfaceSettings(config.entity);
+    const savedFrontendLayout = String(savedInterface.frontendLayout || "modern").trim().toLowerCase();
+    this.frontendLayout = new Set(["origin", "classic", "modern", "compact", "fullscreen"]).has(savedFrontendLayout)
+      ? savedFrontendLayout
+      : "modern";
     const configuredButtonActions = config.button_actions || config.buttonActions || {};
     this.customButtonActions = { ...configuredButtonActions };
     this.customButtonActionsEnabled = Object.keys(configuredButtonActions).length > 0;
@@ -177,6 +205,14 @@ class AnthbotMapCard extends HTMLElement {
     this.mowingPathCalibration = readMowingPathCalibration(config);
     this.robotHeadingOffset = Number(config.robot_heading_offset ?? config.robotHeadingOffset) || 0;
     this.decodedBoundaryCalibration = readDecodedBoundaryCalibration(config);
+    const savedCalibration = this.readSavedCalibration(config.entity);
+    if (savedCalibration) {
+      if (savedCalibration.calibration && typeof savedCalibration.calibration === "object") this.calibration = savedCalibration.calibration;
+      if (savedCalibration.robotCalibration && typeof savedCalibration.robotCalibration === "object") this.robotCalibration = savedCalibration.robotCalibration;
+      if (savedCalibration.mowingPathCalibration && typeof savedCalibration.mowingPathCalibration === "object") this.mowingPathCalibration = savedCalibration.mowingPathCalibration;
+      if (savedCalibration.decodedBoundaryCalibration && typeof savedCalibration.decodedBoundaryCalibration === "object") this.decodedBoundaryCalibration = savedCalibration.decodedBoundaryCalibration;
+      if (Number.isFinite(Number(savedCalibration.robotHeadingOffset))) this.robotHeadingOffset = Number(savedCalibration.robotHeadingOffset);
+    }
     this.mapOverlayOverrides = savedInterface.mapOverlayOverrides && typeof savedInterface.mapOverlayOverrides === "object"
       ? { ...savedInterface.mapOverlayOverrides }
       : {};
@@ -200,6 +236,7 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   set hass(hass) {
+    const hadHass = Boolean(this._hass);
     const previousLanguage = this.language;
     const previousOptionalSignature = this.optionalEntitySignature;
     const previousVoicePackSignature = this.voicePackSignature;
@@ -229,23 +266,26 @@ class AnthbotMapCard extends HTMLElement {
       previousLanguage !== this.language
       || customButtonsChanged
     ) {
+      // Language and custom button definitions genuinely change the UI tree.
       this.render();
-    } else if (optionalEntitiesChanged) {
-      // Voice installation can publish several HA state updates in quick
-      // succession (pending -> slot/metadata confirmation). Rebuilding the
-      // whole card here closes/resets the floating settings view. When only
-      // the voice entity changed, replace that tile in place instead.
-      if (
-        onlyVoicePackChanged
-        && this.activePanel === "settings"
-        && this.refreshVoicePackControl()
-      ) {
-        this.updateRenderer();
-      } else {
-        this.render();
-      }
     } else {
+      if (optionalEntitiesChanged) {
+        // Entity discovery must never tear down an open drawer/details tree.
+        // Mark the structure dirty; the newest structure is naturally used
+        // next time that panel is opened. Voice can still refresh in-place.
+        this.optionalPanelStructureDirty = true;
+        if (
+          onlyVoicePackChanged
+          && this.activePanel === "settings"
+        ) {
+          this.refreshVoicePackControl();
+        }
+      }
       this.updateRenderer();
+      // setConfig() builds the DOM before Home Assistant supplies `hass`.
+      // Render the initial panel once when `hass` arrives; later state pushes
+      // keep the stable in-place refresh path from v14.
+      if (!hadHass) this.renderAppPanel();
     }
   }
 
@@ -316,13 +356,538 @@ class AnthbotMapCard extends HTMLElement {
     window.clearTimeout(this.voiceDialogInteractionTimer);
     document.getElementById(this.feedbackToastId)?.remove();
     this.resizeObserver?.disconnect();
+    this.viewportCardResizeObserver?.disconnect();
+    this.classicLandscapePanelObserver?.disconnect();
     this.mapLiveStatusResizeObserver?.disconnect();
+    if (this.fullscreenChangeHandler) {
+      document.removeEventListener("fullscreenchange", this.fullscreenChangeHandler);
+    }
+    if (this.viewportFillSyncHandler) {
+      window.removeEventListener("resize", this.viewportFillSyncHandler);
+      window.removeEventListener("scroll", this.viewportFillSyncHandler);
+      window.removeEventListener("orientationchange", this.viewportFillSyncHandler);
+      window.visualViewport?.removeEventListener("resize", this.viewportFillSyncHandler);
+      window.visualViewport?.removeEventListener("scroll", this.viewportFillSyncHandler);
+    }
+    if (this.viewportFillSyncRaf) {
+      cancelAnimationFrame(this.viewportFillSyncRaf);
+      this.viewportFillSyncRaf = null;
+    }
     this.renderer?.destroy();
     this.renderer = null;
   }
 
+  scheduleViewportFillSync() {
+    if (this.viewportFillSyncRaf) cancelAnimationFrame(this.viewportFillSyncRaf);
+    this.viewportFillSyncRaf = requestAnimationFrame(() => {
+      this.viewportFillSyncRaf = null;
+      this.syncViewportFillHeight();
+    });
+  }
+
+  syncViewportFillHeight() {
+    const card = this.shadowRoot?.querySelector("ha-card");
+    if (!card || !this.isConnected) return;
+
+    const rect = this.getBoundingClientRect();
+    const vv = window.visualViewport;
+    const viewportTop = vv ? Number(vv.offsetTop || 0) : 0;
+    const viewportHeight = vv?.height || window.innerHeight || document.documentElement?.clientHeight || 0;
+    const viewportWidth = vv?.width || window.innerWidth || document.documentElement?.clientWidth || 0;
+    if (!viewportHeight || !viewportWidth) return;
+
+    // getBoundingClientRect() is layout-viewport based while VisualViewport can
+    // move independently on tablets/mobile when browser chrome opens/closes.
+    const cardTopInsideVisibleViewport = Math.max(0, rect.top - viewportTop);
+    const bottomGap = Math.max(2, Math.min(8, Math.round(viewportHeight * 0.008)));
+    const availableHeight = Math.max(240, Math.floor(viewportHeight - cardTopInsideVisibleViewport - bottomGap));
+    const availableWidth = Math.max(280, Math.floor(Math.min(rect.width || viewportWidth, viewportWidth)));
+
+    // UI scale follows the actual visible screen, not a fixed desktop/tablet breakpoint.
+    // The card keeps normal sizing on large screens and shrinks controls progressively
+    // on short/small tablet and phone viewports.
+    const widthScale = availableWidth / 1180;
+    const heightScale = availableHeight / 720;
+    const uiScale = Math.max(0.72, Math.min(1, Math.min(widthScale, heightScale)));
+
+    card.style.setProperty("--anthbot-viewport-fill-height", `${availableHeight}px`);
+    card.style.setProperty("--anthbot-viewport-fill-max-height", `${availableHeight}px`);
+    card.style.setProperty("--anthbot-viewport-fill-min-height", `${availableHeight}px`);
+    card.style.setProperty("--anthbot-visible-width", `${availableWidth}px`);
+    card.style.setProperty("--anthbot-visible-height", `${availableHeight}px`);
+    card.style.setProperty("--anthbot-ui-scale", uiScale.toFixed(3));
+
+    card.toggleAttribute("data-short-screen", availableHeight < 560);
+    card.toggleAttribute("data-narrow-screen", availableWidth < 760);
+    card.toggleAttribute("data-classic-touch-landscape", this.isClassicMobileLandscape());
+
+    // v27: CSS Grid owns the internal row sizing. JavaScript only tells the
+    // card how much of the visible viewport is available. This prevents a
+    // zero-height first measurement from pushing the bottom controls offscreen.
+    card.style.removeProperty("--anthbot-main-height");
+    card.style.removeProperty("--anthbot-top-row-height");
+    card.style.removeProperty("--anthbot-bottom-row-height");
+    card.style.removeProperty("--anthbot-fullscreen-bottom-reserve");
+
+    this.ensureFrontendBottomQuickbar();
+
+    const main = this.shadowRoot?.querySelector('.frontend-main');
+    if (main) {
+      main.style.removeProperty("height");
+      main.style.removeProperty("max-height");
+    }
+    const side = this.shadowRoot?.querySelector('.frontend-side-slot');
+    if (side) {
+      side.style.removeProperty("height");
+      side.style.removeProperty("max-height");
+    }
+    const wrap = this.shadowRoot?.querySelector('.canvas-wrap');
+    if (wrap) wrap.style.removeProperty("--anthbot-map-height");
+    this.renderer?.resize();
+  }
+
   getCardSize() {
     return 8;
+  }
+
+
+  frontendTabsMarkup() {
+    if (this.frontendLayout === "origin") {
+      const item = (panel, label) => `<button type="button" data-panel="${panel}">${escapeHtml(label)}</button>`;
+      return [
+        item("control", this.t("control")),
+        item("schedule", anthbotScheduleText(this, "schedule")),
+        item("settings", this.t("robotSettings")),
+        item("interface", this.t("interfaceSettings")),
+        item("status", this.t("status")),
+        item("maintenance", this.t("maintenance")),
+        item("diagnostics", this.t("diagnostics")),
+        item("calibration", this.t("calibration")),
+      ].join("");
+    }
+    const icon = (name) => `<ha-icon icon="${name}"></ha-icon>`;
+    const item = (panel, label, mdi) => `<button type="button" data-panel="${panel}" title="${escapeHtml(label)}">${icon(mdi)}<span class="tab-label">${escapeHtml(label)}</span></button>`;
+    return [
+      item("control", this.t("control"), "mdi:play-circle-outline"),
+      item("schedule", anthbotScheduleText(this, "schedule"), "mdi:calendar-clock"),
+      item("settings", this.t("robotSettings"), "mdi:robot-mower-outline"),
+      item("more", this.t("menu"), "mdi:menu"),
+    ].join("");
+  }
+
+  calibrationOverlayMarkup() {
+    const dpad = (attr) => `
+      <div class="calibration-dpad compact-dpad">
+        <button type="button" class="up" ${attr}="up" title="${this.t("up")}"><ha-icon icon="mdi:chevron-up"></ha-icon></button>
+        <button type="button" class="left" ${attr}="left" title="${this.t("left")}"><ha-icon icon="mdi:chevron-left"></ha-icon></button>
+        <span class="center" aria-hidden="true"><ha-icon icon="mdi:crosshairs"></ha-icon></span>
+        <button type="button" class="right" ${attr}="right" title="${this.t("right")}"><ha-icon icon="mdi:chevron-right"></ha-icon></button>
+        <button type="button" class="down" ${attr}="down" title="${this.t("down")}"><ha-icon icon="mdi:chevron-down"></ha-icon></button>
+      </div>`;
+    const toolButton = (attr, action, icon, symbol, title, extraClass = "") =>
+      `<button type="button" class="calibration-icon-button ${extraClass}" ${attr}="${action}" title="${escapeHtml(title)}"><ha-icon icon="${icon}"></ha-icon><span>${symbol}</span></button>`;
+    const tools = (attr, resetAction = "", includeHeight = true) => `
+      <div class="calibration-tool-grid compact-tools">
+        ${toolButton(attr, "narrower", "mdi:arrow-collapse-horizontal", "−", this.t("narrower"))}
+        ${toolButton(attr, "wider", "mdi:arrow-expand-horizontal", "+", this.t("wider"))}
+        ${includeHeight ? toolButton(attr, "shorter", "mdi:arrow-collapse-vertical", "−", this.t("shorter")) : ""}
+        ${includeHeight ? toolButton(attr, "taller", "mdi:arrow-expand-vertical", "+", this.t("taller")) : ""}
+        ${toolButton(attr, "rotate-left", "mdi:rotate-left", "", `${this.t("rotation")} −`, "rotation-button")}
+        ${toolButton(attr, "rotate-right", "mdi:rotate-right", "", `${this.t("rotation")} +`, "rotation-button")}
+        ${resetAction ? `<button type="button" class="calibration-icon-button reset-button" data-action="${resetAction}" title="${this.t("reset")}"><ha-icon icon="mdi:restore"></ha-icon></button>` : ""}
+      </div>`;
+    const modeButton = (id, title, mdi) => `<button type="button" class="calibration-mode" data-calibration-mode="${id}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"><ha-icon icon="${mdi}"></ha-icon></button>`;
+    const panel = (id, title, body) => `<section class="calibration-popover-content" data-calibration-content="${id}" data-calibration-title="${escapeHtml(title)}" hidden>${body}</section>`;
+    return `
+      <section class="calibration-overlay" data-role="calibration-overlay" hidden>
+        <nav class="calibration-rail" aria-label="${this.t("calibration")}">
+          <button type="button" class="calibration-exit" data-calibration-close title="${this.t("close")}" aria-label="${this.t("close")}"><ha-icon icon="mdi:close"></ha-icon></button>
+          ${modeButton("map", this.t("mapFit"), "mdi:map-marker-path")}
+          ${modeButton("robot", this.t("robotFit"), "mdi:robot-mower-outline")}
+          ${modeButton("path", this.t("mowingPathFit"), "mdi:vector-polyline")}
+          ${modeButton("heading", this.t("robotDirection"), "mdi:compass-outline")}
+          ${modeButton("boundary", this.t("boundaryFit"), "mdi:vector-polygon")}
+        </nav>
+        <div class="calibration-popover" data-calibration-popover hidden>
+          ${panel("map", this.t("mapFit"), `<div class="calibration-control-layout compact-calibration-layout">${dpad("data-calibration")}${tools("data-calibration")}</div>`)}
+          ${panel("robot", this.t("robotFit"), `<div class="calibration-control-layout compact-calibration-layout">${dpad("data-robot-calibration")}${tools("data-robot-calibration", "reset-robot", false)}</div>`)}
+          ${panel("path", this.t("mowingPathFit"), `<div class="calibration-control-layout compact-calibration-layout">${dpad("data-mowing-path-calibration")}${tools("data-mowing-path-calibration", "reset-mowing-path")}</div>`)}
+          ${panel("heading", this.t("robotDirection"), `<div class="calibration-heading-grid compact-heading-grid"><button type="button" data-robot-heading="left" title="−15°"><ha-icon icon="mdi:rotate-left"></ha-icon><span>−15°</span></button><button type="button" data-robot-heading="right" title="+15°"><ha-icon icon="mdi:rotate-right"></ha-icon><span>+15°</span></button><button type="button" data-robot-heading="around" title="180°"><ha-icon icon="mdi:rotate-3d-variant"></ha-icon><span>180°</span></button><button type="button" data-action="reset-robot-heading" title="${this.t("reset")}"><ha-icon icon="mdi:restore"></ha-icon></button></div>`)}
+          ${panel("boundary", this.t("boundaryFit"), `<div class="calibration-control-layout compact-calibration-layout">${dpad("data-boundary-calibration")}${tools("data-boundary-calibration", "reset-boundary")}</div>`)}
+        </div>
+      </section>`;
+  }
+
+  frontendInfoMarkup() {
+    const infoLabel = `${this.t("status")} · ${this.t("cutHeight")}`;
+    return `
+      <div class="frontend-info-control" data-role="frontend-info-control">
+        <button type="button" class="frontend-info-button" data-info-toggle
+          title="${escapeHtml(infoLabel)}" aria-label="${escapeHtml(infoLabel)}">
+          <span aria-hidden="true">i</span>
+        </button>
+        <div class="frontend-info-popover" data-role="frontend-info-popover" hidden>
+          <div class="frontend-info-row"><span>${this.t("status")}</span><strong data-role="info-status">–</strong></div>
+          <div class="frontend-info-row"><span>${this.t("battery")}</span><strong data-role="info-battery">–</strong></div>
+          <div class="frontend-info-row"><span>${this.t("connection")}</span><strong data-role="info-connection">–</strong></div>
+          <div class="frontend-info-row"><span>Cloud / MQTT</span><strong data-role="info-cloud">–</strong></div>
+          <div class="frontend-info-row"><span>${this.t("charging")}</span><strong data-role="info-charging">–</strong></div>
+          <div class="frontend-info-row"><span>${this.t("mowedArea")}</span><strong data-role="info-mowing-progress">–</strong></div>
+          <div class="frontend-info-row frontend-info-height"><span>${this.t("cutHeight")}</span><strong data-role="info-cut-height">–</strong></div>
+          <div class="frontend-info-row next-mow-line" data-role="next-mow-line" hidden><span>${anthbotScheduleText(this, "nextMow")}</span><strong data-role="info-next-mow">–</strong></div>
+        </div>
+      </div>`;
+  }
+
+  updateFrontendInfo(attributes = this.entity?.attributes || {}) {
+    const setText = (role, value) => {
+      const node = this.shadowRoot?.querySelector(`[data-role="${role}"]`);
+      if (node) node.textContent = value ?? "–";
+    };
+
+    const statusEntity = this.getRelatedEntity("status");
+    setText("info-status", statusEntity ? this.translateStatus(statusEntity.state) : "–");
+
+    const batteryEntity = this.getRelatedEntity("battery");
+    const battery = Number(batteryEntity?.state);
+    setText("info-battery", Number.isFinite(battery) ? `${Math.round(battery)}%` : "–");
+
+    const connectionEntity = this.getRelatedEntity("connection");
+    const connectionState = String(connectionEntity?.state || "").trim();
+    setText(
+      "info-connection",
+      connectionState && !["unknown", "unavailable"].includes(connectionState.toLowerCase())
+        ? this.translateStatus(connectionState)
+        : "–",
+    );
+
+    const mark = (value) => value === true ? "✓" : value === false ? "✕" : "–";
+    setText(
+      "info-cloud",
+      `Cloud ${mark(attributes.cloud_connected)} · Robot ${mark(attributes.robot_online)} · MQTT ${mark(attributes.live_shadow_connected)}`,
+    );
+
+    const chargingEntity = this.getRelatedEntity("charging");
+    const chargingState = String(chargingEntity?.state || "").trim();
+    setText(
+      "info-charging",
+      chargingState && !["unknown", "unavailable"].includes(chargingState.toLowerCase())
+        ? this.translateStatus(chargingState)
+        : "–",
+    );
+
+    const mowingProgressEntity = this.getRelatedEntity("mowingProgress");
+    const mowingProgress = Number(mowingProgressEntity?.state);
+    setText("info-mowing-progress", Number.isFinite(mowingProgress) ? `${Math.max(0, Math.min(100, mowingProgress)).toFixed(1)}%` : "–");
+
+    const cuttingHeight = this.getRelatedEntity("cuttingHeight");
+    const height = Number(cuttingHeight?.state);
+    const unit = cuttingHeight?.attributes?.unit_of_measurement || "mm";
+    setText(
+      "info-cut-height",
+      Number.isFinite(height) ? `${Number.isInteger(height) ? height : height.toFixed(1)} ${unit}` : "–",
+    );
+  }
+
+  setupButtonTooltips() {
+    const card = this.shadowRoot?.querySelector("ha-card");
+    const tooltip = this.shadowRoot?.querySelector('[data-role="button-tooltip"]');
+    if (!card || !tooltip) return;
+
+    let activeButton = null;
+
+    const prepare = (button) => {
+      if (!button) return "";
+
+      // A text-labelled button already explains itself in every layout.
+      // Suppress the duplicate hover tooltip globally; keep tooltips only for
+      // icon-only controls (close, zoom, calibration icons, etc.).
+      // Only count text that is actually visible. Several layouts intentionally
+      // hide .quick-label and show just the icon; those controls still need a
+      // tooltip even though button.textContent contains the hidden label.
+      const visibleTextParts = [];
+      const walker = document.createTreeWalker(button, NodeFilter.SHOW_TEXT);
+      let textNode;
+      while ((textNode = walker.nextNode())) {
+        const text = String(textNode.nodeValue || "").replace(/\s+/g, " ").trim();
+        if (!text || !/\p{L}/u.test(text)) continue;
+        const parent = textNode.parentElement;
+        if (!parent) continue;
+        const style = getComputedStyle(parent);
+        if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) continue;
+        if (!parent.getClientRects().length) continue;
+        visibleTextParts.push(text);
+      }
+      const visibleText = visibleTextParts.join(" ");
+      if (/\p{L}/u.test(visibleText)) {
+        button.removeAttribute("title");
+        delete button.dataset.tooltip;
+        return "";
+      }
+
+      if (!button.dataset.tooltip) {
+        const label =
+          String(button.getAttribute("title") || "").trim()
+          || String(button.getAttribute("aria-label") || "").trim()
+          || String(button.textContent || "").replace(/\s+/g, " ").trim();
+        if (label) button.dataset.tooltip = label;
+      }
+      if (button.hasAttribute("title")) button.removeAttribute("title");
+      return String(button.dataset.tooltip || "").trim();
+    };
+
+    const hide = () => {
+      activeButton = null;
+      tooltip.hidden = true;
+    };
+
+    const show = (button) => {
+      const label = prepare(button);
+      if (!label) return hide();
+
+      activeButton = button;
+      tooltip.textContent = label;
+      tooltip.hidden = false;
+
+      requestAnimationFrame(() => {
+        if (activeButton !== button || tooltip.hidden) return;
+        const rect = button.getBoundingClientRect();
+        const tip = tooltip.getBoundingClientRect();
+        const gap = 9;
+        let left = rect.left + rect.width / 2;
+        left = Math.max(tip.width / 2 + 8, Math.min(window.innerWidth - tip.width / 2 - 8, left));
+        let top = rect.top - gap;
+        let below = false;
+        if (top - tip.height < 8) {
+          top = rect.bottom + gap;
+          below = true;
+        }
+        tooltip.style.left = `${Math.round(left)}px`;
+        tooltip.style.top = `${Math.round(top)}px`;
+        tooltip.dataset.below = below ? "true" : "false";
+      });
+    };
+
+    card.addEventListener("pointerover", (event) => {
+      const button = event.target?.closest?.("button");
+      if (button) show(button);
+    });
+    card.addEventListener("pointerout", (event) => {
+      const button = event.target?.closest?.("button");
+      if (!button || button !== activeButton) return;
+      if (event.relatedTarget && button.contains(event.relatedTarget)) return;
+      hide();
+    });
+    card.addEventListener("focusin", (event) => {
+      const button = event.target?.closest?.("button");
+      if (button) show(button);
+    });
+    card.addEventListener("focusout", hide);
+    card.addEventListener("pointerdown", hide, true);
+    card.querySelectorAll("button").forEach(prepare);
+  }
+
+  frontendQuickbarMarkup() {
+    if (!["classic", "modern", "compact", "fullscreen"].includes(this.frontendLayout)) return "";
+    const button = (content, attrs, klass = "") => `<button type="button" class="${klass}" ${attrs}>${content}</button>`;
+    return `<div class="frontend-quickbar">
+      ${button('<ha-icon icon="mdi:play"></ha-icon><span class="quick-label">' + escapeHtml(this.t("startLabel")) + '</span>', 'data-command="start"', 'primary')}
+      ${button('<ha-icon icon="mdi:pause"></ha-icon><span class="quick-label">' + escapeHtml(this.t("pauseTask")) + '</span>', 'data-command="pause"')}
+      ${button('<ha-icon icon="mdi:stop"></ha-icon><span class="quick-label">' + escapeHtml(this.t("stopLabel")) + '</span>', 'data-command="stop"')}
+      ${button('<ha-icon icon="mdi:home-import-outline"></ha-icon><span class="quick-label">' + escapeHtml(this.t("homeLabel")) + '</span>', 'data-command="dock"')}
+      ${button('<ha-icon icon="mdi:vector-polygon"></ha-icon><span class="quick-label">' + escapeHtml(this.t("zones")) + '</span>', 'data-open-panel="control"')}
+    </div>`;
+  }
+
+  ensureFrontendBottomQuickbar(root = this.shadowRoot) {
+    const bottomSlot = root?.querySelector?.('.frontend-bottom-slot');
+    if (!bottomSlot) return;
+
+    const wantsBottomQuickbar = ["classic", "modern", "compact", "fullscreen"].includes(this.frontendLayout);
+    if (!wantsBottomQuickbar) {
+      bottomSlot.innerHTML = "";
+      return;
+    }
+
+    const expectedMarkup = this.frontendQuickbarMarkup();
+    const currentQuickbar = bottomSlot.querySelector('.frontend-quickbar');
+    const currentCount = currentQuickbar ? currentQuickbar.querySelectorAll('button').length : 0;
+
+    if (!currentQuickbar || currentCount < 5) {
+      bottomSlot.innerHTML = expectedMarkup;
+    }
+
+    // Hard rule: every frontend may own at most one bottom action row,
+    // and the Menu action lives only in the top navigation.
+    bottomSlot.querySelectorAll(
+      'button[data-panel="more"], button[data-open-panel="more"], button[data-floating-menu], .frontend-quickbar button[data-panel="more"]'
+    ).forEach((button) => button.remove());
+
+    const repairedQuickbar = bottomSlot.querySelector('.frontend-quickbar');
+    if (!repairedQuickbar || repairedQuickbar.querySelectorAll('button').length < 5) {
+      bottomSlot.innerHTML = expectedMarkup;
+    }
+  }
+
+  isClassicMobilePortrait() {
+    const vv = window.visualViewport;
+    const width = vv?.width || window.innerWidth || 0;
+    const height = vv?.height || window.innerHeight || 0;
+    return this.frontendLayout === "classic" && width > 0 && width <= 700 && height >= width;
+  }
+
+  isClassicMobileLandscape() {
+    const vv = window.visualViewport;
+    const width = vv?.width || window.innerWidth || document.documentElement?.clientWidth || 0;
+    const height = vv?.height || window.innerHeight || document.documentElement?.clientHeight || 0;
+    const coarse = Boolean(window.matchMedia?.("(pointer: coarse)")?.matches);
+    const noHover = Boolean(window.matchMedia?.("(hover: none)")?.matches);
+    const touchPoints = Number(navigator.maxTouchPoints || 0);
+    const touchLike = coarse || noHover || touchPoints > 0;
+    const orientationType = String(window.screen?.orientation?.type || "").toLowerCase();
+    const landscape = orientationType.startsWith("landscape") || (width > 0 && height > 0 && width > height);
+
+    // Touchscreen laptops also report maxTouchPoints/coarse pointer. Restrict this
+    // layout to phone-sized landscape viewports so desktop/laptop Classic never
+    // receives the mobile-landscape UI. visualViewport values are CSS pixels.
+    const shortSide = Math.min(width, height);
+    const longSide = Math.max(width, height);
+    const phoneSized = shortSide > 0 && shortSide <= 600 && longSide <= 1200;
+    return this.frontendLayout === "classic" && touchLike && landscape && phoneSized;
+  }
+
+  setupClassicLandscapePanelNavigation(root = this.shadowRoot) {
+    const card = root?.querySelector?.('ha-card');
+    const controls = root?.querySelector?.('[data-classic-landscape-scroll-controls]');
+    if (!card) return;
+
+    const active = this.isClassicMobileLandscape();
+    card.toggleAttribute('data-classic-touch-landscape', active);
+
+    // v40: landscape Classic no longer uses paging arrows or custom drag-scroll.
+    // Zone selection/order has its own inline editor in the right pane.
+    if (controls) controls.hidden = true;
+    this.classicLandscapePanelObserver?.disconnect();
+    this.classicLandscapePanelObserver = null;
+
+    if (!active) {
+      this.classicLandscapeZoneEditorOpen = false;
+      this.classicLandscapeZoneDrafts = null;
+    }
+  }
+
+  syncClassicMobileSheet(root = this.shadowRoot) {
+    const sideSlot = root?.querySelector?.('.frontend-side-slot');
+    if (!sideSlot) return;
+    const mobile = this.isClassicMobilePortrait();
+    if (!mobile) this.classicMobileSheetOpen = false;
+    sideSlot.classList.toggle('classic-mobile-sheet', mobile);
+    sideSlot.classList.toggle('mobile-sheet-open', mobile && this.classicMobileSheetOpen);
+  }
+
+  isTrueFullscreenActive() {
+    return document.fullscreenElement === this;
+  }
+
+  async enterTrueFullscreen() {
+    if (this.isTrueFullscreenActive()) return true;
+    if (typeof this.requestFullscreen !== "function") return false;
+    try {
+      await this.requestFullscreen();
+      this.updateTrueFullscreenButton();
+      this.renderer?.resize();
+      return true;
+    } catch (error) {
+      console.warn("Anthbot fullscreen request failed", error);
+      return false;
+    }
+  }
+
+  async exitTrueFullscreen() {
+    if (!document.fullscreenElement) return true;
+    try {
+      await document.exitFullscreen();
+      this.updateTrueFullscreenButton();
+      this.renderer?.resize();
+      return true;
+    } catch (error) {
+      console.warn("Anthbot fullscreen exit failed", error);
+      return false;
+    }
+  }
+
+  frontendFullscreenControlMarkup() {
+    if (this.frontendLayout !== "fullscreen") return "";
+    return `<button type="button" class="true-fullscreen-toggle" data-true-fullscreen-toggle
+      title="Fullscreen" aria-label="Fullscreen"><ha-icon icon="mdi:fullscreen"></ha-icon></button>`;
+  }
+
+  updateTrueFullscreenButton() {
+    const button = this.shadowRoot?.querySelector('[data-true-fullscreen-toggle]');
+    if (!button) return;
+    const active = this.isTrueFullscreenActive();
+    const icon = button.querySelector('ha-icon');
+    if (icon) icon.setAttribute('icon', active ? 'mdi:fullscreen-exit' : 'mdi:fullscreen');
+    const label = active ? 'Kilépés a teljes képernyőből' : 'Teljes képernyő';
+    button.setAttribute('aria-label', label);
+    button.dataset.tooltip = label;
+  }
+
+  createFrontendLayoutControl() {
+    const wrapper = document.createElement("section");
+    wrapper.className = "frontend-layout-picker";
+    wrapper.innerHTML = `<div class="frontend-layout-picker-head"><strong>${this.t("interfaceSettings")}</strong></div><div class="frontend-layout-options" role="group" aria-label="${this.t("interfaceSettings")}"></div>`;
+    const options = wrapper.querySelector(".frontend-layout-options");
+    const layouts = [
+      ["origin", "Origin", "mdi:history"],
+      ["classic", "Classic", "mdi:view-dashboard-outline"],
+      ["modern", "Modern", "mdi:map-outline"],
+      ["compact", "Compact", "mdi:view-grid-outline"],
+      ["fullscreen", "Fullscreen", "mdi:fullscreen"],
+    ];
+    for (const [value, label, icon] of layouts) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "frontend-layout-option";
+      button.dataset.layout = value;
+      button.classList.toggle("active", this.frontendLayout === value);
+      button.setAttribute("aria-pressed", this.frontendLayout === value ? "true" : "false");
+      button.setAttribute("aria-label", label);
+      button.innerHTML = `<span class="frontend-layout-icon ${value}" aria-hidden="true"><ha-icon icon="${icon}"></ha-icon></span><strong>${label}</strong>`;
+      button.addEventListener("click", () => this.setFrontendLayout(value));
+      options.appendChild(button);
+    }
+    return wrapper;
+  }
+
+  setFrontendLayout(layout) {
+    const normalized = String(layout || "").trim().toLowerCase();
+    if (!["origin", "classic", "modern", "compact", "fullscreen"].includes(normalized)) return;
+
+    // Fullscreen is a real browser fullscreen mode, not only a wide card layout.
+    // This call happens directly from a user click in the layout picker, so browsers
+    // are allowed to honor requestFullscreen().
+    if (normalized === "fullscreen") {
+      if (this.frontendLayout === normalized) {
+        void this.enterTrueFullscreen();
+        return;
+      }
+      this.frontendLayout = normalized;
+      this.floatingMenuOpen = false;
+      this.activePanel = "control";
+      this.saveInterfaceSettings();
+      void this.enterTrueFullscreen();
+      this.render();
+      return;
+    }
+
+    if (this.frontendLayout === normalized) return;
+    if (this.isTrueFullscreenActive()) void this.exitTrueFullscreen();
+    this.frontendLayout = normalized;
+    this.floatingMenuOpen = false;
+    this.activePanel = "control";
+    this.saveInterfaceSettings();
+    this.render();
   }
 
   render() {
@@ -336,12 +901,12 @@ class AnthbotMapCard extends HTMLElement {
       themeBackground ? "theme-background" : "",
       glassBackground ? "glass-background" : "",
       transparentBackground ? "transparent-background" : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
+      `layout-${this.frontendLayout}`,
+    ].filter(Boolean).join(" ");
+
     root.innerHTML = `
       <ha-card class="${cardClasses}">
-        <link rel="stylesheet" href="${this.resolveAsset("styles.css?v=2482-voice-ota9")}">
+        <link rel="stylesheet" href="${this.resolveAsset("styles.css?v=2482-voice-ota9-mf9")}">
         <style>
           .anthbot-menu-toggle { position:absolute; right:14px; bottom:14px; z-index:40; min-height:46px; padding:9px 15px; border:1px solid rgba(255,255,255,.38); border-radius:999px; background:rgba(10,18,26,.66); color:#fff; backdrop-filter:blur(12px); box-shadow:0 8px 28px rgba(0,0,0,.32); font:inherit; font-weight:800; cursor:pointer; }
           .anthbot-glass-panel { display:none; position:absolute; z-index:39; right:12px; bottom:70px; width:min(1100px,calc(100% - 24px)); max-height:calc(100% - 84px); overflow:auto; border:1px solid rgba(255,255,255,.34); border-radius:18px; background:rgba(9,18,27,.16); color:#fff; backdrop-filter:blur(9px) saturate(115%); box-shadow:0 16px 44px rgba(0,0,0,.24); overscroll-behavior:contain; }
@@ -465,244 +1030,2163 @@ class AnthbotMapCard extends HTMLElement {
             .mowing-mode-options { gap:6px !important; }
             .mowing-mode-options .height-option { padding:8px 4px !important; font-size:12px !important; }
           }
+
+          /* ===== Multi-frontend architecture v2 ===== */
+          :host { --mf-accent:#55e58a; --mf-accent2:#55a6ff; --mf-bg:#08121a; --mf-panel:rgba(9,18,27,.82); --mf-text:#f4f8fb; --mf-muted:#aeb7c2; display:block; }
+          ha-card.layout-classic, ha-card.layout-modern, ha-card.layout-compact, ha-card.layout-fullscreen {
+            height:var(--anthbot-viewport-fill-height, auto) !important;
+            min-height:var(--anthbot-viewport-fill-min-height, auto) !important;
+            max-height:var(--anthbot-viewport-fill-max-height, none) !important;
+            overflow:hidden !important;
+          }
+          .frontend-frame { position:relative; min-width:0; min-height:0; height:100%; display:grid; grid-template-rows:auto minmax(0,1fr) auto; }
+          .frontend-top-slot, .frontend-bottom-slot, .frontend-side-slot, .frontend-map-slot { min-width:0; min-height:0; }
+          .frontend-main { display:grid; min-width:0; min-height:0; height:100%; }
+          .frontend-map-slot { position:relative; min-width:0; min-height:0; overflow:hidden; }
+          .canvas-wrap.auto-map-size { aspect-ratio:auto; height:100% !important; min-height:0 !important; max-height:none !important; }
+          .layout-classic .canvas-wrap.auto-map-size,
+          .layout-modern .canvas-wrap.auto-map-size,
+          .layout-compact .canvas-wrap.auto-map-size,
+          .layout-fullscreen .canvas-wrap,
+          .layout-fullscreen .canvas-wrap.auto-map-size {
+            height:100% !important; min-height:0 !important; max-height:none !important; aspect-ratio:auto !important;
+          }
+          .frontend-side-slot:empty, .frontend-top-slot:empty, .frontend-bottom-slot:empty { display:none; }
+          .frontend-drawer { display:none; position:absolute; z-index:48; overflow:auto; overscroll-behavior:contain; }
+          .frontend-drawer.open { display:block; }
+          .frontend-drawer .app-panel, .frontend-drawer .app-shell { background:transparent !important; border:0 !important; }
+          .frontend-drawer-close { position:sticky; top:0; z-index:5; width:36px; height:36px; margin:8px 8px 0 auto; display:grid; place-items:center; border:0; border-radius:50%; font-size:22px; cursor:pointer; }
+          .frontend-quickbar { position:absolute; z-index:37; display:flex; gap:8px; align-items:center; }
+          .frontend-quickbar button { display:flex; align-items:center; justify-content:center; gap:7px; min-height:46px; padding:9px 14px; border:0; font:inherit; font-weight:800; cursor:pointer; }
+          .frontend-quickbar ha-icon { --mdc-icon-size:20px; }
+          .frontend-open-panel { cursor:pointer; }
+          .frontend-panel-title { display:none; }
+          .panel-tabs button { display:flex; align-items:center; justify-content:center; gap:6px; }
+          .panel-tabs ha-icon { --mdc-icon-size:18px; }
+          .panel-tabs .tab-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+          .anthbot-more-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; padding:2px; }
+          .anthbot-more-tile { min-height:84px; padding:14px; text-align:left; font:inherit; cursor:pointer; }
+          .anthbot-more-tile ha-icon { display:block; margin-bottom:7px; }
+          .anthbot-more-tile strong { display:block; }
+          .anthbot-more-tile span { display:block; margin-top:4px; font-size:11px; opacity:.72; }
+
+          /* Calibration is always an overlay on top of the map. The map never disappears. */
+          .calibration-overlay { position:absolute; z-index:46; overflow:auto; overscroll-behavior:contain; }
+          .calibration-overlay[hidden] { display:none !important; }
+          .calibration-overlay-head { position:sticky; top:0; z-index:3; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; }
+          .calibration-overlay-title { display:flex; align-items:center; gap:9px; min-width:0; font-weight:900; }
+          .calibration-overlay-title ha-icon { flex:0 0 auto; }
+          .calibration-overlay-close { width:36px; height:36px; border:0; border-radius:50%; font-size:22px; cursor:pointer; }
+          .calibration-accordion { display:grid; gap:8px; padding:8px 10px 10px; }
+          .calibration-section { overflow:hidden; }
+          .calibration-section > summary { list-style:none; display:flex; align-items:center; gap:10px; min-height:52px; padding:10px 12px; cursor:pointer; user-select:none; }
+          .calibration-section > summary::-webkit-details-marker { display:none; }
+          .calibration-section > summary ha-icon { flex:0 0 auto; }
+          .calibration-section > summary .calibration-summary-copy { min-width:0; flex:1; }
+          .calibration-section > summary strong { display:block; font-size:14px; }
+          .calibration-section > summary span { display:block; margin-top:2px; font-size:11px; opacity:.68; }
+          .calibration-section > summary::after { content:"⌄"; flex:0 0 auto; font-size:20px; transition:transform .18s ease; }
+          .calibration-section[open] > summary::after { transform:rotate(180deg); }
+          .calibration-section-body { padding:4px 10px 12px; }
+          .calibration-control-layout { display:grid; grid-template-columns:minmax(170px,.9fr) minmax(180px,1.1fr); gap:12px; align-items:center; }
+          .calibration-dpad { display:grid; grid-template-columns:repeat(3,64px); grid-template-rows:repeat(3,58px); gap:7px; justify-content:center; align-items:center; }
+          .calibration-dpad button, .calibration-tool-grid button, .calibration-heading-grid button { border:0; font:inherit; font-weight:800; cursor:pointer; }
+          .calibration-dpad button { width:64px; height:58px; font-size:21px; }
+          .calibration-dpad .up { grid-column:2; grid-row:1; }
+          .calibration-dpad .left { grid-column:1; grid-row:2; }
+          .calibration-dpad .center { grid-column:2; grid-row:2; pointer-events:none; opacity:.65; }
+          .calibration-dpad .right { grid-column:3; grid-row:2; }
+          .calibration-dpad .down { grid-column:2; grid-row:3; }
+          .calibration-tool-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+          .calibration-tool-grid button, .calibration-heading-grid button { min-height:46px; padding:8px 10px; }
+          .calibration-tool-grid .wide { grid-column:1 / -1; }
+          .calibration-heading-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+          .calibration-yaml { margin:0 10px 12px; }
+          .calibration-yaml details > summary { cursor:pointer; font-size:12px; opacity:.72; }
+          .calibration-yaml .yaml-row { margin-top:8px; }
+
+          /* Frontend chooser */
+          .frontend-layout-picker { margin:0 0 14px; padding:14px; }
+          .frontend-layout-picker-head { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; margin-bottom:11px; }
+          .frontend-layout-picker-head strong { font-size:15px; }
+          .frontend-layout-picker-head span { font-size:11px; text-align:right; opacity:.68; }
+          .frontend-layout-options { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:9px; }
+          .frontend-layout-option { position:relative; min-width:0; min-height:108px; padding:12px 8px 10px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:9px; font:inherit; cursor:pointer; }
+          .frontend-layout-option.active::after { content:"✓"; position:absolute; top:7px; right:7px; width:21px; height:21px; display:grid; place-items:center; border-radius:50%; font-size:12px; font-weight:1000; }
+          .frontend-layout-icon { width:52px; height:52px; display:grid; place-items:center; border-radius:16px; border:1px solid rgba(127,127,127,.24); transition:transform .16s ease, box-shadow .16s ease; }
+          .frontend-layout-icon ha-icon { --mdc-icon-size:28px; }
+          .frontend-layout-option:hover .frontend-layout-icon { transform:translateY(-2px); }
+          .frontend-layout-icon.origin { background:linear-gradient(145deg,#12212d,#08121a); color:#55e58a; border-color:#355267; }
+          .frontend-layout-icon.classic { background:linear-gradient(145deg,#24292d,#171a1d); color:#77e68c; border-color:#394147; }
+          .frontend-layout-icon.modern { background:linear-gradient(145deg,#f5faf7,#dfece5); color:#168f5d; border-color:#cedfd5; }
+          .frontend-layout-icon.compact { background:linear-gradient(145deg,#18304a,#0e2033); color:#5a9ff2; border-color:#294a69; }
+          .frontend-layout-icon.fullscreen { background:linear-gradient(145deg,#29231b,#151515); color:#ff9f1a; border-color:#5a4326; }
+          .frontend-layout-option.active .frontend-layout-icon { box-shadow:0 0 0 2px var(--mf-accent),0 8px 18px rgba(0,0,0,.16); }
+          .frontend-layout-option strong { display:block; text-align:center; font-size:12px; line-height:1.15; }
+          .frontend-layout-device-note { margin-top:10px; font-size:11px; line-height:1.35; opacity:.7; }
+
+          /* ========== ORIGIN / exact 2.4.9.1-style map-first glass UI ========== */
+          ha-card.layout-origin { position:relative; overflow:hidden; }
+          .layout-origin .frontend-main { display:block !important; padding:0 !important; }
+          .layout-origin .frontend-map-slot { width:100% !important; }
+          .layout-origin .frontend-side-slot, .layout-origin .frontend-top-slot, .layout-origin .frontend-bottom-slot { display:none !important; }
+          .layout-origin .canvas-wrap { width:100%; }
+          .layout-origin .frontend-info-control { display:none !important; }
+          .layout-origin .origin-menu-toggle { display:block !important; }
+          .layout-origin .frontend-drawer {
+            display:none; position:absolute; z-index:39; right:12px; bottom:70px;
+            width:min(1100px,calc(100% - 24px)); max-height:calc(100% - 84px); overflow:auto;
+            border:1px solid rgba(255,255,255,.34); border-radius:18px;
+            background:rgba(9,18,27,.16); color:#fff; backdrop-filter:blur(9px) saturate(115%);
+            box-shadow:0 16px 44px rgba(0,0,0,.24); overscroll-behavior:contain;
+          }
+          .layout-origin .frontend-drawer.open { display:block !important; }
+          .layout-origin .frontend-drawer-close { position:sticky; top:7px; float:right; z-index:8; margin:7px 7px 0 0; width:36px; height:36px; border:0; border-radius:50%; background:rgba(255,255,255,.12); color:#fff; font-size:22px; }
+          .layout-origin .app-shell, .layout-origin .app-panel { background:transparent !important; border:0 !important; }
+          .layout-origin .top-menu { background:rgba(255,255,255,.07) !important; border-radius:14px; margin:0 10px; }
+          .layout-origin .panel-tabs { display:grid !important; grid-template-columns:repeat(8,minmax(0,1fr)) !important; padding-inline:10px; gap:9px; }
+          .layout-origin .panel-tabs button { min-width:0; min-height:40px; padding:8px 4px !important; font-size:13px !important; line-height:1.15; overflow:hidden; }
+          .layout-origin .panel-tabs button .tab-label { display:block; width:100%; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center; }
+          .layout-origin .app-panel { padding:0 10px 10px !important; }
+          .layout-origin .mowing-target-tile > span { display:none !important; }
+          .layout-origin .calibration-overlay { right:12px; bottom:70px; }
+          /* Origin responsive sizing v3 — use the same measured visible-height contract
+             as the other layouts.  The map fills the available HA viewport in both
+             portrait and landscape; overlays stay inside the map. */
+          @media (max-width:900px), (max-height:720px) {
+            ha-card.layout-origin {
+              height:var(--anthbot-viewport-fill-height,calc(100dvh - 8px)) !important;
+              min-height:var(--anthbot-viewport-fill-min-height,240px) !important;
+              max-height:var(--anthbot-viewport-fill-max-height,none) !important;
+              overflow:hidden !important;
+            }
+            ha-card.layout-origin .frontend-frame,
+            ha-card.layout-origin .frontend-main,
+            ha-card.layout-origin .frontend-map-slot,
+            ha-card.layout-origin .canvas-wrap,
+            ha-card.layout-origin .canvas-wrap.auto-map-size {
+              width:100% !important;
+              height:100% !important;
+              min-height:0 !important;
+              max-height:100% !important;
+              aspect-ratio:auto !important;
+            }
+            ha-card.layout-origin .frontend-main { position:relative !important; }
+            ha-card.layout-origin .frontend-drawer { left:8px; right:8px; bottom:60px; width:auto; max-height:76%; }
+            ha-card.layout-origin .map-live-status:not([data-user-positioned="true"]) { top:8px !important; right:8px !important; max-width:calc(100% - 16px) !important; }
+            ha-card.layout-origin .preview-hint { display:block !important; left:10px !important; bottom:10px !important; max-width:48% !important; }
+            ha-card.layout-origin .origin-menu-toggle { display:block !important; right:9px !important; bottom:9px !important; }
+          }
+          @media (max-width:700px) and (orientation:portrait) {
+            ha-card.layout-origin .panel-tabs { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+          }
+
+          /* ========== CLASSIC / control-first: status dashboard, dark graphite ========== */
+          ha-card.layout-classic { --mf-accent:#68e07e; --mf-accent2:#9ce6ff; --mf-bg:#101214; --mf-panel:#191c1f; --mf-text:#f5f7f8; --mf-muted:#9ca6ae; background:#101214 !important; color:var(--mf-text) !important; border:1px solid #2c3135 !important; border-radius:20px !important; box-shadow:0 16px 34px rgba(0,0,0,.28) !important; }
+          .layout-classic .frontend-top-slot { padding:10px 10px 0; }
+          .layout-classic .frontend-main { grid-template-columns:minmax(0,1.45fr) minmax(360px,.75fr); gap:10px; padding:10px; }
+          .layout-classic .frontend-map-slot { border-radius:16px; }
+          .layout-classic .frontend-side-slot { display:block; min-height:0; overflow:auto; border:1px solid #2f353a; border-radius:16px; background:#171a1d; }
+          .layout-classic .app-shell { background:transparent !important; border:0 !important; }
+          .layout-classic .top-menu { border:1px solid #2f353a !important; border-radius:16px !important; background:#171a1d !important; }
+          .layout-classic .panel-tabs { display:grid; grid-template-columns:repeat(8,minmax(0,1fr)); gap:6px; margin-top:8px; }
+          .layout-classic .panel-tabs button { min-height:42px; border:1px solid #30363b !important; border-radius:11px !important; background:#1e2226 !important; color:#dfe5e9 !important; }
+          .layout-classic .panel-tabs button.active { background:#68e07e !important; color:#0b160e !important; border-color:#86ed97 !important; }
+          .layout-classic .panel-tabs button .tab-label { display:none; }
+          .layout-classic .app-panel { background:transparent !important; border:0 !important; padding:10px !important; height:100%; min-height:0; box-sizing:border-box; overflow:hidden; }
+          .layout-classic .panel-body { height:100%; min-height:0; overflow:auto; padding-right:2px; box-sizing:border-box; }
+          .layout-classic .mowing-action-grid {
+            position:sticky; top:0; z-index:6; margin:0 0 10px; padding:8px;
+            display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:8px !important;
+            border:1px solid #343b40; border-radius:13px; background:rgba(23,26,29,.96);
+            box-shadow:0 8px 18px rgba(0,0,0,.16); backdrop-filter:blur(8px);
+          }
+          .layout-classic .mowing-action-grid .panel-tile { min-height:68px; }
+          .layout-classic .panel-tile, .layout-classic .settings-section, .layout-classic .zone-settings, .layout-classic .anthbot-more-tile, .layout-classic .frontend-layout-picker { background:#202428 !important; border:1px solid #343b40 !important; color:#f5f7f8 !important; border-radius:13px !important; }
+          .layout-classic .mowing-target-tile.active, .layout-classic .mowing-target-tile.active:hover { background:linear-gradient(180deg,#17402a,#10291c) !important; border-color:#6fe48f !important; color:#f6fff8 !important; box-shadow:0 0 0 1px rgba(111,228,143,.28) inset,0 8px 20px rgba(0,0,0,.18) !important; }
+          .layout-classic .mowing-target-tile.active strong, .layout-classic .mowing-target-tile.active span { color:#f6fff8 !important; }
+          .layout-classic .map-live-status { display:none !important; }
+          .layout-classic .frontend-quickbar, .layout-classic .anthbot-menu-toggle, .layout-classic .frontend-drawer { display:none !important; }
+          .layout-classic.calibration-active .frontend-main { grid-template-columns:1fr; }
+          .layout-classic.calibration-active .frontend-side-slot { display:none !important; }
+          .layout-classic .calibration-overlay { right:14px; top:14px; bottom:14px; width:min(430px,46%); background:rgba(23,26,29,.96); color:#f5f7f8; border:1px solid #3a4248; border-radius:16px; box-shadow:0 20px 44px rgba(0,0,0,.38); }
+          .layout-classic .calibration-overlay-head { background:#171a1d; border-bottom:1px solid #30363b; }
+          .layout-classic .calibration-section { background:#202428; border:1px solid #343b40; border-radius:12px; }
+          .layout-classic .calibration-section[open] { border-color:#68e07e; }
+          .layout-classic .calibration-dpad button, .layout-classic .calibration-tool-grid button, .layout-classic .calibration-heading-grid button, .layout-classic .calibration-overlay-close { background:#2a3035; color:#f5f7f8; border:1px solid #3a4248; border-radius:10px; }
+          .layout-classic .calibration-dpad button:hover, .layout-classic .calibration-tool-grid button:hover { border-color:#68e07e; color:#82ed94; }
+
+          /* ========== MODERN / map-first: airy light map UI ========== */
+          ha-card.layout-modern { --mf-accent:#18a86b; --mf-accent2:#2e8fd8; --mf-bg:#f5f7f6; --mf-panel:rgba(255,255,255,.92); --mf-text:#14221b; --mf-muted:#61716a; background:#f4f7f5 !important; color:var(--mf-text) !important; border:1px solid #d9e3dd !important; border-radius:26px !important; box-shadow:0 18px 38px rgba(31,48,39,.12) !important; }
+          .layout-modern .frontend-main { display:block; padding:10px; }
+          .layout-modern .frontend-map-slot { border-radius:20px; }
+          .layout-modern .canvas-wrap { border-radius:20px !important; overflow:hidden; }
+          .layout-modern .app-shell { position:absolute; z-index:40; top:12px; left:12px; right:12px; pointer-events:none; background:transparent !important; border:0 !important; }
+          .layout-modern .top-menu { display:none !important; }
+          .layout-modern .panel-tabs { pointer-events:auto; width:max-content; max-width:calc(100% - 130px); display:flex; gap:5px; padding:5px; border:1px solid rgba(255,255,255,.78); border-radius:999px; background:rgba(255,255,255,.86) !important; box-shadow:0 8px 24px rgba(25,61,43,.14); backdrop-filter:blur(14px); }
+          .layout-modern .panel-tabs button { min-height:38px; padding:7px 12px; border:0 !important; border-radius:999px !important; background:transparent !important; color:#405149 !important; }
+          .layout-modern .panel-tabs button.active { background:#153f2b !important; color:#fff !important; }
+          .layout-modern .frontend-quickbar { left:50%; bottom:14px; transform:translateX(-50%); max-width:calc(100% - 28px); padding:6px; border:1px solid rgba(255,255,255,.82); border-radius:18px; background:rgba(255,255,255,.88); box-shadow:0 12px 28px rgba(25,61,43,.16); backdrop-filter:blur(14px); }
+          .layout-modern .frontend-quickbar button { border-radius:13px; background:#edf3ef; color:#203028; }
+          .layout-modern .frontend-quickbar button.primary { background:#18a86b; color:#fff; }
+          .layout-modern .frontend-drawer { display:none; top:66px; right:18px; bottom:78px; width:min(460px,42%); background:rgba(255,255,255,.94); color:#14221b; border:1px solid rgba(206,220,212,.92); border-radius:20px; box-shadow:0 20px 48px rgba(25,61,43,.20); backdrop-filter:blur(16px); }
+          .layout-modern .frontend-drawer.open { display:block; }
+          .layout-modern .frontend-drawer-close { background:#edf3ef; color:#14221b; }
+          /* Modern uses a light drawer: force all ordinary drawer copy/icons to a dark readable color. */
+          .layout-modern .frontend-drawer,
+          .layout-modern .frontend-drawer .app-panel,
+          .layout-modern .frontend-drawer .panel-body,
+          .layout-modern .frontend-drawer .anthbot-menu-title,
+          .layout-modern .frontend-drawer .anthbot-menu-row,
+          .layout-modern .frontend-drawer .anthbot-menu-row strong,
+          .layout-modern .frontend-drawer .anthbot-menu-row ha-icon,
+          .layout-modern .frontend-drawer .secondary-panel-head,
+          .layout-modern .frontend-drawer .secondary-panel-head strong,
+          .layout-modern .frontend-drawer .secondary-panel-head button,
+          .layout-modern .frontend-drawer .settings-section,
+          .layout-modern .frontend-drawer .settings-section > summary,
+          .layout-modern .frontend-drawer .zone-settings,
+          .layout-modern .frontend-drawer .zone-settings > summary,
+          .layout-modern .frontend-drawer .control-head,
+          .layout-modern .frontend-drawer .control-head span,
+          .layout-modern .frontend-drawer .control-head strong,
+          .layout-modern .frontend-drawer .panel-tile,
+          .layout-modern .frontend-drawer .panel-tile strong,
+          .layout-modern .frontend-drawer .panel-tile span,
+          .layout-modern .frontend-drawer label,
+          .layout-modern .frontend-drawer .custom-button-actions-note,
+          .layout-modern .frontend-drawer .mowing-history-empty,
+          .layout-modern .frontend-drawer .mowing-history-stat span,
+          .layout-modern .frontend-drawer .mowing-history-stat strong {
+            color:#14221b !important;
+          }
+          .layout-modern .frontend-drawer .anthbot-menu-row {
+            background:#f7f9f8 !important;
+            border-color:#d8e3dc !important;
+          }
+          .layout-modern .frontend-drawer .anthbot-menu-row:hover { background:#eef5f1 !important; }
+          .layout-modern .frontend-drawer .anthbot-menu-chevron { color:#5d6f65 !important; }
+          .layout-modern .frontend-drawer .secondary-panel-head button { background:#edf3ef !important; border-color:#d7e2db !important; }
+          .layout-modern .frontend-drawer .panel-tile span,
+          .layout-modern .frontend-drawer .custom-button-actions-note,
+          .layout-modern .frontend-drawer .mowing-history-empty,
+          .layout-modern .frontend-drawer .mowing-history-stat span { color:#66776e !important; }
+          .layout-modern .app-panel { background:transparent !important; border:0 !important; padding:0 10px 12px !important; }
+          .layout-modern .panel-tile, .layout-modern .settings-section, .layout-modern .zone-settings, .layout-modern .anthbot-more-tile, .layout-modern .frontend-layout-picker { background:#fff !important; color:#14221b !important; border:1px solid #dce6e0 !important; border-radius:15px !important; box-shadow:0 6px 16px rgba(36,68,51,.06); }
+          .layout-modern .mowing-target-tile.active, .layout-modern .mowing-target-tile.active:hover { background:linear-gradient(180deg,#1f8a57,#166c43) !important; border-color:#4fcb8a !important; color:#ffffff !important; box-shadow:0 0 0 1px rgba(79,203,138,.22) inset,0 8px 18px rgba(22,108,67,.16) !important; }
+          .layout-modern .mowing-target-tile.active strong, .layout-modern .mowing-target-tile.active span { color:#ffffff !important; }
+          .layout-modern .frontend-drawer .mowing-target-tile.active strong,
+          .layout-modern .frontend-drawer .mowing-target-tile.active span { color:#ffffff !important; }
+          .layout-modern .map-live-status { top:70px; right:14px; background:rgba(255,255,255,.90) !important; color:#14221b !important; border:1px solid rgba(255,255,255,.9) !important; box-shadow:0 8px 22px rgba(25,61,43,.14) !important; }
+          .layout-modern .map-live-status .status-label, .layout-modern .mowing-live-line { color:#61716a !important; }
+          .layout-modern .map-overlay, .layout-modern .map-actions button, .layout-modern .map-close, .layout-modern .map-info-details > summary { background:rgba(255,255,255,.88) !important; color:#14221b !important; border-color:rgba(255,255,255,.9) !important; }
+          .layout-modern .map-badges { display:none !important; }
+          .layout-modern .preview-hint { display:none !important; }
+          .layout-modern .anthbot-menu-toggle { display:none !important; }
+          .layout-modern .calibration-overlay { right:18px; top:66px; bottom:78px; width:min(470px,43%); background:rgba(255,255,255,.95); color:#14221b; border:1px solid #d4e1da; border-radius:20px; box-shadow:0 22px 50px rgba(25,61,43,.22); backdrop-filter:blur(16px); }
+          .layout-modern .calibration-overlay-head { background:rgba(247,250,248,.96); border-bottom:1px solid #dce6e0; }
+          .layout-modern .calibration-section { background:#fff; border:1px solid #dce6e0; border-radius:14px; }
+          .layout-modern .calibration-section[open] { border-color:#18a86b; box-shadow:0 0 0 2px rgba(24,168,107,.08) inset; }
+          .layout-modern .calibration-dpad button, .layout-modern .calibration-tool-grid button, .layout-modern .calibration-heading-grid button, .layout-modern .calibration-overlay-close { background:#edf3ef; color:#163d2a; border:1px solid #d3e2d9; border-radius:13px; }
+          .layout-modern .calibration-dpad button:hover, .layout-modern .calibration-tool-grid button:hover { background:#18a86b; color:#fff; }
+
+          /* ========== COMPACT / task-first: blue bottom-sheet UI ========== */
+          ha-card.layout-compact { --mf-accent:#2e7fe8; --mf-accent2:#54c7ec; --mf-bg:#0b1625; --mf-panel:#122238; --mf-text:#eef6ff; --mf-muted:#9cb0c8; background:linear-gradient(180deg,#0c1828,#0b1320) !important; color:#eef6ff !important; border:1px solid #233a55 !important; border-radius:18px !important; box-shadow:0 18px 36px rgba(0,0,0,.30) !important; }
+          .layout-compact .frontend-top-slot { padding:8px 8px 0; }
+          .layout-compact .frontend-main { display:block; padding:8px; }
+          .layout-compact .top-menu { min-height:56px; border:1px solid #21364e !important; border-radius:14px !important; background:#111f32 !important; }
+          .layout-compact .panel-tabs { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; margin-top:6px; }
+          .layout-compact .panel-tabs button { min-height:38px; border:1px solid #21364e !important; border-radius:10px !important; background:#111f32 !important; color:#bfd0e3 !important; }
+          .layout-compact .panel-tabs button.active { background:#2e7fe8 !important; color:#fff !important; border-color:#5a9af0 !important; }
+          .layout-compact .panel-tabs button .tab-label { display:none; }
+          .layout-compact .canvas-wrap.auto-map-size { height:100% !important; min-height:0 !important; max-height:none !important; aspect-ratio:auto !important; }
+          .layout-compact .map-title, .layout-compact .preview-hint { display:none !important; }
+          .layout-compact .map-live-status { top:10px; right:10px; padding:6px 8px; background:rgba(11,25,42,.90) !important; border:1px solid #294765 !important; border-radius:12px !important; }
+          .layout-compact .map-live-status .battery-ring { width:38px; height:38px; }
+          .layout-compact .map-live-status .status-label, .layout-compact .map-live-status .next-mow-line, .layout-compact .map-live-status .rain-hold-line { display:none !important; }
+          .layout-compact .frontend-quickbar { left:10px; right:10px; bottom:10px; justify-content:stretch; padding:5px; background:rgba(11,25,42,.92); border:1px solid #294765; border-radius:14px; box-shadow:0 10px 24px rgba(0,0,0,.28); }
+          .layout-compact .frontend-quickbar button { flex:1; min-width:0; border-radius:10px; background:#162a42; color:#dcecff; padding-inline:8px; }
+          .layout-compact .frontend-quickbar button.primary { background:#2e7fe8; color:#fff; }
+          .layout-compact .frontend-bottom-slot .frontend-quickbar {
+            left:auto !important; right:auto !important; bottom:auto !important;
+            transform:none !important;
+          }
+          .layout-compact .frontend-quickbar button .quick-label { display:none; }
+          .layout-compact .frontend-drawer { display:none; left:8px; right:8px; bottom:8px; max-height:68%; background:#101f32; color:#eef6ff; border:1px solid #294765; border-radius:20px 20px 14px 14px; box-shadow:0 -18px 42px rgba(0,0,0,.36); }
+          .layout-compact .frontend-drawer.open { display:block; }
+          .layout-compact .frontend-drawer-close { background:#172c45; color:#eaf5ff; }
+          .layout-compact .app-panel { background:transparent !important; border:0 !important; padding:0 9px 10px !important; }
+          .layout-compact .panel-tile, .layout-compact .settings-section, .layout-compact .zone-settings, .layout-compact .anthbot-more-tile, .layout-compact .frontend-layout-picker { background:#162940 !important; color:#eef6ff !important; border:1px solid #2a4765 !important; border-radius:12px !important; }
+          .layout-compact .mowing-target-tile.active, .layout-compact .mowing-target-tile.active:hover { background:linear-gradient(180deg,#275887,#1f466d) !important; border-color:#67a8ff !important; color:#f4f9ff !important; }
+          .layout-compact .mowing-target-tile.active strong, .layout-compact .mowing-target-tile.active span { color:#f4f9ff !important; }
+          .layout-compact .anthbot-menu-toggle { display:none !important; }
+          .layout-compact .calibration-overlay { left:8px; right:8px; bottom:8px; max-height:68%; background:#101f32; color:#eef6ff; border:1px solid #315276; border-radius:20px 20px 14px 14px; box-shadow:0 -18px 42px rgba(0,0,0,.38); }
+          .layout-compact .calibration-overlay-head { background:#101f32; border-bottom:1px solid #294765; }
+          .layout-compact .calibration-section { background:#162940; border:1px solid #2a4765; border-radius:12px; }
+          .layout-compact .calibration-section[open] { border-color:#54a0ff; }
+          .layout-compact .calibration-dpad button, .layout-compact .calibration-tool-grid button, .layout-compact .calibration-heading-grid button, .layout-compact .calibration-overlay-close { background:#1c3552; color:#eef6ff; border:1px solid #355b81; border-radius:10px; }
+          .layout-compact .calibration-dpad button:hover, .layout-compact .calibration-tool-grid button:hover { background:#2e7fe8; }
+
+          /* ========== FULLSCREEN / immersive: map first, controls only as overlays ========== */
+          ha-card.layout-fullscreen {
+            --mf-accent:#ff9f1a; --mf-accent2:#ffd166; --mf-bg:#090a0b; --mf-panel:#17191b;
+            --mf-text:#f6f0e7; --mf-muted:#aaa39a;
+            position:relative; overflow:hidden;
+            background:#090a0b !important; color:#f6f0e7 !important;
+            border:1px solid #3a2b18 !important; border-radius:12px !important;
+            box-shadow:0 22px 48px rgba(0,0,0,.42) !important;
+          }
+          .layout-fullscreen .frontend-main { display:block !important; min-height:0 !important; padding:0 !important; }
+          .layout-fullscreen .frontend-map-slot { width:100% !important; border:0 !important; }
+          .layout-fullscreen .frontend-side-slot { display:none !important; }
+          .layout-fullscreen .canvas-wrap {
+            height:100% !important; min-height:0 !important; max-height:none !important; aspect-ratio:auto !important;
+            border-radius:0 !important;
+          }
+
+          /* Top navigation is a compact floating bar, never a permanent side panel. */
+          .layout-fullscreen .app-shell {
+            position:absolute !important; z-index:45; top:14px; left:14px; right:auto;
+            width:auto; max-width:calc(100% - 90px);
+            padding:0 !important; margin:0 !important;
+            background:transparent !important; border:0 !important; pointer-events:none;
+          }
+          .layout-fullscreen .top-menu { display:none !important; }
+          .layout-fullscreen .panel-tabs {
+            pointer-events:auto; display:flex !important; grid-template-columns:none !important;
+            width:max-content; max-width:100%; gap:5px; margin:0 !important; padding:5px !important;
+            border:1px solid rgba(255,177,59,.26); border-radius:12px;
+            background:rgba(14,15,16,.82) !important;
+            box-shadow:0 10px 28px rgba(0,0,0,.32); backdrop-filter:blur(12px) saturate(115%);
+          }
+          .layout-fullscreen .panel-tabs button {
+            min-height:40px !important; min-width:44px; justify-content:center !important;
+            padding:7px 10px !important; border:1px solid transparent !important;
+            border-radius:8px !important; background:transparent !important; color:#d8d0c4 !important;
+          }
+          .layout-fullscreen .panel-tabs button.active {
+            background:#ff9f1a !important; color:#17100a !important; border-color:#ffc56b !important;
+          }
+          .layout-fullscreen .panel-tabs button ha-icon { --mdc-icon-size:21px; }
+          @media (max-width:900px) { .layout-fullscreen .panel-tabs .tab-label { display:none !important; } }
+
+          /* Bottom driving controls remain available without stealing map width. */
+          .layout-fullscreen .frontend-quickbar {
+            display:flex !important; left:50%; right:auto; bottom:14px; transform:translateX(-50%);
+            max-width:calc(100% - 28px); padding:6px; gap:6px;
+            border:1px solid rgba(255,177,59,.28); border-radius:12px;
+            background:rgba(14,15,16,.86); box-shadow:0 12px 30px rgba(0,0,0,.36);
+            backdrop-filter:blur(12px) saturate(115%);
+          }
+          .layout-fullscreen .frontend-quickbar button {
+            min-height:45px; padding:8px 14px; border:1px solid rgba(255,177,59,.18);
+            border-radius:8px; background:#1a1c1e; color:#f6f0e7;
+          }
+          .layout-fullscreen .frontend-quickbar button.primary { background:#ff9f1a; color:#17100a; border-color:#ffc56b; }
+
+          /* The actual menus are transient overlays on top of the map. */
+          .layout-fullscreen .frontend-drawer {
+            display:none; position:absolute; z-index:46;
+            top:70px; right:14px; bottom:76px; width:min(430px,38%); max-width:calc(100% - 28px);
+            overflow:auto; padding:0;
+            background:rgba(17,19,21,.94); color:#f6f0e7;
+            border:1px solid #594022; border-radius:12px;
+            box-shadow:0 22px 52px rgba(0,0,0,.46); backdrop-filter:blur(15px) saturate(115%);
+          }
+          .layout-fullscreen .frontend-drawer.open { display:block !important; }
+          .layout-fullscreen .frontend-drawer-close {
+            position:sticky; top:8px; float:right; z-index:4; margin:8px 8px 0 0;
+            width:38px; height:38px; border:1px solid #594022; border-radius:8px;
+            background:#1c1e20; color:#ffb13b; font-size:22px;
+          }
+          .layout-fullscreen .app-panel { background:transparent !important; border:0 !important; padding:8px 10px 12px !important; }
+          .layout-fullscreen .panel-tile,
+          .layout-fullscreen .settings-section,
+          .layout-fullscreen .zone-settings,
+          .layout-fullscreen .anthbot-more-tile,
+          .layout-fullscreen .frontend-layout-picker {
+            background:#1a1c1e !important; color:#f6f0e7 !important;
+            border:1px solid #43331f !important; border-radius:8px !important;
+          }
+          .layout-fullscreen .mowing-target-tile.active, .layout-fullscreen .mowing-target-tile.active:hover { background:linear-gradient(180deg,#5a3c12,#3d280c) !important; border-color:#ffb340 !important; color:#fff6e8 !important; box-shadow:0 0 0 1px rgba(255,179,64,.22) inset,0 8px 20px rgba(0,0,0,.18) !important; }
+          .layout-fullscreen .mowing-target-tile.active strong, .layout-fullscreen .mowing-target-tile.active span { color:#fff6e8 !important; }
+
+          .layout-fullscreen .map-title, .layout-fullscreen .preview-hint { display:none !important; }
+          .layout-fullscreen .map-actions button, .layout-fullscreen .map-close, .layout-fullscreen .map-info-details > summary {
+            background:rgba(18,19,20,.90) !important; color:#ffb13b !important;
+            border:1px solid #594022 !important; border-radius:8px !important;
+          }
+          .layout-fullscreen .anthbot-menu-toggle { display:none !important; }
+          .layout-fullscreen .frontend-info-control { top:14px; right:14px; }
+
+          /* Calibration stays in the already-established borderless floating-button mode. */
+          .layout-fullscreen.calibration-active .app-shell,
+          .layout-fullscreen.calibration-active .frontend-quickbar,
+          .layout-fullscreen.calibration-active .frontend-drawer { display:none !important; }
+
+          @media (max-width:720px) {
+            .layout-fullscreen .canvas-wrap { height:100% !important; min-height:0 !important; max-height:none !important; }
+            .layout-fullscreen .app-shell { top:8px; left:8px; max-width:calc(100% - 64px); }
+            .layout-fullscreen .panel-tabs { padding:4px !important; gap:3px; }
+            .layout-fullscreen .panel-tabs button { min-width:39px; min-height:38px !important; padding:6px !important; }
+            .layout-fullscreen .frontend-info-control { top:8px; right:8px; }
+            .layout-fullscreen .frontend-quickbar { left:8px; right:8px; bottom:8px; transform:none; max-width:none; }
+            .layout-fullscreen .frontend-quickbar button { flex:1; min-width:0; padding:7px 6px; }
+            .layout-fullscreen .frontend-quickbar .quick-label { display:none; }
+            .layout-fullscreen .frontend-drawer { top:58px; left:8px; right:8px; bottom:64px; width:auto; max-width:none; }
+          }
+
+          /* layout picker gets a true miniature of each identity */
+          .frontend-layout-picker { border:1px solid rgba(127,127,127,.18); border-radius:16px; background:rgba(127,127,127,.05); }
+          .frontend-layout-option { border:1px solid rgba(127,127,127,.24); border-radius:13px; background:rgba(127,127,127,.06); color:inherit; }
+          .frontend-layout-option.active { box-shadow:0 0 0 2px var(--mf-accent) inset; border-color:var(--mf-accent); }
+          .frontend-layout-option.active::after { background:var(--mf-accent); color:#08100b; }
+
+          @media (max-width:1100px) {
+            .layout-classic .frontend-main { grid-template-columns:minmax(0,1fr) minmax(320px,.8fr); }
+            .layout-classic .panel-tabs { grid-template-columns:repeat(4,minmax(0,1fr)); }
+          }
+          @media (max-width:820px) {
+            .frontend-layout-options { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .calibration-control-layout { grid-template-columns:1fr; }
+            .layout-classic .frontend-main { display:grid !important; grid-template-columns:minmax(0,1fr) minmax(250px,.72fr) !important; min-height:0; height:100%; }
+            .layout-fullscreen .frontend-main { display:block; min-height:0; height:100%; }
+            .layout-classic .frontend-side-slot { min-height:0; max-height:none; overflow:auto; }
+            .layout-fullscreen .frontend-side-slot { border:0; border-radius:0; max-height:none; }
+            .layout-classic .canvas-wrap.auto-map-size, .layout-modern .canvas-wrap.auto-map-size, .layout-compact .canvas-wrap.auto-map-size, .layout-fullscreen .canvas-wrap { height:100% !important; min-height:0 !important; max-height:none !important; }
+            .layout-classic .calibration-overlay, .layout-modern .calibration-overlay, .layout-fullscreen .calibration-overlay { left:8px; right:8px; top:auto; bottom:8px; width:auto; max-height:66%; }
+            .layout-modern .frontend-drawer { left:8px; right:8px; top:auto; bottom:8px; width:auto; max-height:66%; }
+            .layout-modern .frontend-bottom-slot { padding:0 8px 8px; }
+            .layout-modern .frontend-bottom-slot .frontend-quickbar { width:100%; overflow:auto; justify-content:stretch; }
+            .layout-modern .frontend-bottom-slot .frontend-quickbar button { flex:1 0 auto; }
+          }
+          @media (max-width:640px) {
+            .layout-classic .frontend-main { display:block !important; position:relative; height:100%; }
+            .layout-classic .frontend-map-slot { height:100%; }
+            .layout-classic .frontend-side-slot {
+              position:absolute; z-index:44; top:8px; right:8px; bottom:8px; left:auto;
+              width:min(350px,calc(100% - 16px)); max-height:none; overflow:auto;
+              border:1px solid #2f353a; border-radius:14px; box-shadow:0 18px 42px rgba(0,0,0,.36);
+            }
+          }
+          @media (max-width:600px) {
+            .frontend-layout-picker-head { align-items:flex-start; flex-direction:column; }
+            .frontend-layout-picker-head span { text-align:left; }
+            .calibration-dpad { grid-template-columns:repeat(3,56px); grid-template-rows:repeat(3,52px); }
+            .calibration-dpad button { width:56px; height:52px; }
+            .layout-modern .panel-tabs { max-width:calc(100% - 24px); overflow:auto; }
+            .layout-modern .panel-tabs .tab-label { display:none; }
+            .layout-modern .frontend-quickbar .quick-label { display:none; }
+            .layout-classic .panel-tabs { grid-template-columns:repeat(4,minmax(0,1fr)); }
+            .layout-fullscreen .panel-tabs { grid-template-columns:repeat(4,minmax(0,1fr)); }
+            .layout-fullscreen .panel-tabs .tab-label { display:none; }
+          }
+
+
+          /* ===== V3: simplified navigation and calibration ===== */
+          .panel-tabs { grid-template-columns:repeat(4,minmax(0,1fr)) !important; }
+          .panel-tabs button { min-height:46px !important; gap:8px !important; }
+          .panel-tabs .tab-label { display:inline !important; }
+
+          .anthbot-menu-title { padding:4px 4px 12px; font-size:20px; font-weight:900; }
+          .anthbot-more-grid { display:none !important; }
+          .anthbot-more-list { display:grid; gap:8px; }
+          .anthbot-menu-row { width:100%; min-height:58px; display:grid; grid-template-columns:32px 1fr 28px; align-items:center; gap:10px; padding:10px 12px; border:1px solid rgba(127,127,127,.22); border-radius:14px; background:rgba(127,127,127,.055); color:inherit; text-align:left; font:inherit; cursor:pointer; }
+          .anthbot-menu-row > ha-icon:first-child { --mdc-icon-size:23px; opacity:.92; }
+          .anthbot-menu-row strong { font-size:15px; font-weight:800; }
+          .anthbot-menu-chevron { --mdc-icon-size:21px; justify-self:end; opacity:.55; }
+          .secondary-panel-head { position:sticky; top:0; z-index:7; display:flex; align-items:center; gap:10px; min-height:52px; margin:0 0 10px; padding:4px 2px 8px; background:inherit; }
+          .secondary-panel-head button { width:40px; height:40px; display:grid; place-items:center; border:1px solid rgba(127,127,127,.22); border-radius:12px; background:rgba(127,127,127,.08); color:inherit; cursor:pointer; }
+          .secondary-panel-head strong { font-size:18px; }
+
+          /* Frontend chooser: previews, not logos, and no secondary captions. */
+          .frontend-layout-picker { padding:14px !important; }
+          .frontend-layout-picker-head { margin-bottom:12px !important; }
+          .frontend-layout-picker-head span, .frontend-layout-option small, .frontend-layout-device-note { display:none !important; }
+          .frontend-layout-options { grid-template-columns:repeat(4,minmax(0,1fr)) !important; gap:10px !important; }
+          .frontend-layout-option { min-height:104px !important; padding:10px !important; border-radius:15px !important; }
+          .frontend-layout-option strong { font-size:13px !important; }
+
+          /* Interface settings are simple rows with real switches instead of white square checkboxes. */
+          .interface-panel-clean { display:grid; gap:12px; }
+          .interface-setting-list { display:grid; gap:0; overflow:hidden; border:1px solid rgba(127,127,127,.18); border-radius:15px; background:rgba(127,127,127,.04); }
+          .interface-setting-list > .panel-tile { min-height:56px !important; margin:0 !important; padding:10px 14px !important; border:0 !important; border-bottom:1px solid rgba(127,127,127,.14) !important; border-radius:0 !important; background:transparent !important; box-shadow:none !important; }
+          .interface-setting-list > .panel-tile:last-child { border-bottom:0 !important; }
+          .interface-setting-list .switch-tile { display:flex !important; align-items:center !important; justify-content:space-between !important; gap:14px !important; }
+          .interface-setting-list input[type="checkbox"] { appearance:none; -webkit-appearance:none; width:46px; height:26px; flex:0 0 auto; position:relative; border:0 !important; border-radius:999px; background:rgba(127,127,127,.30); cursor:pointer; transition:.18s ease; }
+          .interface-setting-list input[type="checkbox"]::after { content:""; position:absolute; width:20px; height:20px; left:3px; top:3px; border-radius:50%; background:#fff; box-shadow:0 2px 6px rgba(0,0,0,.25); transition:.18s ease; }
+          .interface-setting-list input[type="checkbox"]:checked { background:var(--mf-accent); }
+          .interface-setting-list input[type="checkbox"]:checked::after { transform:translateX(20px); }
+          .interface-setting-list select { min-height:40px; padding:7px 36px 7px 10px; border-radius:10px; }
+
+          /* Calibration mode: the map remains the canvas. Only a slim rail is visible until a tool is selected. */
+          .calibration-overlay { inset:0 !important; width:auto !important; max-height:none !important; overflow:visible !important; background:transparent !important; border:0 !important; box-shadow:none !important; pointer-events:none; }
+          .calibration-rail { position:absolute; z-index:3; top:14px; right:14px; width:min(255px,31%); display:grid; gap:7px; padding:8px; border:1px solid rgba(255,255,255,.24); border-radius:18px; background:rgba(9,18,27,.78); color:#fff; box-shadow:0 14px 34px rgba(0,0,0,.30); backdrop-filter:blur(14px) saturate(120%); pointer-events:auto; }
+          .calibration-rail-head { min-height:42px; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:2px 4px 4px 8px; }
+          .calibration-rail-head strong { font-size:16px; }
+          .calibration-rail-head button, .calibration-popover-head button { width:34px; height:34px; border:0; border-radius:10px; background:rgba(255,255,255,.10); color:#fff; font-size:21px; cursor:pointer; }
+          .calibration-mode { min-height:50px; display:grid; grid-template-columns:28px 1fr 22px; align-items:center; gap:8px; padding:8px 10px; border:1px solid rgba(255,255,255,.12); border-radius:12px; background:rgba(255,255,255,.065); color:#fff; text-align:left; font:inherit; cursor:pointer; }
+          .calibration-mode > ha-icon:first-child { --mdc-icon-size:21px; }
+          .calibration-mode span { font-size:13px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+          .calibration-mode-chevron { --mdc-icon-size:18px; justify-self:end; opacity:.55; }
+          .calibration-mode.active { border-color:var(--mf-accent); box-shadow:0 0 0 1px color-mix(in srgb,var(--mf-accent) 35%, transparent) inset; }
+          .calibration-popover { position:absolute; z-index:4; top:14px; right:min(283px,34%); width:min(410px,44%); max-height:calc(100% - 28px); overflow:auto; border:1px solid rgba(255,255,255,.24); border-radius:18px; background:rgba(9,18,27,.88); color:#fff; box-shadow:0 18px 44px rgba(0,0,0,.36); backdrop-filter:blur(16px) saturate(120%); pointer-events:auto; }
+          .calibration-popover[hidden] { display:none !important; }
+          .calibration-popover-content[hidden] { display:none !important; }
+          .calibration-popover-content { padding:12px; }
+          .calibration-popover-head { min-height:42px; display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+          .calibration-popover-head strong { font-size:16px; }
+          .calibration-control-layout { grid-template-columns:1fr !important; gap:12px !important; }
+          .calibration-dpad { grid-template-columns:repeat(3,58px) !important; grid-template-rows:repeat(3,52px) !important; gap:6px !important; justify-content:center; }
+          .calibration-dpad button { width:58px !important; height:52px !important; display:grid; place-items:center; border:1px solid rgba(255,255,255,.14) !important; border-radius:12px !important; background:rgba(255,255,255,.08) !important; color:#fff !important; }
+          .calibration-dpad button ha-icon { --mdc-icon-size:27px; }
+          .calibration-dpad .center { opacity:.5; }
+          .calibration-tool-grid { grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:7px !important; }
+          .calibration-tool-grid button, .calibration-heading-grid button { min-height:46px !important; display:flex; align-items:center; justify-content:center; gap:7px; padding:8px 9px !important; border:1px solid rgba(255,255,255,.14) !important; border-radius:11px !important; background:rgba(255,255,255,.08) !important; color:#fff !important; font-size:12px; }
+          .calibration-tool-grid button ha-icon, .calibration-heading-grid button ha-icon { --mdc-icon-size:19px; }
+          .calibration-yaml { margin:0 !important; }
+          .calibration-yaml .yaml-row { margin:0 !important; }
+          .calibration-yaml textarea { min-height:180px; }
+
+          /* Layout identities keep their colors, but all share the same calm information hierarchy. */
+          .layout-classic .calibration-rail, .layout-classic .calibration-popover { background:rgba(23,26,29,.94); border-color:#3a4147; }
+          .layout-modern .calibration-rail, .layout-modern .calibration-popover { background:rgba(255,255,255,.94); color:#14221b; border-color:#d5e3da; box-shadow:0 18px 42px rgba(25,61,43,.18); }
+          .layout-modern .calibration-rail-head button, .layout-modern .calibration-popover-head button, .layout-modern .calibration-mode, .layout-modern .calibration-dpad button, .layout-modern .calibration-tool-grid button, .layout-modern .calibration-heading-grid button { background:#f1f6f3 !important; color:#14221b !important; border-color:#d8e4dd !important; }
+          .layout-compact .calibration-rail, .layout-compact .calibration-popover { background:rgba(16,31,50,.95); border-color:#315276; }
+          .layout-fullscreen .calibration-rail, .layout-fullscreen .calibration-popover { background:rgba(17,19,21,.96); border-color:#604522; }
+
+          @media (max-width:900px) {
+            .frontend-layout-options { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+            .calibration-rail { top:auto; left:8px; right:8px; bottom:8px; width:auto; display:flex; align-items:center; overflow-x:auto; padding:7px; }
+            .calibration-rail-head { flex:0 0 auto; min-width:auto; padding:0 4px; }
+            .calibration-rail-head strong { display:none; }
+            .calibration-mode { flex:0 0 52px; width:52px; min-height:48px; grid-template-columns:1fr; place-items:center; padding:6px; }
+            .calibration-mode span, .calibration-mode-chevron { display:none; }
+            .calibration-popover { left:8px; right:8px; top:auto; bottom:72px; width:auto; max-height:42%; border-radius:16px; }
+          }
+          @media (max-width:600px) {
+            .panel-tabs .tab-label { display:none !important; }
+            .anthbot-menu-title { font-size:18px; }
+            .frontend-layout-options { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+          }
+
+
+          /* Calibration v4: map-first, one tiny translucent toolbar + one compact popover. */
+          .calibration-active .frontend-quickbar { display:none !important; }
+          .calibration-active .map-live-status { opacity:.18; pointer-events:none; }
+          .calibration-overlay { inset:0 !important; overflow:visible !important; background:transparent !important; border:0 !important; box-shadow:none !important; pointer-events:none !important; }
+          .calibration-rail {
+            position:absolute !important; z-index:60; right:14px !important; top:14px !important; left:auto !important; bottom:auto !important;
+            width:54px !important; display:flex !important; flex-direction:column !important; gap:7px !important; padding:7px !important;
+            border:1px solid rgba(255,255,255,.20) !important; border-radius:18px !important;
+            background:rgba(8,14,20,.38) !important; color:#fff !important; backdrop-filter:blur(12px) saturate(120%) !important;
+            box-shadow:0 12px 34px rgba(0,0,0,.18) !important; pointer-events:auto !important;
+          }
+          .calibration-exit, .calibration-mode {
+            width:40px !important; height:40px !important; min-height:40px !important; padding:0 !important; display:grid !important; place-items:center !important;
+            border:1px solid rgba(255,255,255,.18) !important; border-radius:13px !important;
+            background:rgba(12,20,28,.34) !important; color:rgba(255,255,255,.92) !important; cursor:pointer !important;
+            box-shadow:none !important; transition:background .15s ease,border-color .15s ease,transform .15s ease !important;
+          }
+          .calibration-exit:hover, .calibration-mode:hover { background:rgba(255,255,255,.14) !important; border-color:rgba(255,255,255,.36) !important; }
+          .calibration-mode.active { background:color-mix(in srgb,var(--mf-accent) 26%,rgba(12,20,28,.38)) !important; border-color:var(--mf-accent) !important; box-shadow:0 0 0 1px color-mix(in srgb,var(--mf-accent) 28%,transparent) inset !important; }
+          .calibration-exit ha-icon, .calibration-mode ha-icon { --mdc-icon-size:22px !important; }
+          .calibration-rail-head, .calibration-mode span, .calibration-mode-chevron { display:none !important; }
+
+          .calibration-popover {
+            position:absolute !important; z-index:59; right:80px !important; top:14px !important; left:auto !important; bottom:auto !important;
+            width:300px !important; max-width:calc(100% - 104px) !important; max-height:none !important; padding:0 !important; overflow:visible !important;
+            border:1px solid rgba(255,255,255,.20) !important; border-radius:20px !important;
+            background:rgba(8,14,20,.42) !important; color:#fff !important; backdrop-filter:blur(14px) saturate(120%) !important;
+            box-shadow:0 16px 38px rgba(0,0,0,.20) !important; pointer-events:auto !important;
+          }
+          .calibration-popover[hidden] { display:none !important; }
+          .calibration-popover-content { padding:10px 12px 12px !important; }
+          .calibration-popover-content[hidden] { display:none !important; }
+          .calibration-popover-head { display:flex !important; align-items:center !important; justify-content:space-between !important; min-height:36px !important; padding:0 0 6px !important; border:0 !important; background:transparent !important; }
+          .calibration-popover-head strong { font-size:13px !important; font-weight:800 !important; color:rgba(255,255,255,.90) !important; }
+          .calibration-popover-head button { width:30px !important; height:30px !important; display:grid !important; place-items:center !important; border:0 !important; border-radius:10px !important; background:rgba(255,255,255,.08) !important; color:#fff !important; font-size:19px !important; cursor:pointer !important; }
+
+          .compact-calibration-layout { display:grid !important; grid-template-columns:126px 1fr !important; gap:14px !important; align-items:center !important; }
+          .compact-dpad { width:126px !important; height:126px !important; display:grid !important; grid-template-columns:repeat(3,38px) !important; grid-template-rows:repeat(3,38px) !important; gap:6px !important; place-content:center !important; }
+          .compact-dpad .up { grid-column:2; grid-row:1; }
+          .compact-dpad .left { grid-column:1; grid-row:2; }
+          .compact-dpad .center { grid-column:2; grid-row:2; }
+          .compact-dpad .right { grid-column:3; grid-row:2; }
+          .compact-dpad .down { grid-column:2; grid-row:3; }
+          .compact-dpad button, .compact-dpad .center {
+            width:38px !important; height:38px !important; min-height:38px !important; display:grid !important; place-items:center !important; padding:0 !important;
+            border:1px solid rgba(255,255,255,.20) !important; border-radius:12px !important;
+            background:rgba(255,255,255,.07) !important; color:#fff !important; box-shadow:none !important;
+          }
+          .compact-dpad button { cursor:pointer !important; }
+          .compact-dpad button:hover { background:rgba(255,255,255,.15) !important; border-color:rgba(255,255,255,.40) !important; }
+          .compact-dpad button:active { transform:scale(.94); background:color-mix(in srgb,var(--mf-accent) 24%,rgba(255,255,255,.08)) !important; }
+          .compact-dpad .center { opacity:.50; pointer-events:none !important; }
+          .compact-dpad ha-icon { --mdc-icon-size:26px !important; }
+
+          .compact-tools { display:grid !important; grid-template-columns:repeat(2,48px) !important; grid-auto-rows:42px !important; gap:7px !important; justify-content:center !important; }
+          .calibration-icon-button {
+            width:48px !important; min-width:48px !important; height:42px !important; min-height:42px !important; display:flex !important; align-items:center !important; justify-content:center !important; gap:1px !important; padding:0 5px !important;
+            border:1px solid rgba(255,255,255,.18) !important; border-radius:12px !important;
+            background:rgba(255,255,255,.07) !important; color:#fff !important; box-shadow:none !important; cursor:pointer !important;
+          }
+          .calibration-icon-button:hover { background:rgba(255,255,255,.15) !important; border-color:rgba(255,255,255,.38) !important; }
+          .calibration-icon-button:active { transform:scale(.95); }
+          .calibration-icon-button ha-icon { --mdc-icon-size:20px !important; }
+          .calibration-icon-button span { font-size:17px !important; font-weight:800 !important; line-height:1 !important; }
+          .calibration-icon-button.rotation-button span { display:none !important; }
+          .calibration-icon-button.reset-button { grid-column:1 / -1 !important; width:103px !important; justify-self:center !important; }
+
+          .compact-heading-grid { display:grid !important; grid-template-columns:repeat(4,1fr) !important; gap:7px !important; }
+          .compact-heading-grid button { min-width:0 !important; min-height:46px !important; display:flex !important; flex-direction:column !important; align-items:center !important; justify-content:center !important; gap:1px !important; padding:4px !important; border:1px solid rgba(255,255,255,.18) !important; border-radius:12px !important; background:rgba(255,255,255,.07) !important; color:#fff !important; box-shadow:none !important; }
+          .compact-heading-grid button:hover { background:rgba(255,255,255,.15) !important; }
+          .compact-heading-grid button span { font-size:10px !important; font-weight:800 !important; }
+          .compact-heading-grid ha-icon { --mdc-icon-size:21px !important; }
+
+          /* Keep controls translucent in all four themes; only the accent changes. */
+          .layout-modern .calibration-rail, .layout-modern .calibration-popover,
+          .layout-classic .calibration-rail, .layout-classic .calibration-popover,
+          .layout-compact .calibration-rail, .layout-compact .calibration-popover,
+          .layout-fullscreen .calibration-rail, .layout-fullscreen .calibration-popover { background:rgba(8,14,20,.42) !important; color:#fff !important; border-color:rgba(255,255,255,.20) !important; }
+          .layout-modern .calibration-exit, .layout-modern .calibration-mode, .layout-modern .compact-dpad button, .layout-modern .compact-dpad .center, .layout-modern .calibration-icon-button, .layout-modern .compact-heading-grid button, .layout-modern .calibration-popover-head button,
+          .layout-classic .calibration-exit, .layout-classic .calibration-mode, .layout-classic .compact-dpad button, .layout-classic .compact-dpad .center, .layout-classic .calibration-icon-button, .layout-classic .compact-heading-grid button, .layout-classic .calibration-popover-head button,
+          .layout-compact .calibration-exit, .layout-compact .calibration-mode, .layout-compact .compact-dpad button, .layout-compact .compact-dpad .center, .layout-compact .calibration-icon-button, .layout-compact .compact-heading-grid button, .layout-compact .calibration-popover-head button,
+          .layout-fullscreen .calibration-exit, .layout-fullscreen .calibration-mode, .layout-fullscreen .compact-dpad button, .layout-fullscreen .compact-dpad .center, .layout-fullscreen .calibration-icon-button, .layout-fullscreen .compact-heading-grid button, .layout-fullscreen .calibration-popover-head button { background:rgba(255,255,255,.07) !important; color:#fff !important; border-color:rgba(255,255,255,.18) !important; }
+          .layout-modern .calibration-popover-head strong, .layout-classic .calibration-popover-head strong, .layout-compact .calibration-popover-head strong, .layout-fullscreen .calibration-popover-head strong { color:rgba(255,255,255,.90) !important; }
+
+          @media (max-width:720px) {
+            .calibration-rail { right:8px !important; top:auto !important; bottom:8px !important; width:auto !important; flex-direction:row !important; gap:5px !important; border-radius:16px !important; }
+            .calibration-exit, .calibration-mode { width:38px !important; height:38px !important; min-height:38px !important; }
+            .calibration-popover { left:8px !important; right:8px !important; top:auto !important; bottom:62px !important; width:auto !important; max-width:none !important; }
+            .compact-calibration-layout { grid-template-columns:126px 1fr !important; gap:9px !important; justify-content:center !important; }
+          }
+          @media (max-width:430px) {
+            .calibration-popover { bottom:58px !important; }
+            .compact-calibration-layout { grid-template-columns:1fr !important; }
+            .compact-dpad { justify-self:center !important; }
+            .compact-tools { grid-template-columns:repeat(6,42px) !important; grid-auto-rows:40px !important; overflow-x:auto !important; justify-content:start !important; }
+            .calibration-icon-button { width:42px !important; min-width:42px !important; height:40px !important; min-height:40px !important; }
+            .calibration-icon-button.reset-button { grid-column:auto !important; width:42px !important; }
+          }
+
+        
+
+          /* Calibration v5 — no container panels: only translucent floating buttons over the map. */
+          .calibration-active .map-live-status { opacity:.12 !important; }
+          .calibration-overlay {
+            inset:0 !important; width:auto !important; max-height:none !important; overflow:visible !important;
+            background:transparent !important; border:0 !important; box-shadow:none !important; backdrop-filter:none !important;
+            pointer-events:none !important;
+          }
+          .calibration-rail {
+            position:absolute !important; z-index:70 !important; top:14px !important; right:14px !important; left:auto !important; bottom:auto !important;
+            width:44px !important; display:flex !important; flex-direction:column !important; gap:7px !important; padding:0 !important;
+            background:transparent !important; border:0 !important; border-radius:0 !important; box-shadow:none !important; backdrop-filter:none !important;
+            pointer-events:auto !important;
+          }
+          .calibration-exit, .calibration-mode {
+            width:44px !important; height:44px !important; min-width:44px !important; min-height:44px !important; padding:0 !important;
+            display:grid !important; place-items:center !important;
+            background:rgba(5,12,18,.34) !important;
+            color:rgba(255,255,255,.94) !important;
+            border:1px solid rgba(255,255,255,.16) !important;
+            border-radius:14px !important;
+            box-shadow:0 5px 14px rgba(0,0,0,.12) !important;
+            backdrop-filter:blur(8px) saturate(115%) !important;
+            -webkit-backdrop-filter:blur(8px) saturate(115%) !important;
+            cursor:pointer !important;
+            transition:background .14s ease,border-color .14s ease,transform .08s ease,opacity .14s ease !important;
+          }
+          .calibration-exit:hover, .calibration-mode:hover {
+            background:rgba(255,255,255,.13) !important;
+            border-color:rgba(255,255,255,.30) !important;
+          }
+          .calibration-exit:active, .calibration-mode:active { transform:scale(.93) !important; }
+          .calibration-mode.active {
+            background:color-mix(in srgb,var(--mf-accent) 28%,rgba(4,12,18,.34)) !important;
+            border-color:color-mix(in srgb,var(--mf-accent) 72%,rgba(255,255,255,.16)) !important;
+            box-shadow:0 0 0 1px color-mix(in srgb,var(--mf-accent) 24%,transparent),0 5px 14px rgba(0,0,0,.12) !important;
+          }
+          .calibration-exit ha-icon, .calibration-mode ha-icon { --mdc-icon-size:23px !important; }
+          .calibration-rail-head, .calibration-mode span, .calibration-mode-chevron { display:none !important; }
+
+          .calibration-popover {
+            position:absolute !important; z-index:69 !important; right:72px !important; top:50% !important; left:auto !important; bottom:auto !important;
+            transform:translateY(-50%) !important;
+            width:auto !important; max-width:calc(100% - 92px) !important; max-height:none !important; overflow:visible !important; padding:0 !important;
+            background:transparent !important; color:#fff !important; border:0 !important; border-radius:0 !important;
+            box-shadow:none !important; backdrop-filter:none !important; pointer-events:auto !important;
+          }
+          .calibration-popover[hidden], .calibration-popover-content[hidden] { display:none !important; }
+          .calibration-popover-content { padding:0 !important; margin:0 !important; background:transparent !important; border:0 !important; box-shadow:none !important; }
+          .calibration-popover-head { display:none !important; }
+
+          .compact-calibration-layout {
+            display:flex !important; align-items:center !important; justify-content:flex-end !important; gap:12px !important;
+            padding:0 !important; margin:0 !important; background:transparent !important; border:0 !important; box-shadow:none !important;
+          }
+          .compact-dpad {
+            width:132px !important; height:132px !important;
+            display:grid !important; grid-template-columns:repeat(3,40px) !important; grid-template-rows:repeat(3,40px) !important;
+            gap:6px !important; place-content:center !important; padding:0 !important; margin:0 !important;
+            background:transparent !important; border:0 !important; box-shadow:none !important;
+          }
+          .compact-dpad .up { grid-column:2 !important; grid-row:1 !important; }
+          .compact-dpad .left { grid-column:1 !important; grid-row:2 !important; }
+          .compact-dpad .center { grid-column:2 !important; grid-row:2 !important; }
+          .compact-dpad .right { grid-column:3 !important; grid-row:2 !important; }
+          .compact-dpad .down { grid-column:2 !important; grid-row:3 !important; }
+          .compact-dpad button, .compact-dpad .center,
+          .calibration-icon-button, .compact-heading-grid button {
+            background:rgba(5,12,18,.32) !important;
+            color:rgba(255,255,255,.95) !important;
+            border:1px solid rgba(255,255,255,.15) !important;
+            box-shadow:0 5px 14px rgba(0,0,0,.10) !important;
+            backdrop-filter:blur(8px) saturate(115%) !important;
+            -webkit-backdrop-filter:blur(8px) saturate(115%) !important;
+          }
+          .compact-dpad button, .compact-dpad .center {
+            width:40px !important; height:40px !important; min-width:40px !important; min-height:40px !important;
+            display:grid !important; place-items:center !important; padding:0 !important; border-radius:13px !important;
+          }
+          .compact-dpad .center { opacity:.54 !important; pointer-events:none !important; }
+          .compact-dpad button { cursor:pointer !important; }
+          .compact-dpad button:hover, .calibration-icon-button:hover, .compact-heading-grid button:hover {
+            background:rgba(255,255,255,.13) !important; border-color:rgba(255,255,255,.30) !important;
+          }
+          .compact-dpad button:active, .calibration-icon-button:active, .compact-heading-grid button:active { transform:scale(.93) !important; }
+          .compact-dpad ha-icon { --mdc-icon-size:27px !important; }
+
+          .compact-tools {
+            display:grid !important; grid-template-columns:repeat(2,48px) !important; grid-auto-rows:42px !important;
+            gap:7px !important; justify-content:center !important; padding:0 !important; margin:0 !important;
+            background:transparent !important; border:0 !important; box-shadow:none !important;
+          }
+          .calibration-icon-button {
+            width:48px !important; min-width:48px !important; height:42px !important; min-height:42px !important;
+            display:flex !important; align-items:center !important; justify-content:center !important; gap:1px !important;
+            padding:0 4px !important; border-radius:13px !important; cursor:pointer !important;
+          }
+          .calibration-icon-button ha-icon { --mdc-icon-size:20px !important; }
+          .calibration-icon-button span { font-size:17px !important; font-weight:850 !important; line-height:1 !important; }
+          .calibration-icon-button.rotation-button span { display:none !important; }
+          .calibration-icon-button.reset-button { grid-column:1 / -1 !important; width:103px !important; justify-self:center !important; }
+
+          .compact-heading-grid {
+            display:flex !important; gap:7px !important; padding:0 !important; margin:0 !important;
+            background:transparent !important; border:0 !important; box-shadow:none !important;
+          }
+          .compact-heading-grid button {
+            width:54px !important; min-width:54px !important; height:48px !important; min-height:48px !important;
+            display:flex !important; flex-direction:column !important; align-items:center !important; justify-content:center !important;
+            gap:1px !important; padding:3px !important; border-radius:13px !important; cursor:pointer !important;
+          }
+          .compact-heading-grid button span { font-size:10px !important; font-weight:850 !important; }
+          .compact-heading-grid ha-icon { --mdc-icon-size:21px !important; }
+
+          /* All frontend themes keep their own accent only; calibration surface itself stays neutral and transparent. */
+          .layout-classic .calibration-rail, .layout-modern .calibration-rail, .layout-compact .calibration-rail, .layout-fullscreen .calibration-rail,
+          .layout-classic .calibration-popover, .layout-modern .calibration-popover, .layout-compact .calibration-popover, .layout-fullscreen .calibration-popover {
+            background:transparent !important; border:0 !important; box-shadow:none !important; backdrop-filter:none !important; color:#fff !important;
+          }
+          .layout-classic .calibration-exit, .layout-classic .calibration-mode, .layout-classic .compact-dpad button, .layout-classic .compact-dpad .center, .layout-classic .calibration-icon-button, .layout-classic .compact-heading-grid button,
+          .layout-modern .calibration-exit, .layout-modern .calibration-mode, .layout-modern .compact-dpad button, .layout-modern .compact-dpad .center, .layout-modern .calibration-icon-button, .layout-modern .compact-heading-grid button,
+          .layout-compact .calibration-exit, .layout-compact .calibration-mode, .layout-compact .compact-dpad button, .layout-compact .compact-dpad .center, .layout-compact .calibration-icon-button, .layout-compact .compact-heading-grid button,
+          .layout-fullscreen .calibration-exit, .layout-fullscreen .calibration-mode, .layout-fullscreen .compact-dpad button, .layout-fullscreen .compact-dpad .center, .layout-fullscreen .calibration-icon-button, .layout-fullscreen .compact-heading-grid button {
+            background:rgba(5,12,18,.32) !important; color:#fff !important; border-color:rgba(255,255,255,.15) !important;
+          }
+
+          @media (max-width:720px) {
+            .calibration-rail {
+              top:auto !important; right:8px !important; bottom:8px !important; left:auto !important;
+              width:auto !important; flex-direction:row !important; gap:5px !important; padding:0 !important;
+            }
+            .calibration-exit, .calibration-mode { width:40px !important; height:40px !important; min-width:40px !important; min-height:40px !important; }
+            .calibration-popover {
+              left:50% !important; right:auto !important; top:auto !important; bottom:58px !important;
+              transform:translateX(-50%) !important; max-width:calc(100% - 16px) !important;
+            }
+            .compact-calibration-layout { gap:8px !important; }
+          }
+          @media (max-width:430px) {
+            .calibration-popover { bottom:56px !important; }
+            .compact-calibration-layout { flex-direction:column !important; gap:5px !important; }
+            .compact-dpad { width:122px !important; height:122px !important; grid-template-columns:repeat(3,36px) !important; grid-template-rows:repeat(3,36px) !important; gap:5px !important; }
+            .compact-dpad button, .compact-dpad .center { width:36px !important; height:36px !important; min-width:36px !important; min-height:36px !important; }
+            .compact-tools { grid-template-columns:repeat(6,40px) !important; grid-auto-rows:38px !important; overflow-x:auto !important; max-width:calc(100vw - 24px) !important; }
+            .calibration-icon-button { width:40px !important; min-width:40px !important; height:38px !important; min-height:38px !important; }
+            .calibration-icon-button.reset-button { grid-column:auto !important; width:40px !important; }
+          }
+
+
+          /* v6: remove the redundant top status/header strip. The primary nav now
+             sits directly above the map; live status remains available on-map and
+             under Menu -> Status. */
+          .compact-nav-only { margin:0 !important; padding:0 !important; min-height:0 !important; }
+          .compact-nav-only .panel-tabs { margin:0 !important; }
+          .frontend-top-slot .compact-nav-only { width:100%; }
+
+
+          /* v7: the old floating status card is replaced by a single Information button. */
+          .map-live-status { display:none !important; }
+          /* Origin preserves the original 2.4.9.1 floating live-status card. */
+          .layout-origin .map-live-status { display:flex !important; }
+
+          .frontend-info-control { position:absolute; z-index:43; top:14px; right:14px; }
+          .frontend-info-button {
+            width:44px; height:44px; display:grid; place-items:center; padding:0;
+            border:1px solid rgba(255,255,255,.42); border-radius:999px;
+            background:rgba(8,16,24,.62); color:#fff;
+            backdrop-filter:blur(12px) saturate(120%);
+            box-shadow:0 8px 22px rgba(0,0,0,.20);
+            cursor:pointer; font:inherit;
+          }
+          .frontend-info-button > span {
+            font-family:Georgia,serif; font-size:24px; line-height:1; font-weight:700;
+            transform:translateY(-1px);
+          }
+          .frontend-info-button:hover, .frontend-info-button:focus-visible { transform:translateY(-1px); }
+
+          .frontend-info-popover {
+            position:absolute; right:0; top:52px; width:285px; box-sizing:border-box;
+            padding:10px 12px; border:1px solid rgba(255,255,255,.28); border-radius:15px;
+            background:rgba(8,16,24,.88); color:#fff;
+            backdrop-filter:blur(16px) saturate(125%);
+            box-shadow:0 16px 38px rgba(0,0,0,.28);
+          }
+          .frontend-info-popover[hidden] { display:none !important; }
+          .frontend-info-row {
+            display:grid; grid-template-columns:minmax(0,1fr) auto; gap:14px;
+            align-items:center; min-height:34px; border-bottom:1px solid rgba(255,255,255,.10);
+            font-size:12px;
+          }
+          .frontend-info-row:last-child { border-bottom:0; }
+          .frontend-info-row span { opacity:.72; }
+          .frontend-info-row strong { text-align:right; font-size:12px; font-weight:850; }
+          .frontend-info-height strong { font-size:16px; }
+
+          /* One consistent tooltip above every button. */
+          .anthbot-button-tooltip {
+            position:fixed; z-index:2147483000;
+            max-width:min(300px,calc(100vw - 20px));
+            padding:7px 10px; border-radius:8px;
+            background:rgba(12,16,20,.95); color:#fff;
+            border:1px solid rgba(255,255,255,.16);
+            box-shadow:0 7px 22px rgba(0,0,0,.30);
+            font-size:12px; line-height:1.25; font-weight:650;
+            white-space:nowrap; pointer-events:none;
+            transform:translate(-50%,-100%);
+          }
+          .anthbot-button-tooltip[data-below="true"] { transform:translate(-50%,0); }
+          .anthbot-button-tooltip[hidden] { display:none !important; }
+
+          /* Match the info control to each frontend without bringing the big status card back. */
+          .layout-modern .frontend-info-button {
+            background:rgba(255,255,255,.92); color:#173d2b;
+            border-color:rgba(255,255,255,.96);
+            box-shadow:0 8px 22px rgba(25,61,43,.14);
+          }
+          .layout-modern .frontend-info-popover {
+            background:rgba(255,255,255,.96); color:#14221b;
+            border-color:#d7e4dc; box-shadow:0 18px 42px rgba(25,61,43,.20);
+          }
+          .layout-modern .frontend-info-row { border-bottom-color:#e2ebe6; }
+
+          .layout-compact .frontend-info-button {
+            background:rgba(11,25,42,.92); border-color:#294765; color:#eef6ff;
+          }
+          .layout-compact .frontend-info-popover {
+            background:rgba(12,28,47,.97); border-color:#294765; color:#eef6ff;
+          }
+
+          .layout-fullscreen .frontend-info-button {
+            background:rgba(18,19,20,.95); border-color:#594022;
+            color:#ffb13b; border-radius:8px;
+          }
+          .layout-fullscreen .frontend-info-popover {
+            background:rgba(18,19,20,.98); border-color:#594022;
+            color:#f6f0e7; border-radius:8px;
+          }
+
+          @media (max-width:720px) {
+            .frontend-info-control { top:9px; right:9px; }
+            .frontend-info-button { width:40px; height:40px; }
+            .frontend-info-popover { top:47px; width:min(285px,calc(100vw - 34px)); }
+          }
+
+
+          /* v9: real browser fullscreen for the Fullscreen frontend. */
+          :host(:fullscreen) {
+            display:block !important;
+            width:100vw !important;
+            height:100vh !important;
+            margin:0 !important;
+            padding:0 !important;
+            background:#090a0b !important;
+          }
+          :host(:fullscreen) ha-card.layout-fullscreen {
+            width:100vw !important;
+            height:100vh !important;
+            min-width:100vw !important;
+            min-height:100vh !important;
+            max-width:none !important;
+            max-height:none !important;
+            margin:0 !important;
+            border:0 !important;
+            border-radius:0 !important;
+            box-shadow:none !important;
+            overflow:hidden !important;
+          }
+          :host(:fullscreen) .layout-fullscreen .frontend-frame,
+          :host(:fullscreen) .layout-fullscreen .frontend-main,
+          :host(:fullscreen) .layout-fullscreen .frontend-map-slot {
+            width:100% !important;
+            height:100% !important;
+            min-height:0 !important;
+            max-height:none !important;
+          }
+          :host(:fullscreen) .layout-fullscreen .canvas-wrap,
+          :host(:fullscreen) .layout-fullscreen .canvas-wrap.auto-map-size {
+            width:100% !important;
+            height:100vh !important;
+            min-height:100vh !important;
+            max-height:none !important;
+            aspect-ratio:auto !important;
+            border-radius:0 !important;
+          }
+          :host(:fullscreen) .layout-fullscreen .frontend-main { padding:0 !important; }
+
+          .true-fullscreen-toggle {
+            display:none;
+            position:absolute;
+            z-index:44;
+            top:14px;
+            right:68px;
+            width:44px;
+            height:44px;
+            place-items:center;
+            padding:0;
+            border:1px solid #594022;
+            border-radius:8px;
+            background:rgba(18,19,20,.95);
+            color:#ffb13b;
+            box-shadow:0 8px 22px rgba(0,0,0,.24);
+            backdrop-filter:blur(12px);
+            cursor:pointer;
+          }
+          .layout-fullscreen .true-fullscreen-toggle { display:grid; }
+          .true-fullscreen-toggle ha-icon { --mdc-icon-size:24px; }
+          :host(:fullscreen) .true-fullscreen-toggle { right:68px; top:14px; }
+          @media (max-width:720px) {
+            .layout-fullscreen .true-fullscreen-toggle { top:8px; right:58px; width:40px; height:40px; }
+          }
+
+
+          /* v14 smooth refresh: keep the existing canvas and panels visually stable. */
+          .canvas-wrap canvas { backface-visibility:hidden; transform:translateZ(0); }
+          .frontend-drawer, .app-panel, .panel-body { overflow-anchor:none; }
+
+
+
+          /* v27 — single cross-layout sizing contract. No stacked v22/v23/v25/v26 patches. */
+          ha-card.layout-origin,
+          ha-card.layout-classic,
+          ha-card.layout-modern,
+          ha-card.layout-compact,
+          ha-card.layout-fullscreen {
+            --ui-s:var(--anthbot-ui-scale,1);
+            box-sizing:border-box !important;
+            height:var(--anthbot-viewport-fill-height,auto) !important;
+            min-height:var(--anthbot-viewport-fill-min-height,auto) !important;
+            max-height:var(--anthbot-viewport-fill-max-height,none) !important;
+            overflow:hidden !important;
+          }
+
+          ha-card.layout-origin .frontend-frame,
+          ha-card.layout-classic .frontend-frame,
+          ha-card.layout-modern .frontend-frame,
+          ha-card.layout-compact .frontend-frame,
+          ha-card.layout-fullscreen .frontend-frame {
+            position:relative !important;
+            width:100% !important;
+            height:100% !important;
+            min-height:0 !important;
+            display:grid !important;
+            grid-template-rows:auto minmax(0,1fr) auto !important;
+            padding:0 !important;
+            box-sizing:border-box !important;
+          }
+
+          ha-card.layout-origin .frontend-main,
+          ha-card.layout-classic .frontend-main,
+          ha-card.layout-modern .frontend-main,
+          ha-card.layout-compact .frontend-main,
+          ha-card.layout-fullscreen .frontend-main {
+            width:100% !important;
+            height:auto !important;
+            max-height:none !important;
+            min-height:0 !important;
+            align-self:stretch !important;
+            overflow:hidden !important;
+          }
+
+          ha-card.layout-origin .frontend-map-slot,
+          ha-card.layout-origin .canvas-wrap,
+          ha-card.layout-origin .canvas-wrap.auto-map-size,
+          ha-card.layout-classic .frontend-map-slot,
+          ha-card.layout-modern .frontend-map-slot,
+          ha-card.layout-compact .frontend-map-slot,
+          ha-card.layout-fullscreen .frontend-map-slot,
+          ha-card.layout-classic .canvas-wrap,
+          ha-card.layout-modern .canvas-wrap,
+          ha-card.layout-compact .canvas-wrap,
+          ha-card.layout-fullscreen .canvas-wrap,
+          ha-card.layout-classic .canvas-wrap.auto-map-size,
+          ha-card.layout-modern .canvas-wrap.auto-map-size,
+          ha-card.layout-compact .canvas-wrap.auto-map-size,
+          ha-card.layout-fullscreen .canvas-wrap.auto-map-size {
+            height:100% !important;
+            max-height:100% !important;
+            min-height:0 !important;
+            aspect-ratio:auto !important;
+          }
+
+          
+          /* Origin v4: use the exact same viewport-fill geometry as the other four layouts. */
+          @media (max-width:900px), (max-height:720px) {
+            ha-card.layout-origin {
+              box-sizing:border-box !important;
+              width:100% !important;
+              height:var(--anthbot-viewport-fill-height) !important;
+              min-height:var(--anthbot-viewport-fill-height) !important;
+              max-height:var(--anthbot-viewport-fill-height) !important;
+              overflow:hidden !important;
+            }
+            ha-card.layout-origin .frontend-frame {
+              position:relative !important;
+              display:grid !important;
+              grid-template-rows:minmax(0,1fr) !important;
+              width:100% !important; height:100% !important; min-height:0 !important;
+            }
+            ha-card.layout-origin .frontend-top-slot,
+            ha-card.layout-origin .frontend-bottom-slot { display:none !important; }
+            ha-card.layout-origin .frontend-main,
+            ha-card.layout-origin .frontend-map-slot,
+            ha-card.layout-origin .canvas-wrap,
+            ha-card.layout-origin .canvas-wrap.auto-map-size {
+              position:relative !important;
+              box-sizing:border-box !important;
+              width:100% !important;
+              height:100% !important;
+              min-height:0 !important;
+              max-height:none !important;
+              aspect-ratio:auto !important;
+              overflow:hidden !important;
+            }
+            ha-card.layout-origin .canvas-wrap > canvas {
+              display:block !important;
+              width:100% !important;
+              height:100% !important;
+              max-width:none !important;
+              max-height:none !important;
+            }
+          }
+/* The telemetry-chip row is redundant in every frontend; the i button owns this information. */
+          ha-card.layout-classic .map-badges,
+          ha-card.layout-modern .map-badges,
+          ha-card.layout-compact .map-badges,
+          ha-card.layout-fullscreen .map-badges { display:none !important; }
+
+          /* Classic uses the permanent right-side control panel, not a bottom quickbar. */
+          ha-card.layout-classic .frontend-bottom-slot { display:none !important; }
+          ha-card.layout-classic .frontend-side-slot {
+            min-height:0 !important;
+            height:100% !important;
+            max-height:100% !important;
+            overflow:auto !important;
+          }
+          ha-card.layout-classic .app-panel,
+          ha-card.layout-classic .panel-body {
+            min-height:0 !important;
+            max-height:100% !important;
+            box-sizing:border-box !important;
+          }
+
+          /* Modern / Compact / Fullscreen all get one real bottom row. */
+          ha-card.layout-modern .frontend-bottom-slot,
+          ha-card.layout-compact .frontend-bottom-slot,
+          ha-card.layout-fullscreen .frontend-bottom-slot {
+            display:flex !important;
+            position:relative !important;
+            z-index:58 !important;
+            left:auto !important; right:auto !important; top:auto !important; bottom:auto !important;
+            width:100% !important;
+            height:auto !important;
+            min-height:0 !important;
+            flex:0 0 auto !important;
+            align-items:center !important;
+            justify-content:center !important;
+            margin:0 !important;
+            padding:calc(4px * var(--ui-s)) calc(8px * var(--ui-s)) calc(6px * var(--ui-s)) !important;
+            overflow:hidden !important;
+            pointer-events:auto !important;
+            box-sizing:border-box !important;
+          }
+          ha-card.layout-modern .frontend-bottom-slot .frontend-quickbar,
+          ha-card.layout-compact .frontend-bottom-slot .frontend-quickbar,
+          ha-card.layout-fullscreen .frontend-bottom-slot .frontend-quickbar {
+            display:flex !important;
+            position:static !important;
+            visibility:visible !important;
+            opacity:1 !important;
+            left:auto !important; right:auto !important; top:auto !important; bottom:auto !important;
+            transform:none !important;
+            margin:0 auto !important;
+            width:max-content !important;
+            max-width:100% !important;
+            box-sizing:border-box !important;
+            gap:calc(7px * var(--ui-s)) !important;
+            padding:calc(5px * var(--ui-s)) !important;
+            overflow:hidden !important;
+          }
+          ha-card.layout-compact .frontend-bottom-slot .frontend-quickbar { width:100% !important; }
+
+          .frontend-quickbar button {
+            min-height:calc(44px * var(--ui-s)) !important;
+            padding:calc(7px * var(--ui-s)) calc(13px * var(--ui-s)) !important;
+            gap:calc(6px * var(--ui-s)) !important;
+            font-size:clamp(11px,calc(14px * var(--ui-s)),15px) !important;
+          }
+          .frontend-quickbar ha-icon { --mdc-icon-size:calc(20px * var(--ui-s)); }
+
+          /* Top navigation also scales with the actually visible screen. */
+          .panel-tabs { gap:calc(5px * var(--ui-s)) !important; }
+          .panel-tabs button {
+            min-height:calc(42px * var(--ui-s)) !important;
+            padding:calc(6px * var(--ui-s)) calc(11px * var(--ui-s)) !important;
+            font-size:clamp(12px,calc(15px * var(--ui-s)),16px) !important;
+          }
+          .panel-tabs ha-icon { --mdc-icon-size:calc(19px * var(--ui-s)); }
+
+          /* On short screens shrink chrome; never remove the bottom action row. */
+          ha-card[data-short-screen] .frontend-quickbar button {
+            min-height:36px !important;
+            padding-block:4px !important;
+          }
+          ha-card[data-short-screen] .panel-tabs button {
+            min-height:36px !important;
+            padding-block:4px !important;
+          }
+
+          /* On narrow screens preserve all actions by collapsing labels, not buttons. */
+          ha-card[data-narrow-screen].layout-modern .frontend-bottom-slot .frontend-quickbar,
+          ha-card[data-narrow-screen].layout-compact .frontend-bottom-slot .frontend-quickbar,
+          ha-card[data-narrow-screen].layout-fullscreen .frontend-bottom-slot .frontend-quickbar {
+            width:100% !important;
+          }
+          ha-card[data-narrow-screen].layout-modern .frontend-bottom-slot .frontend-quickbar button,
+          ha-card[data-narrow-screen].layout-compact .frontend-bottom-slot .frontend-quickbar button,
+          ha-card[data-narrow-screen].layout-fullscreen .frontend-bottom-slot .frontend-quickbar button {
+            flex:1 1 0 !important;
+            min-width:0 !important;
+            padding-inline:4px !important;
+          }
+          ha-card[data-narrow-screen].layout-compact .frontend-bottom-slot .quick-label,
+          ha-card[data-narrow-screen].layout-fullscreen .frontend-bottom-slot .quick-label { display:none !important; }
+
+          /* Browser fullscreen follows the same grid contract: map row + one visible action row. */
+          :host(:fullscreen) ha-card.layout-fullscreen .frontend-frame {
+            height:100% !important;
+            grid-template-rows:auto minmax(0,1fr) auto !important;
+          }
+          :host(:fullscreen) ha-card.layout-fullscreen .frontend-main,
+          :host(:fullscreen) ha-card.layout-fullscreen .frontend-map-slot,
+          :host(:fullscreen) ha-card.layout-fullscreen .canvas-wrap,
+          :host(:fullscreen) ha-card.layout-fullscreen .canvas-wrap.auto-map-size {
+            height:100% !important;
+            min-height:0 !important;
+            max-height:100% !important;
+          }
+
+
+
+          /* v29 — one consistent viewport contract.
+             Modern/Compact/Fullscreen use a single bottom overlay quickbar.
+             It never consumes a grid row, so the map uses the full available area. */
+          ha-card.layout-modern .frontend-frame,
+          ha-card.layout-fullscreen .frontend-frame {
+            grid-template-rows:minmax(0,1fr) !important;
+          }
+          ha-card.layout-compact .frontend-frame {
+            grid-template-rows:auto minmax(0,1fr) !important;
+          }
+
+          ha-card.layout-modern .frontend-main,
+          ha-card.layout-compact .frontend-main,
+          ha-card.layout-fullscreen .frontend-main {
+            min-height:0 !important;
+            height:100% !important;
+            max-height:100% !important;
+            box-sizing:border-box !important;
+            overflow:hidden !important;
+          }
+          ha-card.layout-modern .frontend-map-slot,
+          ha-card.layout-compact .frontend-map-slot,
+          ha-card.layout-fullscreen .frontend-map-slot,
+          ha-card.layout-modern .canvas-wrap,
+          ha-card.layout-compact .canvas-wrap,
+          ha-card.layout-fullscreen .canvas-wrap,
+          ha-card.layout-modern .canvas-wrap.auto-map-size,
+          ha-card.layout-compact .canvas-wrap.auto-map-size,
+          ha-card.layout-fullscreen .canvas-wrap.auto-map-size {
+            height:100% !important;
+            min-height:0 !important;
+            max-height:100% !important;
+            box-sizing:border-box !important;
+          }
+
+          /* Bottom actions float over the map and are anchored to the CARD, not to canvas sizing. */
+          ha-card.layout-modern .frontend-bottom-slot,
+          ha-card.layout-compact .frontend-bottom-slot,
+          ha-card.layout-fullscreen .frontend-bottom-slot {
+            display:flex !important;
+            position:absolute !important;
+            z-index:80 !important;
+            left:0 !important;
+            right:0 !important;
+            bottom:calc(7px * var(--ui-s)) !important;
+            top:auto !important;
+            width:100% !important;
+            height:auto !important;
+            min-height:0 !important;
+            margin:0 !important;
+            padding:0 calc(8px * var(--ui-s)) !important;
+            align-items:center !important;
+            justify-content:center !important;
+            box-sizing:border-box !important;
+            overflow:visible !important;
+            pointer-events:none !important;
+          }
+          ha-card.layout-modern .frontend-bottom-slot .frontend-quickbar,
+          ha-card.layout-compact .frontend-bottom-slot .frontend-quickbar,
+          ha-card.layout-fullscreen .frontend-bottom-slot .frontend-quickbar {
+            display:flex !important;
+            position:static !important;
+            left:auto !important;
+            right:auto !important;
+            top:auto !important;
+            bottom:auto !important;
+            transform:none !important;
+            visibility:visible !important;
+            opacity:1 !important;
+            pointer-events:auto !important;
+            margin:0 auto !important;
+            width:max-content !important;
+            max-width:100% !important;
+            box-sizing:border-box !important;
+            overflow:hidden !important;
+          }
+          ha-card.layout-compact .frontend-bottom-slot .frontend-quickbar {
+            width:min(100%,760px) !important;
+          }
+
+          /* Drawers/calibration stay above the bottom action overlay. */
+          ha-card.layout-modern .frontend-drawer,
+          ha-card.layout-compact .frontend-drawer,
+          ha-card.layout-fullscreen .frontend-drawer {
+            bottom:calc(64px * var(--ui-s)) !important;
+          }
+
+          /* No duplicate information row in any frontend; the i button owns status info. */
+          ha-card.layout-classic .map-badges,
+          ha-card.layout-modern .map-badges,
+          ha-card.layout-compact .map-badges,
+          ha-card.layout-fullscreen .map-badges { display:none !important; }
+
+          /* Fullscreen should spend virtually all pixels on the map. */
+          ha-card.layout-fullscreen {
+            border-width:0 !important;
+            border-radius:0 !important;
+            box-shadow:none !important;
+          }
+          ha-card.layout-fullscreen .frontend-main,
+          ha-card.layout-fullscreen .frontend-map-slot,
+          ha-card.layout-fullscreen .canvas-wrap,
+          ha-card.layout-fullscreen .canvas-wrap.auto-map-size {
+            width:100% !important;
+            height:100% !important;
+            padding:0 !important;
+            margin:0 !important;
+            border:0 !important;
+            border-radius:0 !important;
+          }
+          :host(:fullscreen) ha-card.layout-fullscreen,
+          :host(:fullscreen) ha-card.layout-fullscreen .frontend-frame,
+          :host(:fullscreen) ha-card.layout-fullscreen .frontend-main,
+          :host(:fullscreen) ha-card.layout-fullscreen .frontend-map-slot,
+          :host(:fullscreen) ha-card.layout-fullscreen .canvas-wrap,
+          :host(:fullscreen) ha-card.layout-fullscreen .canvas-wrap.auto-map-size {
+            width:100vw !important;
+            height:100vh !important;
+            min-height:0 !important;
+            max-height:none !important;
+            margin:0 !important;
+            padding:0 !important;
+          }
+
+          /* v31 — real Classic mobile portrait layout. The map is primary;
+             details open only on demand as a half-height bottom sheet. */
+          @media (max-width:700px) and (orientation:portrait) {
+            ha-card.layout-classic .frontend-frame {
+              grid-template-rows:auto minmax(0,1fr) !important;
+              height:100% !important;
+            }
+            ha-card.layout-classic .frontend-main {
+              display:block !important;
+              position:relative !important;
+              height:100% !important;
+              min-height:0 !important;
+              padding:5px !important;
+            }
+            ha-card.layout-classic .frontend-map-slot,
+            ha-card.layout-classic .canvas-wrap,
+            ha-card.layout-classic .canvas-wrap.auto-map-size {
+              width:100% !important;
+              height:100% !important;
+              min-height:0 !important;
+              max-height:100% !important;
+              border-radius:14px !important;
+            }
+            ha-card.layout-classic .preview-hint,
+            ha-card.layout-classic .map-title { display:none !important; }
+
+            ha-card.layout-classic .frontend-top-slot { padding:5px 5px 0 !important; }
+            ha-card.layout-classic .panel-tabs {
+              grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+              gap:5px !important;
+              margin:0 !important;
+            }
+            ha-card.layout-classic .panel-tabs button {
+              min-height:42px !important;
+              padding:7px 5px !important;
+            }
+            ha-card.layout-classic .panel-tabs .tab-label { display:none !important; }
+
+            /* Always-visible mobile quick actions over the map. */
+            ha-card.layout-classic .frontend-bottom-slot {
+              display:flex !important;
+              position:absolute !important;
+              z-index:82 !important;
+              left:6px !important;
+              right:6px !important;
+              bottom:6px !important;
+              top:auto !important;
+              width:auto !important;
+              height:auto !important;
+              padding:0 !important;
+              margin:0 !important;
+              justify-content:center !important;
+              pointer-events:none !important;
+              box-sizing:border-box !important;
+            }
+            ha-card.layout-classic .frontend-bottom-slot .frontend-quickbar {
+              display:flex !important;
+              position:static !important;
+              width:100% !important;
+              max-width:100% !important;
+              margin:0 !important;
+              padding:4px !important;
+              gap:4px !important;
+              border:1px solid #30363b !important;
+              border-radius:13px !important;
+              background:rgba(23,26,29,.93) !important;
+              box-shadow:0 8px 22px rgba(0,0,0,.34) !important;
+              backdrop-filter:blur(12px) !important;
+              pointer-events:auto !important;
+              transform:none !important;
+              left:auto !important; right:auto !important; top:auto !important; bottom:auto !important;
+            }
+            ha-card.layout-classic .frontend-bottom-slot .frontend-quickbar button {
+              flex:1 1 0 !important;
+              min-width:0 !important;
+              min-height:40px !important;
+              padding:6px 4px !important;
+              border-radius:9px !important;
+              background:#202428 !important;
+              color:#f5f7f8 !important;
+              border:1px solid #343b40 !important;
+            }
+            ha-card.layout-classic .frontend-bottom-slot .frontend-quickbar button.primary {
+              background:#68e07e !important;
+              color:#0b160e !important;
+              border-color:#86ed97 !important;
+            }
+            ha-card.layout-classic .frontend-bottom-slot .quick-label { display:none !important; }
+
+            /* Closed by default. Opens only after an explicit top-tab / Zones tap. */
+            ha-card.layout-classic .frontend-side-slot.classic-mobile-sheet {
+              display:none !important;
+              position:absolute !important;
+              z-index:84 !important;
+              left:6px !important;
+              right:6px !important;
+              bottom:58px !important;
+              top:auto !important;
+              width:auto !important;
+              height:auto !important;
+              max-height:min(48vh,460px) !important;
+              overflow:auto !important;
+              border:1px solid #343b40 !important;
+              border-radius:18px !important;
+              background:rgba(23,26,29,.97) !important;
+              box-shadow:0 -14px 34px rgba(0,0,0,.42) !important;
+              backdrop-filter:blur(14px) !important;
+              overscroll-behavior:contain !important;
+            }
+            ha-card.layout-classic .frontend-side-slot.classic-mobile-sheet.mobile-sheet-open {
+              display:block !important;
+            }
+            ha-card.layout-classic .frontend-side-slot.classic-mobile-sheet .classic-mobile-sheet-close {
+              display:grid !important;
+              position:sticky !important;
+              top:6px !important;
+              margin:6px 6px 0 auto !important;
+              z-index:9 !important;
+              width:38px !important;
+              height:38px !important;
+              place-items:center !important;
+              border:1px solid #3a4248 !important;
+              border-radius:11px !important;
+              background:#202428 !important;
+              color:#f5f7f8 !important;
+            }
+            ha-card.layout-classic .frontend-side-slot.classic-mobile-sheet .app-panel {
+              height:auto !important;
+              min-height:0 !important;
+              max-height:none !important;
+              padding:6px !important;
+              overflow:visible !important;
+            }
+            ha-card.layout-classic .frontend-side-slot.classic-mobile-sheet .panel-body {
+              height:auto !important;
+              min-height:0 !important;
+              max-height:none !important;
+              overflow:visible !important;
+            }
+          }
+
+
+          /* v32 — Classic mobile landscape: permanent split view, no fake close button,
+             and a genuinely independent touch-scrollable right control pane. */
+          ha-card.layout-classic .classic-mobile-sheet-close { display:none !important; }
+
+          @media (orientation:landscape) and (max-height:700px) {
+            ha-card.layout-classic .classic-mobile-sheet-close { display:none !important; }
+
+            ha-card.layout-classic .frontend-frame {
+              height:100% !important;
+              min-height:0 !important;
+              grid-template-rows:auto minmax(0,1fr) !important;
+            }
+            ha-card.layout-classic .frontend-main {
+              display:grid !important;
+              grid-template-columns:minmax(0,1.28fr) minmax(300px,.82fr) !important;
+              gap:8px !important;
+              height:100% !important;
+              min-height:0 !important;
+              overflow:hidden !important;
+              padding:6px !important;
+            }
+            ha-card.layout-classic .frontend-map-slot,
+            ha-card.layout-classic .canvas-wrap,
+            ha-card.layout-classic .canvas-wrap.auto-map-size {
+              height:100% !important;
+              min-height:0 !important;
+              max-height:100% !important;
+              overflow:hidden !important;
+            }
+            ha-card.layout-classic .frontend-side-slot {
+              display:block !important;
+              position:relative !important;
+              inset:auto !important;
+              width:auto !important;
+              height:100% !important;
+              min-height:0 !important;
+              max-height:100% !important;
+              overflow:hidden !important;
+              border:1px solid #2f353a !important;
+              border-radius:14px !important;
+              background:#171a1d !important;
+              overscroll-behavior:contain !important;
+              touch-action:pan-y !important;
+            }
+            ha-card.layout-classic .frontend-side-slot .app-panel {
+              display:block !important;
+              height:100% !important;
+              min-height:0 !important;
+              max-height:100% !important;
+              padding:6px !important;
+              overflow:hidden !important;
+              box-sizing:border-box !important;
+            }
+            ha-card.layout-classic .frontend-side-slot .panel-body {
+              display:block !important;
+              height:100% !important;
+              min-height:0 !important;
+              max-height:100% !important;
+              overflow-x:hidden !important;
+              overflow-y:auto !important;
+              overscroll-behavior:contain !important;
+              touch-action:pan-y !important;
+              -webkit-overflow-scrolling:touch !important;
+              padding-right:5px !important;
+              box-sizing:border-box !important;
+            }
+            ha-card.layout-classic .frontend-bottom-slot { display:none !important; }
+          }
+
+          /* v33 — Classic landscape fallback navigation: do not depend on native touch scrolling. */
+          .classic-landscape-scroll-controls { display:none; }
+          @media (orientation:landscape) and (max-height:700px) {
+            ha-card.layout-classic .frontend-side-slot { position:relative !important; }
+            ha-card.layout-classic .frontend-side-slot .panel-body {
+              touch-action:none !important;
+              padding-right:54px !important;
+              padding-bottom:10px !important;
+              scrollbar-gutter:stable !important;
+            }
+            ha-card.layout-classic .classic-landscape-scroll-controls:not([hidden]) {
+              display:flex !important;
+              position:absolute !important;
+              z-index:30 !important;
+              right:7px !important;
+              bottom:7px !important;
+              flex-direction:column !important;
+              gap:6px !important;
+              pointer-events:auto !important;
+            }
+            ha-card.layout-classic .classic-landscape-scroll-controls.no-scroll-needed { opacity:.35; }
+            ha-card.layout-classic .classic-landscape-scroll-controls button {
+              width:42px !important;
+              height:42px !important;
+              display:grid !important;
+              place-items:center !important;
+              padding:0 !important;
+              border:1px solid #3a4248 !important;
+              border-radius:11px !important;
+              background:rgba(32,36,40,.94) !important;
+              color:#f5f7f8 !important;
+              box-shadow:0 6px 18px rgba(0,0,0,.30) !important;
+            }
+            ha-card.layout-classic .classic-landscape-scroll-controls button:disabled {
+              opacity:.28 !important;
+            }
+            ha-card.layout-classic .classic-landscape-scroll-controls ha-icon { --mdc-icon-size:27px; }
+          }
+
+          /* v34 — identify landscape phones by touch capability, not by a fragile max-height media query. */
+          ha-card.layout-classic[data-classic-touch-landscape] .classic-landscape-scroll-controls:not([hidden]) {
+            display:flex !important;
+            position:absolute !important;
+            z-index:80 !important;
+            right:7px !important;
+            bottom:7px !important;
+            flex-direction:column !important;
+            gap:6px !important;
+            pointer-events:auto !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .frontend-side-slot .panel-body {
+            padding-right:54px !important;
+            padding-bottom:10px !important;
+            overflow-y:auto !important;
+            overflow-x:hidden !important;
+            touch-action:none !important;
+            -webkit-overflow-scrolling:touch !important;
+          }
+          ha-card.layout-classic:not([data-classic-touch-landscape]) .classic-landscape-scroll-controls {
+            display:none !important;
+          }
+
+          /* v37 — Classic landscape target selection: no scrolling is needed to
+             choose what should be mowed. Native select works reliably in Android/HA WebView. */
+          .classic-landscape-target-select { display:none; }
+          ha-card.layout-classic[data-classic-touch-landscape] .classic-landscape-target-select {
+            display:grid !important;
+            grid-template-columns:auto minmax(0,1fr) !important;
+            align-items:center !important;
+            gap:10px !important;
+            position:sticky !important;
+            top:0 !important;
+            z-index:110 !important;
+            margin:0 0 8px !important;
+            padding:8px 9px !important;
+            border:1px solid #343b40 !important;
+            border-radius:12px !important;
+            background:rgba(23,26,29,.98) !important;
+            box-shadow:0 8px 18px rgba(0,0,0,.26) !important;
+            box-sizing:border-box !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .classic-landscape-target-select-label {
+            color:#f5f7f8 !important;
+            font-size:14px !important;
+            font-weight:800 !important;
+            white-space:nowrap !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .classic-landscape-target-select-input {
+            width:100% !important;
+            min-width:0 !important;
+            min-height:42px !important;
+            padding:7px 34px 7px 11px !important;
+            border:1px solid #46515a !important;
+            border-radius:10px !important;
+            background:#202428 !important;
+            color:#f5f7f8 !important;
+            font:inherit !important;
+            font-size:16px !important;
+            font-weight:700 !important;
+            outline:none !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .classic-landscape-target-select-input:focus {
+            border-color:#68e07e !important;
+            box-shadow:0 0 0 2px rgba(104,224,126,.18) !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .classic-landscape-target-select {
+            grid-template-columns:auto minmax(0,1fr) auto !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .classic-landscape-multi-button {
+            min-height:42px !important;
+            display:flex !important;
+            align-items:center !important;
+            gap:5px !important;
+            padding:7px 10px !important;
+            border:1px solid #46515a !important;
+            border-radius:10px !important;
+            background:#2a3035 !important;
+            color:#f5f7f8 !important;
+            font:inherit !important;
+            font-size:12px !important;
+            font-weight:800 !important;
+            white-space:nowrap !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .classic-landscape-multi-button ha-icon { --mdc-icon-size:19px; }
+          ha-card.layout-classic[data-classic-touch-landscape] .classic-landscape-scroll-controls { display:none !important; }
+          /* v40 — landscape Classic uses an inline right-pane editor, never an overlay. */
+          ha-card.layout-classic[data-classic-touch-landscape] .mowing-target-grid,
+          ha-card.layout-classic[data-classic-touch-landscape] .mowing-zone-group {
+            display:none !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .mowing-action-grid {
+            display:grid !important;
+            grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+            gap:7px !important;
+            margin:0 !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .mowing-action-grid .panel-tile {
+            min-height:92px !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .panel-body.classic-zone-editor-mode {
+            padding:6px !important;
+          }
+          .classic-landscape-inline-editor { display:none; }
+          ha-card.layout-classic[data-classic-touch-landscape] .classic-landscape-inline-editor {
+            display:block !important;
+            width:100% !important;
+            box-sizing:border-box !important;
+            color:#f5f7f8 !important;
+          }
+          .classic-inline-editor-head {
+            position:sticky;
+            top:0;
+            z-index:20;
+            display:grid;
+            grid-template-columns:auto minmax(0,1fr) auto;
+            align-items:center;
+            gap:8px;
+            padding:7px;
+            margin:0 0 7px;
+            border:1px solid #343b40;
+            border-radius:11px;
+            background:#171a1d;
+          }
+          .classic-inline-editor-head > strong { text-align:center; font-size:15px; }
+          .classic-inline-editor-back,
+          .classic-inline-editor-apply,
+          .classic-inline-editor-tabs button,
+          .classic-inline-zone-move {
+            border:1px solid #46515a;
+            border-radius:9px;
+            background:#24292d;
+            color:#f5f7f8;
+            font:inherit;
+            font-weight:800;
+          }
+          .classic-inline-editor-back { min-height:38px; padding:6px 9px; display:flex; align-items:center; gap:3px; }
+          .classic-inline-editor-back ha-icon { --mdc-icon-size:20px; }
+          .classic-inline-editor-apply { min-height:38px; padding:6px 12px; background:#68e07e; color:#0c1a11; border-color:#86ed97; }
+          .classic-inline-editor-tabs { display:flex; gap:6px; margin:0 0 7px; }
+          .classic-inline-editor-tabs button { flex:1 1 0; min-height:38px; padding:6px 8px; }
+          .classic-inline-editor-tabs button.active { background:#68e07e; color:#102015; border-color:#86ed97; }
+          .classic-inline-editor-summary { margin:0 0 6px; padding:0 3px; color:#b9c3ca; font-size:12px; font-weight:800; }
+          .classic-inline-zone-list { display:grid; gap:5px; }
+          .classic-inline-zone-row {
+            display:grid;
+            grid-template-columns:minmax(0,1fr) 32px 36px 36px;
+            align-items:center;
+            gap:5px;
+            min-height:44px;
+            padding:5px 6px;
+            border:1px solid #30373d;
+            border-radius:9px;
+            background:#202428;
+          }
+          .classic-inline-zone-row.selected { border-color:#4f8f5c; background:#1f2b22; }
+          .classic-inline-zone-check { display:flex; align-items:center; gap:8px; min-width:0; }
+          .classic-inline-zone-check input { width:22px; height:22px; flex:0 0 auto; accent-color:#68e07e; }
+          .classic-inline-zone-check span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; font-weight:750; }
+          .classic-inline-zone-order { text-align:center; font-size:13px; }
+          .classic-inline-zone-move { width:34px; height:34px; padding:0; font-size:17px; }
+          .classic-inline-zone-move:disabled { opacity:.25; }
+
+          /* v39 — zone/order editor stays inside the Classic side pane.
+             It no longer creates a full-card fixed overlay, so HA/map cannot be
+             dimmed or left behind a collapsed modal line. */
+          .classic-landscape-zone-editor { display:none; }
+          ha-card.layout-classic[data-classic-touch-landscape] .classic-landscape-zone-editor {
+            position:absolute !important;
+            inset:0 !important;
+            z-index:220 !important;
+            display:block !important;
+            padding:6px !important;
+            box-sizing:border-box !important;
+            background:#171a1d !important;
+            overflow:hidden !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .classic-landscape-zone-editor[hidden] {
+            display:none !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .classic-landscape-zone-editor-backdrop {
+            display:none !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .classic-landscape-zone-editor-card {
+            position:relative !important;
+            z-index:1 !important;
+            width:100% !important;
+            height:100% !important;
+            min-height:0 !important;
+            max-height:none !important;
+            display:grid !important;
+            grid-template-rows:auto auto minmax(0,1fr) auto !important;
+            overflow:hidden !important;
+            border:1px solid #414a51 !important;
+            border-radius:13px !important;
+            background:#171a1d !important;
+            color:#f5f7f8 !important;
+            box-shadow:none !important;
+          }
+          .classic-zone-editor-head { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid #30363b; }
+          .classic-zone-editor-head strong { font-size:15px; }
+          .classic-zone-editor-head button { width:36px; height:36px; display:grid; place-items:center; border:0; border-radius:10px; background:#24292d; color:#fff; }
+          .classic-zone-editor-tabs { display:flex; gap:6px; padding:8px 10px; border-bottom:1px solid #30363b; }
+          .classic-zone-editor-tabs button { min-height:36px; padding:6px 10px; border:1px solid #3b4349; border-radius:9px; background:#202428; color:#dfe5e9; font:inherit; font-weight:750; }
+          .classic-zone-editor-tabs button.active { background:#68e07e; color:#102015; border-color:#86ed97; }
+          .classic-zone-editor-body { min-height:0; display:grid; grid-template-columns:minmax(160px,.85fr) minmax(200px,1.15fr); gap:10px; padding:10px; overflow:hidden; }
+          .classic-zone-check-list, .classic-zone-order-list { min-height:0; overflow:auto; -webkit-overflow-scrolling:touch; }
+          .classic-zone-check-list { display:grid; align-content:start; gap:5px; }
+          .classic-zone-check-row { min-height:38px; display:flex; align-items:center; gap:9px; padding:6px 8px; border:1px solid #30373d; border-radius:9px; background:#202428; }
+          .classic-zone-check-row input { width:22px; height:22px; flex:0 0 auto; accent-color:#68e07e; }
+          .classic-zone-check-row span { font-size:13px; font-weight:700; }
+          .classic-zone-order-wrap { min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr); }
+          .classic-zone-order-title { padding:0 2px 6px; font-size:12px; font-weight:850; color:#b9c3ca; }
+          .classic-zone-order-list { display:grid; align-content:start; gap:5px; }
+          .classic-zone-order-row { display:grid; grid-template-columns:28px minmax(0,1fr) 38px 38px; align-items:center; gap:5px; min-height:39px; padding:5px 7px; border:1px solid #30373d; border-radius:9px; background:#202428; }
+          .classic-zone-order-row span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+          .classic-zone-order-row button { width:36px; height:32px; border:1px solid #46515a; border-radius:8px; background:#2a3035; color:#fff; font-size:17px; }
+          .classic-zone-order-row button:disabled { opacity:.28; }
+          .classic-zone-order-empty { padding:14px 8px; color:#96a1aa; font-size:12px; text-align:center; }
+          .classic-zone-editor-actions { display:flex; justify-content:flex-end; gap:8px; padding:9px 10px; border-top:1px solid #30363b; }
+          .classic-zone-editor-actions button { min-height:38px; padding:7px 12px; border:1px solid #414a51; border-radius:9px; background:#24292d; color:#fff; font:inherit; font-weight:800; }
+          .classic-zone-editor-actions button.primary { background:#68e07e; color:#0c1a11; border-color:#86ed97; }
+          /* The old page arrows are no longer needed for the primary task flow. */
+          ha-card.layout-classic[data-classic-touch-landscape] .classic-landscape-scroll-controls {
+            display:none !important;
+          }
+
+          /* v36 — REAL Classic touch-landscape fix. This block lives in the
+             main card stylesheet (not in a dialog stylesheet). The entire
+             right pane is one scroll container; page buttons drive that same
+             element, so Android/HA does not depend on nested Shadow-DOM scroll. */
+          ha-card.layout-classic[data-classic-touch-landscape] .classic-mobile-sheet-close {
+            display:none !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .frontend-frame {
+            height:100% !important;
+            min-height:0 !important;
+            grid-template-rows:auto minmax(0,1fr) !important;
+            overflow:hidden !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .frontend-main {
+            display:grid !important;
+            grid-template-columns:minmax(0,1.30fr) minmax(280px,.80fr) !important;
+            gap:8px !important;
+            height:100% !important;
+            min-height:0 !important;
+            overflow:hidden !important;
+            padding:6px !important;
+            box-sizing:border-box !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .frontend-map-slot,
+          ha-card.layout-classic[data-classic-touch-landscape] .canvas-wrap,
+          ha-card.layout-classic[data-classic-touch-landscape] .canvas-wrap.auto-map-size {
+            height:100% !important;
+            min-height:0 !important;
+            max-height:100% !important;
+            overflow:hidden !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .frontend-side-slot {
+            display:block !important;
+            position:relative !important;
+            inset:auto !important;
+            width:auto !important;
+            height:100% !important;
+            min-height:0 !important;
+            max-height:100% !important;
+            overflow-x:hidden !important;
+            overflow-y:auto !important;
+            overscroll-behavior:contain !important;
+            touch-action:pan-y !important;
+            -webkit-overflow-scrolling:touch !important;
+            border:1px solid #2f353a !important;
+            border-radius:14px !important;
+            background:#171a1d !important;
+            box-sizing:border-box !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .frontend-side-slot .app-panel,
+          ha-card.layout-classic[data-classic-touch-landscape] .frontend-side-slot .panel-body {
+            position:static !important;
+            height:auto !important;
+            min-height:0 !important;
+            max-height:none !important;
+            overflow:visible !important;
+            touch-action:auto !important;
+            box-sizing:border-box !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .frontend-side-slot .app-panel {
+            padding:6px !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .frontend-side-slot .panel-body {
+            padding-right:4px !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .classic-landscape-scroll-controls:not([hidden]) {
+            display:flex !important;
+            position:sticky !important;
+            top:6px !important;
+            z-index:90 !important;
+            width:max-content !important;
+            margin:6px 6px -44px auto !important;
+            flex-direction:row !important;
+            gap:5px !important;
+            pointer-events:auto !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .classic-landscape-scroll-controls button {
+            width:42px !important;
+            height:38px !important;
+            display:grid !important;
+            place-items:center !important;
+            padding:0 !important;
+            border:1px solid #3a4248 !important;
+            border-radius:10px !important;
+            background:rgba(32,36,40,.97) !important;
+            color:#f5f7f8 !important;
+            box-shadow:0 5px 16px rgba(0,0,0,.28) !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .classic-landscape-scroll-controls button:disabled {
+            opacity:.28 !important;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .classic-landscape-scroll-controls ha-icon {
+            --mdc-icon-size:25px;
+          }
+          ha-card.layout-classic[data-classic-touch-landscape] .frontend-bottom-slot {
+            display:none !important;
+          }
+
+          /* Portrait mobile keeps the real bottom-sheet close control. */
+          @media (max-width:700px) and (orientation:portrait) {
+            ha-card.layout-classic .frontend-side-slot.classic-mobile-sheet .classic-mobile-sheet-close {
+              display:grid !important;
+            }
+          }
+
+          /* The action row contains only mower actions; Menu exists only in the top navigation. */
+          ha-card.layout-modern .frontend-bottom-slot button[data-panel="more"],
+          ha-card.layout-modern .frontend-bottom-slot button[data-open-panel="more"],
+          ha-card.layout-compact .frontend-bottom-slot button[data-panel="more"],
+          ha-card.layout-compact .frontend-bottom-slot button[data-open-panel="more"],
+          ha-card.layout-fullscreen .frontend-bottom-slot button[data-panel="more"],
+          ha-card.layout-fullscreen .frontend-bottom-slot button[data-open-panel="more"] {
+            display:none !important;
+          }
+
 </style>
-        <section class="app-shell">
-          <div class="top-menu">
+        <div class="frontend-frame">
+          <div class="frontend-top-slot"></div>
+          <div class="frontend-main">
+            <div class="frontend-map-slot">
+              <div class="canvas-wrap">
+                <canvas></canvas>
+                ${this.frontendLayout === "origin" ? `<div class="map-live-status" data-role="map-live-status">
+                  <div class="battery-ring" data-role="battery-ring"><span data-role="battery-value">--</span></div>
+                  <div class="status-copy">
+                    <span class="status-label">${this.t("status")}</span>
+                    <strong data-role="mower-status">-</strong>
+                    <span class="rain-hold-line" data-role="rain-hold-line" hidden></span>
+                    <span class="next-mow-line" data-role="next-mow-line" hidden></span>
+                    <span class="mowing-live-line" data-role="mowing-live-line" hidden>
+                      <span class="mowing-live-target" data-role="mowing-live-target">-</span>
+                      <strong class="mowing-live-progress" data-role="mowing-live-progress">--%</strong>
+                    </span>
+                  </div>
+                </div>` : ""}
+                ${this.frontendInfoMarkup()}
+                ${this.frontendFullscreenControlMarkup()}
+                <div class="map-overlay map-title"><div class="name">${this.config.name || "Anthbot Map"}</div><div class="state" data-role="map-state">${this.t("waiting")}</div></div>
+                <div class="map-overlay preview-hint"><strong>${this.t("map")}</strong><span>${this.t("expand")}</span></div>
+                <button type="button" class="map-close" data-action="close-map" title="${this.t("close")}">&times;</button>
+                <div class="map-overlay map-actions"><button type="button" data-action="zoom-in" title="${this.t("zoomIn")}">+</button><button type="button" data-action="zoom-out" title="${this.t("zoomOut")}">-</button></div>
+                <div class="map-overlay map-badges"><span data-role="zone-count">${this.t("zones")}: -</span><span data-role="pose">${this.t("position")}: -</span><span data-role="heading">${this.t("heading")}: -</span><span class="cloud-status" data-role="map-cloud-status">${this.t("cloudChecking")}</span></div>
+                ${this.calibrationOverlayMarkup()}
+                ${this.frontendLayout === "origin" ? `<button type="button" class="anthbot-menu-toggle origin-menu-toggle" data-floating-menu="toggle">&#9776; ${this.t("menu")}</button>` : ""}
+              </div>
+            </div>
+            <aside class="frontend-side-slot">${this.frontendLayout === "classic" ? `<button type="button" class="classic-mobile-sheet-close" data-classic-mobile-close title="${this.t("close")}" aria-label="${this.t("close")}"><ha-icon icon="mdi:close"></ha-icon></button><div class="classic-landscape-scroll-controls" data-classic-landscape-scroll-controls hidden><button type="button" data-classic-landscape-scroll="up" title="${this.t("up")}" aria-label="${this.t("up")}"><ha-icon icon="mdi:chevron-up"></ha-icon></button><button type="button" data-classic-landscape-scroll="down" title="${this.t("down")}" aria-label="${this.t("down")}"><ha-icon icon="mdi:chevron-down"></ha-icon></button></div>` : ""}</aside>
+          </div>
+          <div class="frontend-bottom-slot">${["classic", "modern", "compact", "fullscreen"].includes(this.frontendLayout) ? this.frontendQuickbarMarkup() : ""}</div>
+          <section class="frontend-drawer"><button type="button" class="frontend-drawer-close" data-floating-menu="close">×</button></section>
+        </div>
+
+        <section class="app-shell ${this.frontendLayout === "origin" ? "" : "compact-nav-only"}">
+          ${this.frontendLayout === "origin" ? `<div class="top-menu">
             <div>
               <div class="menu-title">${this.config.name || "Anthbot Map"}</div>
               <div class="menu-subtitle" data-role="state">${this.t("waiting")}</div>
             </div>
             <div class="mini-status">
-              <div class="battery-ring" data-role="battery-ring">
-                <span data-role="battery-value">--</span>
-              </div>
+              <div class="battery-ring" data-role="battery-ring"><span data-role="battery-value">--</span></div>
               <div class="status-copy">
                 <span class="status-label">${this.t("status")}</span>
                 <strong data-role="mower-status">-</strong>
-                <span class="mowing-live-line" data-role="mowing-live-line" hidden>
-                  <span class="mowing-live-target" data-role="mowing-live-target">-</span>
-                  <strong class="mowing-live-progress" data-role="mowing-live-progress">--%</strong>
-                </span>
+                <span class="mowing-live-line" data-role="mowing-live-line" hidden><span class="mowing-live-target" data-role="mowing-live-target">-</span><strong class="mowing-live-progress" data-role="mowing-live-progress">--%</strong></span>
                 <span class="cloud-status" data-role="cloud-status">${this.t("cloudChecking")}</span>
               </div>
             </div>
-          </div>
-          <div class="panel-tabs">
-            <button type="button" data-panel="control">${this.t("control")}</button>
-            <button type="button" data-panel="schedule">${anthbotScheduleText(this, "schedule")}</button>
-            <button type="button" data-panel="settings">${this.t("robotSettings")}</button>
-            <button type="button" data-panel="interface">${this.t("interfaceSettings")}</button>
-            <button type="button" data-panel="status">${this.t("status")}</button>
-            <button type="button" data-panel="maintenance">${this.t("maintenance")}</button>
-            <button type="button" data-panel="diagnostics">${this.t("diagnostics")}</button>
-          </div>
+          </div>` : ""}
+          <div class="panel-tabs">${this.frontendTabsMarkup()}</div>
         </section>
-        <div class="canvas-wrap">
-          <canvas></canvas>
-          <div class="map-live-status" data-role="map-live-status">
-            <div class="battery-ring" data-role="battery-ring">
-              <span data-role="battery-value">--</span>
-            </div>
-            <div class="status-copy">
-              <span class="status-label">${this.t("status")}</span>
-              <strong data-role="mower-status">-</strong>
-              <span class="rain-hold-line" data-role="rain-hold-line" hidden></span>
-              <span class="next-mow-line" data-role="next-mow-line" hidden></span>
-              <span class="mowing-live-line" data-role="mowing-live-line" hidden>
-                <span class="mowing-live-target" data-role="mowing-live-target">-</span>
-                <strong class="mowing-live-progress" data-role="mowing-live-progress">--%</strong>
-              </span>
-            </div>
-          </div>
-          <div class="map-overlay map-title">
-            <div class="name">${this.config.name || "Anthbot Map"}</div>
-            <div class="state" data-role="map-state">${this.t("waiting")}</div>
-          </div>
-          <div class="map-overlay preview-hint">
-            <strong>${this.t("map")}</strong>
-            <span>${this.t("expand")}</span>
-          </div>
-          <button type="button" class="map-close" data-action="close-map" title="${this.t("close")}">&times;</button>
-          <div class="map-overlay map-actions">
-            <button type="button" data-action="zoom-in" title="${this.t("zoomIn")}">+</button>
-            <button type="button" data-action="zoom-out" title="${this.t("zoomOut")}">-</button>
-          </div>
-          <div class="map-overlay map-badges">
-            <span data-role="zone-count">${this.t("zones")}: -</span>
-            <span data-role="pose">${this.t("position")}: -</span>
-            <span data-role="heading">${this.t("heading")}: -</span>
-            <span class="cloud-status" data-role="map-cloud-status">${this.t("cloudChecking")}</span>
-          </div>
-          <button type="button" class="anthbot-menu-toggle" data-floating-menu="toggle">&#9776; ${this.t("menu")}</button>
-          <section class="anthbot-glass-panel">
-            <div class="anthbot-glass-head"><strong>Anthbot ${this.t("control")}</strong><button type="button" class="anthbot-glass-close" data-floating-menu="close">&times;</button></div>
-          </section>
-        </div>
-        <section class="app-panel">
-          <div class="panel-body" data-role="panel-body"></div>
-        </section>
-        <details class="calibration">
-          <summary>${this.t("calibration")}</summary>
-          <div class="calibration-title">${this.t("mapFit")}</div>
-          <div class="calibration-grid">
-            <button type="button" data-calibration="up">${this.t("up")}</button>
-            <button type="button" data-calibration="left">${this.t("left")}</button>
-            <button type="button" data-calibration="right">${this.t("right")}</button>
-            <button type="button" data-calibration="down">${this.t("down")}</button>
-            <button type="button" data-calibration="narrower">${this.t("narrower")}</button>
-            <button type="button" data-calibration="wider">${this.t("wider")}</button>
-            <button type="button" data-calibration="shorter">${this.t("shorter")}</button>
-            <button type="button" data-calibration="taller">${this.t("taller")}</button>
-            <button type="button" data-calibration="rotate-left">${this.t("rotation")} -</button>
-            <button type="button" data-calibration="rotate-right">${this.t("rotation")} +</button>
-          </div>
-          <div class="calibration-title">${this.t("robotFit")}</div>
-          <div class="calibration-grid">
-            <button type="button" data-robot-calibration="up">${this.t("up")}</button>
-            <button type="button" data-robot-calibration="left">${this.t("left")}</button>
-            <button type="button" data-robot-calibration="right">${this.t("right")}</button>
-            <button type="button" data-robot-calibration="down">${this.t("down")}</button>
-            <button type="button" data-robot-calibration="narrower">${this.t("narrower")}</button>
-            <button type="button" data-robot-calibration="wider">${this.t("wider")}</button>
-            <button type="button" data-robot-calibration="rotate-left">${this.t("rotation")} -</button>
-            <button type="button" data-robot-calibration="rotate-right">${this.t("rotation")} +</button>
-            <button type="button" data-action="reset-robot">${this.t("reset")}</button>
-          </div>
-          <div class="calibration-title">${this.t("mowingPathFit")}</div>
-          <div class="calibration-grid">
-            <button type="button" data-mowing-path-calibration="up">${this.t("up")}</button>
-            <button type="button" data-mowing-path-calibration="left">${this.t("left")}</button>
-            <button type="button" data-mowing-path-calibration="right">${this.t("right")}</button>
-            <button type="button" data-mowing-path-calibration="down">${this.t("down")}</button>
-            <button type="button" data-mowing-path-calibration="narrower">${this.t("narrower")}</button>
-            <button type="button" data-mowing-path-calibration="wider">${this.t("wider")}</button>
-            <button type="button" data-mowing-path-calibration="shorter">${this.t("shorter")}</button>
-            <button type="button" data-mowing-path-calibration="taller">${this.t("taller")}</button>
-            <button type="button" data-mowing-path-calibration="rotate-left">${this.t("rotation")} -</button>
-            <button type="button" data-mowing-path-calibration="rotate-right">${this.t("rotation")} +</button>
-            <button type="button" data-action="reset-mowing-path">${this.t("reset")}</button>
-          </div>
-          <div class="calibration-title">${this.t("robotDirection")}</div>
-          <div class="calibration-grid">
-            <button type="button" data-robot-heading="left">-15°</button>
-            <button type="button" data-robot-heading="right">+15°</button>
-            <button type="button" data-robot-heading="around">180°</button>
-            <button type="button" data-action="reset-robot-heading">${this.t("reset")}</button>
-          </div>
-          <div class="calibration-title">${this.t("boundaryFit")}</div>
-          <div class="calibration-grid">
-            <button type="button" data-boundary-calibration="up">${this.t("up")}</button>
-            <button type="button" data-boundary-calibration="left">${this.t("left")}</button>
-            <button type="button" data-boundary-calibration="right">${this.t("right")}</button>
-            <button type="button" data-boundary-calibration="down">${this.t("down")}</button>
-            <button type="button" data-boundary-calibration="narrower">${this.t("narrower")}</button>
-            <button type="button" data-boundary-calibration="wider">${this.t("wider")}</button>
-            <button type="button" data-boundary-calibration="shorter">${this.t("shorter")}</button>
-            <button type="button" data-boundary-calibration="taller">${this.t("taller")}</button>
-            <button type="button" data-boundary-calibration="rotate-left">${this.t("rotation")} -</button>
-            <button type="button" data-boundary-calibration="rotate-right">${this.t("rotation")} +</button>
-            <button type="button" data-action="reset-boundary">${this.t("reset")}</button>
-          </div>
-          <div class="yaml-row">
-            <textarea readonly data-role="yaml"></textarea>
-            <button type="button" data-action="copy-yaml">${this.t("yamlCopy")}</button>
-          </div>
-        </details>
-      </ha-card>
-    `;
+        <section class="app-panel"><div class="panel-body" data-role="panel-body"></div></section>
+        <div class="anthbot-button-tooltip" data-role="button-tooltip" hidden></div>
+      </ha-card>`;
 
-    const glassPanel = root.querySelector(".anthbot-glass-panel");
-    [
-      root.querySelector(".app-shell"),
-      root.querySelector(".app-panel"),
-    ].forEach((element) => { if (element) glassPanel?.appendChild(element); });
-    glassPanel?.classList.toggle("open", this.floatingMenuOpen);
+    const frame = root.querySelector(".frontend-frame");
+    const topSlot = root.querySelector(".frontend-top-slot");
+    const sideSlot = root.querySelector(".frontend-side-slot");
+    const mapSlot = root.querySelector(".frontend-map-slot");
+    const bottomSlot = root.querySelector(".frontend-bottom-slot");
+    const drawer = root.querySelector(".frontend-drawer");
+    const appShell = root.querySelector(".app-shell");
+    const appPanel = root.querySelector(".app-panel");
 
-    root.querySelectorAll("button[data-action]").forEach((button) => {
-      button.addEventListener("click", () => this.handleAction(button.dataset.action));
-    });
-    root.querySelectorAll("button[data-command]").forEach((button) => {
-      button.addEventListener("click", () => this.handleCommand(button.dataset.command));
-    });
+    this.ensureFrontendBottomQuickbar(root);
+    // v29 runtime invariant: exactly one bottom quickbar for Modern/Compact/Fullscreen,
+    // with five mower actions and no duplicated Menu action.
+    if (["modern", "compact", "fullscreen"].includes(this.frontendLayout)) {
+      const slot = root.querySelector('.frontend-bottom-slot');
+      const bars = slot ? Array.from(slot.querySelectorAll(':scope > .frontend-quickbar')) : [];
+      bars.slice(1).forEach((bar) => bar.remove());
+      slot?.querySelectorAll('button[data-panel="more"], button[data-open-panel="more"], button[data-floating-menu]').forEach((button) => button.remove());
+    }
+
+    if (this.frontendLayout === "origin") {
+      drawer?.appendChild(appShell);
+      drawer?.appendChild(appPanel);
+    } else if (this.frontendLayout === "classic") {
+      topSlot?.appendChild(appShell);
+      sideSlot?.appendChild(appPanel);
+      if (this.isClassicMobilePortrait()) this.classicMobileSheetOpen = false;
+      this.syncClassicMobileSheet(root);
+      this.setupClassicLandscapePanelNavigation(root);
+    } else if (this.frontendLayout === "compact") {
+      topSlot?.appendChild(appShell);
+      drawer?.appendChild(appPanel);
+    } else {
+      // Modern + Fullscreen are map-first. The map always keeps the full width;
+      // controls open over it only when requested.
+      mapSlot?.appendChild(appShell);
+      drawer?.appendChild(appPanel);
+    }
+    drawer?.classList.toggle("open", this.floatingMenuOpen && ["origin", "modern", "compact", "fullscreen"].includes(this.frontendLayout));
+
+    root.querySelectorAll("button[data-action]").forEach((button) => button.addEventListener("click", () => this.handleAction(button.dataset.action)));
+    root.querySelectorAll("button[data-command]").forEach((button) => button.addEventListener("click", () => this.handleCommand(button.dataset.command)));
     root.querySelectorAll("button[data-panel]").forEach((button) => {
-      button.addEventListener("click", () => this.setPanel(button.dataset.panel));
+      button.addEventListener("click", () => {
+        const panel = button.dataset.panel;
+        if (["modern", "compact", "fullscreen"].includes(this.frontendLayout) && panel !== "calibration") {
+          this.floatingMenuOpen = true;
+          drawer?.classList.add("open");
+        }
+        if (this.isClassicMobilePortrait() && panel !== "calibration") {
+          this.classicMobileSheetOpen = true;
+          sideSlot?.classList.add("mobile-sheet-open");
+        }
+        if (panel === "calibration") {
+          this.floatingMenuOpen = false;
+          this.classicMobileSheetOpen = false;
+          drawer?.classList.remove("open");
+          sideSlot?.classList.remove("mobile-sheet-open");
+        }
+        this.setPanel(panel);
+      });
     });
-    root.querySelectorAll("button[data-calibration]").forEach((button) => {
-      button.addEventListener("click", () => this.handleCalibration(button.dataset.calibration));
+    root.querySelectorAll("button[data-open-panel]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (this.isClassicMobilePortrait()) {
+          this.classicMobileSheetOpen = true;
+          sideSlot?.classList.add("mobile-sheet-open");
+        } else {
+          this.floatingMenuOpen = true;
+          drawer?.classList.add("open");
+        }
+        this.setPanel(button.dataset.openPanel);
+      });
     });
-    root.querySelectorAll("button[data-robot-calibration]").forEach((button) => {
-      button.addEventListener("click", () => this.handleRobotCalibration(button.dataset.robotCalibration));
+    root.querySelectorAll("button[data-calibration]").forEach((button) => button.addEventListener("click", () => this.handleCalibration(button.dataset.calibration)));
+    root.querySelectorAll("button[data-robot-calibration]").forEach((button) => button.addEventListener("click", () => this.handleRobotCalibration(button.dataset.robotCalibration)));
+    root.querySelectorAll("button[data-mowing-path-calibration]").forEach((button) => button.addEventListener("click", () => this.handleMowingPathCalibration(button.dataset.mowingPathCalibration)));
+    root.querySelectorAll("button[data-robot-heading]").forEach((button) => button.addEventListener("click", () => this.handleRobotHeading(button.dataset.robotHeading)));
+    root.querySelectorAll("button[data-boundary-calibration]").forEach((button) => button.addEventListener("click", () => this.handleBoundaryCalibration(button.dataset.boundaryCalibration)));
+    root.querySelectorAll("[data-calibration-mode]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const mode = button.dataset.calibrationMode;
+        const popover = root.querySelector("[data-calibration-popover]");
+        const alreadyActive = button.classList.contains("active") && !popover?.hidden;
+        root.querySelectorAll("[data-calibration-mode]").forEach((item) => item.classList.remove("active"));
+        root.querySelectorAll("[data-calibration-content]").forEach((section) => { section.hidden = true; });
+        if (alreadyActive) {
+          if (popover) popover.hidden = true;
+          return;
+        }
+        button.classList.add("active");
+        const content = root.querySelector(`[data-calibration-content="${mode}"]`);
+        if (content) content.hidden = false;
+        if (popover) popover.hidden = false;
+      });
     });
-    root.querySelectorAll("button[data-mowing-path-calibration]").forEach((button) => {
-      button.addEventListener("click", () => this.handleMowingPathCalibration(button.dataset.mowingPathCalibration));
+    root.querySelectorAll("[data-calibration-popover-close]").forEach((button) => {
+      button.addEventListener("click", () => {
+        root.querySelectorAll("[data-calibration-mode]").forEach((item) => item.classList.remove("active"));
+        root.querySelectorAll("[data-calibration-content]").forEach((section) => { section.hidden = true; });
+        const popover = root.querySelector("[data-calibration-popover]");
+        if (popover) popover.hidden = true;
+      });
     });
-    root.querySelectorAll("button[data-robot-heading]").forEach((button) => {
-      button.addEventListener("click", () => this.handleRobotHeading(button.dataset.robotHeading));
-    });
-    root.querySelectorAll("button[data-boundary-calibration]").forEach((button) => {
-      button.addEventListener("click", () => this.handleBoundaryCalibration(button.dataset.boundaryCalibration));
-    });
+    root.querySelector("[data-calibration-close]")?.addEventListener("click", () => this.setPanel("control"));
+
     const panelBody = root.querySelector('[data-role="panel-body"]');
-    panelBody?.addEventListener("pointerdown", () => {
-      // A live HA state update must not replace a pressed button between
-      // pointerdown and click; otherwise the first press appears ignored.
-      this.panelInteractionUntil = Date.now() + 1200;
-    }, true);
-    panelBody?.addEventListener("keydown", () => {
-      this.panelInteractionUntil = Date.now() + 1200;
-    }, true);
+    panelBody?.addEventListener("pointerdown", () => { this.panelInteractionUntil = Date.now() + 1200; }, true);
+    panelBody?.addEventListener("keydown", () => { this.panelInteractionUntil = Date.now() + 1200; }, true);
     root.querySelectorAll("button[data-floating-menu]").forEach((button) => {
       button.addEventListener("click", (event) => {
         event.stopPropagation();
         this.floatingMenuOpen = button.dataset.floatingMenu === "close" ? false : !this.floatingMenuOpen;
-        glassPanel?.classList.toggle("open", this.floatingMenuOpen);
+        drawer?.classList.toggle("open", this.floatingMenuOpen);
       });
+    });    root.querySelector("[data-classic-mobile-close]")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.classicMobileSheetOpen = false;
+      sideSlot?.classList.remove("mobile-sheet-open");
     });
+
+
+
+    const infoControl = root.querySelector('[data-role="frontend-info-control"]');
+    const infoPopover = root.querySelector('[data-role="frontend-info-popover"]');
+    root.querySelector("[data-info-toggle]")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (infoPopover) infoPopover.hidden = !infoPopover.hidden;
+    });
+    root.querySelector("ha-card")?.addEventListener("click", (event) => {
+      if (infoPopover && !infoPopover.hidden && !event.composedPath().includes(infoControl)) {
+        infoPopover.hidden = true;
+      }
+    });
+
+    this.setupButtonTooltips();
+
+    root.querySelector('[data-true-fullscreen-toggle]')?.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (this.isTrueFullscreenActive()) void this.exitTrueFullscreen();
+      else void this.enterTrueFullscreen();
+    });
+    this.updateTrueFullscreenButton();
+
     const canvas = root.querySelector("canvas");
     const canvasWrap = root.querySelector(".canvas-wrap");
     this.applyAutomaticMapSize(canvasWrap);
     this.setupMapLiveStatusDrag(canvasWrap);
     const pointerStarts = new Map();
     let mapGestureMoved = false;
-    canvasWrap?.addEventListener("pointerdown", (event) => {
-      pointerStarts.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    });
+    canvasWrap?.addEventListener("pointerdown", (event) => pointerStarts.set(event.pointerId, { x: event.clientX, y: event.clientY }));
     canvasWrap?.addEventListener("pointermove", (event) => {
       const start = pointerStarts.get(event.pointerId);
-      if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 8) {
-        mapGestureMoved = true;
-      }
+      if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 8) mapGestureMoved = true;
     });
     const finishMapGesture = (event) => {
       pointerStarts.delete(event.pointerId);
-      if (mapGestureMoved) {
-        this.suppressMapExpandClickUntil = Date.now() + 250;
-      }
-      if (!pointerStarts.size) {
-        mapGestureMoved = false;
-      }
+      if (mapGestureMoved) this.suppressMapExpandClickUntil = Date.now() + 250;
+      if (!pointerStarts.size) mapGestureMoved = false;
     };
     canvasWrap?.addEventListener("pointerup", finishMapGesture);
     canvasWrap?.addEventListener("pointercancel", finishMapGesture);
     canvasWrap?.addEventListener("click", (event) => {
-      if (event.composedPath().includes(glassPanel)) return;
+      if (event.composedPath().includes(drawer) || event.composedPath().includes(root.querySelector('[data-role="calibration-overlay"]'))) return;
       if (Date.now() < this.suppressMapExpandClickUntil) return;
-      if (!mapOnly && !this.mapExpanded && !event.target.closest("button")) {
-        this.setMapExpanded(true);
-      }
+      if (!mapOnly && !this.mapExpanded && !event.target.closest("button")) this.setMapExpanded(true);
     });
-    canvasWrap?.addEventListener("dblclick", () => {
-      if (this.mapOnly) this.setInterfaceOption("mapOnly", false);
-    });
+    canvasWrap?.addEventListener("dblclick", () => { if (this.mapOnly) this.setInterfaceOption("mapOnly", false); });
 
     this.renderer?.destroy();
+    this.lastRendererOptionsSignature = "";
+    this.lastRendererVisualSignature = "";
     this.renderer = new AnthbotMapRenderer(canvas, this.rendererOptions());
     this.resizeObserver?.disconnect();
     this.resizeObserver = new ResizeObserver(() => this.renderer?.resize());
     this.resizeObserver.observe(canvas);
+    this.viewportCardResizeObserver?.disconnect();
+    this.viewportCardResizeObserver = new ResizeObserver(() => {
+      this.scheduleViewportFillSync();
+      this.syncClassicMobileSheet();
+      this.setupClassicLandscapePanelNavigation();
+    });
+    this.viewportCardResizeObserver.observe(this);
+    if (this.parentElement) this.viewportCardResizeObserver.observe(this.parentElement);
+    const observedCard = root.querySelector("ha-card");
+    if (observedCard) this.viewportCardResizeObserver.observe(observedCard);
+    if (topSlot) this.viewportCardResizeObserver.observe(topSlot);
+    if (bottomSlot) this.viewportCardResizeObserver.observe(bottomSlot);
     requestAnimationFrame(() => this.renderer?.resize());
     this.setMapExpanded(this.mapExpanded);
+    // Home Assistant may set `hass` before or after setConfig(). Any full DOM
+    // rebuild creates a fresh empty panel-body, so repopulate the active panel
+    // here whenever HA state is already available. This makes Classic reliable
+    // regardless of setter order.
+    if (this._hass) this.renderAppPanel();
     this.updateRenderer();
+    this.scheduleViewportFillSync();
+    window.setTimeout(() => this.scheduleViewportFillSync(), 80);
+    window.setTimeout(() => this.scheduleViewportFillSync(), 320);
   }
 
   applyAutomaticMapSize(canvasWrap) {
@@ -827,19 +3311,102 @@ class AnthbotMapCard extends HTMLElement {
     }
   }
 
+  compactRendererFingerprint(value) {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "number" || typeof value === "boolean") return String(value);
+    if (typeof value === "string") {
+      const length = value.length;
+      return `${length}:${value.slice(0, 28)}:${length > 28 ? value.slice(-28) : ""}`;
+    }
+    if (Array.isArray(value)) {
+      const length = value.length;
+      if (!length) return "a0";
+      const first = this.compactRendererFingerprint(value[0]);
+      const last = this.compactRendererFingerprint(value[length - 1]);
+      const middle = length > 2 ? this.compactRendererFingerprint(value[Math.floor(length / 2)]) : "";
+      return `a${length}:${first}:${middle}:${last}`;
+    }
+    if (typeof value === "object") {
+      const preferred = [
+        "id", "version", "revision", "updated_at", "timestamp", "time",
+        "x", "y", "yaw", "heading", "point_count", "path_id",
+      ];
+      const parts = [];
+      for (const key of preferred) {
+        if (Object.prototype.hasOwnProperty.call(value, key)) {
+          parts.push(`${key}=${this.compactRendererFingerprint(value[key])}`);
+        }
+      }
+      if (parts.length) return `o:${parts.join(",")}`;
+      const keys = Object.keys(value).sort();
+      const sample = keys.slice(0, 4).concat(keys.length > 4 ? keys.slice(-2) : []);
+      return `o${keys.length}:${sample.map((key) => `${key}=${this.compactRendererFingerprint(value[key])}`).join("|")}`;
+    }
+    return String(value);
+  }
+
+  rendererOptionsSignature(options) {
+    try {
+      return JSON.stringify(options);
+    } catch (_error) {
+      return String(options?.image || "") + String(options?.rotation || "");
+    }
+  }
+
+  rendererVisualSignature(attributes = {}, pose = {}) {
+    return [
+      this.entity?.state || "",
+      this.compactRendererFingerprint(pose),
+      this.compactRendererFingerprint(attributes.cur_pose),
+      this.compactRendererFingerprint(attributes.map_scan_pose),
+      attributes.path_id ?? "",
+      attributes.path_point_count ?? "",
+      attributes.path_time ?? "",
+      this.compactRendererFingerprint(attributes.path),
+      this.compactRendererFingerprint(attributes.mowed_path),
+      this.compactRendererFingerprint(attributes.mowedPath),
+      this.compactRendererFingerprint(attributes.mowing_path),
+      this.compactRendererFingerprint(attributes.mowingPath),
+      this.compactRendererFingerprint(attributes.track),
+      this.compactRendererFingerprint(attributes.tracks),
+      this.compactRendererFingerprint(attributes.trajectory),
+      this.compactRendererFingerprint(attributes.cloud_path),
+      this.compactRendererFingerprint(attributes.cloudPath),
+      this.compactRendererFingerprint(attributes.map_raster),
+      this.compactRendererFingerprint(attributes.map_definition),
+      this.compactRendererFingerprint(attributes.path_definition),
+      this.compactRendererFingerprint(attributes.area_definition),
+      this.getRelatedEntity("status")?.state || attributes.mower_status || "",
+      this.getRelatedEntity("charging")?.state || "",
+    ].join("¦");
+  }
+
+  refreshOpenPanelValues() {
+    const root = this.shadowRoot;
+    if (!root) return;
+
+    root.querySelectorAll('[data-info-key]').forEach((tile) => {
+      const key = tile.dataset.infoKey;
+      const value = tile.querySelector("strong");
+      if (key && value) value.textContent = this.formatEntity(this.getRelatedEntity(key), key);
+    });
+
+    root.querySelectorAll('[data-maintenance-kind]').forEach((tile) => {
+      const value = tile.querySelector(".maintenance-value");
+      if (value) value.textContent = this.maintenanceValue(tile.dataset.maintenanceKind);
+    });
+
+    if (this.activePanel === "control") {
+      const current = root.querySelector('[data-primary-mowing-action]');
+      const nextAction = this.primaryMowingAction();
+      if (current && current.dataset.primaryMowingAction !== nextAction) {
+        current.replaceWith(this.createPrimaryMowingTile(nextAction));
+      }
+    }
+  }
+
   updateRenderer() {
     if (!this.renderer || !this.entity) {
-      return;
-    }
-
-    // Keep the complete visual tree stable while the user edits zone
-    // settings. Map, zone-button and status refreshes share the same
-    // scrollable glass panel and can otherwise trigger browser scroll
-    // anchoring even when the settings DOM itself is not rebuilt.
-    if (
-      this.activePanel === "settings"
-      && this.shadowRoot?.querySelector('[data-role="panel-body"]')?.childElementCount
-    ) {
       return;
     }
 
@@ -849,42 +3416,56 @@ class AnthbotMapCard extends HTMLElement {
     // rendering needs); the state's own separate `raw_pose` field wants the
     // pre-merge raw value, so it's reconstructed the same trivial way here.
     const rawPose = attributes.pose && typeof attributes.pose === "object" ? attributes.pose : {};
-    this.renderer.setOptions(this.rendererOptions());
-    this.renderer.setState({
-      pose,
-      raw_pose: rawPose,
-      cur_pose: attributes.cur_pose,
-      map_scan_pose: attributes.map_scan_pose,
-      path: attributes.path,
-      mowed_path: attributes.mowed_path,
-      mowedPath: attributes.mowedPath,
-      mowing_path: attributes.mowing_path,
-      mowingPath: attributes.mowingPath,
-      track: attributes.track,
-      tracks: attributes.tracks,
-      trajectory: attributes.trajectory,
-      cloud_path: attributes.cloud_path,
-      cloudPath: attributes.cloudPath,
-      path_id: attributes.path_id,
-      path_start: attributes.path_start,
-      path_task_type: attributes.path_task_type,
-      path_point_count: attributes.path_point_count,
-      path_coordinate_scale: attributes.path_coordinate_scale,
-      path_first_point: attributes.path_first_point,
-      path_time: attributes.path_time,
-      history_path_info: attributes.history_path_info,
-      history_path_source: attributes.history_path_source,
-      map_raster: attributes.map_raster,
-      map_definition: attributes.map_definition,
-      path_definition: attributes.path_definition,
-      map_binary_paths: attributes.map_binary_paths,
-      path_binary_paths: attributes.path_binary_paths,
-      mower_status: this.getRelatedEntity("status")?.state || attributes.mower_status || this.entity.state,
-      robot_status_raw: attributes.robot_status_raw,
-      charging: this.getRelatedEntity("charging")?.state === "on",
-      history_path_live_refresh: attributes.history_path_live_refresh,
-      area_definition: attributes.area_definition,
-    });
+    const rendererOptions = this.rendererOptions();
+    const optionsSignature = this.rendererOptionsSignature(rendererOptions);
+    if (optionsSignature !== this.lastRendererOptionsSignature) {
+      // Re-applying renderer options can reload/re-fit the background image,
+      // so do it only when a real visual option/calibration changed.
+      this.renderer.setOptions(rendererOptions);
+      this.lastRendererOptionsSignature = optionsSignature;
+      // Force one state pass after an options change.
+      this.lastRendererVisualSignature = "";
+    }
+
+    const visualSignature = this.rendererVisualSignature(attributes, pose);
+    if (visualSignature !== this.lastRendererVisualSignature) {
+      this.renderer.setState({
+        pose,
+        raw_pose: rawPose,
+        cur_pose: attributes.cur_pose,
+        map_scan_pose: attributes.map_scan_pose,
+        path: attributes.path,
+        mowed_path: attributes.mowed_path,
+        mowedPath: attributes.mowedPath,
+        mowing_path: attributes.mowing_path,
+        mowingPath: attributes.mowingPath,
+        track: attributes.track,
+        tracks: attributes.tracks,
+        trajectory: attributes.trajectory,
+        cloud_path: attributes.cloud_path,
+        cloudPath: attributes.cloudPath,
+        path_id: attributes.path_id,
+        path_start: attributes.path_start,
+        path_task_type: attributes.path_task_type,
+        path_point_count: attributes.path_point_count,
+        path_coordinate_scale: attributes.path_coordinate_scale,
+        path_first_point: attributes.path_first_point,
+        path_time: attributes.path_time,
+        history_path_info: attributes.history_path_info,
+        history_path_source: attributes.history_path_source,
+        map_raster: attributes.map_raster,
+        map_definition: attributes.map_definition,
+        path_definition: attributes.path_definition,
+        map_binary_paths: attributes.map_binary_paths,
+        path_binary_paths: attributes.path_binary_paths,
+        mower_status: this.getRelatedEntity("status")?.state || attributes.mower_status || this.entity.state,
+        robot_status_raw: attributes.robot_status_raw,
+        charging: this.getRelatedEntity("charging")?.state === "on",
+        history_path_live_refresh: attributes.history_path_live_refresh,
+        area_definition: attributes.area_definition,
+      });
+      this.lastRendererVisualSignature = visualSignature;
+    }
 
     const state = this.shadowRoot.querySelector('[data-role="state"]');
     if (state) {
@@ -898,19 +3479,10 @@ class AnthbotMapCard extends HTMLElement {
     this.updateMapBadges(attributes);
     this.updateBatteryAndStatus();
     this.renderZoneControls(attributes.area_definition);
-    // Do not rebuild the settings/diagnostics DOM on every cloud refresh.
-    // Replacing an open <details> tree (zone settings, or the mowing-history
-    // / error-history sections on the Diagnostics tab) resets the panel
-    // scroll position and collapses whatever the user just expanded.
-    if (
-      this.activePanel !== "settings"
-      && this.activePanel !== "schedule"
-      && this.activePanel !== "diagnostics"
-      && Date.now() >= this.panelInteractionUntil
-      && !this.isPanelControlActive()
-    ) {
-      this.renderAppPanel();
-    }
+    // Passive state updates must never rebuild the drawer/panel DOM.
+    // Update only live values in-place, preserving open menus, details,
+    // scroll position, focus and the user's current interaction.
+    this.refreshOpenPanelValues();
     this.updateYaml();
   }
 
@@ -1120,6 +3692,7 @@ class AnthbotMapCard extends HTMLElement {
     this.updateNextMowDisplay();
 
     this.updateMowingProgressStatus();
+    this.updateFrontendInfo(this.entity?.attributes || {});
   }
 
   updateNextMowDisplay() {
@@ -1129,9 +3702,16 @@ class AnthbotMapCard extends HTMLElement {
     const raw = String(entity?.state || "").toLowerCase();
     const hasNextMow = Boolean(entity) && !["", "unknown", "unavailable", "none"].includes(raw);
     line.hidden = !hasNextMow;
-    line.textContent = hasNextMow
-      ? `${anthbotScheduleText(this, "nextMow")}: ${this.formatLocalDateTime(entity.state)}`
-      : "";
+    if (line.classList?.contains("frontend-info-row")) {
+      const label = line.querySelector("span");
+      const value = line.querySelector("strong");
+      if (label) label.textContent = anthbotScheduleText(this, "nextMow");
+      if (value) value.textContent = hasNextMow ? this.formatLocalDateTime(entity.state) : "–";
+    } else {
+      line.textContent = hasNextMow
+        ? `${anthbotScheduleText(this, "nextMow")}: ${this.formatLocalDateTime(entity.state)}`
+        : "";
+    }
   }
 
   mowingCompletionStorageKey() {
@@ -1282,43 +3862,362 @@ class AnthbotMapCard extends HTMLElement {
 
   setPanel(panel) {
     this.activePanel = panel;
+    this.optionalPanelStructureDirty = false;
+    const calibration = this.shadowRoot?.querySelector('[data-role="calibration-overlay"]');
+    if (calibration) calibration.hidden = panel !== "calibration";
+    if (panel === "calibration") {
+      const popover = this.shadowRoot?.querySelector('[data-calibration-popover]');
+      if (popover) popover.hidden = true;
+      this.shadowRoot?.querySelectorAll('[data-calibration-mode]').forEach((item) => item.classList.remove("active"));
+      this.shadowRoot?.querySelectorAll('[data-calibration-content]').forEach((item) => { item.hidden = true; });
+    }
     this.renderAppPanel();
   }
 
   renderAppPanel() {
     const body = this.shadowRoot.querySelector('[data-role="panel-body"]');
-    if (!body || !this._hass) {
+    if (!body || !this._hass) return;
+
+    const secondaryPanels = new Set(["more", "interface", "status", "maintenance", "diagnostics", "calibration"]);
+    this.shadowRoot.querySelectorAll("button[data-panel]").forEach((button) => {
+      const selectedPanel = button.dataset.panel;
+      button.classList.toggle("active", selectedPanel === this.activePanel || (selectedPanel === "more" && secondaryPanels.has(this.activePanel)));
+    });
+
+    const calibration = this.shadowRoot.querySelector('[data-role="calibration-overlay"]');
+    const calibrationActive = this.activePanel === "calibration";
+    if (calibration) calibration.hidden = !calibrationActive;
+    this.shadowRoot.querySelector("ha-card")?.classList.toggle("calibration-active", calibrationActive);
+    body.hidden = calibrationActive;
+    if (calibrationActive) {
+      requestAnimationFrame(() => this.renderer?.resize());
       return;
     }
-
-    this.shadowRoot.querySelectorAll("button[data-panel]").forEach((button) => {
-      button.classList.toggle("active", button.dataset.panel === this.activePanel);
-    });
+    body.hidden = false;
 
     if (this.activePanel === "schedule") {
       renderAnthbotSchedulePanel(this, body);
     } else if (this.activePanel === "settings") {
       this.renderSettingsPanel(body);
+    } else if (this.activePanel === "more") {
+      this.renderMorePanel(body);
     } else if (this.activePanel === "interface") {
       this.renderInterfacePanel(body);
+      this.prependSecondaryPanelHeader(body, this.t("interfaceSettings"));
     } else if (this.activePanel === "status") {
       this.renderStatusPanel(body);
+      this.prependSecondaryPanelHeader(body, this.t("status"));
     } else if (this.activePanel === "maintenance") {
       this.renderMaintenancePanel(body);
+      this.prependSecondaryPanelHeader(body, this.t("maintenance"));
     } else if (this.activePanel === "diagnostics") {
       this.renderDiagnosticsPanel(body);
+      this.prependSecondaryPanelHeader(body, this.t("diagnostics"));
     } else {
       this.renderControlPanel(body);
     }
   }
 
+  renderMorePanel(body) {
+    body.innerHTML = "";
+    const title = document.createElement("div");
+    title.className = "anthbot-menu-title";
+    title.textContent = this.t("menu");
+    const list = document.createElement("div");
+    list.className = "anthbot-more-list";
+    const items = [
+      ["status", this.t("status"), "mdi:heart-pulse"],
+      ["maintenance", this.t("maintenance"), "mdi:wrench-outline"],
+      ["diagnostics", this.t("diagnostics"), "mdi:chart-box-outline"],
+      ["interface", this.t("interfaceSettings"), "mdi:view-dashboard-edit-outline"],
+      ["calibration", this.t("calibration"), "mdi:crosshairs-gps"],
+    ];
+    for (const [panel, label, mdi] of items) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "anthbot-menu-row";
+      button.innerHTML = `<ha-icon icon="${mdi}"></ha-icon><strong>${escapeHtml(label)}</strong><ha-icon class="anthbot-menu-chevron" icon="mdi:chevron-right"></ha-icon>`;
+      button.addEventListener("click", () => {
+        if (panel === "calibration") {
+          this.floatingMenuOpen = false;
+          this.shadowRoot?.querySelector(".frontend-drawer")?.classList.remove("open");
+        }
+        this.setPanel(panel);
+      });
+      list.appendChild(button);
+    }
+    body.append(title, list);
+  }
+
+  prependSecondaryPanelHeader(body, title) {
+    if (!body || !title) return;
+    const header = document.createElement("div");
+    header.className = "secondary-panel-head";
+    header.innerHTML = `<button type="button" title="${this.t("menu")}"><ha-icon icon="mdi:chevron-left"></ha-icon></button><strong>${escapeHtml(title)}</strong>`;
+    header.querySelector("button")?.addEventListener("click", () => this.setPanel("more"));
+    body.prepend(header);
+  }
+
+  createClassicLandscapeTargetSelector(body) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "classic-landscape-target-select";
+
+    const title = document.createElement("span");
+    title.className = "classic-landscape-target-select-label";
+    title.textContent = this.t("classicMowingArea");
+
+    const select = document.createElement("select");
+    select.className = "classic-landscape-target-select-input";
+    select.setAttribute("aria-label", title.textContent);
+
+    const multiButton = document.createElement("button");
+    multiButton.type = "button";
+    multiButton.className = "classic-landscape-multi-button";
+    multiButton.innerHTML = `<ha-icon icon="mdi:format-list-numbered"></ha-icon><span>${escapeHtml(this.t("classicZonesOrder"))}</span>`;
+
+    const addOption = (value, label, selected = false, disabled = false) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      option.selected = Boolean(selected);
+      option.disabled = Boolean(disabled);
+      select.appendChild(option);
+    };
+
+    const selectedTarget = this.selectedMowingTarget || { type: "full" };
+    const manualZones = this.currentZones();
+    const autoZones = this.currentAutoZones();
+    let selectedValue = "full";
+
+    if (selectedTarget.type === "edge") selectedValue = "edge";
+    else if (selectedTarget.type === "dock-edge") selectedValue = "dock-edge";
+    else if (selectedTarget.type === "zone-set") {
+      const chosen = selectedTarget.zones || [];
+      if (manualZones.length && chosen.length === manualZones.length && manualZones.every((zone) => chosen.some((item) => String(item.id) === String(zone.id)))) selectedValue = "manual-all";
+      else if (chosen.length === 1) selectedValue = `manual:${chosen[0].id}`;
+      else if (chosen.length > 1) selectedValue = "manual-custom";
+    } else if (selectedTarget.type === "auto-zone-set") {
+      const chosen = selectedTarget.zones || [];
+      if (autoZones.length && chosen.length === autoZones.length && autoZones.every((zone) => chosen.some((item) => String(item.id) === String(zone.id)))) selectedValue = "auto-all";
+      else if (chosen.length === 1) selectedValue = `auto:${chosen[0].id}`;
+      else if (chosen.length > 1) selectedValue = "auto-custom";
+    }
+
+    addOption("full", this.t("fullArea"), selectedValue === "full");
+    addOption("edge", this.t("commandOuterEdge"), selectedValue === "edge");
+    addOption("dock-edge", this.t("dockEdgeLabel"), selectedValue === "dock-edge");
+
+    if (manualZones.length) {
+      if (selectedValue === "manual-custom") addOption("manual-custom", `${this.t("manualZones")} (${(selectedTarget.zones || []).length})`, true, true);
+      addOption("manual-all", `${this.t("manualZones")} – ${this.t("classicAll")}`, selectedValue === "manual-all");
+      manualZones.forEach((zone) => addOption(`manual:${zone.id}`, zone.name || `${this.t("zone")} ${zone.id}`, selectedValue === `manual:${zone.id}`));
+    }
+    if (autoZones.length) {
+      if (selectedValue === "auto-custom") addOption("auto-custom", `${this.t("autoZones")} (${(selectedTarget.zones || []).length})`, true, true);
+      addOption("auto-all", `${this.t("autoZones")} – ${this.t("classicAll")}`, selectedValue === "auto-all");
+      autoZones.forEach((zone) => addOption(`auto:${zone.id}`, zone.name || `${this.t("autoZone")} ${zone.id}`, selectedValue === `auto:${zone.id}`));
+    }
+
+    select.addEventListener("change", () => {
+      const value = String(select.value || "full");
+      if (value === "full") this.selectedMowingTarget = { type: "full" };
+      else if (value === "edge") this.selectedMowingTarget = { type: "edge" };
+      else if (value === "dock-edge") this.selectedMowingTarget = { type: "dock-edge" };
+      else if (value === "manual-all") this.selectedMowingTarget = { type: "zone-set", zones: [...manualZones] };
+      else if (value === "auto-all") this.selectedMowingTarget = { type: "auto-zone-set", zones: [...autoZones] };
+      else if (value.startsWith("manual:")) {
+        const id = value.slice("manual:".length);
+        const zone = manualZones.find((item) => String(item.id) === id);
+        if (zone) this.selectedMowingTarget = { type: "zone-set", zones: [zone] };
+      } else if (value.startsWith("auto:")) {
+        const id = value.slice("auto:".length);
+        const zone = autoZones.find((item) => String(item.id) === id);
+        if (zone) this.selectedMowingTarget = { type: "auto-zone-set", zones: [zone] };
+      }
+      this.renderControlPanel(body);
+    });
+
+    multiButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const manualSelected = selectedTarget.type === "zone-set" ? [...(selectedTarget.zones || [])] : [];
+      const autoSelected = selectedTarget.type === "auto-zone-set" ? [...(selectedTarget.zones || [])] : [];
+      this.classicLandscapeZoneDrafts = { "zone-set": manualSelected, "auto-zone-set": autoSelected };
+      this.classicLandscapeZoneEditorType = selectedTarget.type === "auto-zone-set" && autoZones.length
+        ? "auto-zone-set"
+        : manualZones.length ? "zone-set" : "auto-zone-set";
+      this.classicLandscapeZoneEditorOpen = true;
+      this.renderControlPanel(body);
+    });
+
+    wrapper.append(title, select, multiButton);
+    return wrapper;
+  }
+
+  renderClassicLandscapeZoneEditor(body) {
+    const manualZones = this.currentZones();
+    const autoZones = this.currentAutoZones();
+    const availableTypes = [];
+    if (manualZones.length) availableTypes.push("zone-set");
+    if (autoZones.length) availableTypes.push("auto-zone-set");
+
+    if (!availableTypes.length) {
+      this.classicLandscapeZoneEditorOpen = false;
+      this.classicLandscapeZoneDrafts = null;
+      return false;
+    }
+
+    if (!availableTypes.includes(this.classicLandscapeZoneEditorType)) {
+      this.classicLandscapeZoneEditorType = availableTypes[0];
+    }
+    if (!this.classicLandscapeZoneDrafts) {
+      this.classicLandscapeZoneDrafts = {
+        "zone-set": this.selectedMowingTarget?.type === "zone-set" ? [...(this.selectedMowingTarget.zones || [])] : [],
+        "auto-zone-set": this.selectedMowingTarget?.type === "auto-zone-set" ? [...(this.selectedMowingTarget.zones || [])] : [],
+      };
+    }
+
+    const type = this.classicLandscapeZoneEditorType;
+    const source = type === "auto-zone-set" ? autoZones : manualZones;
+    const chosen = this.classicLandscapeZoneDrafts[type];
+
+    body.innerHTML = "";
+    body.classList.add("classic-zone-editor-mode");
+
+    const editor = document.createElement("section");
+    editor.className = "classic-landscape-inline-editor";
+
+    const header = document.createElement("div");
+    header.className = "classic-inline-editor-head";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "classic-inline-editor-back";
+    cancel.innerHTML = `<ha-icon icon="mdi:chevron-left"></ha-icon><span>${escapeHtml(this.t("classicBack"))}</span>`;
+    const heading = document.createElement("strong");
+    heading.textContent = this.t("classicZonesAndOrder");
+    const apply = document.createElement("button");
+    apply.type = "button";
+    apply.className = "classic-inline-editor-apply";
+    apply.textContent = this.t("classicDone");
+    header.append(cancel, heading, apply);
+    editor.appendChild(header);
+
+    if (availableTypes.length > 1) {
+      const tabs = document.createElement("div");
+      tabs.className = "classic-inline-editor-tabs";
+      for (const tabType of availableTypes) {
+        const tab = document.createElement("button");
+        tab.type = "button";
+        tab.classList.toggle("active", tabType === type);
+        tab.textContent = tabType === "zone-set" ? this.t("manualZones") : this.t("autoZones");
+        tab.addEventListener("click", () => {
+          this.classicLandscapeZoneEditorType = tabType;
+          this.renderClassicLandscapeZoneEditor(body);
+        });
+        tabs.appendChild(tab);
+      }
+      editor.appendChild(tabs);
+    }
+
+    const summary = document.createElement("div");
+    summary.className = "classic-inline-editor-summary";
+    summary.textContent = `${this.t("classicSelected")}: ${chosen.length}`;
+    editor.appendChild(summary);
+
+    const list = document.createElement("div");
+    list.className = "classic-inline-zone-list";
+    for (const zone of source) {
+      const index = chosen.findIndex((item) => String(item.id) === String(zone.id));
+      const selected = index >= 0;
+      const row = document.createElement("div");
+      row.className = `classic-inline-zone-row ${selected ? "selected" : ""}`;
+
+      const label = document.createElement("label");
+      label.className = "classic-inline-zone-check";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = selected;
+      const name = document.createElement("span");
+      name.textContent = zone.name || `${this.t(type === "auto-zone-set" ? "autoZone" : "zone")} ${zone.id}`;
+      label.append(input, name);
+      row.appendChild(label);
+
+      const order = document.createElement("strong");
+      order.className = "classic-inline-zone-order";
+      order.textContent = selected ? `${index + 1}.` : "";
+      row.appendChild(order);
+
+      const up = document.createElement("button");
+      up.type = "button";
+      up.className = "classic-inline-zone-move";
+      up.textContent = "↑";
+      up.disabled = !selected || index === 0;
+      up.setAttribute("aria-label", this.t("moveUp"));
+      const down = document.createElement("button");
+      down.type = "button";
+      down.className = "classic-inline-zone-move";
+      down.textContent = "↓";
+      down.disabled = !selected || index === chosen.length - 1;
+      down.setAttribute("aria-label", this.t("moveDown"));
+      row.append(up, down);
+
+      input.addEventListener("change", () => {
+        const draft = this.classicLandscapeZoneDrafts[type];
+        const currentIndex = draft.findIndex((item) => String(item.id) === String(zone.id));
+        if (input.checked && currentIndex < 0) draft.push(zone);
+        if (!input.checked && currentIndex >= 0) draft.splice(currentIndex, 1);
+        this.renderClassicLandscapeZoneEditor(body);
+      });
+      up.addEventListener("click", () => {
+        const draft = this.classicLandscapeZoneDrafts[type];
+        const currentIndex = draft.findIndex((item) => String(item.id) === String(zone.id));
+        if (currentIndex <= 0) return;
+        [draft[currentIndex - 1], draft[currentIndex]] = [draft[currentIndex], draft[currentIndex - 1]];
+        this.renderClassicLandscapeZoneEditor(body);
+      });
+      down.addEventListener("click", () => {
+        const draft = this.classicLandscapeZoneDrafts[type];
+        const currentIndex = draft.findIndex((item) => String(item.id) === String(zone.id));
+        if (currentIndex < 0 || currentIndex >= draft.length - 1) return;
+        [draft[currentIndex + 1], draft[currentIndex]] = [draft[currentIndex], draft[currentIndex + 1]];
+        this.renderClassicLandscapeZoneEditor(body);
+      });
+
+      list.appendChild(row);
+    }
+    editor.appendChild(list);
+
+    cancel.addEventListener("click", () => {
+      this.classicLandscapeZoneEditorOpen = false;
+      this.classicLandscapeZoneDrafts = null;
+      this.renderControlPanel(body);
+    });
+    apply.addEventListener("click", () => {
+      const selected = [...(this.classicLandscapeZoneDrafts?.[type] || [])];
+      this.selectedMowingTarget = selected.length ? { type, zones: selected } : { type: "full" };
+      this.classicLandscapeZoneEditorOpen = false;
+      this.classicLandscapeZoneDrafts = null;
+      this.renderControlPanel(body);
+    });
+
+    body.appendChild(editor);
+    return true;
+  }
+
   renderControlPanel(body) {
     body.innerHTML = "";
+    body.classList.remove("classic-zone-editor-mode");
+    if (this.frontendLayout === "classic" && this.isClassicMobileLandscape() && this.classicLandscapeZoneEditorOpen) {
+      if (this.renderClassicLandscapeZoneEditor(body)) return;
+    }
     const targetGrid = this.createPanelGrid();
     targetGrid.classList.add("mowing-target-grid");
     const actionGrid = this.createPanelGrid();
     actionGrid.classList.add("mowing-action-grid");
     const action = this.primaryMowingAction();
+    if (this.frontendLayout === "classic") {
+      body.appendChild(this.createClassicLandscapeTargetSelector(body));
+    }
     actionGrid.append(
       this.createPrimaryMowingTile(action),
       this.createCommandTile(this.t("stopLabel"), this.t("stopSub"), "stop"),
@@ -1328,7 +4227,7 @@ class AnthbotMapCard extends HTMLElement {
     const fullTile = document.createElement("button");
     fullTile.type = "button";
     fullTile.className = `panel-tile mowing-target-tile ${this.selectedMowingTarget?.type === "full" ? "active" : ""}`;
-    fullTile.innerHTML = `<strong>${this.t("fullArea")}</strong><span>${this.t("selectMowingTarget")}</span>`;
+    fullTile.innerHTML = this.frontendLayout === "origin" ? `<strong>${this.t("fullArea")}</strong>` : `<strong>${this.t("fullArea")}</strong><span>${this.t("selectMowingTarget")}</span>`;
     fullTile.addEventListener("click", () => {
       this.selectedMowingTarget = { type: "full" };
       this.renderControlPanel(body);
@@ -1338,7 +4237,7 @@ class AnthbotMapCard extends HTMLElement {
     const edgeTile = document.createElement("button");
     edgeTile.type = "button";
     edgeTile.className = `panel-tile mowing-target-tile ${this.selectedMowingTarget?.type === "edge" ? "active" : ""}`;
-    edgeTile.innerHTML = `<strong>${this.t("commandOuterEdge")}</strong><span>${this.t("selectMowingTarget")}</span>`;
+    edgeTile.innerHTML = this.frontendLayout === "origin" ? `<strong>${this.t("commandOuterEdge")}</strong>` : `<strong>${this.t("commandOuterEdge")}</strong><span>${this.t("selectMowingTarget")}</span>`;
     edgeTile.addEventListener("click", () => {
       this.selectedMowingTarget = { type: "edge" };
       this.renderControlPanel(body);
@@ -1348,19 +4247,20 @@ class AnthbotMapCard extends HTMLElement {
     const dockEdgeTile = document.createElement("button");
     dockEdgeTile.type = "button";
     dockEdgeTile.className = `panel-tile mowing-target-tile ${this.selectedMowingTarget?.type === "dock-edge" ? "active" : ""}`;
-    dockEdgeTile.innerHTML = `<strong>${this.t("dockEdgeLabel")}</strong><span>${this.t("selectMowingTarget")}</span>`;
+    dockEdgeTile.innerHTML = this.frontendLayout === "origin" ? `<strong>${this.t("dockEdgeLabel")}</strong>` : `<strong>${this.t("dockEdgeLabel")}</strong><span>${this.t("selectMowingTarget")}</span>`;
     dockEdgeTile.addEventListener("click", () => {
       this.selectedMowingTarget = { type: "dock-edge" };
       this.renderControlPanel(body);
     });
     targetGrid.appendChild(dockEdgeTile);
 
+    if (this.frontendLayout === "classic") body.appendChild(actionGrid);
     body.appendChild(targetGrid);
     const manualZones = this.currentZones();
     if (manualZones.length) body.appendChild(this.createMowingZoneGroup("zone-set", this.t("manualZones"), manualZones, body));
     const automaticZones = this.currentAutoZones();
     if (automaticZones.length) body.appendChild(this.createMowingZoneGroup("auto-zone-set", this.t("autoZones"), automaticZones, body));
-    body.appendChild(actionGrid);
+    if (this.frontendLayout !== "classic") body.appendChild(actionGrid);
   }
 
   createMowingZoneGroup(type, title, zones, body) {
@@ -1379,7 +4279,7 @@ class AnthbotMapCard extends HTMLElement {
       tile.type = "button";
       const isSelected = selected.some((item) => String(item.id) === String(zone.id));
       tile.className = `panel-tile mowing-target-tile ${isSelected ? "active" : ""}`;
-      tile.innerHTML = `<strong>${zone.name || `${type === "auto-zone-set" ? this.t("autoZone") : this.t("zone")} ${zone.id}`}</strong><span>${this.t("selectMowingTarget")}</span>`;
+      tile.innerHTML = this.frontendLayout === "origin" ? `<strong>${zone.name || `${type === "auto-zone-set" ? this.t("autoZone") : this.t("zone")} ${zone.id}`}</strong>` : `<strong>${zone.name || `${type === "auto-zone-set" ? this.t("autoZone") : this.t("zone")} ${zone.id}`}</strong><span>${this.t("selectMowingTarget")}</span>`;
       tile.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -1669,6 +4569,7 @@ class AnthbotMapCard extends HTMLElement {
   createMaintenanceTile(title, kind, resetLabel, command) {
     const tile = document.createElement("div");
     tile.className = "panel-tile maintenance-tile";
+    tile.dataset.maintenanceKind = kind;
     tile.innerHTML = `<strong>${title}</strong><span>${this.t("remainingLife")}</span><span class="maintenance-value">${this.maintenanceValue(kind)}</span>`;
     const button = document.createElement("button");
     button.type = "button";
@@ -1946,19 +4847,26 @@ class AnthbotMapCard extends HTMLElement {
 
   renderInterfacePanel(body) {
     body.innerHTML = "";
-    const grid = this.createPanelGrid();
-    grid.append(
+    body.classList.add("interface-panel-clean");
+    const layoutPicker = this.createFrontendLayoutControl();
+    const general = document.createElement("section");
+    general.className = "interface-setting-list";
+    general.append(
       this.createLanguageControl(),
       this.createInterfaceSwitch(this.t("mapOnly"), "mapOnly"),
       this.createInterfaceSwitch(this.t("themeBackground"), "themeBackground"),
       this.createInterfaceSwitch(this.t("glassBackground"), "glassBackground"),
       this.createInterfaceSwitch(this.t("transparentBackground"), "transparentBackground"),
+    );
+    const map = document.createElement("section");
+    map.className = "interface-setting-list map-layer-list";
+    map.append(
       this.createMapOverlaySwitch(this.t("showZones"), "showZones"),
       this.createMapOverlaySwitch(this.t("showBoundary"), "showDecodedBoundary"),
       this.createMapOverlaySwitch(this.t("showNoGoZones"), "showNoGoZones"),
       this.createMapOverlaySwitch(this.t("showNoGoLabels"), "showNoGoLabels"),
     );
-    body.appendChild(grid);
+    body.append(layoutPicker, general, map);
   }
 
   renderStatusPanel(body) {
@@ -2922,6 +5830,7 @@ class AnthbotMapCard extends HTMLElement {
     const entity = this.getRelatedEntity(key);
     const tile = document.createElement("div");
     tile.className = "panel-tile info-tile";
+    tile.dataset.infoKey = key;
     tile.innerHTML = `<span>${label}</span><strong>${this.formatEntity(entity, key)}</strong>`;
     return tile;
   }
@@ -3853,7 +6762,255 @@ class AnthbotMapCard extends HTMLElement {
         .battery-saver-mode-toggle input[type=checkbox]{width:28px;height:28px;min-width:28px;min-height:28px;cursor:pointer;accent-color:var(--primary-color,#3b82f6)}
         .battery-saver-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
         @media(max-width:760px){.battery-saver-layout{grid-template-columns:1fr}.battery-detail-row{grid-template-columns:1fr 90px}}
-      </style>
+      
+          /* v24 — resize-safe screen fitting. Bottom controls are permanent DOM,
+             while the map height is the measured remainder of the visible screen. */
+          .layout-modern .frontend-bottom-slot,
+          .layout-compact .frontend-bottom-slot {
+            display:flex !important;
+            flex:0 0 auto !important;
+            align-items:center;
+            justify-content:center;
+            min-height:0 !important;
+          }
+          .layout-modern .frontend-bottom-slot:empty,
+          .layout-compact .frontend-bottom-slot:empty { display:none !important; }
+          .layout-modern .frontend-main,
+          .layout-compact .frontend-main {
+            height:var(--anthbot-main-height, 100%) !important;
+            max-height:var(--anthbot-main-height, 100%) !important;
+          }
+          .layout-modern .frontend-map-slot,
+          .layout-compact .frontend-map-slot,
+          .layout-modern .canvas-wrap,
+          .layout-compact .canvas-wrap {
+            height:100% !important;
+            max-height:100% !important;
+            min-height:0 !important;
+          }
+
+          /* v30 — Classic mobile portrait is its own layout, not a squeezed desktop panel. */
+          .classic-mobile-sheet-close { display:none; }
+          @media (max-width:700px) and (orientation:portrait) {
+            ha-card.layout-classic .frontend-frame {
+              grid-template-rows:auto minmax(0,1fr) !important;
+              height:100% !important;
+            }
+            ha-card.layout-classic .frontend-main {
+              display:block !important;
+              position:relative !important;
+              height:100% !important;
+              min-height:0 !important;
+              padding:6px !important;
+            }
+            ha-card.layout-classic .frontend-map-slot,
+            ha-card.layout-classic .canvas-wrap,
+            ha-card.layout-classic .canvas-wrap.auto-map-size {
+              width:100% !important;
+              height:100% !important;
+              min-height:0 !important;
+              max-height:100% !important;
+              border-radius:14px !important;
+            }
+            ha-card.layout-classic .frontend-top-slot { padding:6px 6px 0 !important; }
+            ha-card.layout-classic .panel-tabs {
+              grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+              gap:5px !important;
+              margin-top:0 !important;
+            }
+            ha-card.layout-classic .panel-tabs button {
+              min-height:42px !important;
+              padding:7px 6px !important;
+            }
+            ha-card.layout-classic .panel-tabs .tab-label { display:none !important; }
+
+            ha-card.layout-classic .frontend-bottom-slot {
+              display:flex !important;
+              position:absolute !important;
+              z-index:82 !important;
+              left:0 !important;
+              right:0 !important;
+              bottom:6px !important;
+              top:auto !important;
+              width:100% !important;
+              padding:0 7px !important;
+              margin:0 !important;
+              justify-content:center !important;
+              pointer-events:none !important;
+              box-sizing:border-box !important;
+            }
+            ha-card.layout-classic .frontend-bottom-slot .frontend-quickbar {
+              display:flex !important;
+              position:static !important;
+              width:min(100%,620px) !important;
+              max-width:100% !important;
+              margin:0 auto !important;
+              padding:5px !important;
+              gap:5px !important;
+              border:1px solid #30363b !important;
+              border-radius:14px !important;
+              background:rgba(23,26,29,.94) !important;
+              box-shadow:0 10px 26px rgba(0,0,0,.36) !important;
+              pointer-events:auto !important;
+              backdrop-filter:blur(12px) !important;
+              transform:none !important;
+              left:auto !important; right:auto !important; top:auto !important; bottom:auto !important;
+            }
+            ha-card.layout-classic .frontend-bottom-slot .frontend-quickbar button {
+              flex:1 1 0 !important;
+              min-width:0 !important;
+              min-height:42px !important;
+              padding:7px 5px !important;
+              border-radius:10px !important;
+              background:#202428 !important;
+              color:#f5f7f8 !important;
+              border:1px solid #343b40 !important;
+            }
+            ha-card.layout-classic .frontend-bottom-slot .frontend-quickbar button.primary {
+              background:#68e07e !important;
+              color:#0b160e !important;
+              border-color:#86ed97 !important;
+            }
+            ha-card.layout-classic .frontend-bottom-slot .quick-label { display:none !important; }
+
+            ha-card.layout-classic .frontend-side-slot.classic-mobile-sheet {
+              display:none !important;
+              position:absolute !important;
+              z-index:84 !important;
+              left:7px !important;
+              right:7px !important;
+              top:auto !important;
+              bottom:62px !important;
+              width:auto !important;
+              height:auto !important;
+              max-height:min(68%,520px) !important;
+              overflow:auto !important;
+              border:1px solid #343b40 !important;
+              border-radius:18px !important;
+              background:rgba(23,26,29,.98) !important;
+              box-shadow:0 -16px 38px rgba(0,0,0,.42) !important;
+              backdrop-filter:blur(14px) !important;
+            }
+            ha-card.layout-classic .frontend-side-slot.classic-mobile-sheet.mobile-sheet-open {
+              display:block !important;
+            }
+            ha-card.layout-classic .frontend-side-slot.classic-mobile-sheet .classic-mobile-sheet-close {
+              display:grid !important;
+              position:sticky !important;
+              top:8px !important;
+              margin:8px 8px 0 auto !important;
+              z-index:9 !important;
+              width:40px !important;
+              height:40px !important;
+              place-items:center !important;
+              border:1px solid #3a4248 !important;
+              border-radius:12px !important;
+              background:#202428 !important;
+              color:#f5f7f8 !important;
+            }
+            ha-card.layout-classic .frontend-side-slot.classic-mobile-sheet .app-panel {
+              height:auto !important;
+              min-height:0 !important;
+              max-height:none !important;
+              padding:8px !important;
+              overflow:visible !important;
+            }
+            ha-card.layout-classic .frontend-side-slot.classic-mobile-sheet .panel-body {
+              height:auto !important;
+              min-height:0 !important;
+              max-height:none !important;
+              overflow:visible !important;
+            }
+          }
+
+
+
+          /* v35 — Classic phone landscape: one single native scroll container.
+             No nested panel-body scrolling, no custom pointer interception, no paging arrows. */
+          @media (orientation:landscape) and (pointer:coarse) and (max-width:1200px) {
+            ha-card.layout-classic .classic-landscape-scroll-controls,
+            ha-card.layout-classic .classic-mobile-sheet-close {
+              display:none !important;
+            }
+
+            ha-card.layout-classic .frontend-frame {
+              height:100% !important;
+              min-height:0 !important;
+              grid-template-rows:auto minmax(0,1fr) !important;
+              overflow:hidden !important;
+            }
+
+            ha-card.layout-classic .frontend-main {
+              display:grid !important;
+              grid-template-columns:minmax(0,1.28fr) minmax(300px,.82fr) !important;
+              gap:8px !important;
+              height:100% !important;
+              min-height:0 !important;
+              overflow:hidden !important;
+              padding:6px !important;
+              box-sizing:border-box !important;
+            }
+
+            ha-card.layout-classic .frontend-map-slot,
+            ha-card.layout-classic .canvas-wrap,
+            ha-card.layout-classic .canvas-wrap.auto-map-size {
+              height:100% !important;
+              min-height:0 !important;
+              max-height:100% !important;
+              overflow:hidden !important;
+            }
+
+            /* THIS is the only scroll container in landscape Classic. */
+            ha-card.layout-classic .frontend-side-slot {
+              display:block !important;
+              position:relative !important;
+              inset:auto !important;
+              width:auto !important;
+              height:100% !important;
+              min-height:0 !important;
+              max-height:100% !important;
+              overflow-x:hidden !important;
+              overflow-y:scroll !important;
+              overscroll-behavior:contain !important;
+              touch-action:pan-y !important;
+              -webkit-overflow-scrolling:touch !important;
+              scrollbar-gutter:stable !important;
+              border:1px solid #2f353a !important;
+              border-radius:14px !important;
+              background:#171a1d !important;
+              box-sizing:border-box !important;
+            }
+
+            ha-card.layout-classic .frontend-side-slot .app-panel {
+              display:block !important;
+              position:static !important;
+              height:auto !important;
+              min-height:0 !important;
+              max-height:none !important;
+              overflow:visible !important;
+              padding:6px !important;
+              box-sizing:border-box !important;
+            }
+
+            ha-card.layout-classic .frontend-side-slot .panel-body {
+              display:block !important;
+              position:static !important;
+              height:auto !important;
+              min-height:0 !important;
+              max-height:none !important;
+              overflow:visible !important;
+              touch-action:auto !important;
+              -webkit-overflow-scrolling:auto !important;
+              padding-right:4px !important;
+              box-sizing:border-box !important;
+            }
+
+            ha-card.layout-classic .frontend-bottom-slot {
+              display:none !important;
+            }
+          }
+
+</style>
       <div class="mowing-record-detail-head">
         <div>
           <div class="mowing-record-detail-title">${escapeHtml(this.t("batterySaverMode"))}</div>
@@ -4045,11 +7202,21 @@ class AnthbotMapCard extends HTMLElement {
 
   rendererOptions() {
     const mobileViewport = typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches;
-    const mobileRotation = mobileViewport ? Number(this.config.mobile_map_rotation ?? this.config.mobileMapRotation ?? 90) || 0 : 0;
+    // Origin: on a phone held upright rotate the map 90 degrees so the
+    // landscape garden fills the portrait viewport. In landscape keep the
+    // original orientation. Other layouts retain their existing mobile rule.
+    const originLayout = this.frontendLayout === "origin";
+    const portraitViewport = typeof window !== "undefined" && window.matchMedia("(orientation: portrait)").matches;
+    const mobileRotation = originLayout
+      ? (mobileViewport && portraitViewport ? 90 : 0)
+      : (mobileViewport ? Number(this.config.mobile_map_rotation ?? this.config.mobileMapRotation ?? 90) || 0 : 0);
+    const mapFit = originLayout
+      ? (mobileViewport ? "cover" : (this.config.fit || "contain"))
+      : (mobileViewport ? this.config.mobile_map_fit || this.config.mobileMapFit || "contain" : this.config.fit || "cover");
     return {
       image: this.config.image,
       bounds: this.config.bounds,
-      fit: mobileViewport ? this.config.mobile_map_fit || this.config.mobileMapFit || "contain" : this.config.fit || "cover",
+      fit: mapFit,
       rotation: degreesToRadians((Number(this.config.rotation) || 0) + mobileRotation),
       calibration: this.calibration,
       robotCalibration: this.robotCalibration,
@@ -4097,7 +7264,7 @@ class AnthbotMapCard extends HTMLElement {
       return;
     }
 
-    const interval = Math.max(1, Number(this.config.refresh_interval ?? this.config.refreshInterval ?? 2)) * 1000;
+    const interval = Math.max(1, Number(this.config.refresh_interval ?? this.config.refreshInterval ?? 4)) * 1000;
     this.refreshTimer = window.setInterval(() => this.refreshEntities(), interval);
   }
 
@@ -4572,22 +7739,27 @@ class AnthbotMapCard extends HTMLElement {
       this.renderer.setMowingPathCalibration(this.mowingPathCalibration);
       this.renderer.setOptions({ robotHeadingOffset: this.robotHeadingOffset });
       this.renderer.resetView();
+      this.saveCalibrationSettings();
       this.updateYaml();
     } else if (action === "reset-mowing-path") {
       this.mowingPathCalibration = resetCalibration();
       this.renderer.setMowingPathCalibration(this.mowingPathCalibration);
+      this.saveCalibrationSettings();
       this.updateYaml();
     } else if (action === "reset-robot") {
       this.robotCalibration = resetCalibration();
       this.renderer.setRobotCalibration(this.robotCalibration);
+      this.saveCalibrationSettings();
       this.updateYaml();
     } else if (action === "reset-robot-heading") {
       this.robotHeadingOffset = 0;
       this.renderer.setOptions({ robotHeadingOffset: this.robotHeadingOffset });
+      this.saveCalibrationSettings();
       this.updateYaml();
     } else if (action === "reset-boundary") {
       this.decodedBoundaryCalibration = resetCalibration();
       this.renderer?.setDecodedBoundaryCalibration(this.decodedBoundaryCalibration);
+      this.saveCalibrationSettings();
       this.updateYaml();
     } else if (action === "copy-yaml") {
       this.copyYaml();
@@ -4609,6 +7781,34 @@ class AnthbotMapCard extends HTMLElement {
     this.updateYaml();
   }
 
+  calibrationStorageKey(entity = this.config.entity) {
+    return `anthbot-map-calibration:${entity || "default"}`;
+  }
+
+  readSavedCalibration(entity = this.config.entity) {
+    try {
+      const value = JSON.parse(window.localStorage.getItem(this.calibrationStorageKey(entity)) || "null");
+      return value && typeof value === "object" ? value : null;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  saveCalibrationSettings() {
+    try {
+      window.localStorage.setItem(this.calibrationStorageKey(), JSON.stringify({
+        version: 1,
+        calibration: this.calibration,
+        robotCalibration: this.robotCalibration,
+        mowingPathCalibration: this.mowingPathCalibration,
+        decodedBoundaryCalibration: this.decodedBoundaryCalibration,
+        robotHeadingOffset: this.robotHeadingOffset,
+      }));
+    } catch (_error) {
+      // Keep calibration usable even when browser storage is unavailable.
+    }
+  }
+
   interfaceStorageKey(entity = this.config.entity) {
     return `anthbot-map-interface:${entity || "default"}`;
   }
@@ -4627,6 +7827,7 @@ class AnthbotMapCard extends HTMLElement {
 
   saveInterfaceSettings() {
     window.localStorage.setItem(this.interfaceStorageKey(), JSON.stringify({
+      frontendLayout: this.frontendLayout,
       mapOnly: this.mapOnly,
       themeBackground: this.themeBackground,
       glassBackground: this.glassBackground,
@@ -4668,18 +7869,21 @@ class AnthbotMapCard extends HTMLElement {
   handleCalibration(action) {
     this.calibration = adjustCalibration(this.calibration, action, 1);
     this.renderer.setCalibration(this.calibration);
+    this.saveCalibrationSettings();
     this.updateYaml();
   }
 
   handleMowingPathCalibration(action) {
     this.mowingPathCalibration = adjustCalibration(this.mowingPathCalibration, action, 1);
     this.renderer.setMowingPathCalibration(this.mowingPathCalibration);
+    this.saveCalibrationSettings();
     this.updateYaml();
   }
 
   handleRobotCalibration(action) {
     this.robotCalibration = adjustCalibration(this.robotCalibration, action, 1);
     this.renderer.setRobotCalibration(this.robotCalibration);
+    this.saveCalibrationSettings();
     this.updateYaml();
   }
 
@@ -4689,12 +7893,14 @@ class AnthbotMapCard extends HTMLElement {
     if (action === "around") this.robotHeadingOffset += 180;
     this.robotHeadingOffset = ((this.robotHeadingOffset + 180) % 360 + 360) % 360 - 180;
     this.renderer.setOptions({ robotHeadingOffset: this.robotHeadingOffset });
+    this.saveCalibrationSettings();
     this.updateYaml();
   }
 
   handleBoundaryCalibration(action) {
     this.decodedBoundaryCalibration = adjustCalibration(this.decodedBoundaryCalibration, action, 1);
     this.renderer?.setDecodedBoundaryCalibration(this.decodedBoundaryCalibration);
+    this.saveCalibrationSettings();
     this.updateYaml();
   }
 

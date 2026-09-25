@@ -109,7 +109,9 @@ class ResumeCommandTests(unittest.TestCase):
         self.assertIn("this.panelInteractionUntil = 0", source)
         self.assertIn('panelBody?.addEventListener("pointerdown"', source)
         self.assertIn("this.panelInteractionUntil = Date.now() + 1200", source)
-        self.assertIn("Date.now() >= this.panelInteractionUntil", source)
+        renderer_block = source.split("  updateRenderer() {", 1)[1].split("  isPanelControlActive() {", 1)[0]
+        self.assertIn("this.refreshOpenPanelValues()", renderer_block)
+        self.assertNotIn("this.renderAppPanel()", renderer_block)
         self.assertIn('["SELECT", "INPUT"]', source)
 
     def test_mobile_layout_matches_garden_map_card_behavior(self) -> None:

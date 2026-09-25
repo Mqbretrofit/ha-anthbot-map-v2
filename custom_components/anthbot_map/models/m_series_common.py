@@ -8,6 +8,7 @@ from .genie_path_diagnostics import install_genie_path_diagnostics
 from .genie_progress_posttrim import install_genie_progress_posttrim
 from .genie_progress_presentation import install_genie_progress_presentation
 from .genie_status import install_genie_live_status_support
+from .issue64_cpu_hotpath import install_issue64_cpu_hotpath_fix
 from .live_task_events import install_live_task_event_refresh
 from .m5_lidar_live_map_v2475 import install_m5_lidar_live_map_fix
 from .m_series_legacy import install_m_series_compat as _install_legacy
@@ -78,6 +79,9 @@ def install_m_series_compat() -> None:
     # refresh isolated from the five-minute ancillary coordinator cadence and
     # from every M-series/N8 absolute-index assembler.
     install_genie_live_path_refresh()
+    # Issue #64 optimization only patches lookup/diagnostic hot paths; model
+    # command routing and live telemetry cadence remain unchanged.
+    install_issue64_cpu_hotpath_fix()
     # Match M9/M9 Pro presentation semantics through the whole motion cycle:
     # keep requesting/publishing the Genie path while returning to the dock and
     # promote camelCase live pose aliases without widening shared model guards.
