@@ -1,4 +1,4 @@
-name: Runtime optimization prerelease
+name: Beta2 info percentage patch
 
 on:
   push:
@@ -9,53 +9,35 @@ permissions:
   contents: write
 
 jobs:
-  prerelease:
+  patch:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Add mowed percentage to information popover
-        shell: python {0}
+      - name: Patch frontend
         run: |
+          python3 <<'PY'
           from pathlib import Path
-
-          paths = [
-              Path("custom_components/anthbot_map/frontend/anthbot-map-card.js"),
-              Path("www/anthbot-map/anthbot-map-card.js"),
-          ]
-          row = '          <div class="frontend-info-row"><span>${this.t("charging")}</span><strong data-role="info-charging">–</strong></div>\n'
-          added = row + '          <div class="frontend-info-row"><span>${this.t("mowedArea")}</span><strong data-role="info-mowing-progress">–</strong></div>\n'
+          paths = [Path('custom_components/anthbot_map/frontend/anthbot-map-card.js'), Path('www/anthbot-map/anthbot-map-card.js')]
+          old_row = '          <div class="frontend-info-row"><span>${this.t("charging")}</span><strong data-role="info-charging">–</strong></div>\n'
+          new_row = old_row + '          <div class="frontend-info-row"><span>${this.t("mowedArea")}</span><strong data-role="info-mowing-progress">–</strong></div>\n'
           marker = '  updateFrontendInfo(attributes = this.entity?.attributes || {}) {'
           anchor = '    const cuttingHeight = this.getRelatedEntity("cuttingHeight");\n'
-          block = '''    const mowingProgressEntity = this.getRelatedEntity("mowingProgress");
-    const mowingProgress = Number(mowingProgressEntity?.state);
-    setText(
-      "info-mowing-progress",
-      Number.isFinite(mowingProgress) ? `${Math.max(0, Math.min(100, mowingProgress)).toFixed(1)}%` : "–",
-    );
-
-'''
-
+          block = '    const mowingProgressEntity = this.getRelatedEntity("mowingProgress");\n    const mowingProgress = Number(mowingProgressEntity?.state);\n    setText("info-mowing-progress", Number.isFinite(mowingProgress) ? `${Math.max(0, Math.min(100, mowingProgress)).toFixed(1)}%` : "–");\n\n'
           for path in paths:
-              text = path.read_text(encoding="utf-8")
+              text = path.read_text(encoding='utf-8')
               if 'data-role="info-mowing-progress"' in text:
                   continue
-              if text.count(row) != 1:
-                  raise SystemExit(f"{path}: info row anchor mismatch: {text.count(row)}")
-              text = text.replace(row, added, 1)
+              if text.count(old_row) != 1:
+                  raise SystemExit('info row anchor mismatch in ' + str(path))
+              text = text.replace(old_row, new_row, 1)
               start = text.index(marker)
               pos = text.index(anchor, start)
               text = text[:pos] + block + text[pos:]
-              path.write_text(text, encoding="utf-8")
-      - name: Commit patch
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              path.write_text(text, encoding='utf-8')
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add custom_components/anthbot_map/frontend/anthbot-map-card.js www/anthbot-map/anthbot-map-card.js
-          if git diff --cached --quiet; then
-            echo "Patch already present"
-            exit 0
-          fi
-          git commit -m "feat: show mowed percentage in info popover [info-mowed-percent-applied]"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'feat: show mowed percentage in info popover'
+          git push
