@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.4.9.2 — 2026-09-25
+
+- Promotes the validated **2.4.9.2 beta line** to stable while preserving the working 2.4.9.1 base behavior and the fixes added through Beta 4.
+- Adds **five browser-local map views**: **Origin, Classic, Modern, Compact and Fullscreen**. Origin preserves the familiar original layout, while the other views provide alternative responsive/map-first presentations; the selected view remains local to each browser/device.
+- Keeps the responsive/mobile refinements from the beta line, including Classic portrait/landscape handling, the landscape zone/order editor, viewport-filling map layouts, and all **23 supported UI languages**.
+- Fixes the Issue #64 **high-CPU hot path** without reducing telemetry cadence or changing mower commands: history metadata/URL discovery is consolidated into one traversal, and distant No-Go geometry is rejected cheaply using polygon bounding boxes before exact polygon/intersection checks.
+- Preserves the working **minimal installation presence heartbeat** introduced in Beta 4, kept separate from detailed developer Reports and limited to the installation ID, integration version and mower model.
+- Includes the mowing-percentage status in the information popover and retains the existing calibration, schedule, voice, map, history and model-specific behavior.
+
 ## 2.4.9.2-beta1 — 2026-09-24
 
 - Uses **2.4.9.1 as the exact base**, preserving its Home Assistant thread-safety fix, Voice Pack Recorder protection, voice-store support and existing mower/model behavior.
