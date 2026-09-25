@@ -532,6 +532,7 @@ class AnthbotMapCard extends HTMLElement {
           <div class="frontend-info-row"><span>${this.t("connection")}</span><strong data-role="info-connection">–</strong></div>
           <div class="frontend-info-row"><span>Cloud / MQTT</span><strong data-role="info-cloud">–</strong></div>
           <div class="frontend-info-row"><span>${this.t("charging")}</span><strong data-role="info-charging">–</strong></div>
+          <div class="frontend-info-row"><span>${this.t("mowedArea")}</span><strong data-role="info-mowing-progress">–</strong></div>
           <div class="frontend-info-row frontend-info-height"><span>${this.t("cutHeight")}</span><strong data-role="info-cut-height">–</strong></div>
           <div class="frontend-info-row next-mow-line" data-role="next-mow-line" hidden><span>${anthbotScheduleText(this, "nextMow")}</span><strong data-role="info-next-mow">–</strong></div>
         </div>
@@ -574,6 +575,10 @@ class AnthbotMapCard extends HTMLElement {
         ? this.translateStatus(chargingState)
         : "–",
     );
+
+    const mowingProgressEntity = this.getRelatedEntity("mowingProgress");
+    const mowingProgress = Number(mowingProgressEntity?.state);
+    setText("info-mowing-progress", Number.isFinite(mowingProgress) ? `${Math.max(0, Math.min(100, mowingProgress)).toFixed(1)}%` : "–");
 
     const cuttingHeight = this.getRelatedEntity("cuttingHeight");
     const height = Number(cuttingHeight?.state);
