@@ -1,0 +1,34 @@
+name: Wire presence beta3 once
+on:
+  push:
+    branches: [release/v2.4.9.2-beta3]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[presence-wired]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - shell: python
+        run: |
+          from pathlib import Path
+          p=Path('custom_components/anthbot_map/device_tracker.py')
+          s=p.read_text()
+          imp='from .presence import async_start_presence_heartbeat\n'
+          anchor='from .location_recorder import location_snapshot, should_write_location_state\n'
+          if imp not in s:
+              s=s.replace(anchor,anchor+imp,1)
+          call='    await async_start_presence_heartbeat(hass)\n'
+          anchor2='    await async_register_developer_agent(hass, entry)\n'
+          if call not in s:
+              s=s.replace(anchor2,anchor2+call,1)
+          p.write_text(s)
+      - shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/anthbot_map/device_tracker.py
+          git diff --cached --quiet && exit 0
+          git commit -m "feat: wire minimal presence heartbeat [presence-wired]"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
