@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.4.9.3 — 2026-09-26
+
+- Fixes the 2.4.9.2 service-routing regression where presence-heartbeat runtime metadata in `hass.data["anthbot_map"]` could be treated as a coordinator list, causing `'bool' object is not iterable` when commands such as mowing-height changes were sent.
+- Hardens coordinator discovery and config-entry service loops so non-list runtime metadata is ignored safely.
+- Fixes last-entry unload cleanup so presence runtime metadata does not prevent global Anthbot Map services and the schedule engine from being cleaned up.
+- Adds regression coverage for the presence-runtime routing case.
+- No mower command payload, model-specific control, map rendering, calibration, voice-store, or other 2.4.9.2 behavior is changed by this hotfix.
+
 ## 2.4.9.2 — 2026-09-25
 
 - **Major CPU/performance fix:** removes the geometry/path hot path behind issue #64 and avoids repeated expensive zone/path checks during live operation, dramatically reducing call volume and Home Assistant CPU load in the profiled mower workload.
