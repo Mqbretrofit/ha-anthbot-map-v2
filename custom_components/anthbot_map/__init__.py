@@ -124,7 +124,13 @@ LEGACY_ENTITY_SUFFIXES: tuple[str, ...] = (
 def _all_coordinators(hass: HomeAssistant) -> list[AnthbotGenieDataUpdateCoordinator]:
     entries = hass.data.get(DOMAIN, {})
     coordinators: list[AnthbotGenieDataUpdateCoordinator] = []
+    if not isinstance(entries, dict):
+        return coordinators
     for entry_coordinators in entries.values():
+        # Runtime metadata (for example the presence heartbeat flags) shares
+        # the domain data mapping with config-entry coordinator lists.
+        if not isinstance(entry_coordinators, list):
+            continue
         coordinators.extend(entry_coordinators)
     return coordinators
 
@@ -730,6 +736,8 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             raise AnthbotGenieApiError("No target Anthbot mower found")
         target_serials = {item.client.serial_number for item in targets}
         for entry_id, coordinators in hass.data.get(DOMAIN, {}).items():
+            if not isinstance(coordinators, list):
+                continue
             matching = [
                 item
                 for item in coordinators
@@ -773,6 +781,8 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             raise AnthbotGenieApiError("No target Anthbot mower found")
         target_serials = {item.client.serial_number for item in targets}
         for entry_id, coordinators in hass.data.get(DOMAIN, {}).items():
+            if not isinstance(coordinators, list):
+                continue
             matching = [
                 item
                 for item in coordinators
@@ -1381,8 +1391,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await coordinator.async_stop_battery_saver_monitor()
         await coordinator.async_stop_live_shadow()
 
-    hass.data[DOMAIN].pop(entry.entry_id, None)
-    if not hass.data[DOMAIN]:
+    domain_data = hass.data.get(DOMAIN, {})
+    if isinstance(domain_data, dict):
+        domain_data.pop(entry.entry_id, None)
+    if not any(
+        isinstance(value, list) and value
+        for value in domain_data.values()
+    ):
         for service_name in (
             SERVICE_START_FULL_MOW,
             SERVICE_START_OUTER_EDGE_MOW,
