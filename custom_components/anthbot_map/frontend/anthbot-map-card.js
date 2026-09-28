@@ -3396,24 +3396,59 @@ class AnthbotMapCard extends HTMLElement {
       if (value) value.textContent = this.maintenanceValue(tile.dataset.maintenanceKind);
     });
 
-    root.querySelectorAll('[data-visual-obstacle-switch]').forEach((tile) => {
-      const entityId = tile.dataset.visualObstacleSwitch || "";
-      const entityState = entityId ? this._hass?.states?.[entityId]?.state : null;
-      const pending = tile.dataset.visualObstaclePending || "";
-      const pendingUntil = Number(tile.dataset.visualObstaclePendingUntil || 0);
-      const pendingActive = Boolean(pending) && Date.now() < pendingUntil && entityState !== pending;
-      if (!pendingActive && pending && entityState === pending) {
-        delete tile.dataset.visualObstaclePending;
-        delete tile.dataset.visualObstaclePendingUntil;
-      } else if (!pendingActive && pending && Date.now() >= pendingUntil) {
-        delete tile.dataset.visualObstaclePending;
-        delete tile.dataset.visualObstaclePendingUntil;
+    root.querySelectorAll('[data-global-visual-obstacle="true"]').forEach((tile) => {
+      const attrs = this.entity?.attributes || {};
+      const labels = [this.t("low"), this.t("medium"), this.t("high")];
+
+      const reportedEnabled = attrs.visual_obstacle_enabled;
+      const pendingSwitch = tile.dataset.pendingVisualSwitch || "";
+      const pendingSwitchUntil = Number(tile.dataset.pendingVisualSwitchUntil || 0);
+      const reportedSwitchState = reportedEnabled === true ? "on" : reportedEnabled === false ? "off" : "";
+      if (pendingSwitch && reportedSwitchState === pendingSwitch) {
+        delete tile.dataset.pendingVisualSwitch;
+        delete tile.dataset.pendingVisualSwitchUntil;
+      } else if (pendingSwitch && Date.now() >= pendingSwitchUntil) {
+        delete tile.dataset.pendingVisualSwitch;
+        delete tile.dataset.pendingVisualSwitchUntil;
       }
-      const shownState = pendingActive ? pending : entityState;
-      const enabled = shownState === "on";
-      const input = tile.querySelector('[data-visual-obstacle-toggle]');
-      if (input && this.shadowRoot?.activeElement !== input) input.checked = enabled;
-      tile.classList.toggle("disabled", !enabled);
+      const shownSwitch = tile.dataset.pendingVisualSwitch || reportedSwitchState;
+      const input = tile.querySelector("[data-global-visual-switch]");
+      if (shownSwitch && input && this.shadowRoot?.activeElement !== input) {
+        input.checked = shownSwitch === "on";
+        tile.classList.toggle("disabled", shownSwitch !== "on");
+      }
+
+      const reportedLevelRaw = Number(attrs.visual_obstacle_level);
+      const reportedLevel = Number.isFinite(reportedLevelRaw)
+        ? Math.max(0, Math.min(2, Math.round(reportedLevelRaw)))
+        : null;
+      const pendingLevelRaw = Number(tile.dataset.pendingVisualLevel);
+      const pendingLevelUntil = Number(tile.dataset.pendingVisualLevelUntil || 0);
+      if (
+        Number.isFinite(pendingLevelRaw)
+        && reportedLevel !== null
+        && reportedLevel === pendingLevelRaw
+      ) {
+        delete tile.dataset.pendingVisualLevel;
+        delete tile.dataset.pendingVisualLevelUntil;
+      } else if (tile.dataset.pendingVisualLevel && Date.now() >= pendingLevelUntil) {
+        delete tile.dataset.pendingVisualLevel;
+        delete tile.dataset.pendingVisualLevelUntil;
+      }
+      const shownLevelRaw = tile.dataset.pendingVisualLevel !== undefined
+        ? Number(tile.dataset.pendingVisualLevel)
+        : reportedLevel;
+      if (shownLevelRaw !== null && Number.isFinite(shownLevelRaw)) {
+        const shownLevel = Math.max(0, Math.min(2, Math.round(shownLevelRaw)));
+        const label = tile.querySelector("[data-global-visual-level-label]");
+        if (label) label.textContent = labels[shownLevel];
+        tile.querySelectorAll("[data-global-visual-level]").forEach((button) => {
+          button.classList.toggle(
+            "active",
+            Number(button.dataset.globalVisualLevel) === shownLevel,
+          );
+        });
+      }
     });
 
     if (this.activePanel === "control") {
@@ -4352,10 +4387,7 @@ class AnthbotMapCard extends HTMLElement {
       this.createCommandTile(this.t("cloud"), this.t("cloudSub"), "connect"),
       this.createMowHeightControl(),
       this.createNumberControl(this.t("mowCount"), "mowCount", 1, 2, 1, "×"),
-      this.createDirectObstacleControl(
-        this.getSwitchEntity("visualObstacle"),
-        this.getNumberEntity("visualObstacleLevel"),
-      ),
+      this.createGlobalObstacleControl(),
       this.createNumberControl(this.t("customDirection"), "mowDirection", 0, 180, 1, "deg"),
       this.createNumberControl(this.t("rainDelay"), "rainContinue", 0, 8, 1, "h"),
     ];
@@ -4817,27 +4849,118 @@ class AnthbotMapCard extends HTMLElement {
     return tile;
   }
 
+  createGlobalObstacleControl() {
+    const attrs = this.entity?.attributes || {};
+    const fallbackSwitchId = this.getSwitchEntity("visualObstacle");
+    const fallbackLevelId = this.getNumberEntity("visualObstacleLevel");
+    const fallbackSwitch = fallbackSwitchId ? this._hass?.states?.[fallbackSwitchId] : null;
+    const fallbackLevel = fallbackLevelId ? this._hass?.states?.[fallbackLevelId] : null;
+
+    const rawEnabled = attrs.visual_obstacle_enabled;
+    const enabled = typeof rawEnabled === "boolean"
+      ? rawEnabled
+      : fallbackSwitch?.state === "on";
+    const rawLevel = Number(
+      attrs.visual_obstacle_level ?? fallbackLevel?.state ?? 1
+    );
+    const selected = Number.isFinite(rawLevel)
+      ? Math.max(0, Math.min(2, Math.round(rawLevel)))
+      : 1;
+    const labels = [this.t("low"), this.t("medium"), this.t("high")];
+
+    const tile = document.createElement("div");
+    tile.className = `panel-tile obstacle-combined ${enabled ? "" : "disabled"}`;
+    tile.dataset.globalVisualObstacle = "true";
+
+    const row = document.createElement("label");
+    row.className = "switch-tile";
+    row.innerHTML = `<span>${this.t("visualObstacle")}</span><input data-global-visual-switch type="checkbox" ${enabled ? "checked" : ""}>`;
+
+    const levels = document.createElement("div");
+    levels.className = "obstacle-levels";
+    const levelTile = document.createElement("div");
+    levelTile.className = "panel-tile control-tile";
+    levelTile.innerHTML = `<div class="control-head"><span>${this.t("visualObstacleLevel")}</span><strong data-global-visual-level-label>${labels[selected]}</strong></div><div class="height-options" data-global-visual-level-options></div>`;
+    const options = levelTile.querySelector("[data-global-visual-level-options]");
+    options.style.cssText = "display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px";
+
+    labels.forEach((label, level) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "height-option";
+      button.dataset.globalVisualLevel = String(level);
+      button.textContent = label;
+      button.style.cssText = "min-width:0;width:100%;padding:8px 3px;font-size:12px;white-space:nowrap";
+      button.classList.toggle("active", level === selected);
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const previous = Number(tile.dataset.pendingVisualLevel ?? selected);
+        tile.dataset.pendingVisualLevel = String(level);
+        tile.dataset.pendingVisualLevelUntil = String(Date.now() + 5000);
+        options.querySelectorAll(".height-option").forEach((item) => {
+          item.classList.toggle("active", item === button);
+        });
+        levelTile.querySelector("[data-global-visual-level-label]").textContent = label;
+        try {
+          await this.callAnthbotService("set_visual_obstacle_level", {
+            visual_obstacle_level: level,
+          });
+          this.scheduleRefresh(300);
+        } catch (error) {
+          tile.dataset.pendingVisualLevel = String(previous);
+          delete tile.dataset.pendingVisualLevelUntil;
+          throw error;
+        }
+      });
+      options.appendChild(button);
+    });
+    levels.appendChild(levelTile);
+
+    const input = row.querySelector("[data-global-visual-switch]");
+    input.addEventListener("change", async (event) => {
+      event.stopPropagation();
+      const requested = input.checked;
+      tile.dataset.pendingVisualSwitch = requested ? "on" : "off";
+      tile.dataset.pendingVisualSwitchUntil = String(Date.now() + 5000);
+      tile.classList.toggle("disabled", !requested);
+      input.disabled = true;
+      try {
+        await this.callAnthbotService("set_visual_obstacle_detection", {
+          enable_visual_obstacle: requested,
+        });
+        this.scheduleRefresh(300);
+      } catch (error) {
+        delete tile.dataset.pendingVisualSwitch;
+        delete tile.dataset.pendingVisualSwitchUntil;
+        input.checked = !requested;
+        tile.classList.toggle("disabled", requested);
+        throw error;
+      } finally {
+        input.disabled = false;
+      }
+    });
+
+    tile.append(row, levels);
+    return tile;
+  }
+
   createDirectObstacleControl(switchEntityId, levelEntityId) {
     const switchEntity = switchEntityId ? this._hass.states[switchEntityId] : null;
     const enabled = switchEntity?.state === "on";
     const tile = document.createElement("div");
     tile.className = `panel-tile obstacle-combined ${enabled ? "" : "disabled"}`;
     tile.dataset.visualObstacleSwitch = switchEntityId || "";
-    tile.dataset.visualObstacleLevel = levelEntityId || "";
     const row = document.createElement("label");
     row.className = "switch-tile";
-    row.innerHTML = `<span>${this.t("visualObstacle")}</span><input data-visual-obstacle-toggle type="checkbox" ${enabled ? "checked" : ""} ${switchEntityId ? "" : "disabled"}>`;
+    row.innerHTML = `<span>${this.t("visualObstacle")}</span><input type="checkbox" ${enabled ? "checked" : ""} ${switchEntityId ? "" : "disabled"}>`;
     const levels = document.createElement("div");
     levels.className = "obstacle-levels";
     levels.appendChild(this.createDirectObstacleLevelControl(levelEntityId));
     const input = row.querySelector("input");
-    input.addEventListener("change", async (event) => {
-      event.stopPropagation();
+    input.addEventListener("change", async () => {
       if (!switchEntityId) return;
       const requested = input.checked;
-      tile.dataset.visualObstaclePending = requested ? "on" : "off";
-      tile.dataset.visualObstaclePendingUntil = String(Date.now() + 5000);
-      tile.classList.toggle("disabled", !requested);
       input.disabled = true;
       try {
         await this._hass.callService(
@@ -4845,12 +4968,14 @@ class AnthbotMapCard extends HTMLElement {
           requested ? "turn_on" : "turn_off",
           {entity_id: switchEntityId},
         );
-        // The M9 shadow update is asynchronous. Keep the requested state
-        // visible until HA reports the new switch entity state.
-        this.scheduleRefresh(1200);
+        tile.classList.toggle("disabled", !requested);
+        try {
+          await this._hass.callService("homeassistant", "update_entity", {
+            entity_id: switchEntityId,
+          });
+        } catch (_error) {}
+        this.scheduleRefresh(150);
       } catch (error) {
-        delete tile.dataset.visualObstaclePending;
-        delete tile.dataset.visualObstaclePendingUntil;
         input.checked = !requested;
         tile.classList.toggle("disabled", requested);
         this.notify(`${this.t("operationFailed")}: ${switchEntityId}`);
@@ -8100,10 +8225,6 @@ class AnthbotMapCard extends HTMLElement {
     if (this.isEntityAvailable(configured)) {
       return configured;
     }
-    if (kind === "visualObstacleLevel") {
-      const exact = this.findEntityBySetting("number", "visual_obstacle_level_setting");
-      if (exact) return exact;
-    }
     return this.findEntity("number", NUMBER_MAP[kind] || []);
   }
 
@@ -8128,36 +8249,8 @@ class AnthbotMapCard extends HTMLElement {
     if (this.isEntityAvailable(configured)) {
       return configured;
     }
-    if (kind === "visualObstacle") {
-      const exact = this.findEntityBySetting("switch", "visual_obstacle_detection_enabled");
-      if (exact) return exact;
-    }
-    return this.findEntity("switch", SWITCH_MAP[kind] || []);
-  }
 
-  findEntityBySetting(domain, setting) {
-    const states = this._hass?.states || {};
-    const activeId = String(this._activeEntityId || this.config?.entity || "");
-    const activeState = states[activeId] || this.entity;
-    const activeSerial = String(
-      activeState?.attributes?.serial_number
-      || activeState?.attributes?.sn
-      || ""
-    ).trim();
-    if (!activeSerial) return null;
-    const candidates = Object.entries(states)
-      .filter(([entityId, state]) =>
-        entityId.startsWith(`${domain}.`)
-        && state?.state !== "unavailable"
-        && String(state?.attributes?.serial_number || "").trim() === activeSerial
-        && String(state?.attributes?.setting || "") === setting
-      )
-      .sort(([left], [right]) => {
-        const leftNumber = Number(left.match(/_(\d+)$/)?.[1] || 0);
-        const rightNumber = Number(right.match(/_(\d+)$/)?.[1] || 0);
-        return rightNumber - leftNumber;
-      });
-    return candidates[0]?.[0] || null;
+    return this.findEntity("switch", SWITCH_MAP[kind] || []);
   }
 
   isEntityAvailable(entityId) {
