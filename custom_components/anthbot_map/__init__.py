@@ -112,7 +112,7 @@ PLATFORMS = [
 _LOGGER = logging.getLogger(__name__)
 VALID_MOW_HEIGHTS = list(range(30, 75, 5))
 FRONTEND_RESOURCE_PATH = "/anthbot-map-v2/anthbot-map-card.js"
-FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.9.3-m9visual9"
+FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.9.3-m9visual10"
 LEGACY_ENTITY_SUFFIXES: tuple[str, ...] = (
     "enable_custom_mowing_direction",
     "custom_mowing_direction_enable",
@@ -751,6 +751,12 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             raise AnthbotGenieApiError("No target Anthbot mower found")
         enabled = bool(service_call.data[ATTR_ENABLE_VISUAL_OBSTACLE])
         for coordinator in targets:
+            _LOGGER.warning(
+                "ANTHBOT VISUAL CONTROL service=toggle sn=%s model=%s enabled=%s",
+                coordinator.client.serial_number,
+                getattr(coordinator.device, "model", None),
+                enabled,
+            )
             state = coordinator.reported_state
             pobctl = state.get("pobctl")
             device_config = state.get("device_config")
@@ -777,6 +783,12 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         level = int(service_call.data[ATTR_VISUAL_OBSTACLE_LEVEL])
         for coordinator in targets:
             model = str(getattr(coordinator.device, "model", "") or "").upper()
+            _LOGGER.warning(
+                "ANTHBOT VISUAL CONTROL service=level sn=%s model=%s level=%s",
+                coordinator.client.serial_number,
+                model,
+                level,
+            )
             if "M9" in model:
                 data = {"level": level}
             else:
