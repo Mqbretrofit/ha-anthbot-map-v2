@@ -1626,6 +1626,30 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_handle_live_shadow(
         self, shadow_name: str, reported: dict[str, Any]
     ) -> None:
+        reported = dict(reported)
+        app_setting_mirror = reported.pop("_app_setting_mirror", None)
+        if isinstance(app_setting_mirror, dict) and app_setting_mirror:
+            overrides = dict(getattr(self, "_app_setting_overrides", {}))
+            expires_at = time.monotonic() + 20.0
+            for key, value in app_setting_mirror.items():
+                if key in {
+                    "visual_switch",
+                    "visual_level",
+                    "mow_count",
+                    "cutter_height",
+                }:
+                    overrides[key] = (value, expires_at)
+            setattr(self, "_app_setting_overrides", overrides)
+            _LOGGER.warning(
+                "ANTHBOT APP SETTING OVERRIDE sn=%s values=%s",
+                self.client.serial_number,
+                {
+                    key: value[0]
+                    for key, value in overrides.items()
+                    if isinstance(value, tuple) and len(value) == 2
+                },
+            )
+
         if shadow_name == "service":
             self._pending_live_service.update(reported)
         else:
@@ -1725,7 +1749,11 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         pobctl["level"] = level_value
 
                     incoming_pobctl = property_update.get("pobctl")
-                    if isinstance(incoming_pobctl, dict):
+                    model_name = str(
+                        getattr(self.device, "model", "") or ""
+                    ).upper()
+                    incoming_device = property_update.get("device_config")
+                    if "M9" not in model_name and isinstance(incoming_pobctl, dict):
                         raw_switch = incoming_pobctl.get("switch")
                         if raw_switch in (0, 1, False, True):
                             switch_value = int(bool(raw_switch))
@@ -1736,6 +1764,17 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             level_value = int(raw_level)
                             pobctl["level"] = level_value
                             device_config["pobctl_level"] = level_value
+                    elif "M9" in model_name and isinstance(incoming_device, dict):
+                        raw_switch = incoming_device.get("pobctl_switch")
+                        if raw_switch in (0, 1, False, True):
+                            switch_value = int(bool(raw_switch))
+                            device_config["pobctl_switch"] = switch_value
+                            pobctl["switch"] = switch_value
+                        raw_level = incoming_device.get("pobctl_level")
+                        if raw_level in (0, 1, 2):
+                            level_value = int(raw_level)
+                            device_config["pobctl_level"] = level_value
+                            pobctl["level"] = level_value
 
                     raw_mow_count = property_update.get("mow_count")
                     incoming_param = property_update.get("param_set")
@@ -1778,6 +1817,109 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         state["pobctl"] = pobctl
                     if param_set:
                         state["param_set"] = param_set
+
+                    overrides = dict(
+                        getattr(self, "_app_setting_overrides", {})
+                    )
+                    if overrides:
+                        now = time.monotonic()
+                        active_overrides: dict[str, tuple[Any, float]] = {}
+                        for key, stored in overrides.items():
+                            if (
+                                not isinstance(stored, tuple)
+                                or len(stored) != 2
+                            ):
+                                continue
+                            value, expires_at = stored
+                            if not isinstance(expires_at, (int, float)):
+                                continue
+                            if expires_at <= now:
+                                continue
+                            active_overrides[key] = (value, float(expires_at))
+
+                        visual_switch_override = active_overrides.get(
+                            "visual_switch"
+                        )
+                        if visual_switch_override is not None:
+                            switch_value = int(
+                                bool(visual_switch_override[0])
+                            )
+                            device_config = state.get("device_config")
+                            device_config = (
+                                dict(device_config)
+                                if isinstance(device_config, dict)
+                                else {}
+                            )
+                            pobctl = state.get("pobctl")
+                            pobctl = (
+                                dict(pobctl)
+                                if isinstance(pobctl, dict)
+                                else {}
+                            )
+                            device_config["pobctl_switch"] = switch_value
+                            pobctl["switch"] = switch_value
+                            state["device_config"] = device_config
+                            state["pobctl"] = pobctl
+                            state["pobctl_switch"] = switch_value
+
+                        visual_level_override = active_overrides.get(
+                            "visual_level"
+                        )
+                        if visual_level_override is not None:
+                            level_value = int(visual_level_override[0])
+                            device_config = state.get("device_config")
+                            device_config = (
+                                dict(device_config)
+                                if isinstance(device_config, dict)
+                                else {}
+                            )
+                            pobctl = state.get("pobctl")
+                            pobctl = (
+                                dict(pobctl)
+                                if isinstance(pobctl, dict)
+                                else {}
+                            )
+                            device_config["pobctl_level"] = level_value
+                            pobctl["level"] = level_value
+                            state["device_config"] = device_config
+                            state["pobctl"] = pobctl
+                            state["pobctl_level"] = level_value
+
+                        mow_count_override = active_overrides.get("mow_count")
+                        if mow_count_override is not None:
+                            mow_count_value = int(mow_count_override[0])
+                            param_set = state.get("param_set")
+                            param_set = (
+                                dict(param_set)
+                                if isinstance(param_set, dict)
+                                else {}
+                            )
+                            param_set["mow_count"] = mow_count_value
+                            state["param_set"] = param_set
+                            state["mow_count"] = mow_count_value
+
+                        cutter_height_override = active_overrides.get(
+                            "cutter_height"
+                        )
+                        if cutter_height_override is not None:
+                            cutter_height_value = int(
+                                cutter_height_override[0]
+                            )
+                            param_set = state.get("param_set")
+                            param_set = (
+                                dict(param_set)
+                                if isinstance(param_set, dict)
+                                else {}
+                            )
+                            param_set["cutter_height"] = cutter_height_value
+                            state["param_set"] = param_set
+                            state["cutter_height"] = cutter_height_value
+
+                        setattr(
+                            self,
+                            "_app_setting_overrides",
+                            active_overrides,
+                        )
 
                     state["_robot_online"] = is_robot_online(state)
                     selection = select_map_archive(state)
