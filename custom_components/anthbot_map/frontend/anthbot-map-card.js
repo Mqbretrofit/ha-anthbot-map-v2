@@ -3396,6 +3396,106 @@ class AnthbotMapCard extends HTMLElement {
       if (value) value.textContent = this.maintenanceValue(tile.dataset.maintenanceKind);
     });
 
+    root.querySelectorAll('[data-global-visual-obstacle="true"]').forEach((tile) => {
+      const attrs = this.entity?.attributes || {};
+      const switchEntityId = String(
+        attrs.visual_obstacle_switch_entity_id
+        || tile.dataset.visualSwitchEntityId
+        || ""
+      );
+      const levelEntityId = String(
+        attrs.visual_obstacle_level_entity_id
+        || tile.dataset.visualLevelEntityId
+        || ""
+      );
+      const switchEntity = switchEntityId
+        ? this._hass?.states?.[switchEntityId]
+        : null;
+      const levelEntity = levelEntityId
+        ? this._hass?.states?.[levelEntityId]
+        : null;
+
+      const reportedSwitch = switchEntity
+        ? switchEntity.state
+        : attrs.visual_obstacle_enabled === true
+          ? "on"
+          : attrs.visual_obstacle_enabled === false
+            ? "off"
+            : "";
+      const pendingSwitch = tile.dataset.pendingVisualSwitch || "";
+      const pendingSwitchUntil = Number(
+        tile.dataset.pendingVisualSwitchUntil || 0
+      );
+      if (pendingSwitch && reportedSwitch === pendingSwitch) {
+        delete tile.dataset.pendingVisualSwitch;
+        delete tile.dataset.pendingVisualSwitchUntil;
+      } else if (pendingSwitch && Date.now() >= pendingSwitchUntil) {
+        delete tile.dataset.pendingVisualSwitch;
+        delete tile.dataset.pendingVisualSwitchUntil;
+      }
+      const shownSwitch = tile.dataset.pendingVisualSwitch || reportedSwitch;
+      if (shownSwitch) {
+        const enabled = shownSwitch === "on";
+        tile.dataset.visualEnabled = shownSwitch;
+        tile.classList.toggle("disabled", !enabled);
+        const toggle = tile.querySelector("[data-global-visual-toggle]");
+        const knob = tile.querySelector("[data-global-visual-knob]");
+        if (toggle) {
+          toggle.setAttribute("aria-checked", enabled ? "true" : "false");
+          toggle.style.background = enabled
+            ? "var(--mf-accent,#2f9e63)"
+            : "rgba(127,127,127,.30)";
+        }
+        if (knob) knob.style.left = enabled ? "23px" : "3px";
+      }
+
+      const reportedLevelRaw = Number(
+        levelEntity?.state ?? attrs.visual_obstacle_level
+      );
+      const reportedLevel = Number.isFinite(reportedLevelRaw)
+        ? Math.max(0, Math.min(2, Math.round(reportedLevelRaw)))
+        : null;
+      const pendingLevelText = tile.dataset.pendingVisualLevel;
+      const pendingLevel = pendingLevelText === undefined
+        ? null
+        : Number(pendingLevelText);
+      const pendingLevelUntil = Number(
+        tile.dataset.pendingVisualLevelUntil || 0
+      );
+      if (
+        pendingLevel !== null
+        && Number.isFinite(pendingLevel)
+        && reportedLevel !== null
+        && reportedLevel === pendingLevel
+      ) {
+        delete tile.dataset.pendingVisualLevel;
+        delete tile.dataset.pendingVisualLevelUntil;
+      } else if (
+        pendingLevelText !== undefined
+        && Date.now() >= pendingLevelUntil
+      ) {
+        delete tile.dataset.pendingVisualLevel;
+        delete tile.dataset.pendingVisualLevelUntil;
+      }
+      const shownLevelRaw = tile.dataset.pendingVisualLevel !== undefined
+        ? Number(tile.dataset.pendingVisualLevel)
+        : reportedLevel;
+      if (shownLevelRaw !== null && Number.isFinite(shownLevelRaw)) {
+        const level = Math.max(0, Math.min(2, Math.round(shownLevelRaw)));
+        const labels = [this.t("low"), this.t("medium"), this.t("high")];
+        const label = tile.querySelector(
+          "[data-global-visual-level-label]"
+        );
+        if (label) label.textContent = labels[level];
+        tile.querySelectorAll("[data-global-visual-level]").forEach((button) => {
+          button.classList.toggle(
+            "active",
+            Number(button.dataset.globalVisualLevel) === level,
+          );
+        });
+      }
+    });
+
     if (this.activePanel === "control") {
       const current = root.querySelector('[data-primary-mowing-action]');
       const nextAction = this.primaryMowingAction();
@@ -4881,6 +4981,8 @@ class AnthbotMapCard extends HTMLElement {
       event.stopPropagation();
       const requested = tile.dataset.visualEnabled !== "on";
       paintToggle(requested);
+      tile.dataset.pendingVisualSwitch = requested ? "on" : "off";
+      tile.dataset.pendingVisualSwitchUntil = String(Date.now() + 5000);
       toggle.disabled = true;
       try {
         if (!serialNumber) {
@@ -4896,6 +4998,8 @@ class AnthbotMapCard extends HTMLElement {
         );
         this.scheduleRefresh(350);
       } catch (error) {
+        delete tile.dataset.pendingVisualSwitch;
+        delete tile.dataset.pendingVisualSwitchUntil;
         paintToggle(!requested);
         this.notify(`${this.t("operationFailed")}: ${this.t("visualObstacle")}`);
         console.error("ANTHBOT visual obstacle toggle failed", {
