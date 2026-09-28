@@ -229,7 +229,7 @@ class M9CleanSettingsRebuildTests(unittest.TestCase):
         self.assertIn("mowingZonesFromPoints(taskData.points)", runtime)
         self.assertIn("zone?.cutter_height ?? zone?.cutting_height", runtime)
         self.assertIn(
-            '`${progressText} · ${mowingContext.label}`',
+            'const mowingAreaParts = [progressText, areaText, mowingContext?.label]',
             runtime,
         )
         self.assertIn(
@@ -242,6 +242,18 @@ class M9CleanSettingsRebuildTests(unittest.TestCase):
         self.assertIn("const showRememberedTarget = activeMowing", runtime)
         self.assertIn("const activeHeightContext = activeMowing ? mowingContext : null;", runtime)
         self.assertNotIn(".frontend-info-height strong { font-size:16px; }", runtime)
+
+    def test_information_popover_shows_session_area_and_time(self) -> None:
+        runtime = _read(
+            "custom_components/anthbot_map/frontend/anthbot-map-card.js"
+        )
+        self.assertIn('data-role="info-mowing-time"', runtime)
+        self.assertIn('this.getRelatedEntity("mowingArea")', runtime)
+        self.assertIn('this.getRelatedEntity("mowingTime")', runtime)
+        self.assertIn('`${Math.round(sessionInfo.areaM2 * 10) / 10} m²`', runtime)
+        self.assertIn('formatMowingDuration(sessionInfo.durationSeconds)', runtime)
+        self.assertIn('anthbot-map-mowing-session-info:', runtime)
+        self.assertIn('if (active && (cached.active !== true || regressed))', runtime)
 
 
 if __name__ == "__main__":

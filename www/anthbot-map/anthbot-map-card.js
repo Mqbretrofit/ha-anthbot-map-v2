@@ -549,6 +549,7 @@ class AnthbotMapCard extends HTMLElement {
           <div class="frontend-info-row"><span>Cloud / MQTT</span><strong data-role="info-cloud">–</strong></div>
           <div class="frontend-info-row"><span>${this.t("charging")}</span><strong data-role="info-charging">–</strong></div>
           <div class="frontend-info-row"><span>${this.t("mowedArea")}</span><strong data-role="info-mowing-progress">–</strong></div>
+          <div class="frontend-info-row"><span>${this.t("mowingTime")}</span><strong data-role="info-mowing-time">–</strong></div>
           <div class="frontend-info-row frontend-info-height"><span>${this.t("cutHeight")}</span><strong data-role="info-cut-height">–</strong></div>
           <div class="frontend-info-row next-mow-line" data-role="next-mow-line" hidden><span>${anthbotScheduleText(this, "nextMow")}</span><strong data-role="info-next-mow">–</strong></div>
         </div>
@@ -674,6 +675,86 @@ class AnthbotMapCard extends HTMLElement {
     return Number.isFinite(globalHeight) ? [globalHeight] : [];
   }
 
+  mowingSessionInfoStorageKey() {
+    const entityId = String(this.config?.entity || this.entity?.entity_id || "default");
+    return `anthbot-map-mowing-session-info:${entityId}`;
+  }
+
+  readMowingSessionInfo() {
+    try {
+      const value = JSON.parse(window.localStorage.getItem(this.mowingSessionInfoStorageKey()) || "null");
+      return value && typeof value === "object" ? value : {};
+    } catch (_error) {
+      return {};
+    }
+  }
+
+  writeMowingSessionInfo(value) {
+    try {
+      const key = this.mowingSessionInfoStorageKey();
+      const serialized = JSON.stringify(value);
+      if (window.localStorage.getItem(key) !== serialized) {
+        window.localStorage.setItem(key, serialized);
+      }
+    } catch (_error) {}
+  }
+
+  mowingTimeSeconds(entity, fallbackValue) {
+    const entityValue = Number(entity?.state);
+    if (!Number.isFinite(entityValue)) {
+      const fallback = Number(fallbackValue);
+      return Number.isFinite(fallback) && fallback >= 0 ? fallback : null;
+    }
+    const unit = String(entity?.attributes?.unit_of_measurement || "s").trim().toLowerCase();
+    if (["ms", "millisecond", "milliseconds"].includes(unit)) return Math.max(0, entityValue / 1000);
+    if (["min", "minute", "minutes"].includes(unit)) return Math.max(0, entityValue * 60);
+    if (["h", "hr", "hour", "hours"].includes(unit)) return Math.max(0, entityValue * 3600);
+    if (["d", "day", "days"].includes(unit)) return Math.max(0, entityValue * 86400);
+    return Math.max(0, entityValue);
+  }
+
+  resolveMowingSessionInfo(active, areaM2, durationSeconds) {
+    const currentArea = Number.isFinite(Number(areaM2)) && Number(areaM2) >= 0
+      ? Number(areaM2)
+      : null;
+    const currentDuration = Number.isFinite(Number(durationSeconds)) && Number(durationSeconds) >= 0
+      ? Number(durationSeconds)
+      : null;
+    let cached = this.readMowingSessionInfo();
+    const cachedArea = Number(cached.areaM2);
+    const cachedDuration = Number(cached.durationSeconds);
+    const regressed = active && cached.active === true && (
+      (currentArea !== null && Number.isFinite(cachedArea) && currentArea + 0.01 < cachedArea)
+      || (currentDuration !== null && Number.isFinite(cachedDuration) && currentDuration + 1 < cachedDuration)
+    );
+
+    if (active && (cached.active !== true || regressed)) {
+      cached = { active: true };
+    } else {
+      cached.active = Boolean(active);
+    }
+
+    if (active) {
+      if (currentArea !== null) cached.areaM2 = currentArea;
+      if (currentDuration !== null) cached.durationSeconds = currentDuration;
+    } else {
+      if (!Number.isFinite(Number(cached.areaM2)) && currentArea !== null && currentArea > 0) {
+        cached.areaM2 = currentArea;
+      }
+      if (!Number.isFinite(Number(cached.durationSeconds)) && currentDuration !== null && currentDuration > 0) {
+        cached.durationSeconds = currentDuration;
+      }
+    }
+
+    this.writeMowingSessionInfo(cached);
+    return {
+      areaM2: Number.isFinite(Number(cached.areaM2)) ? Number(cached.areaM2) : null,
+      durationSeconds: Number.isFinite(Number(cached.durationSeconds))
+        ? Number(cached.durationSeconds)
+        : null,
+    };
+  }
+
   updateFrontendInfo(attributes = this.entity?.attributes || {}) {
     const setText = (role, value) => {
       const node = this.shadowRoot?.querySelector(`[data-role="${role}"]`);
@@ -714,6 +795,16 @@ class AnthbotMapCard extends HTMLElement {
     const mowingProgressEntity = this.getRelatedEntity("mowingProgress");
     const mowingProgress = Number(mowingProgressEntity?.state);
     const activeMowing = this.isMowingActive(statusEntity, mowingProgressEntity);
+    const mowingAreaEntity = this.getRelatedEntity("mowingArea");
+    const mowingAreaCandidates = [
+      Number(mowingAreaEntity?.state),
+      Number(mowingProgressEntity?.attributes?.progress_mowing_area_m2),
+      Number(attributes.mowing_area),
+    ];
+    const mowingAreaM2 = mowingAreaCandidates.find((value) => Number.isFinite(value) && value >= 0);
+    const mowingTimeEntity = this.getRelatedEntity("mowingTime");
+    const mowingTimeSeconds = this.mowingTimeSeconds(mowingTimeEntity, attributes.mowing_time);
+    const sessionInfo = this.resolveMowingSessionInfo(activeMowing, mowingAreaM2, mowingTimeSeconds);
     const rememberedTask = this.entity?.attributes?.last_mowing_task
       ?? mowingProgressEntity?.attributes?.last_mowing_task;
     const showRememberedTarget = activeMowing
@@ -725,9 +816,19 @@ class AnthbotMapCard extends HTMLElement {
     const progressText = Number.isFinite(mowingProgress)
       ? `${Math.max(0, Math.min(100, mowingProgress)).toFixed(1)}%`
       : "–";
+    const areaText = Number.isFinite(sessionInfo.areaM2)
+      ? `${Math.round(sessionInfo.areaM2 * 10) / 10} m²`
+      : null;
+    const mowingAreaParts = [progressText, areaText, mowingContext?.label].filter(Boolean);
     setText(
       "info-mowing-progress",
-      mowingContext?.label ? `${progressText} · ${mowingContext.label}` : progressText,
+      mowingAreaParts.join(" · "),
+    );
+    setText(
+      "info-mowing-time",
+      Number.isFinite(sessionInfo.durationSeconds)
+        ? formatMowingDuration(sessionInfo.durationSeconds)
+        : "–",
     );
 
     const cuttingHeight = this.getRelatedEntity("cuttingHeight");
@@ -9916,6 +10017,16 @@ function formatRecordPercent(value) {
   if (Number.isNaN(num)) return null;
   const pct = num > 0 && num <= 1 ? num * 100 : num;
   return `${Math.round(pct * 10) / 10}%`;
+}
+
+function formatMowingDuration(totalSeconds) {
+  const total = Math.max(0, Math.round(Number(totalSeconds) || 0));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  return [hours, minutes, seconds]
+    .map((value) => String(value).padStart(2, "0"))
+    .join(":");
 }
 
 function formatRecordDurationSeconds(totalSeconds) {
