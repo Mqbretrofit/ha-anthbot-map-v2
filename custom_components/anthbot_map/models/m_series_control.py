@@ -183,12 +183,26 @@ def install_m_series_control_support() -> None:
             await _publish_native_simple_command(self, cmd=cmd, data=full_param_set)
             return
 
-        # Verified from the official app's live M9 Pro service shadow:
-        # visual obstacle sensitivity is not perception_obstacle_ctl. The app
-        # publishes cmd=device_config with data={pobctl_level: 0|1|2}.
-        # Keep the entity API stable and translate only for M9/M9 Pro.
+        # Verified from the official app's live M9 Pro service/property shadows:
+        # device_config.pobctl_switch is the independent on/off control, while
+        # device_config.pobctl_level is sensitivity (0/1/2). Preserve the
+        # existing entity API and translate only M9/M9 Pro commands.
         if cmd == "perception_obstacle_ctl" and _is_m9_client(self):
-            level = data.get("level") if isinstance(data, dict) else data
+            if not isinstance(data, dict):
+                raise AnthbotGenieApiError("M9 visual obstacle command requires a dict payload")
+            if "switch" in data:
+                switch = data.get("switch")
+                if switch not in (0, 1, False, True):
+                    raise AnthbotGenieApiError("M9 pobctl_switch must be 0 or 1")
+                _LOGGER.warning(
+                    "ANTHBOT COMMAND PROBE stage=translate sn=%s model=%s from_cmd=%s to_cmd=device_config pobctl_switch=%s",
+                    self.serial_number, _model(self), cmd, int(bool(switch)),
+                )
+                await _publish_native_simple_command(
+                    self, cmd="device_config", data={"pobctl_switch": int(bool(switch))}
+                )
+                return
+            level = data.get("level")
             if level not in (0, 1, 2):
                 raise AnthbotGenieApiError("M9 pobctl_level must be 0, 1 or 2")
             _LOGGER.warning(
