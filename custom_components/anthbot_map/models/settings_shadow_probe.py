@@ -1,8 +1,9 @@
 """Temporary safe live diagnostics for ANTHBOT settings persistence tests.
 
-Logs only selected non-sensitive property/service shadow fields and their
-changes. No credentials, URLs, map geometry, position or account data are
-logged. Intended for comparing official-app setting changes on Genie/M-series.
+For M-series property updates this probe also records the complete *safe scalar
+shape* of the shadow so previously unknown setting names can be discovered.
+Credentials, URLs, map/path/position payloads, identifiers and large values are
+excluded. Genie keeps the narrower selected-settings probe.
 """
 
 from __future__ import annotations
@@ -26,6 +27,24 @@ _WANTED_PARAM_FIELDS = (
     "pobctl_switch", "obstacle_avoid_level", "visual_obstacle_level",
     "enable_adaptive_head", "mow_head", "mow_mode", "nest_switch", "rid_switch",
 )
+
+# Never log these families from the broad discovery probe. Matching is
+# intentionally conservative because this is diagnostic code running on a
+# user's real mower/account.
+_BLOCKED_KEY_PARTS = (
+    "token", "secret", "credential", "password", "passwd", "auth", "sign",
+    "cert", "key", "url", "uri", "endpoint", "host", "account", "email",
+    "phone", "user", "owner", "serial", "sn", "uuid", "device_id", "imei",
+    "mac", "wifi", "ssid", "ip", "location", "position", "coordinate",
+    "latitude", "longitude", "gps", "map", "path", "track", "trajectory",
+    "boundary", "polygon", "point", "area", "zone", "image", "picture",
+    "file", "blob", "raw", "history", "record", "log",
+)
+
+
+def _is_m_series(model: Any) -> bool:
+    text = str(model or "").upper()
+    return "M9" in text or "M5" in text
 
 
 def _selected(state: Any) -> dict[str, Any]:
@@ -51,8 +70,43 @@ def _selected(state: Any) -> dict[str, Any]:
     return result
 
 
+def _safe_scalar_shape(value: Any, *, depth: int = 0) -> Any:
+    """Keep safe scalar leaves and small nested dicts; discard bulk payloads."""
+    if depth > 3:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, str):
+        # Settings are normally short enums/strings. Avoid dumping arbitrary
+        # text or encoded payloads.
+        return value if len(value) <= 80 else None
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for raw_key, item in value.items():
+            key = str(raw_key)
+            lowered = key.lower()
+            if any(part in lowered for part in _BLOCKED_KEY_PARTS):
+                continue
+            safe = _safe_scalar_shape(item, depth=depth + 1)
+            if safe is not None and (not isinstance(safe, dict) or safe):
+                out[key] = safe
+        return out or None
+    # Lists/tuples are deliberately excluded: mower geometry and paths are
+    # commonly represented as arrays.
+    return None
+
+
+def _safe_m_series_property(state: Any) -> dict[str, Any]:
+    if not isinstance(state, dict):
+        return {}
+    safe = _safe_scalar_shape(state)
+    return safe if isinstance(safe, dict) else {}
+
+
 def _diff(previous: Any, current: Any, prefix: str = "") -> dict[str, dict[str, Any]]:
-    """Return leaf changes between two selected dictionaries."""
+    """Return leaf changes between two dictionaries."""
     before = previous if isinstance(previous, dict) else {}
     after = current if isinstance(current, dict) else {}
     changes: dict[str, dict[str, Any]] = {}
@@ -74,7 +128,7 @@ def _diff(previous: Any, current: Any, prefix: str = "") -> dict[str, dict[str, 
 
 
 def install_settings_shadow_probe() -> None:
-    """Attach a selected-field logger to each coordinator's live shadow callback."""
+    """Attach safe setting diagnostics to each coordinator's live callback."""
     global _INSTALLED
     if _INSTALLED:
         return
@@ -85,6 +139,7 @@ def install_settings_shadow_probe() -> None:
     def coordinator_init(self: AnthbotGenieDataUpdateCoordinator, *args: Any, **kwargs: Any) -> None:
         previous_init(self, *args, **kwargs)
         setattr(self, "_settings_probe_last", {})
+        setattr(self, "_settings_probe_broad_last", {})
 
     previous_start = AnthbotGenieDataUpdateCoordinator.async_start_live_shadow
 
@@ -96,12 +151,12 @@ def install_settings_shadow_probe() -> None:
             return
 
         async def capture(name: str, reported: dict[str, Any]) -> None:
+            model = str(getattr(self.device, "model", "") or "")
             selected = _selected(reported)
             if selected:
                 cache = dict(getattr(self, "_settings_probe_last", {}))
                 previous = cache.get(name)
                 if selected != previous:
-                    model = str(getattr(self.device, "model", "") or "")
                     changes = _diff(previous, selected) if previous is not None else {}
                     _LOGGER.warning(
                         "ANTHBOT SETTINGS PROBE sn=%s model=%s shadow=%s values=%s changes=%s",
@@ -109,6 +164,23 @@ def install_settings_shadow_probe() -> None:
                     )
                     cache[name] = selected
                     setattr(self, "_settings_probe_last", cache)
+
+            # M9/M5 discovery mode: inspect every safe scalar property field,
+            # allowing us to learn an unknown official-app setting name without
+            # logging map/path/position/account/auth data.
+            if name == "property" and _is_m_series(model):
+                broad = _safe_m_series_property(reported)
+                broad_cache = dict(getattr(self, "_settings_probe_broad_last", {}))
+                previous_broad = broad_cache.get(name)
+                if broad and broad != previous_broad:
+                    broad_changes = _diff(previous_broad, broad) if previous_broad is not None else {}
+                    _LOGGER.warning(
+                        "ANTHBOT M-SERIES PROPERTY DIFF sn=%s model=%s changes=%s",
+                        self.client.serial_number, model, broad_changes,
+                    )
+                    broad_cache[name] = broad
+                    setattr(self, "_settings_probe_broad_last", broad_cache)
+
             await original(name, reported)
 
         setattr(listener, "_on_shadow", capture)
