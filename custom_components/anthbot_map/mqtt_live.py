@@ -176,6 +176,124 @@ def _reported_state(payload: dict[str, Any]) -> dict[str, Any] | None:
     return reported if isinstance(reported, dict) else None
 
 
+def _coerce_small_int(value: Any, allowed: tuple[int, ...]) -> int | None:
+    """Return a compact integer setting only when it is in the allowed range."""
+    if isinstance(value, bool):
+        number = int(value)
+    elif isinstance(value, int):
+        number = value
+    elif isinstance(value, float) and value.is_integer():
+        number = int(value)
+    elif isinstance(value, str):
+        try:
+            number = int(value.strip())
+        except ValueError:
+            return None
+    else:
+        return None
+    return number if number in allowed else None
+
+
+def _find_nested_setting(value: Any, names: tuple[str, ...], *, depth: int = 0) -> Any:
+    """Find a verified setting name in a shallow command payload."""
+    if depth > 5:
+        return None
+    if isinstance(value, dict):
+        for name in names:
+            if name in value:
+                return value[name]
+        for child in value.values():
+            found = _find_nested_setting(child, names, depth=depth + 1)
+            if found is not None:
+                return found
+    elif isinstance(value, list):
+        for child in value[:20]:
+            found = _find_nested_setting(child, names, depth=depth + 1)
+            if found is not None:
+                return found
+    return None
+
+
+def _setting_patch_from_service_payload(
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Turn an app-originated desired command into a property-style patch."""
+    documents: list[dict[str, Any]] = []
+    current = payload.get("current")
+    if isinstance(current, dict):
+        documents.append(current)
+    documents.append(payload)
+    previous = payload.get("previous")
+    if isinstance(previous, dict):
+        documents.append(previous)
+
+    desired: dict[str, Any] | None = None
+    for document in documents:
+        state = document.get("state")
+        candidate = state.get("desired") if isinstance(state, dict) else None
+        if isinstance(candidate, dict) and candidate:
+            desired = candidate
+            break
+    if desired is None:
+        return None
+
+    cmd = str(desired.get("cmd") or desired.get("command") or "").strip().lower()
+    data = desired.get("data")
+    search_root: Any = data if isinstance(data, (dict, list)) else desired
+    mirror: dict[str, int] = {}
+    patch: dict[str, Any] = {}
+
+    raw_switch = _find_nested_setting(search_root, ("pobctl_switch",))
+    if raw_switch is None:
+        pobctl = _find_nested_setting(search_root, ("pobctl",))
+        if isinstance(pobctl, dict):
+            raw_switch = pobctl.get("switch")
+    if raw_switch is None and (
+        cmd == "perception_obstacle_ctl" or "obstacle" in cmd or "pobctl" in cmd
+    ):
+        raw_switch = _find_nested_setting(search_root, ("switch",))
+    visual_switch = _coerce_small_int(raw_switch, (0, 1))
+    if visual_switch is not None:
+        mirror["visual_switch"] = visual_switch
+        patch.setdefault("device_config", {})["pobctl_switch"] = visual_switch
+        patch.setdefault("pobctl", {})["switch"] = visual_switch
+        patch["pobctl_switch"] = visual_switch
+
+    raw_level = _find_nested_setting(search_root, ("pobctl_level",))
+    if raw_level is None and cmd == "perception_obstacle_ctl":
+        raw_level = _find_nested_setting(search_root, ("level",))
+    visual_level = _coerce_small_int(raw_level, (0, 1, 2))
+    if visual_level is not None:
+        mirror["visual_level"] = visual_level
+        patch.setdefault("device_config", {})["pobctl_level"] = visual_level
+        patch.setdefault("pobctl", {})["level"] = visual_level
+        patch["pobctl_level"] = visual_level
+
+    mow_count = _coerce_small_int(
+        _find_nested_setting(search_root, ("mow_count",)), (1, 2)
+    )
+    if mow_count is not None:
+        mirror["mow_count"] = mow_count
+        patch.setdefault("param_set", {})["mow_count"] = mow_count
+        patch["mow_count"] = mow_count
+
+    cutter_height = _coerce_small_int(
+        _find_nested_setting(
+            search_root, ("cutter_height", "cutter_ctl_cutter_lift")
+        ),
+        tuple(range(30, 71, 5)),
+    )
+    if cutter_height is not None:
+        mirror["cutter_height"] = cutter_height
+        patch.setdefault("param_set", {})["cutter_height"] = cutter_height
+        patch["cutter_height"] = cutter_height
+
+    if not mirror:
+        return None
+    patch["_app_setting_mirror"] = mirror
+    return patch
+
+
 class AnthbotLiveShadowListener:
     """Maintain a live subscription to property and service shadows."""
 
@@ -407,6 +525,15 @@ class AnthbotLiveShadowListener:
                             continue
                         if not isinstance(payload, dict):
                             continue
+                        if (
+                            "/service/" in topic
+                            and not topic.endswith("/get/accepted")
+                        ):
+                            setting_patch = _setting_patch_from_service_payload(
+                                payload
+                            )
+                            if setting_patch:
+                                await self._on_shadow("property", setting_patch)
                         reported = _reported_state(payload)
                         if reported is None:
                             continue

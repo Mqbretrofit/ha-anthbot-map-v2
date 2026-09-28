@@ -27,7 +27,10 @@ def _base_identity(entity: Any) -> dict[str, Any]:
 
 
 def _global_identity(entity: Any) -> dict[str, Any]:
-    return _base_identity(entity)
+    return {
+        **_base_identity(entity),
+        "setting": entity.entity_description.key,
+    }
 
 
 def _zone_number_identity(entity: AnthbotZoneNumberEntity) -> dict[str, Any]:

@@ -42,12 +42,14 @@ NUMBERS: tuple[AnthbotNumberDescription, ...] = (
         native_unit_of_measurement="mm",
         mode=NumberMode.SLIDER,
         getter=lambda data: (
-            data.get("param_set", {}).get("cutter_height")
+            data.get("param_set", {}).get(
+                "cutter_height", data.get("cutter_height")
+            )
             if isinstance(data.get("param_set"), dict)
             else (
                 data.get("mow_remote", {}).get("cutter_height")
                 if isinstance(data.get("mow_remote"), dict)
-                else None
+                else data.get("cutter_height")
             )
         ),
     ),
@@ -56,13 +58,13 @@ NUMBERS: tuple[AnthbotNumberDescription, ...] = (
         translation_key="mow_count_setting",
         name="Mowing passes",
         native_min_value=1,
-        native_max_value=3,
+        native_max_value=2,
         native_step=1,
         mode=NumberMode.SLIDER,
         getter=lambda data: (
-            data.get("param_set", {}).get("mow_count")
+            data.get("param_set", {}).get("mow_count", data.get("mow_count"))
             if isinstance(data.get("param_set"), dict)
-            else None
+            else data.get("mow_count")
         ),
     ),
     AnthbotNumberDescription(
@@ -199,10 +201,31 @@ class AnthbotNumberEntity(
     @property
     def native_value(self) -> float | None:
         """Return current value."""
-        value = self.entity_description.getter(self.coordinator.reported_state)
+        state = self.coordinator.reported_state
+        value = None
+        if self.entity_description.key == "visual_obstacle_level_setting":
+            model = str(getattr(self.coordinator.device, "model", "") or "").upper()
+            device_config = state.get("device_config")
+            if "M9" in model and isinstance(device_config, dict):
+                value = device_config.get("pobctl_level")
+            if value is None:
+                value = self.entity_description.getter(state)
+            if value is None:
+                value = state.get("pobctl_level")
+        else:
+            value = self.entity_description.getter(state)
         if isinstance(value, (int, float)):
             return float(value)
         return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str]:
+        """Expose stable metadata for the bundled frontend."""
+        return {
+            "serial_number": self.coordinator.client.serial_number,
+            "model": self.coordinator.device.model,
+            "setting": self.entity_description.key,
+        }
 
     async def async_set_native_value(self, value: float) -> None:
         """Set value on mower."""
@@ -216,8 +239,8 @@ class AnthbotNumberEntity(
                 data={"cutter_height": int_value},
             )
         elif key == "mow_count_setting":
-            if int_value < 1 or int_value > 3:
-                raise ValueError("Mowing passes must be 1..3")
+            if int_value not in (1, 2):
+                raise ValueError("Mowing passes must be 1..2")
             await self.coordinator.client.async_publish_service_command(
                 cmd="param_set",
                 data={"mow_count": int_value},
@@ -225,24 +248,33 @@ class AnthbotNumberEntity(
         elif key == "visual_obstacle_level_setting":
             if int_value < 0 or int_value > 2:
                 raise ValueError("Visual obstacle sensitivity must be 0..2")
-            state = self.coordinator.reported_state
-            pobctl = state.get("pobctl")
-            device_config = state.get("device_config")
-            switch_value = (
-                pobctl.get("switch")
-                if isinstance(pobctl, dict)
-                else (
-                    device_config.get("pobctl_switch")
-                    if isinstance(device_config, dict)
-                    else 1
+            model = str(getattr(self.coordinator.device, "model", "") or "").upper()
+            if "M9" in model:
+                data = {"level": int_value}
+            else:
+                state = self.coordinator.reported_state
+                pobctl = state.get("pobctl")
+                device_config = state.get("device_config")
+                switch_value = (
+                    pobctl.get("switch")
+                    if isinstance(pobctl, dict)
+                    else (
+                        device_config.get("pobctl_switch")
+                        if isinstance(device_config, dict)
+                        else 1
+                    )
                 )
-            )
+                data = {
+                    "switch": (
+                        1
+                        if switch_value in (1, "1", True, "true", "on")
+                        else 0
+                    ),
+                    "level": int_value,
+                }
             await self.coordinator.client.async_publish_service_command(
                 cmd="perception_obstacle_ctl",
-                data={
-                    "switch": 1 if switch_value in (1, "1", True, "true", "on") else 0,
-                    "level": int_value,
-                },
+                data=data,
             )
         elif key == "voice_volume_setting":
             if int_value < 0 or int_value > 100:
@@ -279,7 +311,7 @@ class AnthbotNumberEntity(
 
 
 _ZONE_NUMBER_SETTINGS: dict[str, tuple[str, float, float, float, str | None]] = {
-    "mow_count": ("Mowing passes", 1, 3, 1, None),
+    "mow_count": ("Mowing passes", 1, 2, 1, None),
     "cutter_height": ("Cutting height", 30, 70, 5, "mm"),
     "obstacle_avoid_level": ("Obstacle sensitivity", 0, 2, 1, None),
     "mow_head": ("Mowing direction", 0, 180, 1, "deg"),

@@ -282,6 +282,10 @@ class AnthbotMapCard extends HTMLElement {
         }
       }
       this.updateRenderer();
+      // Home Assistant supplies a new `hass` object for every entity state
+      // change. Settings are separate entities, so refresh their existing
+      // controls even when the map entity itself did not change.
+      this.refreshOpenPanelValues();
       // setConfig() builds the DOM before Home Assistant supplies `hass`.
       // Render the initial panel once when `hass` arrives; later state pushes
       // keep the stable in-place refresh path from v14.
@@ -3396,6 +3400,84 @@ class AnthbotMapCard extends HTMLElement {
       if (value) value.textContent = this.maintenanceValue(tile.dataset.maintenanceKind);
     });
 
+    root.querySelectorAll('[data-number-kind]').forEach((tile) => {
+      const kind = tile.dataset.numberKind || "";
+      if (!kind) return;
+
+      // Resolve the native entity again on every HA state push. Never keep a
+      // zone entity that happened to be discovered while the panel was built.
+      const entityId = this.getNumberEntity(kind) || "";
+      tile.dataset.numberEntityId = entityId;
+      const entity = entityId ? this._hass?.states?.[entityId] : null;
+      const reported = Number(entity?.state);
+      if (!Number.isFinite(reported)) return;
+
+      const input = tile.querySelector('input[type="range"]');
+      const userIsEditing = Boolean(
+        input && this.shadowRoot?.activeElement === input
+      );
+      if (input) {
+        input.disabled = !entityId;
+        if (!userIsEditing) input.value = String(reported);
+      }
+
+      const value = tile.querySelector(".control-head strong");
+      const unit = tile.dataset.numberUnit || "";
+      if (tile.dataset.numberMode === "buttons" && kind === "mowHeight") {
+        const normalized = Math.max(
+          30,
+          Math.min(70, Math.round(reported / 5) * 5),
+        );
+        if (value) value.textContent = `${normalized} mm`;
+        tile.querySelectorAll(".height-option").forEach((button) => {
+          button.classList.toggle(
+            "active",
+            Number(button.textContent) === normalized,
+          );
+          button.disabled = !entityId;
+        });
+        return;
+      }
+
+      if (!userIsEditing && value) {
+        value.textContent = `${reported}${unit ? ` ${unit}` : ""}`;
+      }
+    });
+
+    root.querySelectorAll('[data-global-visual-obstacle="true"]').forEach((tile) => {
+      const switchEntityId = this.getSwitchEntity("visualObstacle") || "";
+      const levelEntityId = this.getNumberEntity("visualObstacleLevel") || "";
+      tile.dataset.visualSwitchEntityId = switchEntityId;
+      tile.dataset.visualLevelEntityId = levelEntityId;
+
+      const switchEntity = switchEntityId
+        ? this._hass?.states?.[switchEntityId]
+        : null;
+      const enabled = switchEntity?.state === "on";
+      const input = tile.querySelector('[data-global-visual-toggle]');
+      if (input) {
+        input.disabled = !switchEntityId;
+        input.checked = enabled;
+      }
+      tile.classList.toggle("disabled", !enabled);
+
+      const rawLevel = Number(
+        levelEntityId ? this._hass?.states?.[levelEntityId]?.state : NaN,
+      );
+      if (!Number.isFinite(rawLevel)) return;
+      const level = Math.max(0, Math.min(2, Math.round(rawLevel)));
+      const labels = [this.t("low"), this.t("medium"), this.t("high")];
+      const label = tile.querySelector('[data-global-visual-level-label]');
+      if (label) label.textContent = labels[level];
+      tile.querySelectorAll('[data-global-visual-level]').forEach((button) => {
+        button.disabled = !levelEntityId;
+        button.classList.toggle(
+          "active",
+          Number(button.dataset.globalVisualLevel) === level,
+        );
+      });
+    });
+
     if (this.activePanel === "control") {
       const current = root.querySelector('[data-primary-mowing-action]');
       const nextAction = this.primaryMowingAction();
@@ -4331,7 +4413,7 @@ class AnthbotMapCard extends HTMLElement {
     const controls = [
       this.createCommandTile(this.t("cloud"), this.t("cloudSub"), "connect"),
       this.createMowHeightControl(),
-      this.createNumberControl(this.t("mowCount"), "mowCount", 1, 3, 1, "×"),
+      this.createNumberControl(this.t("mowCount"), "mowCount", 1, 2, 1, "×"),
       this.createDirectObstacleControl(
         this.getSwitchEntity("visualObstacle"),
         this.getNumberEntity("visualObstacleLevel"),
@@ -4639,7 +4721,7 @@ class AnthbotMapCard extends HTMLElement {
         const obstacleSwitch = this.findZoneSettingEntity("switch", kind, zone, "Visual obstacle detection");
         const obstacleLevel = this.findZoneSettingEntity("number", kind, zone, "Obstacle sensitivity");
         grid.append(
-          this.createDirectNumberControl(this.t("mowCount"), this.findZoneSettingEntity("number", kind, zone, "Mowing passes"), 1, 3, 1, "×"),
+          this.createDirectNumberControl(this.t("mowCount"), this.findZoneSettingEntity("number", kind, zone, "Mowing passes"), 1, 2, 1, "×"),
           this.createDirectNumberControl(this.t("cutHeight"), this.findZoneSettingEntity("number", kind, zone, "Cutting height"), 30, 70, 5, "mm"),
           this.createDirectObstacleControl(obstacleSwitch, obstacleLevel),
           this.createDirectSelectControl(this.t("mowingMode"), this.findZoneSettingEntity("select", kind, zone, "Mowing mode"), [this.t("mowingModeNormal"), this.t("mowingModeEfficient")]),
@@ -4801,15 +4883,22 @@ class AnthbotMapCard extends HTMLElement {
     const enabled = switchEntityId && this._hass.states[switchEntityId]?.state === "on";
     const tile = document.createElement("div");
     tile.className = `panel-tile obstacle-combined ${enabled ? "" : "disabled"}`;
+    tile.dataset.globalVisualObstacle = "true";
+    tile.dataset.visualSwitchEntityId = switchEntityId || "";
+    tile.dataset.visualLevelEntityId = levelEntityId || "";
     const row = document.createElement("label");
     row.className = "switch-tile";
-    row.innerHTML = `<span>${this.t("visualObstacle")}</span><input type="checkbox" ${enabled ? "checked" : ""} ${switchEntityId ? "" : "disabled"}>`;
+    row.innerHTML = `<span>${this.t("visualObstacle")}</span><input data-global-visual-toggle type="checkbox" ${enabled ? "checked" : ""} ${switchEntityId ? "" : "disabled"}>`;
     const levels = document.createElement("div");
     levels.className = "obstacle-levels";
     levels.appendChild(this.createDirectObstacleLevelControl(levelEntityId));
     const input = row.querySelector("input");
     input.addEventListener("change", async () => {
-      await this._hass.callService("switch", input.checked ? "turn_on" : "turn_off", {entity_id: switchEntityId});
+      const currentEntityId = this.getSwitchEntity("visualObstacle")
+        || tile.dataset.visualSwitchEntityId
+        || switchEntityId;
+      if (!currentEntityId) return;
+      await this._hass.callService("switch", input.checked ? "turn_on" : "turn_off", {entity_id: currentEntityId});
       tile.classList.toggle("disabled", !input.checked);
       this.scheduleRefresh();
     });
@@ -4823,13 +4912,14 @@ class AnthbotMapCard extends HTMLElement {
     const labels = [this.t("low"), this.t("medium"), this.t("high")];
     const tile = document.createElement("div");
     tile.className = "panel-tile control-tile";
-    tile.innerHTML = `<div class="control-head"><span>${this.t("visualObstacleLevel")}</span><strong>${labels[selected]}</strong></div><div class="height-options"></div>`;
+    tile.innerHTML = `<div class="control-head"><span>${this.t("visualObstacleLevel")}</span><strong data-global-visual-level-label>${labels[selected]}</strong></div><div class="height-options"></div>`;
     const options = tile.querySelector(".height-options");
     options.style.cssText = "display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px";
     labels.forEach((label, level) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "height-option";
+      button.dataset.globalVisualLevel = String(level);
       button.textContent = label;
       button.style.cssText = "min-width:0;width:100%;padding:8px 3px;font-size:12px;white-space:nowrap";
       button.disabled = !entityId;
@@ -4837,7 +4927,10 @@ class AnthbotMapCard extends HTMLElement {
       button.addEventListener("click", async () => {
         options.querySelectorAll(".height-option").forEach((item) => item.classList.toggle("active", item === button));
         tile.querySelector("strong").textContent = label;
-        await this._hass.callService("number", "set_value", {entity_id: entityId, value: level});
+        const currentEntityId = this.getNumberEntity("visualObstacleLevel")
+          || entityId;
+        if (!currentEntityId) return;
+        await this._hass.callService("number", "set_value", {entity_id: currentEntityId, value: level});
         this.scheduleRefresh();
       });
       options.appendChild(button);
@@ -5869,6 +5962,10 @@ class AnthbotMapCard extends HTMLElement {
     const selected = Number.isFinite(value) ? Math.max(30, Math.min(70, Math.round(value / 5) * 5)) : 50;
     const tile = document.createElement("div");
     tile.className = "panel-tile control-tile mow-height-tile";
+    tile.dataset.numberKind = key;
+    tile.dataset.numberUnit = "mm";
+    tile.dataset.numberMode = "buttons";
+    tile.dataset.numberEntityId = entityId || "";
     tile.innerHTML = `
       <div class="control-head">
         <span>${this.t("cutHeight")}</span>
@@ -5887,7 +5984,12 @@ class AnthbotMapCard extends HTMLElement {
       button.addEventListener("click", () => {
         options.querySelectorAll(".height-option").forEach((item) => item.classList.toggle("active", item === button));
         this.applyOptimisticNumber(key, height, button);
-        this.setNumberEntity(key, entityId, height, button);
+        this.setNumberEntity(
+          key,
+          this.getNumberEntity(key) || tile.dataset.numberEntityId || entityId,
+          height,
+          button,
+        );
       });
       options.appendChild(button);
     }
@@ -5935,6 +6037,10 @@ class AnthbotMapCard extends HTMLElement {
     const value = this.displayedNumberValue(key, Number(entity?.state));
     const tile = document.createElement("div");
     tile.className = "panel-tile control-tile";
+    tile.dataset.numberKind = key;
+    tile.dataset.numberUnit = unit || "";
+    tile.dataset.numberMode = "range";
+    tile.dataset.numberEntityId = entityId || "";
     tile.innerHTML = `
       <div class="control-head">
         <span>${label}</span>
@@ -5944,7 +6050,13 @@ class AnthbotMapCard extends HTMLElement {
     `;
     const input = tile.querySelector("input");
     input.addEventListener("input", () => this.applyOptimisticNumber(key, Number(input.value), input));
-    input.addEventListener("change", () => this.setNumberEntity(key, entityId, Number(input.value), input));
+    input.addEventListener("change", () => this.setNumberEntity(
+      key,
+      this.getNumberEntity(key) || tile.dataset.numberEntityId || entityId,
+      Number(input.value),
+      input,
+    ));
+    input.addEventListener("blur", () => this.refreshOpenPanelValues());
     return tile;
   }
 
@@ -8054,6 +8166,19 @@ class AnthbotMapCard extends HTMLElement {
     if (this.isEntityAvailable(configured)) {
       return configured;
     }
+    const settingByKind = {
+      mowHeight: "mow_height_setting",
+      mowCount: "mow_count_setting",
+      visualObstacleLevel: "visual_obstacle_level_setting",
+      voiceVolume: "voice_volume_setting",
+      mowDirection: "custom_mowing_direction_setting",
+      rainContinue: "rain_continue_time_setting",
+    };
+    const setting = settingByKind[kind];
+    if (setting) {
+      const entityId = this.findSettingEntity("number", setting);
+      if (entityId) return entityId;
+    }
     return this.findEntity("number", NUMBER_MAP[kind] || []);
   }
 
@@ -8079,7 +8204,48 @@ class AnthbotMapCard extends HTMLElement {
       return configured;
     }
 
+    const settingByKind = {
+      rain: "rain_perception_enabled",
+      visualObstacle: "visual_obstacle_detection_enabled",
+      customDirection: "custom_mowing_direction_enabled",
+      edgeReturn: "edge_following_return_enabled",
+      autoDockMow: "automatic_dock_mowing_enabled",
+    };
+    const setting = settingByKind[kind];
+    if (setting) {
+      const entityId = this.findSettingEntity("switch", setting);
+      if (entityId) return entityId;
+    }
+
     return this.findEntity("switch", SWITCH_MAP[kind] || []);
+  }
+
+  findSettingEntity(domain, setting) {
+    const states = this._hass?.states || {};
+    const activeState = states[this._activeEntityId] || this.entity;
+    const serial = String(
+      activeState?.attributes?.serial_number
+      || activeState?.attributes?.sn
+      || ""
+    ).trim();
+    if (!serial) return null;
+
+    const matches = Object.entries(states)
+      .filter(([entityId, state]) => {
+        const attrs = state?.attributes || {};
+        return entityId.startsWith(`${domain}.`)
+          && state?.state !== "unavailable"
+          && !attrs.zone_kind
+          && attrs.zone_id === undefined
+          && String(attrs.serial_number || attrs.sn || "").trim() === serial
+          && String(attrs.setting || "") === setting;
+      })
+      .sort(([leftId], [rightId]) => {
+        const leftSuffix = Number(leftId.match(/_(\d+)$/)?.[1] || 0);
+        const rightSuffix = Number(rightId.match(/_(\d+)$/)?.[1] || 0);
+        return leftSuffix - rightSuffix;
+      });
+    return matches[0]?.[0] || null;
   }
 
   isEntityAvailable(entityId) {

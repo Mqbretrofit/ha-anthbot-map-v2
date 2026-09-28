@@ -199,6 +199,15 @@ class AnthbotSwitchEntity(
         )
 
     @property
+    def extra_state_attributes(self) -> dict[str, str]:
+        """Expose stable metadata for the bundled frontend."""
+        return {
+            "serial_number": self.coordinator.client.serial_number,
+            "model": self.coordinator.device.model,
+            "setting": self.entity_description.key,
+        }
+
+    @property
     def is_on(self) -> bool:
         """Return current switch value."""
         state = self.coordinator.reported_state
@@ -207,12 +216,23 @@ class AnthbotSwitchEntity(
         if self.entity_description.key == "rain_perception_enabled":
             return _coerce_enabled_value(state.get("rain_switch"))
         if self.entity_description.key == "visual_obstacle_detection_enabled":
+            model = str(getattr(self.coordinator.device, "model", "") or "").upper()
             pobctl = state.get("pobctl")
-            if isinstance(pobctl, dict):
-                return _coerce_enabled_value(pobctl.get("switch"))
             device_config = state.get("device_config")
-            if isinstance(device_config, dict):
-                return _coerce_enabled_value(device_config.get("pobctl_switch"))
+            candidates = (
+                (
+                    device_config.get("pobctl_switch")
+                    if isinstance(device_config, dict)
+                    else None
+                ),
+                state.get("pobctl_switch"),
+                pobctl.get("switch") if isinstance(pobctl, dict) else None,
+            )
+            if "M9" not in model:
+                candidates = (candidates[2], candidates[1], candidates[0])
+            for value in candidates:
+                if value is not None:
+                    return _coerce_enabled_value(value)
             return False
 
         param_set = state.get("param_set")
@@ -267,6 +287,18 @@ class AnthbotSwitchEntity(
         self, enabled: bool
     ) -> None:
         """Set camera-based obstacle detection."""
+        model = str(getattr(self.coordinator.device, "model", "") or "").upper()
+        if "M9" in model:
+            data = {"switch": 1 if enabled else 0}
+            await self.coordinator.client.async_publish_service_command(
+                cmd="perception_obstacle_ctl",
+                data=data,
+            )
+            await self.coordinator.client.async_request_all_properties()
+            await asyncio.sleep(1)
+            await self.coordinator.async_request_refresh()
+            return
+
         state = self.coordinator.reported_state
         pobctl = state.get("pobctl")
         device_config = state.get("device_config")

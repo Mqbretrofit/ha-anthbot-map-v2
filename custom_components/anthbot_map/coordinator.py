@@ -83,6 +83,187 @@ _ROBOT_STATUS_BY_CODE = {
     18: "nestmowing",
 }
 
+_SETTING_NESTED_KEYS = ("device_config", "pobctl", "param_set", "nest_param_set")
+
+
+def _setting_int(value: Any, allowed: tuple[int, ...]) -> int | None:
+    """Normalize a mower setting without accepting unrelated values."""
+    if isinstance(value, bool):
+        number = int(value)
+    elif isinstance(value, int):
+        number = value
+    elif isinstance(value, float) and value.is_integer():
+        number = int(value)
+    elif isinstance(value, str):
+        try:
+            number = int(value.strip())
+        except ValueError:
+            return None
+    else:
+        return None
+    return number if number in allowed else None
+
+
+def _merge_live_setting_patch(
+    state: dict[str, Any], patch: dict[str, Any], model: str
+) -> None:
+    """Deep-merge partial shadows and normalize the verified setting fields."""
+    for nested_key in _SETTING_NESTED_KEYS:
+        incoming = patch.get(nested_key)
+        if not isinstance(incoming, dict):
+            continue
+        existing = state.get(nested_key)
+        merged = dict(existing) if isinstance(existing, dict) else {}
+        merged.update(incoming)
+        state[nested_key] = merged
+    state.update(
+        {
+            key: value
+            for key, value in patch.items()
+            if key not in _SETTING_NESTED_KEYS
+        }
+    )
+
+    incoming_device = patch.get("device_config")
+    incoming_device = incoming_device if isinstance(incoming_device, dict) else {}
+    incoming_pobctl = patch.get("pobctl")
+    incoming_pobctl = incoming_pobctl if isinstance(incoming_pobctl, dict) else {}
+    incoming_param = patch.get("param_set")
+    incoming_param = incoming_param if isinstance(incoming_param, dict) else {}
+
+    if "M9" in model:
+        switch_candidates = (
+            incoming_device.get("pobctl_switch"),
+            patch.get("pobctl_switch"),
+            incoming_pobctl.get("switch"),
+        )
+        level_candidates = (
+            incoming_device.get("pobctl_level"),
+            patch.get("pobctl_level"),
+            incoming_pobctl.get("level"),
+        )
+    else:
+        switch_candidates = (
+            incoming_pobctl.get("switch"),
+            patch.get("pobctl_switch"),
+            incoming_device.get("pobctl_switch"),
+        )
+        level_candidates = (
+            incoming_pobctl.get("level"),
+            patch.get("pobctl_level"),
+            incoming_device.get("pobctl_level"),
+        )
+
+    switch_value = next(
+        (
+            normalized
+            for value in switch_candidates
+            if (normalized := _setting_int(value, (0, 1))) is not None
+        ),
+        None,
+    )
+    level_value = next(
+        (
+            normalized
+            for value in level_candidates
+            if (normalized := _setting_int(value, (0, 1, 2))) is not None
+        ),
+        None,
+    )
+    device_config = state.get("device_config")
+    device_config = dict(device_config) if isinstance(device_config, dict) else {}
+    pobctl = state.get("pobctl")
+    pobctl = dict(pobctl) if isinstance(pobctl, dict) else {}
+    if switch_value is not None:
+        device_config["pobctl_switch"] = switch_value
+        pobctl["switch"] = switch_value
+        state["pobctl_switch"] = switch_value
+    if level_value is not None:
+        device_config["pobctl_level"] = level_value
+        pobctl["level"] = level_value
+        state["pobctl_level"] = level_value
+    if device_config:
+        state["device_config"] = device_config
+    if pobctl:
+        state["pobctl"] = pobctl
+
+    mow_count = _setting_int(
+        patch.get("mow_count", incoming_param.get("mow_count")), (1, 2)
+    )
+    cutter_height = _setting_int(
+        patch.get(
+            "cutter_height",
+            patch.get(
+                "cutter_ctl_cutter_lift",
+                incoming_param.get(
+                    "cutter_height", incoming_param.get("cutter_ctl_cutter_lift")
+                ),
+            ),
+        ),
+        tuple(range(30, 71, 5)),
+    )
+    param_set = state.get("param_set")
+    param_set = dict(param_set) if isinstance(param_set, dict) else {}
+    if mow_count is not None:
+        param_set["mow_count"] = mow_count
+        state["mow_count"] = mow_count
+    if cutter_height is not None:
+        param_set["cutter_height"] = cutter_height
+        state["cutter_height"] = cutter_height
+    if param_set:
+        state["param_set"] = param_set
+
+
+def _apply_live_setting_overrides(
+    state: dict[str, Any], overrides: dict[str, tuple[Any, float]]
+) -> dict[str, tuple[Any, float]]:
+    """Keep a just-observed app command ahead of a stale property fragment."""
+    now = time.monotonic()
+    active = {
+        key: stored
+        for key, stored in overrides.items()
+        if isinstance(stored, tuple)
+        and len(stored) == 2
+        and isinstance(stored[1], (int, float))
+        and stored[1] > now
+    }
+    if not active:
+        return {}
+
+    device_config = state.get("device_config")
+    device_config = dict(device_config) if isinstance(device_config, dict) else {}
+    pobctl = state.get("pobctl")
+    pobctl = dict(pobctl) if isinstance(pobctl, dict) else {}
+    param_set = state.get("param_set")
+    param_set = dict(param_set) if isinstance(param_set, dict) else {}
+
+    if "visual_switch" in active:
+        value = int(active["visual_switch"][0])
+        device_config["pobctl_switch"] = value
+        pobctl["switch"] = value
+        state["pobctl_switch"] = value
+    if "visual_level" in active:
+        value = int(active["visual_level"][0])
+        device_config["pobctl_level"] = value
+        pobctl["level"] = value
+        state["pobctl_level"] = value
+    if "mow_count" in active:
+        value = int(active["mow_count"][0])
+        param_set["mow_count"] = value
+        state["mow_count"] = value
+    if "cutter_height" in active:
+        value = int(active["cutter_height"][0])
+        param_set["cutter_height"] = value
+        state["cutter_height"] = value
+
+    if device_config:
+        state["device_config"] = device_config
+    if pobctl:
+        state["pobctl"] = pobctl
+    if param_set:
+        state["param_set"] = param_set
+    return active
+
 _RTK_READY_STATES = {2, 3, 4, 5, "differential", "fixed", "float", "dead_reckoning"}
 _RTK_BASE_READY_STATES = {3, "online"}
 _RAIN_RETURN_EVENT_CODE = 1036
@@ -233,6 +414,7 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._live_shadow_error: str | None = None
         self._pending_live_property: dict[str, Any] = {}
         self._pending_live_service: dict[str, Any] = {}
+        self._app_setting_overrides: dict[str, tuple[Any, float]] = {}
         self._live_flush_task: asyncio.Task[None] | None = None
         self._last_mowing_task: dict[str, Any] | None = None
         self._mowing_area_learning_profiles: dict[str, dict[str, Any]] = {}
@@ -1626,6 +1808,18 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_handle_live_shadow(
         self, shadow_name: str, reported: dict[str, Any]
     ) -> None:
+        reported = dict(reported)
+        app_setting_mirror = reported.pop("_app_setting_mirror", None)
+        if isinstance(app_setting_mirror, dict):
+            expires_at = time.monotonic() + 20.0
+            for key, value in app_setting_mirror.items():
+                if key in {
+                    "visual_switch",
+                    "visual_level",
+                    "mow_count",
+                    "cutter_height",
+                }:
+                    self._app_setting_overrides[key] = (value, expires_at)
         if shadow_name == "service":
             self._pending_live_service.update(reported)
         else:
@@ -1655,7 +1849,11 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     merged_service.update(service_update)
                     state["_service_reported"] = merged_service
                 if property_update:
-                    state.update(property_update)
+                    _merge_live_setting_patch(
+                        state,
+                        property_update,
+                        str(getattr(self.device, "model", "") or "").upper(),
+                    )
                     state["_robot_online"] = is_robot_online(state)
                     selection = select_map_archive(state)
                     state["_map_archive_selection"] = map_archive_diagnostics(
@@ -1663,6 +1861,9 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
                 else:
                     selection = None
+                self._app_setting_overrides = _apply_live_setting_overrides(
+                    state, self._app_setting_overrides
+                )
                 state["_map_definition"] = self._map_definition
                 state["_map_definition_error"] = self._map_definition_error
                 state["_cloud_connected"] = True
