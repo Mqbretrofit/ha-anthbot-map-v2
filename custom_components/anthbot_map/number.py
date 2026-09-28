@@ -72,7 +72,23 @@ class AnthbotNumberEntity(CoordinatorEntity[AnthbotGenieDataUpdateCoordinator], 
             switch_value = pobctl.get("switch") if isinstance(pobctl,dict) else (device_config.get("pobctl_switch") if isinstance(device_config,dict) else 1)
             model=str(getattr(self.coordinator.device,"model","") or "")
             _LOGGER.warning("ANTHBOT VISUAL ENTITY PROBE type=number sn=%s model=%s requested_level=%s current_switch=%s", self.coordinator.client.serial_number, model, int_value, switch_value)
-            await self.coordinator.client.async_publish_service_command(cmd="perception_obstacle_ctl", data={"switch":1 if switch_value in (1,"1",True,"true","on") else 0,"level":int_value})
+            if "M9" in model.upper():
+                # M9/M9 Pro exposes the on/off state and sensitivity as two
+                # independent device_config properties.  Sending the switch
+                # together with a level makes the M9 transport treat this as
+                # a switch update, so a sensitivity-only change must contain
+                # only the level.
+                await self.coordinator.client.async_publish_service_command(
+                    cmd="perception_obstacle_ctl", data={"level": int_value}
+                )
+            else:
+                await self.coordinator.client.async_publish_service_command(
+                    cmd="perception_obstacle_ctl",
+                    data={
+                        "switch": 1 if switch_value in (1,"1",True,"true","on") else 0,
+                        "level": int_value,
+                    },
+                )
         elif key == "voice_volume_setting":
             if not 0 <= int_value <= 100: raise ValueError("Voice volume must be 0..100")
             await self.coordinator.client.async_publish_service_command(cmd="volume_ctl", data={"volume":int_value})
