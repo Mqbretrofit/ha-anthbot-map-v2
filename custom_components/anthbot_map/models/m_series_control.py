@@ -4,7 +4,7 @@ The clean rebuild keeps Genie on the proven beta3 command path.  M-series
 mowers use the same AWS service shadow, but their simple app commands must keep
 the scalar/null ``data`` value instead of being rewritten to ``{cmd: value}``.
 This layer is installed after the legacy M-series compatibility wrapper and only
-intercepts those native simple commands.
+intercepts those native simple commands plus M-series ``param_set`` writes.
 """
 
 from __future__ import annotations
@@ -22,8 +22,9 @@ _LOGGER = logging.getLogger(__name__)
 _INSTALLED = False
 
 # Confirmed native command names from the official Android app protocol.  Dict
-# payload commands (region/zone/param/volume/etc.) continue through the existing
-# M-series compatibility wrapper unchanged.
+# payload commands (region/zone/volume/etc.) continue through the existing
+# M-series compatibility wrapper unchanged.  param_set is handled separately
+# below because M9/M9 Pro require the complete current parameter object.
 _NATIVE_SIMPLE_COMMANDS = {
     "mow_start",
     "mow_pause",
@@ -122,8 +123,53 @@ async def _publish_native_simple_command(
     )
 
 
+async def _build_full_param_set(
+    client: AnthbotShadowApiClient,
+    changes: Any,
+) -> dict[str, Any]:
+    """Merge requested M-series settings into the robot's full param_set.
+
+    The official M9/M9 Pro app sends the complete current param_set object when
+    changing one field.  Sending only the changed field is accepted by the AWS
+    shadow transport but is not reliably persisted by the mower.
+    """
+    if not isinstance(changes, dict) or not changes:
+        raise AnthbotGenieApiError("M-series param_set requires a non-empty dict payload")
+
+    try:
+        reported = await client._async_get_named_shadow_reported_state("property")
+    except Exception as err:  # noqa: BLE001 - fail closed instead of sending partial settings.
+        raise AnthbotGenieApiError(
+            f"Unable to read current M-series param_set before update: {err}"
+        ) from err
+
+    current = reported.get("param_set") if isinstance(reported, dict) else None
+    if not isinstance(current, dict) or not current:
+        raise AnthbotGenieApiError(
+            "M-series property shadow did not contain a usable param_set; refusing partial update"
+        )
+
+    merged = dict(current)
+    normalized_changes = dict(changes)
+
+    # Compatibility with the old M-series wrapper.  The real M9 property
+    # shadow uses cutter_height; never leak the legacy cutter_ctl key into the
+    # complete param_set object.
+    if "cutter_ctl_cutter_lift" in normalized_changes and "cutter_height" not in normalized_changes:
+        normalized_changes["cutter_height"] = normalized_changes.pop("cutter_ctl_cutter_lift")
+
+    merged.update(normalized_changes)
+    _LOGGER.debug(
+        "ANTHBOT M-SERIES full param_set update: sn=%s changed=%s fields=%s",
+        client.serial_number,
+        sorted(normalized_changes),
+        sorted(merged),
+    )
+    return merged
+
+
 def install_m_series_control_support() -> None:
-    """Install M-series-only native simple-command transport."""
+    """Install M-series native command and persistent param_set transport."""
     global _INSTALLED
     if _INSTALLED:
         return
@@ -139,6 +185,11 @@ def install_m_series_control_support() -> None:
     ) -> None:
         if not _is_m_series_client(self):
             await previous_publish(self, cmd=cmd, data=data)
+            return
+
+        if cmd == "param_set":
+            full_param_set = await _build_full_param_set(self, data)
+            await _publish_native_simple_command(self, cmd=cmd, data=full_param_set)
             return
 
         if cmd not in _NATIVE_SIMPLE_COMMANDS:
