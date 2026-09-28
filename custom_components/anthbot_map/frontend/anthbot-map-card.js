@@ -8100,6 +8100,10 @@ class AnthbotMapCard extends HTMLElement {
     if (this.isEntityAvailable(configured)) {
       return configured;
     }
+    if (kind === "visualObstacleLevel") {
+      const exact = this.findEntityBySetting("number", "visual_obstacle_level_setting");
+      if (exact) return exact;
+    }
     return this.findEntity("number", NUMBER_MAP[kind] || []);
   }
 
@@ -8124,8 +8128,36 @@ class AnthbotMapCard extends HTMLElement {
     if (this.isEntityAvailable(configured)) {
       return configured;
     }
-
+    if (kind === "visualObstacle") {
+      const exact = this.findEntityBySetting("switch", "visual_obstacle_detection_enabled");
+      if (exact) return exact;
+    }
     return this.findEntity("switch", SWITCH_MAP[kind] || []);
+  }
+
+  findEntityBySetting(domain, setting) {
+    const states = this._hass?.states || {};
+    const activeId = String(this._activeEntityId || this.config?.entity || "");
+    const activeState = states[activeId] || this.entity;
+    const activeSerial = String(
+      activeState?.attributes?.serial_number
+      || activeState?.attributes?.sn
+      || ""
+    ).trim();
+    if (!activeSerial) return null;
+    const candidates = Object.entries(states)
+      .filter(([entityId, state]) =>
+        entityId.startsWith(`${domain}.`)
+        && state?.state !== "unavailable"
+        && String(state?.attributes?.serial_number || "").trim() === activeSerial
+        && String(state?.attributes?.setting || "") === setting
+      )
+      .sort(([left], [right]) => {
+        const leftNumber = Number(left.match(/_(\d+)$/)?.[1] || 0);
+        const rightNumber = Number(right.match(/_(\d+)$/)?.[1] || 0);
+        return rightNumber - leftNumber;
+      });
+    return candidates[0]?.[0] || null;
   }
 
   isEntityAvailable(entityId) {
