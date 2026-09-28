@@ -555,6 +555,125 @@ class AnthbotMapCard extends HTMLElement {
       </div>`;
   }
 
+  normalizeMowingZoneIds(value) {
+    const values = Array.isArray(value) ? value : String(value ?? "").split(",");
+    return values
+      .map((item) => String(item ?? "").trim())
+      .filter(Boolean);
+  }
+
+  mowingZonesFromPoints(points) {
+    const requested = Array.isArray(points) ? points : [];
+    if (!requested.length) return [];
+    return this.currentAutoZones().filter((zone) => requested.some((point) => {
+      const pointX = Number(Array.isArray(point) ? point[0] : point?.x);
+      const pointY = Number(Array.isArray(point) ? point[1] : point?.y);
+      return Number.isFinite(pointX)
+        && Number.isFinite(pointY)
+        && Number(zone?.x) === pointX
+        && Number(zone?.y) === pointY;
+    }));
+  }
+
+  mowingZoneContext(kind, zones, ids = []) {
+    const isAuto = kind === "auto";
+    const fallback = isAuto ? this.t("autoZone") : this.t("zone");
+    const names = zones.map((zone) => String(zone?.name || `${fallback} ${zone?.id}`).trim());
+    const missingNames = ids
+      .filter((id) => !zones.some((zone) => String(zone?.id) === String(id)))
+      .map((id) => `${fallback} ${id}`);
+    const allNames = [...names, ...missingNames].filter(Boolean);
+    return {
+      kind,
+      zones,
+      label: allNames.length ? `${fallback}: ${allNames.join(" + ")}` : fallback,
+    };
+  }
+
+  resolveActiveMowingContext(progressEntity = this.getRelatedEntity("mowingProgress")) {
+    const progressAttrs = progressEntity?.attributes || {};
+    const mapAttrs = this.entity?.attributes || {};
+    const task = mapAttrs.last_mowing_task ?? progressAttrs.last_mowing_task;
+    const taskType = String(task?.type || "").trim().toLowerCase();
+    const taskData = task?.data && typeof task.data === "object" ? task.data : {};
+
+    if (taskType === "full") return { kind: "full", zones: [], label: this.t("fullArea") };
+    if (taskType === "edge") return { kind: "edge", zones: [], label: this.t("commandOuterEdge") };
+    if (taskType === "dock_edge") return { kind: "dock-edge", zones: [], label: this.t("dockEdgeLabel") };
+    if (taskType === "manual_zone") {
+      const ids = this.normalizeMowingZoneIds(taskData.id ?? taskData.ids ?? taskData.zone_ids);
+      const zones = this.currentZones().filter((zone) => ids.includes(String(zone?.id)));
+      return this.mowingZoneContext("manual", zones, ids);
+    }
+    if (taskType === "auto_zone") {
+      const ids = this.normalizeMowingZoneIds(taskData.id ?? taskData.ids ?? taskData.zone_ids);
+      let zones = this.currentAutoZones().filter((zone) => ids.includes(String(zone?.id)));
+      if (!zones.length) zones = this.mowingZonesFromPoints(taskData.points);
+      return this.mowingZoneContext("auto", zones, ids);
+    }
+
+    const activeIds = this.normalizeMowingZoneIds(progressAttrs.active_zone_ids);
+    if (activeIds.length) {
+      const zones = this.currentZones().filter((zone) => activeIds.includes(String(zone?.id)));
+      return this.mowingZoneContext("manual", zones, activeIds);
+    }
+
+    const learnedKey = String(progressAttrs.learned_zone_mowing_key || "").trim().toLowerCase();
+    if (learnedKey.startsWith("manual:")) {
+      const ids = this.normalizeMowingZoneIds(learnedKey.slice("manual:".length));
+      const zones = this.currentZones().filter((zone) => ids.includes(String(zone?.id)));
+      return this.mowingZoneContext("manual", zones, ids);
+    }
+
+    const rawStatus = String(
+      mapAttrs.robot_status_raw
+      ?? progressAttrs.robot_status_raw
+      ?? this.getRelatedEntity("status")?.attributes?.robot_status_raw
+      ?? ""
+    ).trim().toLowerCase().replace(/[_\s-]+/g, "");
+    const source = String(progressAttrs.progress_source || "").trim().toLowerCase();
+    const pathTaskType = String(mapAttrs.path_task_type || "").trim().toLowerCase();
+    if (rawStatus.includes("regionmowing")) return this.mowingZoneContext("auto", []);
+    if (rawStatus.includes("zonemowing")) return this.mowingZoneContext("manual", []);
+    if (rawStatus.includes("nestmowing")) return { kind: "dock-edge", zones: [], label: this.t("dockEdgeLabel") };
+    if (rawStatus.includes("edgemowing") || rawStatus.includes("bordermowing")) {
+      return { kind: "edge", zones: [], label: this.t("commandOuterEdge") };
+    }
+    if (
+      learnedKey === "full"
+      || source.startsWith("full_map_area")
+      || pathTaskType.includes("global")
+      || pathTaskType.includes("full")
+      || rawStatus.includes("globalmowing")
+      || rawStatus === "mowing"
+    ) {
+      return { kind: "full", zones: [], label: this.t("fullArea") };
+    }
+    return null;
+  }
+
+  isMowingActive(statusEntity = this.getRelatedEntity("status"), progressEntity = this.getRelatedEntity("mowingProgress")) {
+    const canonical = String(statusEntity?.state || "").trim().toLowerCase().replace(/[_\s-]+/g, "");
+    if (canonical) return canonical === "mowing" || canonical.includes("mowing");
+    const raw = String(
+      this.entity?.attributes?.robot_status_raw
+      ?? progressEntity?.attributes?.robot_status_raw
+      ?? ""
+    ).trim().toLowerCase().replace(/[_\s-]+/g, "");
+    return ["mowing", "zonemowing", "regionmowing", "globalmowing", "nestmowing", "edgemowing", "bordermowing"]
+      .some((value) => raw.includes(value));
+  }
+
+  mowingCutHeights(context, cuttingHeightEntity) {
+    const zoneHeights = (context?.zones || [])
+      .map((zone) => Number(zone?.cutter_height ?? zone?.cutting_height))
+      .filter(Number.isFinite);
+    const uniqueHeights = [...new Set(zoneHeights)];
+    if (uniqueHeights.length) return uniqueHeights;
+    const globalHeight = Number(cuttingHeightEntity?.state);
+    return Number.isFinite(globalHeight) ? [globalHeight] : [];
+  }
+
   updateFrontendInfo(attributes = this.entity?.attributes || {}) {
     const setText = (role, value) => {
       const node = this.shadowRoot?.querySelector(`[data-role="${role}"]`);
@@ -594,14 +713,24 @@ class AnthbotMapCard extends HTMLElement {
 
     const mowingProgressEntity = this.getRelatedEntity("mowingProgress");
     const mowingProgress = Number(mowingProgressEntity?.state);
-    setText("info-mowing-progress", Number.isFinite(mowingProgress) ? `${Math.max(0, Math.min(100, mowingProgress)).toFixed(1)}%` : "–");
+    const activeMowing = this.isMowingActive(statusEntity, mowingProgressEntity);
+    const mowingContext = activeMowing ? this.resolveActiveMowingContext(mowingProgressEntity) : null;
+    const progressText = Number.isFinite(mowingProgress)
+      ? `${Math.max(0, Math.min(100, mowingProgress)).toFixed(1)}%`
+      : "–";
+    setText(
+      "info-mowing-progress",
+      mowingContext?.label ? `${progressText} · ${mowingContext.label}` : progressText,
+    );
 
     const cuttingHeight = this.getRelatedEntity("cuttingHeight");
-    const height = Number(cuttingHeight?.state);
     const unit = cuttingHeight?.attributes?.unit_of_measurement || "mm";
+    const heights = this.mowingCutHeights(mowingContext, cuttingHeight);
     setText(
       "info-cut-height",
-      Number.isFinite(height) ? `${Number.isInteger(height) ? height : height.toFixed(1)} ${unit}` : "–",
+      heights.length
+        ? `${heights.map((height) => Number.isInteger(height) ? height : height.toFixed(1)).join(" / ")} ${unit}`
+        : "–",
     );
   }
 

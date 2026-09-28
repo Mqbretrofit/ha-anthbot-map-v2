@@ -219,6 +219,21 @@ class M9CleanSettingsRebuildTests(unittest.TestCase):
             5,
         )
 
+    def test_information_popover_uses_active_zone_height(self) -> None:
+        runtime = _read(
+            "custom_components/anthbot_map/frontend/anthbot-map-card.js"
+        )
+        self.assertIn("resolveActiveMowingContext(progressEntity", runtime)
+        self.assertIn('taskType === "manual_zone"', runtime)
+        self.assertIn('taskType === "auto_zone"', runtime)
+        self.assertIn("mowingZonesFromPoints(taskData.points)", runtime)
+        self.assertIn("zone?.cutter_height ?? zone?.cutting_height", runtime)
+        self.assertIn(
+            '`${progressText} · ${mowingContext.label}`',
+            runtime,
+        )
+        self.assertIn("mowingCutHeights(mowingContext, cuttingHeight)", runtime)
+
 
 if __name__ == "__main__":
     unittest.main()
