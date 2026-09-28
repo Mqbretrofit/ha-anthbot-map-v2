@@ -629,3 +629,45 @@ get_mowing_record_detail:
       example: "YOUR_MOWER_SERIAL"
       selector:
         text:
+
+set_visual_obstacle_detection:
+  name: Set visual obstacle detection
+  description: Enable or disable camera-based visual obstacle detection for the selected mower.
+  fields:
+    enable_visual_obstacle:
+      name: Enabled
+      required: true
+      selector:
+        boolean:
+    serial_number:
+      name: Serial number
+      selector:
+        text:
+    entity_id:
+      name: Entity
+      selector:
+        entity:
+          integration: anthbot_map
+
+set_visual_obstacle_level:
+  name: Set visual obstacle sensitivity
+  description: Set visual obstacle sensitivity to low (0), medium (1), or high (2) for the selected mower.
+  fields:
+    visual_obstacle_level:
+      name: Sensitivity
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 2
+          step: 1
+          mode: slider
+    serial_number:
+      name: Serial number
+      selector:
+        text:
+    entity_id:
+      name: Entity
+      selector:
+        entity:
+          integration: anthbot_map
