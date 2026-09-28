@@ -3399,11 +3399,24 @@ class AnthbotMapCard extends HTMLElement {
     root.querySelectorAll('[data-global-visual-obstacle="true"]').forEach((tile) => {
       const attrs = this.entity?.attributes || {};
       const labels = [this.t("low"), this.t("medium"), this.t("high")];
+      const switchEntityId = tile.dataset.visualSwitchEntityId
+        || attrs.visual_obstacle_switch_entity_id
+        || "";
+      const levelEntityId = tile.dataset.visualLevelEntityId
+        || attrs.visual_obstacle_level_entity_id
+        || "";
+      const switchEntity = switchEntityId ? this._hass?.states?.[switchEntityId] : null;
+      const levelEntity = levelEntityId ? this._hass?.states?.[levelEntityId] : null;
 
-      const reportedEnabled = attrs.visual_obstacle_enabled;
+      const reportedSwitchState = switchEntity
+        ? switchEntity.state
+        : attrs.visual_obstacle_enabled === true
+          ? "on"
+          : attrs.visual_obstacle_enabled === false
+            ? "off"
+            : "";
       const pendingSwitch = tile.dataset.pendingVisualSwitch || "";
       const pendingSwitchUntil = Number(tile.dataset.pendingVisualSwitchUntil || 0);
-      const reportedSwitchState = reportedEnabled === true ? "on" : reportedEnabled === false ? "off" : "";
       if (pendingSwitch && reportedSwitchState === pendingSwitch) {
         delete tile.dataset.pendingVisualSwitch;
         delete tile.dataset.pendingVisualSwitchUntil;
@@ -3418,25 +3431,35 @@ class AnthbotMapCard extends HTMLElement {
         tile.classList.toggle("disabled", shownSwitch !== "on");
       }
 
-      const reportedLevelRaw = Number(attrs.visual_obstacle_level);
+      const reportedLevelRaw = Number(
+        levelEntity?.state ?? attrs.visual_obstacle_level
+      );
       const reportedLevel = Number.isFinite(reportedLevelRaw)
         ? Math.max(0, Math.min(2, Math.round(reportedLevelRaw)))
         : null;
-      const pendingLevelRaw = Number(tile.dataset.pendingVisualLevel);
+      const pendingLevelText = tile.dataset.pendingVisualLevel;
+      const pendingLevel = pendingLevelText === undefined
+        ? null
+        : Number(pendingLevelText);
       const pendingLevelUntil = Number(tile.dataset.pendingVisualLevelUntil || 0);
       if (
-        Number.isFinite(pendingLevelRaw)
+        pendingLevel !== null
+        && Number.isFinite(pendingLevel)
         && reportedLevel !== null
-        && reportedLevel === pendingLevelRaw
+        && reportedLevel === pendingLevel
       ) {
         delete tile.dataset.pendingVisualLevel;
         delete tile.dataset.pendingVisualLevelUntil;
-      } else if (tile.dataset.pendingVisualLevel && Date.now() >= pendingLevelUntil) {
+      } else if (
+        pendingLevelText !== undefined
+        && Date.now() >= pendingLevelUntil
+      ) {
         delete tile.dataset.pendingVisualLevel;
         delete tile.dataset.pendingVisualLevelUntil;
       }
-      const shownLevelRaw = tile.dataset.pendingVisualLevel !== undefined
-        ? Number(tile.dataset.pendingVisualLevel)
+      const livePendingLevel = tile.dataset.pendingVisualLevel;
+      const shownLevelRaw = livePendingLevel !== undefined
+        ? Number(livePendingLevel)
         : reportedLevel;
       if (shownLevelRaw !== null && Number.isFinite(shownLevelRaw)) {
         const shownLevel = Math.max(0, Math.min(2, Math.round(shownLevelRaw)));
@@ -4851,17 +4874,24 @@ class AnthbotMapCard extends HTMLElement {
 
   createGlobalObstacleControl() {
     const attrs = this.entity?.attributes || {};
-    const fallbackSwitchId = this.getSwitchEntity("visualObstacle");
-    const fallbackLevelId = this.getNumberEntity("visualObstacleLevel");
-    const fallbackSwitch = fallbackSwitchId ? this._hass?.states?.[fallbackSwitchId] : null;
-    const fallbackLevel = fallbackLevelId ? this._hass?.states?.[fallbackLevelId] : null;
+    const switchEntityId = String(
+      attrs.visual_obstacle_switch_entity_id
+      || this.getSwitchEntity("visualObstacle")
+      || ""
+    );
+    const levelEntityId = String(
+      attrs.visual_obstacle_level_entity_id
+      || this.getNumberEntity("visualObstacleLevel")
+      || ""
+    );
+    const switchEntity = switchEntityId ? this._hass?.states?.[switchEntityId] : null;
+    const levelEntity = levelEntityId ? this._hass?.states?.[levelEntityId] : null;
 
-    const rawEnabled = attrs.visual_obstacle_enabled;
-    const enabled = typeof rawEnabled === "boolean"
-      ? rawEnabled
-      : fallbackSwitch?.state === "on";
+    const enabled = switchEntity
+      ? switchEntity.state === "on"
+      : attrs.visual_obstacle_enabled === true;
     const rawLevel = Number(
-      attrs.visual_obstacle_level ?? fallbackLevel?.state ?? 1
+      levelEntity?.state ?? attrs.visual_obstacle_level ?? 1
     );
     const selected = Number.isFinite(rawLevel)
       ? Math.max(0, Math.min(2, Math.round(rawLevel)))
@@ -4871,10 +4901,12 @@ class AnthbotMapCard extends HTMLElement {
     const tile = document.createElement("div");
     tile.className = `panel-tile obstacle-combined ${enabled ? "" : "disabled"}`;
     tile.dataset.globalVisualObstacle = "true";
+    tile.dataset.visualSwitchEntityId = switchEntityId;
+    tile.dataset.visualLevelEntityId = levelEntityId;
 
     const row = document.createElement("label");
     row.className = "switch-tile";
-    row.innerHTML = `<span>${this.t("visualObstacle")}</span><input data-global-visual-switch type="checkbox" ${enabled ? "checked" : ""}>`;
+    row.innerHTML = `<span>${this.t("visualObstacle")}</span><input data-global-visual-switch type="checkbox" ${enabled ? "checked" : ""} ${switchEntityId ? "" : "disabled"}>`;
 
     const levels = document.createElement("div");
     levels.className = "obstacle-levels";
@@ -4891,10 +4923,12 @@ class AnthbotMapCard extends HTMLElement {
       button.dataset.globalVisualLevel = String(level);
       button.textContent = label;
       button.style.cssText = "min-width:0;width:100%;padding:8px 3px;font-size:12px;white-space:nowrap";
+      button.disabled = !levelEntityId;
       button.classList.toggle("active", level === selected);
       button.addEventListener("click", async (event) => {
         event.preventDefault();
         event.stopPropagation();
+        if (!levelEntityId) return;
         const previous = Number(tile.dataset.pendingVisualLevel ?? selected);
         tile.dataset.pendingVisualLevel = String(level);
         tile.dataset.pendingVisualLevelUntil = String(Date.now() + 5000);
@@ -4903,8 +4937,9 @@ class AnthbotMapCard extends HTMLElement {
         });
         levelTile.querySelector("[data-global-visual-level-label]").textContent = label;
         try {
-          await this.callAnthbotService("set_visual_obstacle_level", {
-            visual_obstacle_level: level,
+          await this._hass.callService("number", "set_value", {
+            entity_id: levelEntityId,
+            value: level,
           });
           this.scheduleRefresh(300);
         } catch (error) {
@@ -4920,15 +4955,18 @@ class AnthbotMapCard extends HTMLElement {
     const input = row.querySelector("[data-global-visual-switch]");
     input.addEventListener("change", async (event) => {
       event.stopPropagation();
+      if (!switchEntityId) return;
       const requested = input.checked;
       tile.dataset.pendingVisualSwitch = requested ? "on" : "off";
       tile.dataset.pendingVisualSwitchUntil = String(Date.now() + 5000);
       tile.classList.toggle("disabled", !requested);
       input.disabled = true;
       try {
-        await this.callAnthbotService("set_visual_obstacle_detection", {
-          enable_visual_obstacle: requested,
-        });
+        await this._hass.callService(
+          "switch",
+          requested ? "turn_on" : "turn_off",
+          { entity_id: switchEntityId },
+        );
         this.scheduleRefresh(300);
       } catch (error) {
         delete tile.dataset.pendingVisualSwitch;
@@ -7512,6 +7550,8 @@ class AnthbotMapCard extends HTMLElement {
       this.getRelatedEntity("mowingArea")?.entity_id,
       this.getRelatedEntity("mowingTime")?.entity_id,
       this.getRelatedEntity("poseYaw")?.entity_id,
+      this.entity?.attributes?.visual_obstacle_switch_entity_id,
+      this.entity?.attributes?.visual_obstacle_level_entity_id,
     ].filter(Boolean);
   }
 
