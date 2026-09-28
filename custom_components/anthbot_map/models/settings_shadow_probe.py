@@ -7,6 +7,7 @@ credentials, URLs, identifiers and map/path/position payloads are excluded.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -92,8 +93,6 @@ def _safe_scalar_shape(value: Any, *, depth: int = 0) -> Any:
         for raw_key, item in value.items():
             key = str(raw_key)
             lowered = key.lower()
-            # Every ANTHBOT snapshot carries many changing *.time leaves. They
-            # are transport noise for this settings investigation.
             if lowered in {"time", "timestamp", "ts"} or lowered.endswith("_time"):
                 continue
             if any(part in lowered for part in _BLOCKED_KEY_PARTS):
@@ -110,6 +109,20 @@ def _safe_m_series_property(state: Any) -> dict[str, Any]:
         return {}
     safe = _safe_scalar_shape(state)
     return safe if isinstance(safe, dict) else {}
+
+
+def _safe_service_command(state: Any) -> dict[str, Any]:
+    """Keep only command-shaped, non-sensitive service-shadow fields."""
+    if not isinstance(state, dict):
+        return {}
+    result: dict[str, Any] = {}
+    for key in ("cmd", "command", "data", "value", "code"):
+        if key not in state:
+            continue
+        safe = _safe_scalar_shape(state[key])
+        if safe is not None:
+            result[key] = safe
+    return result
 
 
 def _deep_merge(base: Any, patch: Any) -> dict[str, Any]:
@@ -145,6 +158,27 @@ def _diff(previous: Any, current: Any, prefix: str = "") -> dict[str, dict[str, 
     return changes
 
 
+async def _capture_service_after_visual_change(coordinator: Any, level: Any) -> None:
+    """Sample the actual service shadow immediately after an official-app change."""
+    # Give AWS IoT a fraction of a second to settle the matching service shadow.
+    await asyncio.sleep(0.15)
+    try:
+        service = await coordinator.client._async_get_named_shadow_reported_state("service")
+    except asyncio.CancelledError:
+        raise
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.warning(
+            "ANTHBOT M9 VISUAL SERVICE PROBE sn=%s level=%s result=read_failed error=%s",
+            coordinator.client.serial_number, level, type(err).__name__,
+        )
+        return
+    command = _safe_service_command(service)
+    _LOGGER.warning(
+        "ANTHBOT M9 VISUAL SERVICE PROBE sn=%s level=%s service=%s",
+        coordinator.client.serial_number, level, command or "<no-command-fields>",
+    )
+
+
 def install_settings_shadow_probe() -> None:
     global _INSTALLED
     if _INSTALLED:
@@ -170,6 +204,7 @@ def install_settings_shadow_probe() -> None:
         async def capture(name: str, reported: dict[str, Any]) -> None:
             model = str(getattr(self.device, "model", "") or "")
             selected = _selected(reported)
+            visual_change_level = _MISSING
             if selected:
                 cache = dict(getattr(self, "_settings_probe_last", {}))
                 previous = cache.get(name)
@@ -181,6 +216,9 @@ def install_settings_shadow_probe() -> None:
                             "ANTHBOT SETTINGS PROBE sn=%s model=%s shadow=%s changes=%s",
                             self.client.serial_number, model, name, changes,
                         )
+                        visual = changes.get("device_config.pobctl_level")
+                        if isinstance(visual, dict):
+                            visual_change_level = visual.get("current", _MISSING)
                     cache[name] = merged_selected
                     setattr(self, "_settings_probe_last", cache)
 
@@ -198,6 +236,11 @@ def install_settings_shadow_probe() -> None:
                         )
                     broad_cache[name] = merged_broad
                     setattr(self, "_settings_probe_broad_last", broad_cache)
+
+            if visual_change_level is not _MISSING and _is_m_series(model):
+                self.hass.async_create_task(
+                    _capture_service_after_visual_change(self, visual_change_level)
+                )
 
             await original(name, reported)
 
