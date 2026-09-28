@@ -249,6 +249,7 @@ class AnthbotMapCard extends HTMLElement {
     this.ensureSettingStateSubscription();
     this._activeEntityId = this.resolveMapEntityId();
     this.entity = hass.states[this._activeEntityId];
+    this.syncLiveSettingsFromNativeEntities();
 
     const nextVoicePackSignature = this.getVoicePackSignature();
     const nextNonVoiceOptionalSignature = this.getNonVoiceOptionalEntitySignature();
@@ -377,15 +378,26 @@ class AnthbotMapCard extends HTMLElement {
       const newState = event?.data?.new_state;
       if (!entityId || !newState) return;
 
-      const setting = String(newState.attributes?.setting || "");
-      if (![
-        "mow_height_setting",
-        "mow_count_setting",
-        "visual_obstacle_detection_enabled",
-        "visual_obstacle_level_setting",
-      ].includes(setting)) {
-        return;
+      const targets = new Map([
+        [this.getNumberEntity("mowHeight"), "mow_height_setting"],
+        [this.getNumberEntity("mowCount"), "mow_count_setting"],
+        [this.getSwitchEntity("visualObstacle"), "visual_obstacle_detection_enabled"],
+        [this.getNumberEntity("visualObstacleLevel"), "visual_obstacle_level_setting"],
+      ].filter(([targetId]) => Boolean(targetId)));
+
+      let setting = targets.get(entityId);
+      if (!setting) {
+        const attrSetting = String(newState.attributes?.setting || "");
+        if ([
+          "mow_height_setting",
+          "mow_count_setting",
+          "visual_obstacle_detection_enabled",
+          "visual_obstacle_level_setting",
+        ].includes(attrSetting)) {
+          setting = attrSetting;
+        }
       }
+      if (!setting) return;
 
       const activeState = this._hass?.states?.[this._activeEntityId] || this.entity;
       const activeSerial = String(
@@ -401,10 +413,14 @@ class AnthbotMapCard extends HTMLElement {
       if (activeSerial && entitySerial && activeSerial !== entitySerial) return;
 
       this.applyLiveSettingState(setting, newState);
-    };
+    }
 
     try {
-      const result = connection.subscribeEvents(onStateChanged, "state_changed");
+      const result = connection.subscribeEvents.call(
+        connection,
+        onStateChanged,
+        "state_changed",
+      );
       Promise.resolve(result)
         .then((unsubscribe) => {
           this.settingStateSubscriptionPending = false;
@@ -440,6 +456,20 @@ class AnthbotMapCard extends HTMLElement {
       } catch (_error) {
         // Best-effort cleanup only.
       }
+    }
+  }
+
+  syncLiveSettingsFromNativeEntities() {
+    if (!this._hass?.states) return;
+    const targets = [
+      ["mow_height_setting", this.getNumberEntity("mowHeight")],
+      ["mow_count_setting", this.getNumberEntity("mowCount")],
+      ["visual_obstacle_detection_enabled", this.getSwitchEntity("visualObstacle")],
+      ["visual_obstacle_level_setting", this.getNumberEntity("visualObstacleLevel")],
+    ];
+    for (const [setting, entityId] of targets) {
+      const state = entityId ? this._hass.states[entityId] : null;
+      if (state) this.applyLiveSettingState(setting, state);
     }
   }
 
@@ -3579,7 +3609,12 @@ class AnthbotMapCard extends HTMLElement {
     root.querySelectorAll("[data-number-kind]").forEach((tile) => {
       const kind = tile.dataset.numberKind || "";
       if (!kind) return;
-      const entityId = this.getNumberEntity(kind);
+      const entityId = String(
+        tile.dataset.numberEntityId
+        || this.getNumberEntity(kind)
+        || ""
+      );
+      if (entityId) tile.dataset.numberEntityId = entityId;
       const entity = entityId ? this._hass?.states?.[entityId] : null;
       const reported = Number(entity?.state);
       if (!Number.isFinite(reported)) return;
@@ -6414,6 +6449,7 @@ class AnthbotMapCard extends HTMLElement {
     tile.dataset.numberKind = key;
     tile.dataset.numberUnit = "mm";
     tile.dataset.numberMode = "buttons";
+    tile.dataset.numberEntityId = entityId || "";
     tile.innerHTML = `
       <div class="control-head">
         <span>${this.t("cutHeight")}</span>
@@ -6483,6 +6519,7 @@ class AnthbotMapCard extends HTMLElement {
     tile.dataset.numberKind = key;
     tile.dataset.numberUnit = unit || "";
     tile.dataset.numberMode = "range";
+    tile.dataset.numberEntityId = entityId || "";
     tile.innerHTML = `
       <div class="control-head">
         <span>${label}</span>
