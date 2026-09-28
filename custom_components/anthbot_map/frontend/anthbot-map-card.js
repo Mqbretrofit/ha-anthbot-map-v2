@@ -3396,6 +3396,20 @@ class AnthbotMapCard extends HTMLElement {
       if (value) value.textContent = this.maintenanceValue(tile.dataset.maintenanceKind);
     });
 
+    root.querySelectorAll('[data-number-kind="mowCount"]').forEach((tile) => {
+      const entityId = this.getNumberEntity("mowCount");
+      const entity = entityId ? this._hass?.states?.[entityId] : null;
+      const reported = Number(entity?.state);
+      if (!Number.isFinite(reported)) return;
+      const shown = this.displayedNumberValue("mowCount", reported);
+      const input = tile.querySelector('input[type="range"]');
+      if (input && this.shadowRoot?.activeElement !== input) {
+        input.value = String(shown);
+      }
+      const value = tile.querySelector(".control-head strong");
+      if (value) value.textContent = `${shown} ×`;
+    });
+
     root.querySelectorAll('[data-global-visual-obstacle="true"]').forEach((tile) => {
       const attrs = this.entity?.attributes || {};
       const switchEntityId = String(
@@ -6232,6 +6246,8 @@ class AnthbotMapCard extends HTMLElement {
     const value = this.displayedNumberValue(key, Number(entity?.state));
     const tile = document.createElement("div");
     tile.className = "panel-tile control-tile";
+    tile.dataset.numberKind = key;
+    tile.dataset.numberUnit = unit || "";
     tile.innerHTML = `
       <div class="control-head">
         <span>${label}</span>
