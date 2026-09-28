@@ -4795,31 +4795,176 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   createGlobalObstacleControl() {
-    const wrapper = document.createElement("div");
-    wrapper.className = "panel-tile obstacle-combined";
-
-    const switchTile = this.createSwitchControl(
-      this.t("visualObstacle"),
-      "visualObstacle",
+    const attrs = this.entity?.attributes || {};
+    const serialNumber = String(attrs.serial_number || "").trim();
+    const switchEntityId = String(
+      attrs.visual_obstacle_switch_entity_id
+      || this.getSwitchEntity("visualObstacle")
+      || ""
     );
-    switchTile.classList.add("visual-obstacle-global-switch");
+    const levelEntityId = String(
+      attrs.visual_obstacle_level_entity_id
+      || this.getNumberEntity("visualObstacleLevel")
+      || ""
+    );
 
-    const switchInput = switchTile.querySelector('input[type="checkbox"]');
-    const levelWrap = document.createElement("div");
-    levelWrap.className = "obstacle-levels";
-    levelWrap.appendChild(this.createObstacleLevelControl());
+    const switchEntity = switchEntityId ? this._hass?.states?.[switchEntityId] : null;
+    const levelEntity = levelEntityId ? this._hass?.states?.[levelEntityId] : null;
+    const enabled = switchEntity
+      ? switchEntity.state === "on"
+      : attrs.visual_obstacle_enabled === true;
+    const rawLevel = Number(levelEntity?.state ?? attrs.visual_obstacle_level ?? 1);
+    const selected = Number.isFinite(rawLevel)
+      ? Math.max(0, Math.min(2, Math.round(rawLevel)))
+      : 1;
+    const labels = [this.t("low"), this.t("medium"), this.t("high")];
 
-    const syncVisibility = () => {
-      const entityId = this.getSwitchEntity("visualObstacle");
-      const entity = entityId ? this._hass?.states?.[entityId] : null;
-      const enabled = switchInput ? switchInput.checked : entity?.state === "on";
-      wrapper.classList.toggle("disabled", !enabled);
+    const tile = document.createElement("div");
+    tile.className = `panel-tile obstacle-combined ${enabled ? "" : "disabled"}`;
+    tile.dataset.globalVisualObstacle = "true";
+    tile.dataset.visualEnabled = enabled ? "on" : "off";
+    tile.dataset.visualSwitchEntityId = switchEntityId;
+    tile.dataset.visualLevelEntityId = levelEntityId;
+
+    const row = document.createElement("div");
+    row.className = "switch-tile";
+    row.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:14px";
+
+    const title = document.createElement("span");
+    title.textContent = this.t("visualObstacle");
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.dataset.globalVisualToggle = "true";
+    toggle.setAttribute("role", "switch");
+    toggle.setAttribute("aria-checked", enabled ? "true" : "false");
+    toggle.style.cssText = [
+      "width:46px",
+      "height:26px",
+      "padding:0",
+      "border:0",
+      "border-radius:999px",
+      "position:relative",
+      "cursor:pointer",
+      "flex:0 0 auto",
+      "background:" + (enabled ? "var(--mf-accent,#2f9e63)" : "rgba(127,127,127,.30)"),
+    ].join(";");
+    const knob = document.createElement("span");
+    knob.dataset.globalVisualKnob = "true";
+    knob.style.cssText = [
+      "position:absolute",
+      "width:20px",
+      "height:20px",
+      "left:" + (enabled ? "23px" : "3px"),
+      "top:3px",
+      "border-radius:50%",
+      "background:#fff",
+      "box-shadow:0 2px 6px rgba(0,0,0,.25)",
+      "transition:left .18s ease",
+      "pointer-events:none",
+    ].join(";");
+    toggle.appendChild(knob);
+
+    const paintToggle = (state) => {
+      const on = state === true;
+      tile.dataset.visualEnabled = on ? "on" : "off";
+      tile.classList.toggle("disabled", !on);
+      toggle.setAttribute("aria-checked", on ? "true" : "false");
+      toggle.style.background = on
+        ? "var(--mf-accent,#2f9e63)"
+        : "rgba(127,127,127,.30)";
+      knob.style.left = on ? "23px" : "3px";
     };
-    switchInput?.addEventListener("change", syncVisibility);
-    syncVisibility();
 
-    wrapper.append(switchTile, levelWrap);
-    return wrapper;
+    toggle.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const requested = tile.dataset.visualEnabled !== "on";
+      paintToggle(requested);
+      toggle.disabled = true;
+      try {
+        if (!serialNumber) {
+          throw new Error("Missing mower serial number");
+        }
+        await this._hass.callService(
+          "anthbot_map",
+          "set_visual_obstacle_detection",
+          {
+            serial_number: serialNumber,
+            enable_visual_obstacle: requested,
+          },
+        );
+        this.scheduleRefresh(350);
+      } catch (error) {
+        paintToggle(!requested);
+        this.notify(`${this.t("operationFailed")}: ${this.t("visualObstacle")}`);
+        console.error("ANTHBOT visual obstacle toggle failed", {
+          serialNumber,
+          switchEntityId,
+          requested,
+          error,
+        });
+      } finally {
+        toggle.disabled = false;
+      }
+    });
+
+    row.append(title, toggle);
+
+    const levels = document.createElement("div");
+    levels.className = "obstacle-levels";
+    const levelTile = document.createElement("div");
+    levelTile.className = "panel-tile control-tile";
+    levelTile.innerHTML = `<div class="control-head"><span>${this.t("visualObstacleLevel")}</span><strong data-global-visual-level-label>${labels[selected]}</strong></div><div class="height-options" data-global-visual-level-options></div>`;
+    const options = levelTile.querySelector("[data-global-visual-level-options]");
+    options.style.cssText = "display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px";
+
+    labels.forEach((label, level) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "height-option";
+      button.dataset.globalVisualLevel = String(level);
+      button.textContent = label;
+      button.style.cssText = "min-width:0;width:100%;padding:8px 3px;font-size:12px;white-space:nowrap";
+      button.classList.toggle("active", level === selected);
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!serialNumber) return;
+        const previous = Number(tile.dataset.pendingVisualLevel ?? selected);
+        tile.dataset.pendingVisualLevel = String(level);
+        tile.dataset.pendingVisualLevelUntil = String(Date.now() + 5000);
+        options.querySelectorAll(".height-option").forEach((item) => {
+          item.classList.toggle("active", item === button);
+        });
+        levelTile.querySelector("[data-global-visual-level-label]").textContent = label;
+        try {
+          await this._hass.callService(
+            "anthbot_map",
+            "set_visual_obstacle_level",
+            {
+              serial_number: serialNumber,
+              visual_obstacle_level: level,
+            },
+          );
+          this.scheduleRefresh(350);
+        } catch (error) {
+          tile.dataset.pendingVisualLevel = String(previous);
+          delete tile.dataset.pendingVisualLevelUntil;
+          this.notify(`${this.t("settingFailed")}: ${this.t("visualObstacleLevel")}`);
+          console.error("ANTHBOT visual obstacle level failed", {
+            serialNumber,
+            level,
+            error,
+          });
+        }
+      });
+      options.appendChild(button);
+    });
+    levels.appendChild(levelTile);
+
+    tile.append(row, levels);
+    return tile;
   }
 
   createDirectObstacleControl(switchEntityId, levelEntityId) {
