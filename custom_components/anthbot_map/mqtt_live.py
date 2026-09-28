@@ -220,6 +220,9 @@ def _visual_setting_patch_from_service_payload(
     if isinstance(current, dict):
         documents.append(current)
     documents.append(payload)
+    previous = payload.get("previous")
+    if isinstance(previous, dict):
+        documents.append(previous)
 
     desired: dict[str, Any] | None = None
     for document in documents:
@@ -241,7 +244,15 @@ def _visual_setting_patch_from_service_payload(
     raw_visual_switch = _find_nested_setting(
         search_root, ("pobctl_switch",)
     )
-    if raw_visual_switch is None and cmd == "perception_obstacle_ctl":
+    if raw_visual_switch is None:
+        pobctl_container = _find_nested_setting(search_root, ("pobctl",))
+        if isinstance(pobctl_container, dict):
+            raw_visual_switch = pobctl_container.get("switch")
+    if raw_visual_switch is None and (
+        cmd == "perception_obstacle_ctl"
+        or "obstacle" in cmd
+        or "pobctl" in cmd
+    ):
         raw_visual_switch = _find_nested_setting(search_root, ("switch",))
     visual_switch = _coerce_small_int(raw_visual_switch, (0, 1))
     if visual_switch is not None:
