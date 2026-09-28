@@ -45,10 +45,6 @@ def _safe_error(error: Exception) -> str:
     )
     if not isinstance(error, ClientResponseError) or not error.headers:
         return value
-
-    # AWS usually explains a rejected WebSocket upgrade in response headers.
-    # Include only this strict allow-list: never copy arbitrary headers because
-    # the request contains temporary credentials in its presigned URL.
     diagnostic_headers = {
         "aws_error_type": error.headers.get("x-amzn-errortype"),
         "aws_request_id": (
@@ -63,6 +59,7 @@ def _safe_error(error: Exception) -> str:
         if header_value
     )
     return f"{value}; handshake={details}" if details else value
+
 
 ShadowCallback = Callable[[str, dict[str, Any]], Awaitable[None]]
 ConnectionCallback = Callable[[bool, str | None], Awaitable[None]]
@@ -90,8 +87,6 @@ def _packet(packet_type: int, payload: bytes) -> bytes:
 
 
 def _connect_packet(client_id: str, keepalive: int) -> bytes:
-    # aws-iot-device-sdk-js 2.2.15 defaults: clean session, 300 second
-    # keepalive and enabled SDK metrics in the MQTT username.
     username = "?SDK=JavaScript&Version=2.2.15"
     variable = _mqtt_string("MQTT") + bytes((4, 0x82)) + struct.pack("!H", keepalive)
     return _packet(
@@ -138,7 +133,6 @@ def _decode_publish(packet: bytes) -> tuple[str, bytes] | None:
 
 
 def _mqtt_packets(data: bytes) -> list[bytes]:
-    """Split all complete MQTT packets carried by one WebSocket message."""
     packets: list[bytes] = []
     offset = 0
     while offset < len(data):
@@ -165,7 +159,6 @@ def _mqtt_packets(data: bytes) -> list[bytes]:
 
 
 def _reported_state(payload: dict[str, Any]) -> dict[str, Any] | None:
-    """Extract reported state from shadow get/update payload variants."""
     current = payload.get("current")
     if isinstance(current, dict):
         payload = current
@@ -174,6 +167,60 @@ def _reported_state(payload: dict[str, Any]) -> dict[str, Any] | None:
         return None
     reported = state.get("reported")
     return reported if isinstance(reported, dict) else None
+
+
+def _safe_probe_value(value: Any, *, depth: int = 0) -> Any:
+    """Sanitize a command-shaped value for temporary diagnostics."""
+    if depth > 4:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, str):
+        return value if len(value) <= 120 else "<long-string>"
+    if isinstance(value, list):
+        out = [_safe_probe_value(item, depth=depth + 1) for item in value[:20]]
+        return [item for item in out if item is not None]
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        blocked = (
+            "token", "secret", "credential", "password", "passwd", "auth",
+            "sign", "cert", "key", "url", "uri", "endpoint", "account",
+            "email", "phone", "imei", "mac", "ssid", "wifi", "ip",
+        )
+        for raw_key, item in value.items():
+            key = str(raw_key)
+            lowered = key.lower()
+            if lowered in {"time", "timestamp", "ts", "clienttoken", "version"}:
+                continue
+            if any(part in lowered for part in blocked):
+                continue
+            safe = _safe_probe_value(item, depth=depth + 1)
+            if safe is not None:
+                out[key] = safe
+        return out
+    return None
+
+
+def _service_probe_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Extract desired/reported command data from service shadow responses."""
+    result: dict[str, Any] = {}
+    for label in ("previous", "current"):
+        document = payload.get(label)
+        if not isinstance(document, dict):
+            continue
+        state = document.get("state")
+        if isinstance(state, dict):
+            safe = _safe_probe_value(state)
+            if isinstance(safe, dict) and safe:
+                result[label] = safe
+    state = payload.get("state")
+    if isinstance(state, dict):
+        safe = _safe_probe_value(state)
+        if isinstance(safe, dict) and safe:
+            result["state"] = safe
+    return result
 
 
 class AnthbotLiveShadowListener:
@@ -197,12 +244,10 @@ class AnthbotLiveShadowListener:
         self._send_lock = asyncio.Lock()
 
     async def async_stop(self) -> None:
-        """Stop reconnecting and close the current WebSocket via cancellation."""
         self._stop.set()
         self._client.set_live_command_publisher(None)
 
     async def async_publish_command(self, topic: str, payload: bytes) -> None:
-        """Publish a service-shadow command over the active MQTT socket."""
         async with self._send_lock:
             ws = self._active_ws
             if ws is None or ws.closed:
@@ -210,14 +255,11 @@ class AnthbotLiveShadowListener:
             try:
                 await ws.send_bytes(_packet(0x30, _mqtt_string(topic) + payload))
             except (ClientError, OSError, RuntimeError):
-                # Do not leave a failed socket registered as the command
-                # transport. Closing it wakes the persistent reconnect loop.
                 self._client.set_live_command_publisher(None)
                 await ws.close()
                 raise
 
     async def async_run(self) -> None:
-        """Connect until stopped, using bounded reconnect backoff."""
         delay = _RECONNECT_INITIAL_SECONDS
         while not self._stop.is_set():
             try:
@@ -233,9 +275,6 @@ class AnthbotLiveShadowListener:
                 ValueError,
             ) as err:
                 self._client.set_live_command_publisher(None)
-                # If this attempt had reached an accepted MQTT CONNECT, start
-                # a fresh short reconnect sequence after the later socket
-                # close instead of retaining the previous outage's delay.
                 if self._consecutive_failures == 0:
                     delay = _RECONNECT_INITIAL_SECONDS
                 error = (
@@ -243,18 +282,9 @@ class AnthbotLiveShadowListener:
                     f"{self._client.iot_credential_diagnostics}"
                 )
                 self._consecutive_failures += 1
-                # Brief AWS IoT reconnect races can return a single 404/403
-                # and then recover on the next freshly signed URL.  Do not
-                # create a visible Home Assistant warning for a self-healing
-                # one-off failure; warn only when the fallback persists.
-                log = (
-                    _LOGGER.warning
-                    if self._consecutive_failures == 3
-                    else _LOGGER.debug
-                )
+                log = _LOGGER.warning if self._consecutive_failures == 3 else _LOGGER.debug
                 log(
-                    "Anthbot live shadow unavailable for %s "
-                    "(attempt %d): %s",
+                    "Anthbot live shadow unavailable for %s (attempt %d): %s",
                     self._client.serial_number,
                     self._consecutive_failures,
                     error,
@@ -266,18 +296,9 @@ class AnthbotLiveShadowListener:
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=delay)
             except TimeoutError:
-                # The live shadow drives both fast position updates and
-                # commands.  A five-minute backoff made a transient AWS IoT
-                # 404 look permanent.  Keep retry traffic bounded, but never
-                # leave recovery more than 30 seconds away.
                 delay = min(delay * 2, _RECONNECT_MAX_SECONDS)
 
     async def _async_connected_session(self) -> None:
-        # SigV4 covers the exact percent-encoded query string.  aiohttp/yarl
-        # normally canonicalizes URLs before sending them, which can turn
-        # signed values such as ``%2F`` back into ``/`` and make AWS reject the
-        # WebSocket upgrade with HTTP 403.  Mark the presigned URL as already
-        # encoded so its raw query is sent byte-for-byte unchanged.
         url = URL(
             await self._client.async_get_mqtt_websocket_url(),
             encoded=True,
@@ -287,16 +308,11 @@ class AnthbotLiveShadowListener:
         response_topics = [
             f"{base}/{name}/{suffix}"
             for name in ("property", "service")
-            # This is the response set accepted by the mower's IoT policy and
-            # used by the app's two named-shadow registrations.
             for suffix in ("get/accepted", "update/accepted", "update/documents")
         ]
         async with self._session.ws_connect(
             url,
             headers={"User-Agent": ANDROID_APP_USER_AGENT},
-            # aws-iot-device-sdk-js used by ANTHBOT 2.15.15 explicitly sends
-            # ``Sec-WebSocket-Protocol: mqttv3.1``.  AWS performs this check
-            # during the HTTP upgrade, before the MQTT CONNECT packet.
             protocols=("mqttv3.1",),
             autoping=False,
             heartbeat=None,
@@ -304,8 +320,6 @@ class AnthbotLiveShadowListener:
         ) as ws:
             self._active_ws = ws
             try:
-                # Match the official app/AWS IoT SDK: every connection uses a
-                # fresh UUID v4 client identifier.
                 await ws.send_bytes(_connect_packet(str(uuid.uuid4()), 300))
                 message = await asyncio.wait_for(ws.receive(), timeout=15)
                 if (
@@ -350,44 +364,29 @@ class AnthbotLiveShadowListener:
                         deadlines.append(ping_sent_at + _MQTT_PING_RESPONSE_SECONDS)
                     receive_timeout = max(0.1, min(deadlines) - now)
                     try:
-                        message = await asyncio.wait_for(
-                            ws.receive(), timeout=receive_timeout
-                        )
+                        message = await asyncio.wait_for(ws.receive(), timeout=receive_timeout)
                     except TimeoutError:
                         now = loop.time()
                         if now >= next_property_refresh:
-                            # Match the cloud-connect action: ask the mower,
-                            # over the active MQTT service shadow, to publish
-                            # a fresh complete property state. Reading only
-                            # property/get can return an already stale pose.
                             await self._client.async_request_all_properties()
                             next_property_refresh = now + _PROPERTY_REFRESH_SECONDS
-                        if (
-                            ping_sent_at is None
-                            and now - last_received >= _MQTT_IDLE_PING_SECONDS
-                        ):
+                        if ping_sent_at is None and now - last_received >= _MQTT_IDLE_PING_SECONDS:
                             await ws.send_bytes(b"\xc0\x00")
                             ping_sent_at = now
-                        elif (
-                            ping_sent_at is not None
-                            and now - ping_sent_at >= _MQTT_PING_RESPONSE_SECONDS
-                        ):
-                            raise TimeoutError(
-                                "AWS IoT MQTT did not answer PINGREQ"
-                            )
+                        elif ping_sent_at is not None and now - ping_sent_at >= _MQTT_PING_RESPONSE_SECONDS:
+                            raise TimeoutError("AWS IoT MQTT did not answer PINGREQ")
                         continue
                     if message.type in (WSMsgType.CLOSED, WSMsgType.CLOSE, WSMsgType.ERROR):
                         detail = ws.exception()
                         raise ConnectionError(
                             "AWS IoT WebSocket closed "
-                            f"(message_type={message.type.name}, "
-                            f"close_code={ws.close_code}, exception={detail!r})"
+                            f"(message_type={message.type.name}, close_code={ws.close_code}, exception={detail!r})"
                         )
                     if message.type != WSMsgType.BINARY:
                         continue
                     for packet in _mqtt_packets(message.data):
                         last_received = loop.time()
-                        if packet[0] >> 4 == 13:  # PINGRESP
+                        if packet[0] >> 4 == 13:
                             ping_sent_at = None
                             continue
                         decoded = _decode_publish(packet)
@@ -407,6 +406,17 @@ class AnthbotLiveShadowListener:
                             continue
                         if not isinstance(payload, dict):
                             continue
+
+                        if "/service/" in topic and not topic.endswith("/get/accepted"):
+                            probe = _service_probe_payload(payload)
+                            if probe:
+                                _LOGGER.warning(
+                                    "ANTHBOT M9 SERVICE MQTT PROBE sn=%s topic=%s payload=%s",
+                                    serial,
+                                    topic.rsplit("/", 2)[-2] + "/" + topic.rsplit("/", 1)[-1],
+                                    probe,
+                                )
+
                         reported = _reported_state(payload)
                         if reported is None:
                             continue
