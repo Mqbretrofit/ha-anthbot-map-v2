@@ -172,13 +172,12 @@ def _reported_state(payload: dict[str, Any]) -> dict[str, Any] | None:
 def _visual_setting_patch_from_service_payload(
     payload: dict[str, Any],
 ) -> dict[str, Any] | None:
-    """Translate app-side visual-setting commands into a property-style patch.
+    """Translate verified app-side settings commands into property-style state.
 
-    The official app writes visual obstacle changes to the service shadow.
-    Some mower firmwares publish the matching property state only later (or as
-    a partial fragment), so mirror only these verified setting fields into the
-    coordinator's property stream. A later real property report remains
-    authoritative and will overwrite the mirrored values.
+    The ANTHBOT app writes some settings through the service shadow. Mirror
+    those command values immediately so Home Assistant entities follow the app
+    without waiting for a later full property refresh. A real property report
+    still remains authoritative and can overwrite these mirrored values.
     """
     document: dict[str, Any] = payload
     current = payload.get("current")
@@ -196,19 +195,29 @@ def _visual_setting_patch_from_service_payload(
     if not isinstance(data, dict):
         data = {}
 
+    # Some firmware/app combinations wrap the actual command data once more.
+    nested_device = data.get("device_config")
+    nested_pobctl = data.get("pobctl")
+    nested_param = data.get("param_set")
+    device_data = nested_device if isinstance(nested_device, dict) else data
+    pobctl_data = nested_pobctl if isinstance(nested_pobctl, dict) else data
+    param_data = nested_param if isinstance(nested_param, dict) else data
+
     patch: dict[str, Any] = {}
 
     if cmd == "device_config":
         config: dict[str, Any] = {}
         pobctl: dict[str, Any] = {}
-        if data.get("pobctl_switch") in (0, 1, False, True):
-            value = int(bool(data["pobctl_switch"]))
+        switch = device_data.get("pobctl_switch")
+        if switch in (0, 1, False, True):
+            value = int(bool(switch))
             config["pobctl_switch"] = value
             pobctl["switch"] = value
-        level = data.get("pobctl_level")
+        level = device_data.get("pobctl_level")
         if level in (0, 1, 2):
-            config["pobctl_level"] = int(level)
-            pobctl["level"] = int(level)
+            value = int(level)
+            config["pobctl_level"] = value
+            pobctl["level"] = value
         if config:
             patch["device_config"] = config
         if pobctl:
@@ -216,13 +225,20 @@ def _visual_setting_patch_from_service_payload(
 
     elif cmd == "perception_obstacle_ctl":
         pobctl: dict[str, Any] = {}
-        if data.get("switch") in (0, 1, False, True):
-            pobctl["switch"] = int(bool(data["switch"]))
-        level = data.get("level")
+        switch = pobctl_data.get("switch", pobctl_data.get("pobctl_switch"))
+        if switch in (0, 1, False, True):
+            pobctl["switch"] = int(bool(switch))
+        level = pobctl_data.get("level", pobctl_data.get("pobctl_level"))
         if level in (0, 1, 2):
             pobctl["level"] = int(level)
         if pobctl:
             patch["pobctl"] = pobctl
+
+    elif cmd == "param_set":
+        mow_count = param_data.get("mow_count")
+        if mow_count in (1, 2):
+            patch["param_set"] = {"mow_count": int(mow_count)}
+            patch["mow_count"] = int(mow_count)
 
     return patch or None
 
