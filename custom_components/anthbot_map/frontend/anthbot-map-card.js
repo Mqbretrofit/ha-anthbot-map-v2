@@ -523,6 +523,10 @@ class AnthbotMapCard extends HTMLElement {
     }
   }
 
+  connectedCallback() {
+    this.ensureSettingStateSubscription();
+  }
+
   disconnectedCallback() {
     this.stopSettingStateSubscription();
     this.stopRefreshTimer();
