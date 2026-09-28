@@ -157,7 +157,16 @@ class TestLiveMapStreamArchitecture(unittest.TestCase):
         self.assertIn('scheduleSubscriptionRetry(card, "subscription failed")', text)
         self.assertIn("ANTHBOT_LIVE_RETRY_MAX_MS", text)
         backend = (INTEGRATION / "live_map_stream.py").read_text(encoding="utf-8")
-        self.assertIn("?v=247-live2-3", backend)
+        self.assertIn("?v=247-live2-4", backend)
+
+    def test_live_geometry_updates_never_rebuild_the_open_card(self):
+        source = ROOT / "www" / "anthbot-map" / "live-map-stream.js"
+        text = source.read_text(encoding="utf-8")
+        apply_start = text.index("function applyLiveMessage")
+        apply_end = text.index("function ensureLiveSubscription", apply_start)
+        apply_source = text[apply_start:apply_end]
+        self.assertIn("card.updateRenderer?.();", apply_source)
+        self.assertNotIn("card.render?.();", apply_source)
 
     def test_frontend_patch_is_bundled_identically(self):
         source = ROOT / "www" / "anthbot-map" / "live-map-stream.js"

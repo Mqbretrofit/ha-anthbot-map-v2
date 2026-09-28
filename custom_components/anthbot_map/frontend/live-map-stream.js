@@ -226,10 +226,10 @@ function applyLiveMessage(card, message) {
     }
     Object.assign(card._anthbotLiveOverlay, pathOverlay(card));
     cloneEntityWithLiveOverlay(card);
-    // A snapshot can introduce zone geometry used by controls created during
-    // render(), so rebuild the card once. Subsequent trajectory deltas only
-    // redraw the renderer and do not churn the DOM.
-    card.render?.();
+    // A live snapshot must not rebuild the whole card. updateRenderer() applies
+    // geometry and values in place, preserving the open drawer, settings
+    // details, scroll position and focused control.
+    card.updateRenderer?.();
     return;
   }
 
@@ -256,11 +256,11 @@ function applyLiveMessage(card, message) {
   card._anthbotLiveSequence = sequence;
   cloneEntityWithLiveOverlay(card);
 
-  const geometryChanged = Object.prototype.hasOwnProperty.call(attributes, "area_definition")
-    || Object.prototype.hasOwnProperty.call(attributes, "map_raster")
-    || Object.prototype.hasOwnProperty.call(attributes, "ridable_areas");
-  if (geometryChanged) card.render?.();
-  else card.updateRenderer?.();
+  // Zone setting changes arrive inside area_definition. A full render here
+  // used to destroy the active zone settings tree after every slider/switch
+  // update. The renderer already accepts all geometry fields through setState,
+  // so every live delta can use the stable in-place path.
+  card.updateRenderer?.();
 }
 
 function ensureLiveSubscription(card) {
