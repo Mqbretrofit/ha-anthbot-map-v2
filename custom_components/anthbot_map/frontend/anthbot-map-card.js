@@ -282,6 +282,10 @@ class AnthbotMapCard extends HTMLElement {
         }
       }
       this.updateRenderer();
+      // Native setting entities can change without the map entity changing.
+      // Refresh the already-open settings DOM directly from hass.states on
+      // every HA state push; do not depend on the map renderer lifecycle.
+      this.refreshOpenPanelValues();
       // setConfig() builds the DOM before Home Assistant supplies `hass`.
       // Render the initial panel once when `hass` arrives; later state pushes
       // keep the stable in-place refresh path from v14.
@@ -3404,7 +3408,19 @@ class AnthbotMapCard extends HTMLElement {
       const reported = Number(entity?.state);
       if (!Number.isFinite(reported)) return;
 
-      const shown = this.displayedNumberValue(kind, reported);
+      const input = tile.querySelector('input[type="range"]');
+      const userIsEditing = Boolean(
+        input && this.shadowRoot?.activeElement === input
+      );
+      const shown = userIsEditing
+        ? this.displayedNumberValue(kind, reported)
+        : reported;
+      if (!userIsEditing) {
+        const optimistic = this.optimisticSettings.get(kind);
+        if (optimistic && Number(optimistic.value) !== Number(reported)) {
+          this.optimisticSettings.delete(kind);
+        }
+      }
       const unit = tile.dataset.numberUnit || "";
       const value = tile.querySelector(".control-head strong");
 
@@ -3423,7 +3439,6 @@ class AnthbotMapCard extends HTMLElement {
         return;
       }
 
-      const input = tile.querySelector('input[type="range"]');
       if (input && this.shadowRoot?.activeElement !== input) {
         input.value = String(shown);
       }
@@ -3435,15 +3450,25 @@ class AnthbotMapCard extends HTMLElement {
     root.querySelectorAll('[data-global-visual-obstacle="true"]').forEach((tile) => {
       const attrs = this.entity?.attributes || {};
       const switchEntityId = String(
-        attrs.visual_obstacle_switch_entity_id
+        this.findSettingEntity(
+          "switch",
+          "visual_obstacle_detection_enabled",
+        )
+        || attrs.visual_obstacle_switch_entity_id
         || tile.dataset.visualSwitchEntityId
         || ""
       );
       const levelEntityId = String(
-        attrs.visual_obstacle_level_entity_id
+        this.findSettingEntity(
+          "number",
+          "visual_obstacle_level_setting",
+        )
+        || attrs.visual_obstacle_level_entity_id
         || tile.dataset.visualLevelEntityId
         || ""
       );
+      tile.dataset.visualSwitchEntityId = switchEntityId;
+      tile.dataset.visualLevelEntityId = levelEntityId;
       const switchEntity = switchEntityId
         ? this._hass?.states?.[switchEntityId]
         : null;
@@ -4934,12 +4959,20 @@ class AnthbotMapCard extends HTMLElement {
     const attrs = this.entity?.attributes || {};
     const serialNumber = String(attrs.serial_number || "").trim();
     const switchEntityId = String(
-      attrs.visual_obstacle_switch_entity_id
+      this.findSettingEntity(
+        "switch",
+        "visual_obstacle_detection_enabled",
+      )
+      || attrs.visual_obstacle_switch_entity_id
       || this.getSwitchEntity("visualObstacle")
       || ""
     );
     const levelEntityId = String(
-      attrs.visual_obstacle_level_entity_id
+      this.findSettingEntity(
+        "number",
+        "visual_obstacle_level_setting",
+      )
+      || attrs.visual_obstacle_level_entity_id
       || this.getNumberEntity("visualObstacleLevel")
       || ""
     );
@@ -8395,6 +8428,19 @@ class AnthbotMapCard extends HTMLElement {
     if (this.isEntityAvailable(configured)) {
       return configured;
     }
+    const settingByKind = {
+      mowHeight: "mow_height_setting",
+      mowCount: "mow_count_setting",
+      visualObstacleLevel: "visual_obstacle_level_setting",
+      voiceVolume: "voice_volume_setting",
+      mowDirection: "custom_mowing_direction_setting",
+      rainContinue: "rain_continue_time_setting",
+    };
+    const setting = settingByKind[kind];
+    if (setting) {
+      const exactSettingEntity = this.findSettingEntity("number", setting);
+      if (exactSettingEntity) return exactSettingEntity;
+    }
     if (kind === "visualObstacleLevel") {
       const exact = String(this.entity?.attributes?.visual_obstacle_level_entity_id || "");
       if (this.isEntityAvailable(exact)) return exact;
@@ -8424,10 +8470,44 @@ class AnthbotMapCard extends HTMLElement {
       return configured;
     }
     if (kind === "visualObstacle") {
+      const exactSettingEntity = this.findSettingEntity(
+        "switch",
+        "visual_obstacle_detection_enabled",
+      );
+      if (exactSettingEntity) return exactSettingEntity;
       const exact = String(this.entity?.attributes?.visual_obstacle_switch_entity_id || "");
       if (this.isEntityAvailable(exact)) return exact;
     }
     return this.findEntity("switch", SWITCH_MAP[kind] || []);
+  }
+
+  findSettingEntity(domain, setting) {
+    const states = this._hass?.states || {};
+    const activeState = states[this._activeEntityId] || this.entity;
+    const serial = String(
+      activeState?.attributes?.serial_number
+      || activeState?.attributes?.sn
+      || ""
+    ).trim();
+    if (!serial) return null;
+
+    const matches = Object.entries(states)
+      .filter(([entityId, state]) =>
+        entityId.startsWith(`${domain}.`)
+        && state?.state !== "unavailable"
+        && String(
+          state?.attributes?.serial_number
+          || state?.attributes?.sn
+          || ""
+        ).trim() === serial
+        && String(state?.attributes?.setting || "") === setting
+      )
+      .sort(([leftId], [rightId]) => {
+        const leftSuffix = Number(leftId.match(/_(\d+)$/)?.[1] || 0);
+        const rightSuffix = Number(rightId.match(/_(\d+)$/)?.[1] || 0);
+        return rightSuffix - leftSuffix;
+      });
+    return matches[0]?.[0] || null;
   }
 
   isEntityAvailable(entityId) {
