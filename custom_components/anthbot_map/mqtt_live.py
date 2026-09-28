@@ -169,6 +169,64 @@ def _reported_state(payload: dict[str, Any]) -> dict[str, Any] | None:
     return reported if isinstance(reported, dict) else None
 
 
+def _visual_setting_patch_from_service_payload(
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Translate app-side visual-setting commands into a property-style patch.
+
+    The official app writes visual obstacle changes to the service shadow.
+    Some mower firmwares publish the matching property state only later (or as
+    a partial fragment), so mirror only these verified setting fields into the
+    coordinator's property stream. A later real property report remains
+    authoritative and will overwrite the mirrored values.
+    """
+    document: dict[str, Any] = payload
+    current = payload.get("current")
+    if isinstance(current, dict):
+        document = current
+    state = document.get("state")
+    if not isinstance(state, dict):
+        return None
+    desired = state.get("desired")
+    if not isinstance(desired, dict):
+        return None
+
+    cmd = str(desired.get("cmd") or desired.get("command") or "").strip()
+    data = desired.get("data")
+    if not isinstance(data, dict):
+        data = {}
+
+    patch: dict[str, Any] = {}
+
+    if cmd == "device_config":
+        config: dict[str, Any] = {}
+        pobctl: dict[str, Any] = {}
+        if data.get("pobctl_switch") in (0, 1, False, True):
+            value = int(bool(data["pobctl_switch"]))
+            config["pobctl_switch"] = value
+            pobctl["switch"] = value
+        level = data.get("pobctl_level")
+        if level in (0, 1, 2):
+            config["pobctl_level"] = int(level)
+            pobctl["level"] = int(level)
+        if config:
+            patch["device_config"] = config
+        if pobctl:
+            patch["pobctl"] = pobctl
+
+    elif cmd == "perception_obstacle_ctl":
+        pobctl: dict[str, Any] = {}
+        if data.get("switch") in (0, 1, False, True):
+            pobctl["switch"] = int(bool(data["switch"]))
+        level = data.get("level")
+        if level in (0, 1, 2):
+            pobctl["level"] = int(level)
+        if pobctl:
+            patch["pobctl"] = pobctl
+
+    return patch or None
+
+
 def _safe_probe_value(value: Any, *, depth: int = 0) -> Any:
     """Sanitize a command-shaped value for temporary diagnostics."""
     if depth > 4:
@@ -416,6 +474,16 @@ class AnthbotLiveShadowListener:
                                     topic.rsplit("/", 2)[-2] + "/" + topic.rsplit("/", 1)[-1],
                                     probe,
                                 )
+                            visual_patch = _visual_setting_patch_from_service_payload(
+                                payload
+                            )
+                            if visual_patch:
+                                _LOGGER.debug(
+                                    "ANTHBOT visual app sync sn=%s patch=%s",
+                                    serial,
+                                    visual_patch,
+                                )
+                                await self._on_shadow("property", visual_patch)
 
                         reported = _reported_state(payload)
                         if reported is None:
