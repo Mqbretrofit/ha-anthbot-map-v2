@@ -1741,9 +1741,37 @@ class AnthbotMapSensorEntity(
         path_definition = state.get("_path_definition")
         path_points = _definition_path_points(path_definition) or state.get("path")
 
+        pobctl = state.get("pobctl")
+        device_config = state.get("device_config")
+        visual_switch = (
+            pobctl.get("switch")
+            if isinstance(pobctl, dict) and "switch" in pobctl
+            else (
+                device_config.get("pobctl_switch")
+                if isinstance(device_config, dict)
+                else None
+            )
+        )
+        visual_level = (
+            pobctl.get("level")
+            if isinstance(pobctl, dict) and "level" in pobctl
+            else (
+                device_config.get("pobctl_level")
+                if isinstance(device_config, dict)
+                else None
+            )
+        )
+        visual_enabled = (
+            visual_switch in (1, "1", True, "true", "on")
+            if visual_switch is not None
+            else None
+        )
+
         return {
             "serial_number": self.coordinator.client.serial_number,
             "model": self.coordinator.device.model,
+            "visual_obstacle_enabled": visual_enabled,
+            "visual_obstacle_level": visual_level,
             "pose": state.get("pose"),
             "mower_status": _general_mower_status(state),
             "robot_status_raw": _raw_robot_status(state),
