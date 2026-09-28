@@ -3396,18 +3396,40 @@ class AnthbotMapCard extends HTMLElement {
       if (value) value.textContent = this.maintenanceValue(tile.dataset.maintenanceKind);
     });
 
-    root.querySelectorAll('[data-number-kind="mowCount"]').forEach((tile) => {
-      const entityId = this.getNumberEntity("mowCount");
+    root.querySelectorAll("[data-number-kind]").forEach((tile) => {
+      const kind = tile.dataset.numberKind || "";
+      if (!kind) return;
+      const entityId = this.getNumberEntity(kind);
       const entity = entityId ? this._hass?.states?.[entityId] : null;
       const reported = Number(entity?.state);
       if (!Number.isFinite(reported)) return;
-      const shown = this.displayedNumberValue("mowCount", reported);
+
+      const shown = this.displayedNumberValue(kind, reported);
+      const unit = tile.dataset.numberUnit || "";
+      const value = tile.querySelector(".control-head strong");
+
+      if (tile.dataset.numberMode === "buttons" && kind === "mowHeight") {
+        const normalized = Math.max(
+          30,
+          Math.min(70, Math.round(Number(shown) / 5) * 5),
+        );
+        if (value) value.textContent = `${normalized} mm`;
+        tile.querySelectorAll(".height-option").forEach((button) => {
+          button.classList.toggle(
+            "active",
+            Number(button.textContent) === normalized,
+          );
+        });
+        return;
+      }
+
       const input = tile.querySelector('input[type="range"]');
       if (input && this.shadowRoot?.activeElement !== input) {
         input.value = String(shown);
       }
-      const value = tile.querySelector(".control-head strong");
-      if (value) value.textContent = `${shown} ×`;
+      if (value) {
+        value.textContent = `${shown}${unit ? ` ${unit}` : ""}`;
+      }
     });
 
     root.querySelectorAll('[data-global-visual-obstacle="true"]').forEach((tile) => {
@@ -6180,6 +6202,9 @@ class AnthbotMapCard extends HTMLElement {
     const selected = Number.isFinite(value) ? Math.max(30, Math.min(70, Math.round(value / 5) * 5)) : 50;
     const tile = document.createElement("div");
     tile.className = "panel-tile control-tile mow-height-tile";
+    tile.dataset.numberKind = key;
+    tile.dataset.numberUnit = "mm";
+    tile.dataset.numberMode = "buttons";
     tile.innerHTML = `
       <div class="control-head">
         <span>${this.t("cutHeight")}</span>
@@ -6248,6 +6273,7 @@ class AnthbotMapCard extends HTMLElement {
     tile.className = "panel-tile control-tile";
     tile.dataset.numberKind = key;
     tile.dataset.numberUnit = unit || "";
+    tile.dataset.numberMode = "range";
     tile.innerHTML = `
       <div class="control-head">
         <span>${label}</span>
