@@ -19,10 +19,7 @@ _NATIVE_SIMPLE_COMMANDS = {
     "mow_start", "mow_pause", "mow_continue", "stop_all_tasks",
     "ridable_mow_start", "nest_mow_start", "nest_mow_stop", "mow_point",
     "mow_point_stop", "charge_start", "charge_pause", "charge_continue",
-    # M9 Pro visual obstacle level is reported as device_config.pobctl_level.
-    # Send the existing perception_obstacle_ctl command through the same native
-    # service-shadow transport used by the verified M-series commands.
-    "perception_obstacle_ctl",
+    "perception_obstacle_ctl", "device_config",
 }
 
 
@@ -33,6 +30,10 @@ def _model(client: AnthbotShadowApiClient) -> str:
 def _is_m_series_client(client: AnthbotShadowApiClient) -> bool:
     model = _model(client)
     return "M5" in model or "M9" in model
+
+
+def _is_m9_client(client: AnthbotShadowApiClient) -> bool:
+    return "M9" in _model(client)
 
 
 def _is_genie_client(client: AnthbotShadowApiClient) -> bool:
@@ -180,6 +181,23 @@ def install_m_series_control_support() -> None:
         if cmd == "param_set" and (is_m_series or is_genie):
             full_param_set = _build_full_param_set(self, data)
             await _publish_native_simple_command(self, cmd=cmd, data=full_param_set)
+            return
+
+        # Verified from the official app's live M9 Pro service shadow:
+        # visual obstacle sensitivity is not perception_obstacle_ctl. The app
+        # publishes cmd=device_config with data={pobctl_level: 0|1|2}.
+        # Keep the entity API stable and translate only for M9/M9 Pro.
+        if cmd == "perception_obstacle_ctl" and _is_m9_client(self):
+            level = data.get("level") if isinstance(data, dict) else data
+            if level not in (0, 1, 2):
+                raise AnthbotGenieApiError("M9 pobctl_level must be 0, 1 or 2")
+            _LOGGER.warning(
+                "ANTHBOT COMMAND PROBE stage=translate sn=%s model=%s from_cmd=%s to_cmd=device_config pobctl_level=%s",
+                self.serial_number, _model(self), cmd, level,
+            )
+            await _publish_native_simple_command(
+                self, cmd="device_config", data={"pobctl_level": int(level)}
+            )
             return
 
         if not is_m_series:
