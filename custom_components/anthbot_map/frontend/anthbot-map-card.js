@@ -3495,7 +3495,11 @@ class AnthbotMapCard extends HTMLElement {
       const entityId = this.resolveZoneControlEntity(tile, "number") || "";
       tile.dataset.zoneEntityId = entityId;
       const entity = entityId ? this._hass?.states?.[entityId] : null;
-      const reported = Number(entity?.state);
+      const liveZone = this.liveZoneForControl(tile);
+      const liveValue = liveZone?.[tile.dataset.zoneSetting];
+      const reported = Number(
+        liveValue !== undefined && liveValue !== null ? liveValue : entity?.state,
+      );
       const input = tile.querySelector('input[type="range"]');
       const userIsEditing = Boolean(input && root.activeElement === input);
       if (input) {
@@ -3517,17 +3521,32 @@ class AnthbotMapCard extends HTMLElement {
       const input = tile.querySelector('input[type="checkbox"]');
       if (!input) return;
       input.disabled = !entityId;
-      input.checked = entityId
-        ? this._hass?.states?.[entityId]?.state === "on"
-        : false;
+      const liveZone = this.liveZoneForControl(tile);
+      if (
+        tile.dataset.zoneSetting === "custom_direction"
+        && liveZone?.enable_adaptive_head !== undefined
+        && liveZone.enable_adaptive_head !== null
+      ) {
+        input.checked = !this.zoneToggleEnabled(liveZone.enable_adaptive_head);
+      } else {
+        input.checked = entityId
+          ? this._hass?.states?.[entityId]?.state === "on"
+          : false;
+      }
     });
 
     root.querySelectorAll('[data-zone-control="select"]').forEach((tile) => {
       const entityId = this.resolveZoneControlEntity(tile, "select") || "";
       tile.dataset.zoneEntityId = entityId;
-      const current = String(
+      let current = String(
         entityId ? this._hass?.states?.[entityId]?.state || "" : ""
       );
+      const liveModeValue = this.liveZoneForControl(tile)?.mow_mode;
+      const liveMode = liveModeValue !== undefined && liveModeValue !== null
+        ? Number(liveModeValue)
+        : NaN;
+      if (liveMode === 0) current = "Normal";
+      if (liveMode === 1) current = "Efficient";
       const value = tile.querySelector(".control-head strong");
       tile.querySelectorAll('[data-zone-select-option]').forEach((button) => {
         button.disabled = !entityId;
@@ -3555,9 +3574,13 @@ class AnthbotMapCard extends HTMLElement {
       tile.dataset.visualLevelEntityId = levelEntityId;
 
       const input = tile.querySelector('[data-global-visual-toggle]');
-      const enabled = switchEntityId
-        ? this._hass?.states?.[switchEntityId]?.state === "on"
-        : false;
+      const liveZone = this.liveZoneForControl(tile);
+      const liveSwitch = liveZone?.visual_ignore_obstacle_switch;
+      const enabled = liveSwitch !== undefined && liveSwitch !== null
+        ? this.zoneToggleEnabled(liveSwitch)
+        : switchEntityId
+          ? this._hass?.states?.[switchEntityId]?.state === "on"
+          : false;
       if (input) {
         input.disabled = !switchEntityId;
         input.checked = enabled;
@@ -3565,7 +3588,10 @@ class AnthbotMapCard extends HTMLElement {
       tile.classList.toggle("disabled", !enabled);
 
       const rawLevel = Number(
-        levelEntityId ? this._hass?.states?.[levelEntityId]?.state : NaN
+        liveZone?.obstacle_avoid_level !== undefined
+          && liveZone.obstacle_avoid_level !== null
+          ? liveZone.obstacle_avoid_level
+          : levelEntityId ? this._hass?.states?.[levelEntityId]?.state : NaN
       );
       if (!Number.isFinite(rawLevel)) return;
       const level = Math.max(0, Math.min(2, Math.round(rawLevel)));
@@ -4948,6 +4974,23 @@ class AnthbotMapCard extends HTMLElement {
       tile.dataset.zoneKind,
       { id: Number(tile.dataset.zoneId), name: tile.dataset.zoneName },
       tile.dataset.zoneSetting,
+    );
+  }
+
+  liveZoneForControl(tile) {
+    const kind = tile?.dataset?.zoneKind;
+    const zoneId = Number(tile?.dataset?.zoneId);
+    if (!kind || !Number.isFinite(zoneId)) return null;
+    const area = this.entity?.attributes?.area_definition || {};
+    const zones = kind === "auto" ? this.currentAutoZones(area) : this.currentZones(area);
+    return zones.find((zone) => Number(zone?.id) === zoneId) || null;
+  }
+
+  zoneToggleEnabled(value) {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value === 1;
+    return ["1", "true", "on", "enabled", "enable"].includes(
+      String(value ?? "").trim().toLowerCase(),
     );
   }
 

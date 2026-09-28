@@ -206,6 +206,9 @@ class M9CleanSettingsRebuildTests(unittest.TestCase):
         self.assertIn("this.openZoneSettings.has(zoneKey)", runtime)
         self.assertIn("readPanelSessionState(config.entity)", runtime)
         self.assertIn("this.savePanelSessionState();", runtime)
+        self.assertIn("liveZoneForControl(tile)", runtime)
+        self.assertIn("liveValue !== undefined && liveValue !== null", runtime)
+        self.assertIn("liveZone?.obstacle_avoid_level", runtime)
         self.assertIn("this.refreshOpenPanelValues?.();", resolver)
         availability_refresh = resolver.split(
             "const originalUpdateRenderer = proto.updateRenderer;", 1
