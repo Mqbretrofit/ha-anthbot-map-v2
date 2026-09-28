@@ -236,9 +236,12 @@ class M9CleanSettingsRebuildTests(unittest.TestCase):
             'label: allNames.length ? allNames.join(" + ") : fallback',
             runtime,
         )
-        self.assertIn("mowingCutHeights(mowingContext, cuttingHeight)", runtime)
+        self.assertIn("mowingCutHeights(activeHeightContext, cuttingHeight)", runtime)
         self.assertIn('this.t("globalLabel")', runtime)
         self.assertIn('· ${heightSource}`', runtime)
+        self.assertIn("const showRememberedTarget = activeMowing", runtime)
+        self.assertIn("const activeHeightContext = activeMowing ? mowingContext : null;", runtime)
+        self.assertNotIn(".frontend-info-height strong { font-size:16px; }", runtime)
 
 
 if __name__ == "__main__":

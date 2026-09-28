@@ -714,7 +714,14 @@ class AnthbotMapCard extends HTMLElement {
     const mowingProgressEntity = this.getRelatedEntity("mowingProgress");
     const mowingProgress = Number(mowingProgressEntity?.state);
     const activeMowing = this.isMowingActive(statusEntity, mowingProgressEntity);
-    const mowingContext = activeMowing ? this.resolveActiveMowingContext(mowingProgressEntity) : null;
+    const rememberedTask = this.entity?.attributes?.last_mowing_task
+      ?? mowingProgressEntity?.attributes?.last_mowing_task;
+    const showRememberedTarget = activeMowing
+      || Boolean(rememberedTask?.type)
+      || (Number.isFinite(mowingProgress) && mowingProgress > 0);
+    const mowingContext = showRememberedTarget
+      ? this.resolveActiveMowingContext(mowingProgressEntity)
+      : null;
     const progressText = Number.isFinite(mowingProgress)
       ? `${Math.max(0, Math.min(100, mowingProgress)).toFixed(1)}%`
       : "–";
@@ -725,9 +732,10 @@ class AnthbotMapCard extends HTMLElement {
 
     const cuttingHeight = this.getRelatedEntity("cuttingHeight");
     const unit = cuttingHeight?.attributes?.unit_of_measurement || "mm";
-    const heights = this.mowingCutHeights(mowingContext, cuttingHeight);
-    const heightSource = mowingContext?.zones?.length && mowingContext?.label
-      ? mowingContext.label
+    const activeHeightContext = activeMowing ? mowingContext : null;
+    const heights = this.mowingCutHeights(activeHeightContext, cuttingHeight);
+    const heightSource = activeHeightContext?.zones?.length && activeHeightContext?.label
+      ? activeHeightContext.label
       : this.t("globalLabel");
     setText(
       "info-cut-height",
@@ -2012,7 +2020,6 @@ class AnthbotMapCard extends HTMLElement {
           .frontend-info-row:last-child { border-bottom:0; }
           .frontend-info-row span { opacity:.72; }
           .frontend-info-row strong { text-align:right; font-size:12px; font-weight:850; }
-          .frontend-info-height strong { font-size:16px; }
 
           /* One consistent tooltip above every button. */
           .anthbot-button-tooltip {
