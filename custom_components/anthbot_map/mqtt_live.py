@@ -235,10 +235,25 @@ def _visual_setting_patch_from_service_payload(
             patch["pobctl"] = pobctl
 
     elif cmd == "param_set":
+        param_patch: dict[str, Any] = {}
+
         mow_count = param_data.get("mow_count")
         if mow_count in (1, 2):
-            patch["param_set"] = {"mow_count": int(mow_count)}
-            patch["mow_count"] = int(mow_count)
+            mow_count_value = int(mow_count)
+            param_patch["mow_count"] = mow_count_value
+            patch["mow_count"] = mow_count_value
+
+        cutter_height = param_data.get("cutter_height")
+        if cutter_height is None:
+            cutter_height = param_data.get("cutter_ctl_cutter_lift")
+        if isinstance(cutter_height, (int, float)):
+            cutter_height_value = int(cutter_height)
+            if 30 <= cutter_height_value <= 70 and cutter_height_value % 5 == 0:
+                param_patch["cutter_height"] = cutter_height_value
+                patch["cutter_height"] = cutter_height_value
+
+        if param_patch:
+            patch["param_set"] = param_patch
 
     return patch or None
 
