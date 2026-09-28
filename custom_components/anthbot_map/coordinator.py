@@ -1688,6 +1688,74 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             }
                         }
                     )
+
+                    # Canonicalize settings that different mower firmware
+                    # versions report at different nesting levels.
+                    device_config = state.get("device_config")
+                    pobctl = state.get("pobctl")
+                    param_set = state.get("param_set")
+                    device_config = (
+                        dict(device_config)
+                        if isinstance(device_config, dict)
+                        else {}
+                    )
+                    pobctl = dict(pobctl) if isinstance(pobctl, dict) else {}
+                    param_set = (
+                        dict(param_set) if isinstance(param_set, dict) else {}
+                    )
+
+                    raw_switch = property_update.get("pobctl_switch")
+                    if raw_switch not in (0, 1, False, True):
+                        incoming_device = property_update.get("device_config")
+                        if isinstance(incoming_device, dict):
+                            raw_switch = incoming_device.get("pobctl_switch")
+                    if raw_switch in (0, 1, False, True):
+                        switch_value = int(bool(raw_switch))
+                        device_config["pobctl_switch"] = switch_value
+                        pobctl["switch"] = switch_value
+
+                    raw_level = property_update.get("pobctl_level")
+                    if raw_level not in (0, 1, 2):
+                        incoming_device = property_update.get("device_config")
+                        if isinstance(incoming_device, dict):
+                            raw_level = incoming_device.get("pobctl_level")
+                    if raw_level in (0, 1, 2):
+                        level_value = int(raw_level)
+                        device_config["pobctl_level"] = level_value
+                        pobctl["level"] = level_value
+
+                    incoming_pobctl = property_update.get("pobctl")
+                    if isinstance(incoming_pobctl, dict):
+                        raw_switch = incoming_pobctl.get("switch")
+                        if raw_switch in (0, 1, False, True):
+                            switch_value = int(bool(raw_switch))
+                            pobctl["switch"] = switch_value
+                            device_config["pobctl_switch"] = switch_value
+                        raw_level = incoming_pobctl.get("level")
+                        if raw_level in (0, 1, 2):
+                            level_value = int(raw_level)
+                            pobctl["level"] = level_value
+                            device_config["pobctl_level"] = level_value
+
+                    raw_mow_count = property_update.get("mow_count")
+                    incoming_param = property_update.get("param_set")
+                    if (
+                        raw_mow_count not in (1, 2)
+                        and isinstance(incoming_param, dict)
+                    ):
+                        raw_mow_count = incoming_param.get("mow_count")
+                    if raw_mow_count in (1, 2):
+                        mow_count_value = int(raw_mow_count)
+                        param_set["mow_count"] = mow_count_value
+                        state["mow_count"] = mow_count_value
+
+                    if device_config:
+                        state["device_config"] = device_config
+                    if pobctl:
+                        state["pobctl"] = pobctl
+                    if param_set:
+                        state["param_set"] = param_set
+
                     state["_robot_online"] = is_robot_online(state)
                     selection = select_map_archive(state)
                     state["_map_archive_selection"] = map_archive_diagnostics(
