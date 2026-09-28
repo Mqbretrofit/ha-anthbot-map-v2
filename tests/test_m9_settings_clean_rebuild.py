@@ -237,6 +237,8 @@ class M9CleanSettingsRebuildTests(unittest.TestCase):
             runtime,
         )
         self.assertIn("mowingCutHeights(mowingContext, cuttingHeight)", runtime)
+        self.assertIn('this.t("globalLabel")', runtime)
+        self.assertIn('· ${heightSource}`', runtime)
 
 
 if __name__ == "__main__":

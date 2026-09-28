@@ -726,10 +726,13 @@ class AnthbotMapCard extends HTMLElement {
     const cuttingHeight = this.getRelatedEntity("cuttingHeight");
     const unit = cuttingHeight?.attributes?.unit_of_measurement || "mm";
     const heights = this.mowingCutHeights(mowingContext, cuttingHeight);
+    const heightSource = mowingContext?.zones?.length && mowingContext?.label
+      ? mowingContext.label
+      : this.t("globalLabel");
     setText(
       "info-cut-height",
       heights.length
-        ? `${heights.map((height) => Number.isInteger(height) ? height : height.toFixed(1)).join(" / ")} ${unit}`
+        ? `${heights.map((height) => Number.isInteger(height) ? height : height.toFixed(1)).join(" / ")} ${unit} · ${heightSource}`
         : "–",
     );
   }
