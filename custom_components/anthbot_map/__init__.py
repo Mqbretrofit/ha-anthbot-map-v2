@@ -29,6 +29,7 @@ from .const import (
     ATTR_AUTO_ZONES,
     ATTR_ENABLE_CUSTOM_DIRECTION,
     ATTR_ENABLE_RAIN_PERCEPTION,
+    ATTR_ENABLE_VISUAL_OBSTACLE,
     ATTR_EDGE_ID,
     ATTR_MOW_DIRECTION,
     ATTR_MOW_HEIGHT,
@@ -36,6 +37,7 @@ from .const import (
     ATTR_RIDE_DISTANCE,
     ATTR_SERIAL_NUMBER,
     ATTR_VOICE_VOLUME,
+    ATTR_VISUAL_OBSTACLE_LEVEL,
     ATTR_ZONES,
     CONF_API_HOST,
     CONF_AREA_CODE,
@@ -61,6 +63,8 @@ from .const import (
     SERVICE_SET_MOW_HEIGHT,
     SERVICE_SET_RAIN_CONTINUE_TIME,
     SERVICE_SET_RAIN_PERCEPTION,
+    SERVICE_SET_VISUAL_OBSTACLE_DETECTION,
+    SERVICE_SET_VISUAL_OBSTACLE_LEVEL,
     SERVICE_SET_VOICE_VOLUME,
     SERVICE_START_FULL_MOW,
     SERVICE_START_OUTER_EDGE_MOW,
@@ -108,7 +112,7 @@ PLATFORMS = [
 _LOGGER = logging.getLogger(__name__)
 VALID_MOW_HEIGHTS = list(range(30, 75, 5))
 FRONTEND_RESOURCE_PATH = "/anthbot-map-v2/anthbot-map-card.js"
-FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.9.3-m9visual6"
+FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.9.3-m9visual7"
 LEGACY_ENTITY_SUFFIXES: tuple[str, ...] = (
     "enable_custom_mowing_direction",
     "custom_mowing_direction_enable",
@@ -422,6 +426,24 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         },
         extra=vol.ALLOW_EXTRA,
     )
+    set_visual_obstacle_detection_schema = vol.Schema(
+        {
+            vol.Required(ATTR_ENABLE_VISUAL_OBSTACLE): cv.boolean,
+            vol.Optional(ATTR_SERIAL_NUMBER): vol.Any(cv.string, [cv.string]),
+            vol.Optional("entity_id"): vol.Any(cv.entity_id, [cv.entity_id]),
+        },
+        extra=vol.ALLOW_EXTRA,
+    )
+    set_visual_obstacle_level_schema = vol.Schema(
+        {
+            vol.Required(ATTR_VISUAL_OBSTACLE_LEVEL): vol.All(
+                vol.Coerce(int), vol.Range(min=0, max=2)
+            ),
+            vol.Optional(ATTR_SERIAL_NUMBER): vol.Any(cv.string, [cv.string]),
+            vol.Optional("entity_id"): vol.Any(cv.entity_id, [cv.entity_id]),
+        },
+        extra=vol.ALLOW_EXTRA,
+    )
     battery_saver_config_schema = vol.Schema(
         {
             vol.Optional(CONF_CHARGER_SWITCH): cv.entity_id,
@@ -723,6 +745,65 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             )
             await _async_sync_after_command(coordinator)
 
+    async def _handle_set_visual_obstacle_detection(service_call) -> None:
+        targets = _resolve_target_coordinators(hass, service_call.data)
+        if not targets:
+            raise AnthbotGenieApiError("No target Anthbot mower found")
+        enabled = bool(service_call.data[ATTR_ENABLE_VISUAL_OBSTACLE])
+        for coordinator in targets:
+            state = coordinator.reported_state
+            pobctl = state.get("pobctl")
+            device_config = state.get("device_config")
+            level = (
+                pobctl.get("level")
+                if isinstance(pobctl, dict) and isinstance(pobctl.get("level"), int)
+                else (
+                    device_config.get("pobctl_level")
+                    if isinstance(device_config, dict)
+                    and isinstance(device_config.get("pobctl_level"), int)
+                    else 1
+                )
+            )
+            await coordinator.client.async_publish_service_command(
+                cmd="perception_obstacle_ctl",
+                data={"switch": 1 if enabled else 0, "level": level},
+            )
+            await _async_sync_after_command(coordinator)
+
+    async def _handle_set_visual_obstacle_level(service_call) -> None:
+        targets = _resolve_target_coordinators(hass, service_call.data)
+        if not targets:
+            raise AnthbotGenieApiError("No target Anthbot mower found")
+        level = int(service_call.data[ATTR_VISUAL_OBSTACLE_LEVEL])
+        for coordinator in targets:
+            model = str(getattr(coordinator.device, "model", "") or "").upper()
+            if "M9" in model:
+                data = {"level": level}
+            else:
+                state = coordinator.reported_state
+                pobctl = state.get("pobctl")
+                device_config = state.get("device_config")
+                switch_value = (
+                    pobctl.get("switch")
+                    if isinstance(pobctl, dict)
+                    else (
+                        device_config.get("pobctl_switch")
+                        if isinstance(device_config, dict)
+                        else 1
+                    )
+                )
+                data = {
+                    "switch": 1
+                    if switch_value in (1, "1", True, "true", "on")
+                    else 0,
+                    "level": level,
+                }
+            await coordinator.client.async_publish_service_command(
+                cmd="perception_obstacle_ctl",
+                data=data,
+            )
+            await _async_sync_after_command(coordinator)
+
     async def _handle_set_battery_saver_config(service_call) -> None:
         charge_limit = int(service_call.data[CONF_CHARGE_LIMIT])
         maintenance_level = int(service_call.data[CONF_MAINTENANCE_LEVEL])
@@ -945,6 +1026,20 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             SERVICE_SET_RAIN_PERCEPTION,
             _handle_set_rain_perception,
             schema=set_rain_perception_schema,
+        )
+    if not hass.services.has_service(DOMAIN, SERVICE_SET_VISUAL_OBSTACLE_DETECTION):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_SET_VISUAL_OBSTACLE_DETECTION,
+            _handle_set_visual_obstacle_detection,
+            schema=set_visual_obstacle_detection_schema,
+        )
+    if not hass.services.has_service(DOMAIN, SERVICE_SET_VISUAL_OBSTACLE_LEVEL):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_SET_VISUAL_OBSTACLE_LEVEL,
+            _handle_set_visual_obstacle_level,
+            schema=set_visual_obstacle_level_schema,
         )
     if not hass.services.has_service(DOMAIN, SERVICE_SET_BATTERY_SAVER_CONFIG):
         hass.services.async_register(
@@ -1413,6 +1508,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             SERVICE_CONNECT_CLOUD,
             SERVICE_SET_RAIN_CONTINUE_TIME,
             SERVICE_SET_RAIN_PERCEPTION,
+            SERVICE_SET_VISUAL_OBSTACLE_DETECTION,
+            SERVICE_SET_VISUAL_OBSTACLE_LEVEL,
             SERVICE_START_ZONE_MOW,
             SERVICE_START_AUTO_ZONE_MOW,
             SERVICE_RESET_BLADE_MAINTENANCE,
