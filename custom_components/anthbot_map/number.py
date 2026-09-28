@@ -55,6 +55,13 @@ class AnthbotNumberEntity(CoordinatorEntity[AnthbotGenieDataUpdateCoordinator], 
         self._attr_unique_id=f"{coordinator.client.serial_number}_{description.key}"
         self._attr_device_info=DeviceInfo(identifiers={(DOMAIN, coordinator.client.serial_number)}, manufacturer="Anthbot", model=coordinator.device.model, name=coordinator.device.alias)
     @property
+    def extra_state_attributes(self):
+        return {
+            "serial_number": self.coordinator.client.serial_number,
+            "model": self.coordinator.device.model,
+            "setting": self.entity_description.key,
+        }
+    @property
     def native_value(self):
         value=self.entity_description.getter(self.coordinator.reported_state)
         return float(value) if isinstance(value,(int,float)) else None
