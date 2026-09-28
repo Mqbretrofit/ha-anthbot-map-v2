@@ -8623,11 +8623,6 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   getNumberEntity(kind) {
-    const configured = this.config.numbers?.[kind];
-    if (this.isEntityAvailable(configured)) {
-      return configured;
-    }
-
     const exactAttrByKind = {
       mowHeight: "mow_height_entity_id",
       mowCount: "mow_count_entity_id",
@@ -8637,6 +8632,11 @@ class AnthbotMapCard extends HTMLElement {
     if (exactAttr) {
       const exactEntityId = String(this.entity?.attributes?.[exactAttr] || "");
       if (this.isEntityAvailable(exactEntityId)) return exactEntityId;
+    }
+
+    const configured = this.config.numbers?.[kind];
+    if (this.isEntityAvailable(configured)) {
+      return configured;
     }
 
     const settingByKind = {
@@ -8672,15 +8672,18 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   getSwitchEntity(kind) {
-    const configured = this.config.switches?.[kind];
-    if (this.isEntityAvailable(configured)) {
-      return configured;
-    }
     if (kind === "visualObstacle") {
       const exact = String(
         this.entity?.attributes?.visual_obstacle_switch_entity_id || ""
       );
       if (this.isEntityAvailable(exact)) return exact;
+    }
+
+    const configured = this.config.switches?.[kind];
+    if (this.isEntityAvailable(configured)) {
+      return configured;
+    }
+    if (kind === "visualObstacle") {
       const settingEntity = this.findSettingEntity(
         "switch",
         "visual_obstacle_detection_enabled",
