@@ -3396,6 +3396,26 @@ class AnthbotMapCard extends HTMLElement {
       if (value) value.textContent = this.maintenanceValue(tile.dataset.maintenanceKind);
     });
 
+    root.querySelectorAll('[data-visual-obstacle-switch]').forEach((tile) => {
+      const entityId = tile.dataset.visualObstacleSwitch || "";
+      const entityState = entityId ? this._hass?.states?.[entityId]?.state : null;
+      const pending = tile.dataset.visualObstaclePending || "";
+      const pendingUntil = Number(tile.dataset.visualObstaclePendingUntil || 0);
+      const pendingActive = Boolean(pending) && Date.now() < pendingUntil && entityState !== pending;
+      if (!pendingActive && pending && entityState === pending) {
+        delete tile.dataset.visualObstaclePending;
+        delete tile.dataset.visualObstaclePendingUntil;
+      } else if (!pendingActive && pending && Date.now() >= pendingUntil) {
+        delete tile.dataset.visualObstaclePending;
+        delete tile.dataset.visualObstaclePendingUntil;
+      }
+      const shownState = pendingActive ? pending : entityState;
+      const enabled = shownState === "on";
+      const input = tile.querySelector('[data-visual-obstacle-toggle]');
+      if (input && this.shadowRoot?.activeElement !== input) input.checked = enabled;
+      tile.classList.toggle("disabled", !enabled);
+    });
+
     if (this.activePanel === "control") {
       const current = root.querySelector('[data-primary-mowing-action]');
       const nextAction = this.primaryMowingAction();
@@ -4803,16 +4823,21 @@ class AnthbotMapCard extends HTMLElement {
     const tile = document.createElement("div");
     tile.className = `panel-tile obstacle-combined ${enabled ? "" : "disabled"}`;
     tile.dataset.visualObstacleSwitch = switchEntityId || "";
+    tile.dataset.visualObstacleLevel = levelEntityId || "";
     const row = document.createElement("label");
     row.className = "switch-tile";
-    row.innerHTML = `<span>${this.t("visualObstacle")}</span><input type="checkbox" ${enabled ? "checked" : ""} ${switchEntityId ? "" : "disabled"}>`;
+    row.innerHTML = `<span>${this.t("visualObstacle")}</span><input data-visual-obstacle-toggle type="checkbox" ${enabled ? "checked" : ""} ${switchEntityId ? "" : "disabled"}>`;
     const levels = document.createElement("div");
     levels.className = "obstacle-levels";
     levels.appendChild(this.createDirectObstacleLevelControl(levelEntityId));
     const input = row.querySelector("input");
-    input.addEventListener("change", async () => {
+    input.addEventListener("change", async (event) => {
+      event.stopPropagation();
       if (!switchEntityId) return;
       const requested = input.checked;
+      tile.dataset.visualObstaclePending = requested ? "on" : "off";
+      tile.dataset.visualObstaclePendingUntil = String(Date.now() + 5000);
+      tile.classList.toggle("disabled", !requested);
       input.disabled = true;
       try {
         await this._hass.callService(
@@ -4820,14 +4845,12 @@ class AnthbotMapCard extends HTMLElement {
           requested ? "turn_on" : "turn_off",
           {entity_id: switchEntityId},
         );
-        tile.classList.toggle("disabled", !requested);
-        try {
-          await this._hass.callService("homeassistant", "update_entity", {
-            entity_id: switchEntityId,
-          });
-        } catch (_error) {}
-        this.scheduleRefresh(150);
+        // The M9 shadow update is asynchronous. Keep the requested state
+        // visible until HA reports the new switch entity state.
+        this.scheduleRefresh(1200);
       } catch (error) {
+        delete tile.dataset.visualObstaclePending;
+        delete tile.dataset.visualObstaclePendingUntil;
         input.checked = !requested;
         tile.classList.toggle("disabled", requested);
         this.notify(`${this.t("operationFailed")}: ${switchEntityId}`);
