@@ -6428,7 +6428,11 @@ class AnthbotMapCard extends HTMLElement {
     const key = "mowHeight";
     const entityId = this.getNumberEntity(key);
     const entity = entityId ? this._hass.states[entityId] : null;
-    const value = this.displayedNumberValue(key, Number(entity?.state));
+    const fallbackValue = this.entity?.attributes?.mow_height_setting_value;
+    const value = this.displayedNumberValue(
+      key,
+      Number(entity?.state ?? fallbackValue),
+    );
     const selected = Number.isFinite(value) ? Math.max(30, Math.min(70, Math.round(value / 5) * 5)) : 50;
     const tile = document.createElement("div");
     tile.className = "panel-tile control-tile mow-height-tile";
@@ -6499,7 +6503,16 @@ class AnthbotMapCard extends HTMLElement {
   createNumberControl(label, key, min, max, step, unit) {
     const entityId = this.getNumberEntity(key);
     const entity = entityId ? this._hass.states[entityId] : null;
-    const value = this.displayedNumberValue(key, Number(entity?.state));
+    const attrs = this.entity?.attributes || {};
+    const fallbackByKind = {
+      mowCount: attrs.mow_count_setting_value,
+      mowHeight: attrs.mow_height_setting_value,
+      visualObstacleLevel: attrs.visual_obstacle_level,
+    };
+    const value = this.displayedNumberValue(
+      key,
+      Number(entity?.state ?? fallbackByKind[key]),
+    );
     const tile = document.createElement("div");
     tile.className = "panel-tile control-tile";
     tile.dataset.numberKind = key;
