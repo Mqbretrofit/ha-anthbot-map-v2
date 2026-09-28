@@ -1,9 +1,8 @@
 """Temporary safe live diagnostics for ANTHBOT settings persistence tests.
 
-M-series property updates can be partial. The discovery probe therefore merges
-safe scalar fragments into its previous snapshot before diffing, so omitted
-keys are not falsely reported as deleted. Credentials, URLs, map/path/position
-payloads, identifiers and large values remain excluded.
+M-series shadow updates can be partial. Merge safe scalar fragments into the
+previous snapshot and report only meaningful setting changes. Timestamp noise,
+credentials, URLs, identifiers and map/path/position payloads are excluded.
 """
 
 from __future__ import annotations
@@ -18,9 +17,10 @@ _INSTALLED = False
 _MISSING = object()
 
 _WANTED_TOP_LEVEL = (
-    "param_set", "nest_param_set", "pobctl", "mow_count", "cutter_height",
-    "cutter_level", "pobctl_level", "pobctl_switch", "obstacle_avoid_level",
-    "visual_obstacle_level", "enable_adaptive_head", "mow_head", "mow_mode",
+    "param_set", "nest_param_set", "device_config", "pobctl", "mow_count",
+    "cutter_height", "cutter_level", "pobctl_level", "pobctl_switch",
+    "obstacle_avoid_level", "visual_obstacle_level", "enable_adaptive_head",
+    "mow_head", "mow_mode",
 )
 _WANTED_PARAM_FIELDS = (
     "mow_count", "cutter_height", "cutter_level", "pobctl_level",
@@ -54,6 +54,18 @@ def _selected(state: Any) -> dict[str, Any]:
                 picked = {name: value[name] for name in _WANTED_PARAM_FIELDS if name in value}
                 if picked:
                     result[key] = picked
+        elif key == "device_config":
+            if isinstance(value, dict):
+                picked = {
+                    name: value[name]
+                    for name in (
+                        "pobctl_level", "pobctl_switch", "obstacle_avoid_level",
+                        "visual_obstacle_level",
+                    )
+                    if name in value
+                }
+                if picked:
+                    result[key] = picked
         elif key == "pobctl":
             if isinstance(value, dict):
                 picked = {name: value[name] for name in ("switch", "level", "value") if name in value}
@@ -80,6 +92,10 @@ def _safe_scalar_shape(value: Any, *, depth: int = 0) -> Any:
         for raw_key, item in value.items():
             key = str(raw_key)
             lowered = key.lower()
+            # Every ANTHBOT snapshot carries many changing *.time leaves. They
+            # are transport noise for this settings investigation.
+            if lowered in {"time", "timestamp", "ts"} or lowered.endswith("_time"):
+                continue
             if any(part in lowered for part in _BLOCKED_KEY_PARTS):
                 continue
             safe = _safe_scalar_shape(item, depth=depth + 1)
@@ -97,7 +113,6 @@ def _safe_m_series_property(state: Any) -> dict[str, Any]:
 
 
 def _deep_merge(base: Any, patch: Any) -> dict[str, Any]:
-    """Merge a partial shadow fragment without treating omissions as deletes."""
     result = dict(base) if isinstance(base, dict) else {}
     if not isinstance(patch, dict):
         return result
@@ -120,9 +135,7 @@ def _diff(previous: Any, current: Any, prefix: str = "") -> dict[str, dict[str, 
         new = after.get(key, _MISSING)
         path = f"{prefix}.{key}" if prefix else key
         if isinstance(old, dict) or isinstance(new, dict):
-            changes.update(
-                _diff(old if isinstance(old, dict) else {}, new if isinstance(new, dict) else {}, path)
-            )
+            changes.update(_diff(old if isinstance(old, dict) else {}, new if isinstance(new, dict) else {}, path))
             continue
         if old != new:
             changes[path] = {
@@ -160,15 +173,14 @@ def install_settings_shadow_probe() -> None:
             if selected:
                 cache = dict(getattr(self, "_settings_probe_last", {}))
                 previous = cache.get(name)
-                # Selected settings can also arrive as partial fragments. Merge
-                # them before diffing for the same reason as the broad probe.
                 merged_selected = _deep_merge(previous, selected) if previous is not None else selected
                 if merged_selected != previous:
                     changes = _diff(previous, merged_selected) if previous is not None else {}
-                    _LOGGER.warning(
-                        "ANTHBOT SETTINGS PROBE sn=%s model=%s shadow=%s values=%s changes=%s",
-                        self.client.serial_number, model, name, merged_selected, changes,
-                    )
+                    if previous is not None and changes:
+                        _LOGGER.warning(
+                            "ANTHBOT SETTINGS PROBE sn=%s model=%s shadow=%s changes=%s",
+                            self.client.serial_number, model, name, changes,
+                        )
                     cache[name] = merged_selected
                     setattr(self, "_settings_probe_last", cache)
 
@@ -176,23 +188,13 @@ def install_settings_shadow_probe() -> None:
                 fragment = _safe_m_series_property(reported)
                 broad_cache = dict(getattr(self, "_settings_probe_broad_last", {}))
                 previous_broad = broad_cache.get(name)
-                merged_broad = (
-                    _deep_merge(previous_broad, fragment)
-                    if previous_broad is not None
-                    else fragment
-                )
+                merged_broad = _deep_merge(previous_broad, fragment) if previous_broad is not None else fragment
                 if merged_broad and merged_broad != previous_broad:
-                    broad_changes = (
-                        _diff(previous_broad, merged_broad)
-                        if previous_broad is not None
-                        else {}
-                    )
-                    # Initial snapshot establishes the baseline and is not
-                    # useful as a giant list of <missing> -> value changes.
+                    broad_changes = _diff(previous_broad, merged_broad) if previous_broad is not None else {}
                     if previous_broad is not None and broad_changes:
                         _LOGGER.warning(
-                            "ANTHBOT M-SERIES PROPERTY DIFF sn=%s model=%s changes=%s",
-                            self.client.serial_number, model, broad_changes,
+                            "ANTHBOT M-SERIES PROPERTY DIFF sn=%s model=%s shadow=%s changes=%s",
+                            self.client.serial_number, model, name, broad_changes,
                         )
                     broad_cache[name] = merged_broad
                     setattr(self, "_settings_probe_broad_last", broad_cache)
