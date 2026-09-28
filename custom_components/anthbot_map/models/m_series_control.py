@@ -19,6 +19,10 @@ _NATIVE_SIMPLE_COMMANDS = {
     "mow_start", "mow_pause", "mow_continue", "stop_all_tasks",
     "ridable_mow_start", "nest_mow_start", "nest_mow_stop", "mow_point",
     "mow_point_stop", "charge_start", "charge_pause", "charge_continue",
+    # M9 Pro visual obstacle level is reported as device_config.pobctl_level.
+    # Send the existing perception_obstacle_ctl command through the same native
+    # service-shadow transport used by the verified M-series commands.
+    "perception_obstacle_ctl",
 }
 
 
@@ -36,7 +40,6 @@ def _is_genie_client(client: AnthbotShadowApiClient) -> bool:
 
 
 def _safe_data(data: Any) -> Any:
-    """Return only the non-sensitive command data we intentionally send."""
     if isinstance(data, dict):
         return {str(k): _safe_data(v) for k, v in data.items()}
     if isinstance(data, (str, int, float, bool)) or data is None:
@@ -125,7 +128,6 @@ async def _publish_native_simple_command(client: AnthbotShadowApiClient, *, cmd:
 
 
 def _build_full_param_set(client: AnthbotShadowApiClient, changes: Any) -> dict[str, Any]:
-    """Merge a setting into the cached live property param_set."""
     if not isinstance(changes, dict) or not changes:
         raise AnthbotGenieApiError("param_set requires a non-empty dict payload")
 
