@@ -253,7 +253,13 @@ class M9CleanSettingsRebuildTests(unittest.TestCase):
         self.assertIn('`${Math.round(sessionInfo.areaM2 * 10) / 10} m²`', runtime)
         self.assertIn('formatMowingDuration(sessionInfo.durationSeconds)', runtime)
         self.assertIn('anthbot-map-mowing-session-info:', runtime)
-        self.assertIn('if (active && (cached.active !== true || regressed))', runtime)
+        self.assertIn('this.startMowingInfoTimer();', runtime)
+        self.assertIn('this.stopMowingInfoTimer();', runtime)
+        self.assertIn('}, 1000);', runtime)
+        self.assertIn('previousDuration + elapsed', runtime)
+        self.assertIn('cached.sessionOpen = true;', runtime)
+        self.assertIn('cached.running = false;', runtime)
+        self.assertIn('pausedMowing', runtime)
 
 
 if __name__ == "__main__":

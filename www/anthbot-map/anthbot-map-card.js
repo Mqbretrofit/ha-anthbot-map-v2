@@ -81,6 +81,7 @@ class AnthbotMapCard extends HTMLElement {
     this.renderer = null;
     this.activePanel = "control";
     this.refreshTimer = null;
+    this.mowingInfoTimer = null;
     this.rainCountdownTimer = null;
     this.refreshInFlight = false;
     this.mapExpanded = false;
@@ -265,6 +266,7 @@ class AnthbotMapCard extends HTMLElement {
 
     const customButtonsChanged = this.syncCustomButtonActionsFromServer();
     this.startRefreshTimer();
+    this.startMowingInfoTimer();
     this.startRainCountdownTimer();
 
     const optionalEntitiesChanged =
@@ -366,6 +368,7 @@ class AnthbotMapCard extends HTMLElement {
 
   disconnectedCallback() {
     this.stopRefreshTimer();
+    this.stopMowingInfoTimer();
     this.stopRainCountdownTimer();
     window.clearTimeout(this.pendingRefreshTimer);
     window.clearTimeout(this.commandFeedbackTimer);
@@ -713,7 +716,8 @@ class AnthbotMapCard extends HTMLElement {
     return Math.max(0, entityValue);
   }
 
-  resolveMowingSessionInfo(active, areaM2, durationSeconds) {
+  resolveMowingSessionInfo(active, paused, areaM2, durationSeconds) {
+    const now = Date.now();
     const currentArea = Number.isFinite(Number(areaM2)) && Number(areaM2) >= 0
       ? Number(areaM2)
       : null;
@@ -721,31 +725,60 @@ class AnthbotMapCard extends HTMLElement {
       ? Number(durationSeconds)
       : null;
     let cached = this.readMowingSessionInfo();
-    const cachedArea = Number(cached.areaM2);
-    const cachedDuration = Number(cached.durationSeconds);
-    const regressed = active && cached.active === true && (
-      (currentArea !== null && Number.isFinite(cachedArea) && currentArea + 0.01 < cachedArea)
-      || (currentDuration !== null && Number.isFinite(cachedDuration) && currentDuration + 1 < cachedDuration)
-    );
+    const wasRunning = cached.running === true;
+    const wasSessionOpen = cached.sessionOpen === true;
+    const previousDuration = Number(cached.durationSeconds);
+    const previousUpdate = Number(cached.updatedAt);
+    const elapsed = wasRunning && Number.isFinite(previousUpdate)
+      ? Math.max(0, (now - previousUpdate) / 1000)
+      : 0;
+    let projectedDuration = Number.isFinite(previousDuration)
+      ? previousDuration + elapsed
+      : null;
 
-    if (active && (cached.active !== true || regressed)) {
-      cached = { active: true };
-    } else {
-      cached.active = Boolean(active);
+    if (active && !wasSessionOpen) {
+      cached = { sessionOpen: true, running: true };
+      projectedDuration = null;
     }
 
     if (active) {
+      const previousArea = Number(cached.areaM2);
+      if (currentArea !== null) {
+        cached.areaM2 = Number.isFinite(previousArea)
+          ? Math.max(previousArea, currentArea)
+          : currentArea;
+      }
+      const durationCandidates = [projectedDuration, currentDuration]
+        .filter((value) => Number.isFinite(value));
+      cached.durationSeconds = durationCandidates.length
+        ? Math.max(...durationCandidates)
+        : 0;
+      cached.sessionOpen = true;
+      cached.running = true;
+    } else if (paused) {
       if (currentArea !== null) cached.areaM2 = currentArea;
-      if (currentDuration !== null) cached.durationSeconds = currentDuration;
+      const durationCandidates = [projectedDuration, currentDuration]
+        .filter((value) => Number.isFinite(value));
+      if (durationCandidates.length) cached.durationSeconds = Math.max(...durationCandidates);
+      cached.sessionOpen = true;
+      cached.running = false;
     } else {
+      const durationCandidates = [projectedDuration, currentDuration]
+        .filter((value) => Number.isFinite(value) && value > 0);
+      if (wasRunning && durationCandidates.length) {
+        cached.durationSeconds = Math.max(...durationCandidates);
+      }
       if (!Number.isFinite(Number(cached.areaM2)) && currentArea !== null && currentArea > 0) {
         cached.areaM2 = currentArea;
       }
       if (!Number.isFinite(Number(cached.durationSeconds)) && currentDuration !== null && currentDuration > 0) {
         cached.durationSeconds = currentDuration;
       }
+      cached.sessionOpen = false;
+      cached.running = false;
     }
 
+    cached.updatedAt = now;
     this.writeMowingSessionInfo(cached);
     return {
       areaM2: Number.isFinite(Number(cached.areaM2)) ? Number(cached.areaM2) : null,
@@ -794,7 +827,9 @@ class AnthbotMapCard extends HTMLElement {
 
     const mowingProgressEntity = this.getRelatedEntity("mowingProgress");
     const mowingProgress = Number(mowingProgressEntity?.state);
-    const activeMowing = this.isMowingActive(statusEntity, mowingProgressEntity);
+    const canonicalStatus = String(statusEntity?.state || "").trim().toLowerCase().replace(/[_\s-]+/g, "");
+    const pausedMowing = canonicalStatus.includes("paused") || canonicalStatus.includes("pause");
+    const activeMowing = this.isMowingActive(statusEntity, mowingProgressEntity) && !pausedMowing;
     const mowingAreaEntity = this.getRelatedEntity("mowingArea");
     const mowingAreaCandidates = [
       Number(mowingAreaEntity?.state),
@@ -804,7 +839,12 @@ class AnthbotMapCard extends HTMLElement {
     const mowingAreaM2 = mowingAreaCandidates.find((value) => Number.isFinite(value) && value >= 0);
     const mowingTimeEntity = this.getRelatedEntity("mowingTime");
     const mowingTimeSeconds = this.mowingTimeSeconds(mowingTimeEntity, attributes.mowing_time);
-    const sessionInfo = this.resolveMowingSessionInfo(activeMowing, mowingAreaM2, mowingTimeSeconds);
+    const sessionInfo = this.resolveMowingSessionInfo(
+      activeMowing,
+      pausedMowing,
+      mowingAreaM2,
+      mowingTimeSeconds,
+    );
     const rememberedTask = this.entity?.attributes?.last_mowing_task
       ?? mowingProgressEntity?.attributes?.last_mowing_task;
     const showRememberedTarget = activeMowing
@@ -7887,6 +7927,27 @@ class AnthbotMapCard extends HTMLElement {
 
     const interval = Math.max(1, Number(this.config.refresh_interval ?? this.config.refreshInterval ?? 4)) * 1000;
     this.refreshTimer = window.setInterval(() => this.refreshEntities(), interval);
+  }
+
+  startMowingInfoTimer() {
+    if (this.mowingInfoTimer) return;
+    this.mowingInfoTimer = window.setInterval(() => {
+      if (!this.entity || !this.shadowRoot?.querySelector('[data-role="info-mowing-time"]')) return;
+      const statusEntity = this.getRelatedEntity("status");
+      const progressEntity = this.getRelatedEntity("mowingProgress");
+      const cached = this.readMowingSessionInfo();
+      const canonical = String(statusEntity?.state || "").trim().toLowerCase().replace(/[_\s-]+/g, "");
+      const paused = canonical.includes("paused") || canonical.includes("pause");
+      if ((this.isMowingActive(statusEntity, progressEntity) && !paused) || cached.running === true) {
+        this.updateFrontendInfo(this.entity.attributes || {});
+      }
+    }, 1000);
+  }
+
+  stopMowingInfoTimer() {
+    if (!this.mowingInfoTimer) return;
+    window.clearInterval(this.mowingInfoTimer);
+    this.mowingInfoTimer = null;
   }
 
   stopRefreshTimer() {
