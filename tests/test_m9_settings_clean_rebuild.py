@@ -232,6 +232,10 @@ class M9CleanSettingsRebuildTests(unittest.TestCase):
             '`${progressText} · ${mowingContext.label}`',
             runtime,
         )
+        self.assertIn(
+            'label: allNames.length ? allNames.join(" + ") : fallback',
+            runtime,
+        )
         self.assertIn("mowingCutHeights(mowingContext, cuttingHeight)", runtime)
 
 

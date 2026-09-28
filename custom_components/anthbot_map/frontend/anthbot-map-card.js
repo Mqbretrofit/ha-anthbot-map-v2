@@ -586,7 +586,7 @@ class AnthbotMapCard extends HTMLElement {
     return {
       kind,
       zones,
-      label: allNames.length ? `${fallback}: ${allNames.join(" + ")}` : fallback,
+      label: allNames.length ? allNames.join(" + ") : fallback,
     };
   }
 
