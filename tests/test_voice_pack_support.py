@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ast
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -295,7 +297,9 @@ class VoicePackSupportTests(unittest.TestCase):
 
         self.assertIn("/api/anthbot/store/client/pair", voice)
         self.assertIn("/api/anthbot/store/client/entitlements", voice)
-        self.assertIn('json={"client_token": client_token}', voice)
+        self.assertIn('request_payload = {"client_token": client_token}', voice)
+        self.assertIn('request_payload["robot_fingerprint"] = robot_fingerprint', voice)
+        self.assertIn("self.coordinator.client.serial_number", select)
         self.assertIn('access: str = "free"', voice)
         self.assertIn('access = str(record.get("access") or "free")', voice)
         self.assertIn('entitlement service could not be reached', voice)
@@ -303,6 +307,30 @@ class VoicePackSupportTests(unittest.TestCase):
         # Store identity must be independent of ANTHBOT/cloud account identity.
         self.assertNotIn('CONF_USERNAME', select)
         self.assertNotIn('serial_number": self._store_client_token', select)
+
+    def test_voice_store_robot_fingerprint_matches_server_contract(self) -> None:
+        path = COMPONENT / "voice_packs.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        selected = [
+            node
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "voice_store_robot_fingerprint"
+        ]
+        module = ast.Module(body=selected, type_ignores=[])
+        ast.fix_missing_locations(module)
+        namespace = {
+            "hashlib": hashlib,
+            "_VOICE_STORE_ROBOT_FINGERPRINT_PREFIX": b"anthbot-map-robot-v1\0",
+        }
+        exec(compile(module, str(path), "exec"), namespace)
+        fingerprint = namespace["voice_store_robot_fingerprint"]
+        expected = hashlib.sha256(
+            b"anthbot-map-robot-v1\0" + b"25245hgd00050826"
+        ).hexdigest()
+        self.assertEqual(fingerprint(" 25245HGD00050826 "), expected)
+        self.assertIsNone(fingerprint(""))
+        self.assertEqual(len(expected), 64)
 
     def test_map_card_opens_linked_store_and_tracks_entitlements(self) -> None:
         for path in (

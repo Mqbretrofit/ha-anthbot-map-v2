@@ -224,6 +224,7 @@ class AnthbotVoicePackSelect(
         store_url, error = await async_create_voice_store_pairing(
             self.coordinator.account_client._session,
             self._store_client_token,
+            self.coordinator.client.serial_number,
         )
         changed = store_url != self._voice_store_url or error != self._voice_store_error
         if store_url is not None:

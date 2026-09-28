@@ -19,6 +19,12 @@ The anonymous usage payload does **not** contain the ANTHBOT username, email add
 
 As with any HTTPS request, normal network infrastructure necessarily processes connection metadata such as the source IP address. The integration does not add the IP address to the telemetry JSON payload.
 
+## Community Voice Store robot link
+
+When a supported mower opens the Community Voice Store, the integration sends its random Voice Store client token and a one-way SHA-256 robot fingerprint. The fingerprint is derived locally from a normalized mower serial number with a fixed ANTHBOT Map namespace prefix. The raw mower serial number is not sent to the Voice Store.
+
+The Voice Store converts that public fingerprint into a separate server-only keyed robot identifier. This lets a purchased voice remain associated with the same mower if the anonymous client token later changes, without storing or receiving the raw serial number.
+
 ## Automatic diagnostics
 
 If **Send automatic diagnostics when a relevant error is detected** is enabled, the integration may upload a technical diagnostics report when a supported diagnostic trigger occurs. Diagnostics can include mower model and firmware information, robot state, path data, no-go geometry and related technical information needed to reproduce a fault.

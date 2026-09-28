@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import hashlib
 import logging
 from typing import Any
 
@@ -79,6 +80,7 @@ VOICE_STORE_PAIR_URL = (
 VOICE_STORE_ENTITLEMENTS_URL = (
     "https://anthbotmap.com/api/anthbot/store/client/entitlements"
 )
+_VOICE_STORE_ROBOT_FINGERPRINT_PREFIX = b"anthbot-map-robot-v1\0"
 
 # Every custom/Community voice is installed into the same Genie factory slot.
 # These values describe the technical mower slot, not the human speaker.
@@ -388,15 +390,30 @@ async def async_get_community_voice_packs(
     return packs
 
 
+def voice_store_robot_fingerprint(serial_number: str | None) -> str | None:
+    """Return the privacy-preserving robot identity accepted by the store."""
+    normalized = str(serial_number or "").strip().casefold()
+    if not normalized:
+        return None
+    return hashlib.sha256(
+        _VOICE_STORE_ROBOT_FINGERPRINT_PREFIX + normalized.encode("utf-8")
+    ).hexdigest()
+
+
 async def async_create_voice_store_pairing(
     session: Any,
     client_token: str,
+    serial_number: str | None = None,
 ) -> tuple[str | None, str | None]:
     """Return a temporary browser URL linked to one anonymous Map client."""
+    request_payload = {"client_token": client_token}
+    robot_fingerprint = voice_store_robot_fingerprint(serial_number)
+    if robot_fingerprint is not None:
+        request_payload["robot_fingerprint"] = robot_fingerprint
     try:
         async with session.post(
             VOICE_STORE_PAIR_URL,
-            json={"client_token": client_token},
+            json=request_payload,
             timeout=15,
         ) as response:
             if response.status != 200:
