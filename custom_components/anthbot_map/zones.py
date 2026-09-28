@@ -29,7 +29,6 @@ def manual_zones(data: dict[str, Any]) -> list[dict[str, Any]]:
         zones = _list_of_dicts(area_definition.get(key))
         if zones:
             return zones
-
     return _list_of_dicts(data.get("custom_areas"))
 
 
@@ -37,18 +36,12 @@ def auto_zones(data: dict[str, Any]) -> list[dict[str, Any]]:
     """Return auto-zone definitions."""
     area_definition = _area_definition(data)
     for key in (
-        "region_areas",
-        "regionAreas",
-        "auto_regions",
-        "autoRegions",
-        "auto_zones",
-        "autoZones",
-        "regions",
+        "region_areas", "regionAreas", "auto_regions", "autoRegions",
+        "auto_zones", "autoZones", "regions",
     ):
         zones = _list_of_dicts(area_definition.get(key))
         if zones:
             return zones
-
     return _list_of_dicts(data.get("region_areas"))
 
 
@@ -89,21 +82,10 @@ def zone_attribute_payload(zones: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for zone in zones:
         item: dict[str, Any] = {}
         for key in (
-            "id",
-            "name",
-            "mow_count",
-            "mow_mode",
-            "mow_order",
-            "cutter_height",
-            "ride_distance",
-            "enable_adaptive_head",
-            "mow_head",
-            "visual_ignore_obstacle_switch",
-            "obstacle_avoid_level",
-            "x",
-            "y",
-            "vertexs",
-            "points",
+            "id", "name", "mow_count", "mow_mode", "mow_order",
+            "cutter_height", "ride_distance", "enable_adaptive_head", "mow_head",
+            "visual_ignore_obstacle_switch", "obstacle_avoid_level", "x", "y",
+            "vertexs", "points",
         ):
             value = zone.get(key)
             if value is not None:
@@ -130,7 +112,26 @@ async def async_update_zone_settings(
     zone_id: int,
     updates: dict[str, Any],
 ) -> None:
-    """Persist one zone using the app-compatible full area_set payload."""
+    """Persist a setting selected from the zone/settings UI.
+
+    Live official-app testing on Genie 1000 shows that mowing passes is a
+    mower-wide ``param_set.mow_count`` property.  Do not rewrite the complete
+    area definition when the UI changes only that setting; route it through the
+    verified global param_set command instead.  Other genuine zone settings
+    keep their existing full area_set persistence path.
+    """
+    if set(updates) == {"mow_count"}:
+        mow_count = updates.get("mow_count")
+        if not isinstance(mow_count, int) or isinstance(mow_count, bool) or mow_count < 1 or mow_count > 3:
+            raise AnthbotGenieApiError("mow_count must be an integer from 1 to 3")
+        await coordinator.client.async_publish_service_command(
+            cmd="param_set", data={"mow_count": mow_count}
+        )
+        await asyncio.sleep(1)
+        await coordinator.client.async_request_all_properties()
+        await coordinator.async_request_refresh()
+        return
+
     state = coordinator.reported_state
     source = manual_zones(state) if zone_kind == "manual" else auto_zones(state)
     if not source:
