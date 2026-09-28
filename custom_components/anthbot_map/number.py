@@ -56,7 +56,7 @@ NUMBERS: tuple[AnthbotNumberDescription, ...] = (
         translation_key="mow_count_setting",
         name="Mowing passes",
         native_min_value=1,
-        native_max_value=3,
+        native_max_value=2,
         native_step=1,
         mode=NumberMode.SLIDER,
         getter=lambda data: (
@@ -216,8 +216,8 @@ class AnthbotNumberEntity(
                 data={"cutter_height": int_value},
             )
         elif key == "mow_count_setting":
-            if int_value < 1 or int_value > 3:
-                raise ValueError("Mowing passes must be 1..3")
+            if int_value < 1 or int_value > 2:
+                raise ValueError("Mowing passes must be 1..2")
             await self.coordinator.client.async_publish_service_command(
                 cmd="param_set",
                 data={"mow_count": int_value},
@@ -279,7 +279,7 @@ class AnthbotNumberEntity(
 
 
 _ZONE_NUMBER_SETTINGS: dict[str, tuple[str, float, float, float, str | None]] = {
-    "mow_count": ("Mowing passes", 1, 3, 1, None),
+    "mow_count": ("Mowing passes", 1, 2, 1, None),
     "cutter_height": ("Cutting height", 30, 70, 5, "mm"),
     "obstacle_avoid_level": ("Obstacle sensitivity", 0, 2, 1, None),
     "mow_head": ("Mowing direction", 0, 180, 1, "deg"),
