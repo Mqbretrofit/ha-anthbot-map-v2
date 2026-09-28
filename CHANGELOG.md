@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.4.9.4 — 2026-09-28
+
+- Rebuilds the M9/M9 Pro settings synchronization on the stable 2.4.9.3 base without replacing the existing Genie command path.
+- Keeps global, manual-zone and automatic-zone settings synchronized between Home Assistant and the ANTHBOT app, including per-zone cutting height and related zone controls.
+- Updates open Robot settings controls in place when fresh mower data arrives, so background refreshes no longer close the settings page, collapse the selected section or require reopening the panel to see app-side changes.
+- Extends the Information panel with the active or most recently stopped mowing target, its effective cutting height source, mowed area in square metres and a separate `HH:MM:SS` mowing duration.
+- Keeps the displayed mowing target and session summary after stopping, and advances the visible seconds between the M9/M9 Pro's minute-level duration updates while correctly pausing and resuming the local timer.
+- Adds the new information labels to all 23 supported frontend languages and keeps their typography consistent with the other Information rows.
+- Links Community Voice Store pairing to a privacy-preserving anonymous robot fingerprint so the same mower can be recognized across Home Assistant installations without transmitting its raw serial number.
+- Documents the fingerprint behavior in `PRIVACY.md`; the normal installation-presence heartbeat remains unchanged and does not receive the robot fingerprint.
+- Preserves the stable 2.4.9.3 mower command routing, map rendering, calibration, schedules, firmware, voice-pack and performance behavior.
+- Full release validation passed **420/420 unit tests**, JavaScript syntax checks and bundled-frontend mirror verification.
+
 ## 2.4.9.3 — 2026-09-26
 
 - Fixes the 2.4.9.2 service-routing regression where presence-heartbeat runtime metadata in `hass.data["anthbot_map"]` could be treated as a coordinator list, causing `'bool' object is not iterable` when commands such as mowing-height changes were sent.
