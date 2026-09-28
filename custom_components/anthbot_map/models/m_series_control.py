@@ -1,11 +1,4 @@
-"""M5/M9 command transport corrections.
-
-The clean rebuild keeps Genie on the proven beta3 command path. M-series
-mowers use the same AWS service shadow, but their simple app commands must keep
-the scalar/null ``data`` value instead of being rewritten to ``{cmd: value}``.
-This layer is installed after the legacy M-series compatibility wrapper and only
-intercepts those native simple commands plus M-series ``param_set`` writes.
-"""
+"""Genie/M5/M9 command transport corrections for verified settings writes."""
 
 from __future__ import annotations
 
@@ -29,9 +22,17 @@ _NATIVE_SIMPLE_COMMANDS = {
 }
 
 
+def _model(client: AnthbotShadowApiClient) -> str:
+    return str(getattr(client, "_device_model", "") or "").upper()
+
+
 def _is_m_series_client(client: AnthbotShadowApiClient) -> bool:
-    model = str(getattr(client, "_device_model", "") or "").upper()
+    model = _model(client)
     return "M5" in model or "M9" in model
+
+
+def _is_genie_client(client: AnthbotShadowApiClient) -> bool:
+    return "GENIE" in _model(client)
 
 
 async def _publish_native_simple_command(client: AnthbotShadowApiClient, *, cmd: str, data: Any) -> None:
@@ -73,22 +74,22 @@ async def _publish_native_simple_command(client: AnthbotShadowApiClient, *, cmd:
         await publisher(topic, payload)
         return
     raise AnthbotGenieApiError(
-        f"M-series command '{cmd}' failed ({last_status}); "
+        f"Command '{cmd}' failed ({last_status}); "
         f"errortype={last_headers.get('x-amzn-errortype', '')}; body={last_body[:240]}"
     )
 
 
 def _build_full_param_set(client: AnthbotShadowApiClient, changes: Any) -> dict[str, Any]:
-    """Merge a setting into the already cached live M-series param_set."""
+    """Merge a setting into the cached live property param_set."""
     if not isinstance(changes, dict) or not changes:
-        raise AnthbotGenieApiError("M-series param_set requires a non-empty dict payload")
+        raise AnthbotGenieApiError("param_set requires a non-empty dict payload")
 
-    coordinator = getattr(client, "_m_series_coordinator", None)
+    coordinator = getattr(client, "_settings_param_coordinator", None)
     reported = getattr(coordinator, "reported_state", None)
     current = reported.get("param_set") if isinstance(reported, dict) else None
     if not isinstance(current, dict) or not current:
         raise AnthbotGenieApiError(
-            "Current M-series param_set is not available in the live coordinator state; refusing partial update"
+            "Current param_set is not available in the live coordinator state; refusing partial update"
         )
 
     merged = dict(current)
@@ -97,8 +98,8 @@ def _build_full_param_set(client: AnthbotShadowApiClient, changes: Any) -> dict[
         normalized_changes["cutter_height"] = normalized_changes.pop("cutter_ctl_cutter_lift")
     merged.update(normalized_changes)
     _LOGGER.debug(
-        "ANTHBOT M-SERIES cached full param_set update: sn=%s changed=%s fields=%s",
-        client.serial_number, sorted(normalized_changes), sorted(merged),
+        "ANTHBOT cached full param_set update: sn=%s model=%s changed=%s fields=%s",
+        client.serial_number, _model(client), sorted(normalized_changes), sorted(merged),
     )
     return merged
 
@@ -114,16 +115,24 @@ def install_m_series_control_support() -> None:
 
     def coordinator_init(self, *args: Any, **kwargs: Any) -> None:
         previous_coordinator_init(self, *args, **kwargs)
-        if _is_m_series_client(self.client):
-            setattr(self.client, "_m_series_coordinator", self)
+        if _is_m_series_client(self.client) or _is_genie_client(self.client):
+            setattr(self.client, "_settings_param_coordinator", self)
 
     async def publish_service_command(self: AnthbotShadowApiClient, *, cmd: str, data: Any = None) -> None:
-        if not _is_m_series_client(self):
-            await previous_publish(self, cmd=cmd, data=data)
-            return
-        if cmd == "param_set":
+        is_m_series = _is_m_series_client(self)
+        is_genie = _is_genie_client(self)
+
+        # Verified by live property shadow on both Genie and M9 Pro: settings
+        # such as mow_count live in the global param_set. Preserve all current
+        # fields when changing one value so the mower never receives a partial
+        # param_set object.
+        if cmd == "param_set" and (is_m_series or is_genie):
             full_param_set = _build_full_param_set(self, data)
             await _publish_native_simple_command(self, cmd=cmd, data=full_param_set)
+            return
+
+        if not is_m_series:
+            await previous_publish(self, cmd=cmd, data=data)
             return
         if cmd not in _NATIVE_SIMPLE_COMMANDS:
             await previous_publish(self, cmd=cmd, data=data)
