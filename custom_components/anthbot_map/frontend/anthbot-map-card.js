@@ -3396,84 +3396,6 @@ class AnthbotMapCard extends HTMLElement {
       if (value) value.textContent = this.maintenanceValue(tile.dataset.maintenanceKind);
     });
 
-    root.querySelectorAll('[data-global-visual-obstacle="true"]').forEach((tile) => {
-      const attrs = this.entity?.attributes || {};
-      const labels = [this.t("low"), this.t("medium"), this.t("high")];
-      const switchEntityId = tile.dataset.visualSwitchEntityId
-        || attrs.visual_obstacle_switch_entity_id
-        || "";
-      const levelEntityId = tile.dataset.visualLevelEntityId
-        || attrs.visual_obstacle_level_entity_id
-        || "";
-      const switchEntity = switchEntityId ? this._hass?.states?.[switchEntityId] : null;
-      const levelEntity = levelEntityId ? this._hass?.states?.[levelEntityId] : null;
-
-      const reportedSwitchState = switchEntity
-        ? switchEntity.state
-        : attrs.visual_obstacle_enabled === true
-          ? "on"
-          : attrs.visual_obstacle_enabled === false
-            ? "off"
-            : "";
-      const pendingSwitch = tile.dataset.pendingVisualSwitch || "";
-      const pendingSwitchUntil = Number(tile.dataset.pendingVisualSwitchUntil || 0);
-      if (pendingSwitch && reportedSwitchState === pendingSwitch) {
-        delete tile.dataset.pendingVisualSwitch;
-        delete tile.dataset.pendingVisualSwitchUntil;
-      } else if (pendingSwitch && Date.now() >= pendingSwitchUntil) {
-        delete tile.dataset.pendingVisualSwitch;
-        delete tile.dataset.pendingVisualSwitchUntil;
-      }
-      const shownSwitch = tile.dataset.pendingVisualSwitch || reportedSwitchState;
-      const input = tile.querySelector("[data-global-visual-switch]");
-      if (shownSwitch && input && this.shadowRoot?.activeElement !== input) {
-        input.checked = shownSwitch === "on";
-        tile.classList.toggle("disabled", shownSwitch !== "on");
-      }
-
-      const reportedLevelRaw = Number(
-        levelEntity?.state ?? attrs.visual_obstacle_level
-      );
-      const reportedLevel = Number.isFinite(reportedLevelRaw)
-        ? Math.max(0, Math.min(2, Math.round(reportedLevelRaw)))
-        : null;
-      const pendingLevelText = tile.dataset.pendingVisualLevel;
-      const pendingLevel = pendingLevelText === undefined
-        ? null
-        : Number(pendingLevelText);
-      const pendingLevelUntil = Number(tile.dataset.pendingVisualLevelUntil || 0);
-      if (
-        pendingLevel !== null
-        && Number.isFinite(pendingLevel)
-        && reportedLevel !== null
-        && reportedLevel === pendingLevel
-      ) {
-        delete tile.dataset.pendingVisualLevel;
-        delete tile.dataset.pendingVisualLevelUntil;
-      } else if (
-        pendingLevelText !== undefined
-        && Date.now() >= pendingLevelUntil
-      ) {
-        delete tile.dataset.pendingVisualLevel;
-        delete tile.dataset.pendingVisualLevelUntil;
-      }
-      const livePendingLevel = tile.dataset.pendingVisualLevel;
-      const shownLevelRaw = livePendingLevel !== undefined
-        ? Number(livePendingLevel)
-        : reportedLevel;
-      if (shownLevelRaw !== null && Number.isFinite(shownLevelRaw)) {
-        const shownLevel = Math.max(0, Math.min(2, Math.round(shownLevelRaw)));
-        const label = tile.querySelector("[data-global-visual-level-label]");
-        if (label) label.textContent = labels[shownLevel];
-        tile.querySelectorAll("[data-global-visual-level]").forEach((button) => {
-          button.classList.toggle(
-            "active",
-            Number(button.dataset.globalVisualLevel) === shownLevel,
-          );
-        });
-      }
-    });
-
     if (this.activePanel === "control") {
       const current = root.querySelector('[data-primary-mowing-action]');
       const nextAction = this.primaryMowingAction();
@@ -4873,114 +4795,31 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   createGlobalObstacleControl() {
-    const attrs = this.entity?.attributes || {};
-    const switchEntityId = String(
-      attrs.visual_obstacle_switch_entity_id
-      || this.getSwitchEntity("visualObstacle")
-      || ""
+    const wrapper = document.createElement("div");
+    wrapper.className = "panel-tile obstacle-combined";
+
+    const switchTile = this.createSwitchControl(
+      this.t("visualObstacle"),
+      "visualObstacle",
     );
-    const levelEntityId = String(
-      attrs.visual_obstacle_level_entity_id
-      || this.getNumberEntity("visualObstacleLevel")
-      || ""
-    );
-    const switchEntity = switchEntityId ? this._hass?.states?.[switchEntityId] : null;
-    const levelEntity = levelEntityId ? this._hass?.states?.[levelEntityId] : null;
+    switchTile.classList.add("visual-obstacle-global-switch");
 
-    const enabled = switchEntity
-      ? switchEntity.state === "on"
-      : attrs.visual_obstacle_enabled === true;
-    const rawLevel = Number(
-      levelEntity?.state ?? attrs.visual_obstacle_level ?? 1
-    );
-    const selected = Number.isFinite(rawLevel)
-      ? Math.max(0, Math.min(2, Math.round(rawLevel)))
-      : 1;
-    const labels = [this.t("low"), this.t("medium"), this.t("high")];
+    const switchInput = switchTile.querySelector('input[type="checkbox"]');
+    const levelWrap = document.createElement("div");
+    levelWrap.className = "obstacle-levels";
+    levelWrap.appendChild(this.createObstacleLevelControl());
 
-    const tile = document.createElement("div");
-    tile.className = `panel-tile obstacle-combined ${enabled ? "" : "disabled"}`;
-    tile.dataset.globalVisualObstacle = "true";
-    tile.dataset.visualSwitchEntityId = switchEntityId;
-    tile.dataset.visualLevelEntityId = levelEntityId;
+    const syncVisibility = () => {
+      const entityId = this.getSwitchEntity("visualObstacle");
+      const entity = entityId ? this._hass?.states?.[entityId] : null;
+      const enabled = switchInput ? switchInput.checked : entity?.state === "on";
+      wrapper.classList.toggle("disabled", !enabled);
+    };
+    switchInput?.addEventListener("change", syncVisibility);
+    syncVisibility();
 
-    const row = document.createElement("label");
-    row.className = "switch-tile";
-    row.innerHTML = `<span>${this.t("visualObstacle")}</span><input data-global-visual-switch type="checkbox" ${enabled ? "checked" : ""} ${switchEntityId ? "" : "disabled"}>`;
-
-    const levels = document.createElement("div");
-    levels.className = "obstacle-levels";
-    const levelTile = document.createElement("div");
-    levelTile.className = "panel-tile control-tile";
-    levelTile.innerHTML = `<div class="control-head"><span>${this.t("visualObstacleLevel")}</span><strong data-global-visual-level-label>${labels[selected]}</strong></div><div class="height-options" data-global-visual-level-options></div>`;
-    const options = levelTile.querySelector("[data-global-visual-level-options]");
-    options.style.cssText = "display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px";
-
-    labels.forEach((label, level) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "height-option";
-      button.dataset.globalVisualLevel = String(level);
-      button.textContent = label;
-      button.style.cssText = "min-width:0;width:100%;padding:8px 3px;font-size:12px;white-space:nowrap";
-      button.disabled = !levelEntityId;
-      button.classList.toggle("active", level === selected);
-      button.addEventListener("click", async (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (!levelEntityId) return;
-        const previous = Number(tile.dataset.pendingVisualLevel ?? selected);
-        tile.dataset.pendingVisualLevel = String(level);
-        tile.dataset.pendingVisualLevelUntil = String(Date.now() + 5000);
-        options.querySelectorAll(".height-option").forEach((item) => {
-          item.classList.toggle("active", item === button);
-        });
-        levelTile.querySelector("[data-global-visual-level-label]").textContent = label;
-        try {
-          await this._hass.callService("number", "set_value", {
-            entity_id: levelEntityId,
-            value: level,
-          });
-          this.scheduleRefresh(300);
-        } catch (error) {
-          tile.dataset.pendingVisualLevel = String(previous);
-          delete tile.dataset.pendingVisualLevelUntil;
-          throw error;
-        }
-      });
-      options.appendChild(button);
-    });
-    levels.appendChild(levelTile);
-
-    const input = row.querySelector("[data-global-visual-switch]");
-    input.addEventListener("change", async (event) => {
-      event.stopPropagation();
-      if (!switchEntityId) return;
-      const requested = input.checked;
-      tile.dataset.pendingVisualSwitch = requested ? "on" : "off";
-      tile.dataset.pendingVisualSwitchUntil = String(Date.now() + 5000);
-      tile.classList.toggle("disabled", !requested);
-      input.disabled = true;
-      try {
-        await this._hass.callService(
-          "switch",
-          requested ? "turn_on" : "turn_off",
-          { entity_id: switchEntityId },
-        );
-        this.scheduleRefresh(300);
-      } catch (error) {
-        delete tile.dataset.pendingVisualSwitch;
-        delete tile.dataset.pendingVisualSwitchUntil;
-        input.checked = !requested;
-        tile.classList.toggle("disabled", requested);
-        throw error;
-      } finally {
-        input.disabled = false;
-      }
-    });
-
-    tile.append(row, levels);
-    return tile;
+    wrapper.append(switchTile, levelWrap);
+    return wrapper;
   }
 
   createDirectObstacleControl(switchEntityId, levelEntityId) {
@@ -8265,6 +8104,10 @@ class AnthbotMapCard extends HTMLElement {
     if (this.isEntityAvailable(configured)) {
       return configured;
     }
+    if (kind === "visualObstacleLevel") {
+      const exact = String(this.entity?.attributes?.visual_obstacle_level_entity_id || "");
+      if (this.isEntityAvailable(exact)) return exact;
+    }
     return this.findEntity("number", NUMBER_MAP[kind] || []);
   }
 
@@ -8289,7 +8132,10 @@ class AnthbotMapCard extends HTMLElement {
     if (this.isEntityAvailable(configured)) {
       return configured;
     }
-
+    if (kind === "visualObstacle") {
+      const exact = String(this.entity?.attributes?.visual_obstacle_switch_entity_id || "");
+      if (this.isEntityAvailable(exact)) return exact;
+    }
     return this.findEntity("switch", SWITCH_MAP[kind] || []);
   }
 
