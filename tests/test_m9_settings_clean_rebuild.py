@@ -193,6 +193,19 @@ class M9CleanSettingsRebuildTests(unittest.TestCase):
         self.assertIn("exactSettingKeys.has(requestedSetting)", resolver)
         self.assertIn("function (switchEntityId, levelEntityId, ...rest)", resolver)
 
+    def test_zone_updates_preserve_open_drawers_without_forced_refresh(self) -> None:
+        runtime = _read(
+            "custom_components/anthbot_map/frontend/anthbot-map-card.js"
+        )
+        self.assertIn("this.openSettingsSections = new Set();", runtime)
+        self.assertIn("this.openZoneSettings = new Set();", runtime)
+        self.assertIn("this.openSettingsSections.has(key)", runtime)
+        self.assertIn("this.openZoneSettings.has(zoneKey)", runtime)
+        self.assertGreaterEqual(
+            runtime.count("if (!zoneContext?.zone) this.scheduleRefresh();"),
+            5,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

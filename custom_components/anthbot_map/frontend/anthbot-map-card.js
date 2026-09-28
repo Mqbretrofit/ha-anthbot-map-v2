@@ -112,6 +112,8 @@ class AnthbotMapCard extends HTMLElement {
     this.selectedMowingTarget = { type: "full" };
     this.mowingZoneGroupsOpen = { "zone-set": true, "auto-zone-set": false };
     this.panelInteractionUntil = 0;
+    this.openSettingsSections = new Set();
+    this.openZoneSettings = new Set();
     this.customButtonActions = {};
     this.customButtonActionsEnabled = false;
     this.customButtonServerConfigured = false;
@@ -4766,13 +4768,17 @@ class AnthbotMapCard extends HTMLElement {
     details.dataset.settingsKey = key;
     const configuredOpen = this.defaultSubmenu === key
       || ((key === "manual" || key === "auto") && this.defaultSubmenu.startsWith(`${key}-`));
-    details.open = configuredOpen || (
+    details.open = this.openSettingsSections.has(key) || configuredOpen || (
       !this.defaultSubmenu
       && (this.readOpenSettingsKey() === key || (defaultOpen && !window.localStorage.getItem(this.settingsStorageKey())))
     );
     details.innerHTML = `<summary>${title}</summary><div class="settings-section-body"></div>`;
     details.addEventListener("toggle", () => {
-      if (!details.open) return;
+      if (!details.open) {
+        this.openSettingsSections.delete(key);
+        return;
+      }
+      this.openSettingsSections.add(key);
       window.localStorage.setItem(this.settingsStorageKey(), key);
       this.shadowRoot.querySelectorAll("details.settings-section").forEach((item) => {
         if (item !== details) item.open = false;
@@ -4795,13 +4801,17 @@ class AnthbotMapCard extends HTMLElement {
         const zoneKey = `${kind}-${zone.id}`;
         const details = document.createElement("details");
         details.className = "zone-settings";
-        details.open = this.defaultSubmenu === zoneKey || (
+        details.open = this.openZoneSettings.has(zoneKey) || this.defaultSubmenu === zoneKey || (
           !this.defaultSubmenu
           && window.localStorage.getItem(`${this.settingsStorageKey()}-zone`) === zoneKey
         );
         details.innerHTML = `<summary>${zone.name ? String(zone.name) : `${kind === "auto" ? this.t("autoZone") : this.t("zone")} ${zone.id}`}</summary><div class="zone-settings-body"></div>`;
         details.addEventListener("toggle", () => {
-          if (!details.open) return;
+          if (!details.open) {
+            this.openZoneSettings.delete(zoneKey);
+            return;
+          }
+          this.openZoneSettings.add(zoneKey);
           window.localStorage.setItem(`${this.settingsStorageKey()}-zone`, zoneKey);
           section.querySelectorAll("details.zone-settings").forEach((item) => {
             if (item !== details) item.open = false;
@@ -4912,7 +4922,7 @@ class AnthbotMapCard extends HTMLElement {
       const currentEntityId = this.resolveZoneControlEntity(tile, "number") || tile.dataset.zoneEntityId || entityId;
       if (!currentEntityId) return;
       await this._hass.callService("number", "set_value", {entity_id: currentEntityId, value: Number(input.value)});
-      this.scheduleRefresh();
+      if (!zoneContext?.zone) this.scheduleRefresh();
     });
     input.addEventListener("blur", () => this.refreshOpenPanelValues());
     return tile;
@@ -4961,7 +4971,7 @@ class AnthbotMapCard extends HTMLElement {
           entity_id: currentEntityId,
           option,
         });
-        this.scheduleRefresh();
+        if (!zoneContext?.zone) this.scheduleRefresh();
       });
       options.appendChild(button);
     });
@@ -5028,7 +5038,7 @@ class AnthbotMapCard extends HTMLElement {
       const currentEntityId = this.resolveZoneControlEntity(tile, "switch") || tile.dataset.zoneEntityId || entityId;
       if (!currentEntityId) return;
       await this._hass.callService("switch", input.checked ? "turn_on" : "turn_off", {entity_id: currentEntityId});
-      this.scheduleRefresh();
+      if (!zoneContext?.zone) this.scheduleRefresh();
     });
     return tile;
   }
@@ -5065,7 +5075,7 @@ class AnthbotMapCard extends HTMLElement {
       if (!currentEntityId) return;
       await this._hass.callService("switch", input.checked ? "turn_on" : "turn_off", {entity_id: currentEntityId});
       tile.classList.toggle("disabled", !input.checked);
-      this.scheduleRefresh();
+      if (!zoneContext?.zone) this.scheduleRefresh();
     });
     tile.append(row, levels);
     return tile;
@@ -5099,7 +5109,7 @@ class AnthbotMapCard extends HTMLElement {
             || entityId;
         if (!currentEntityId) return;
         await this._hass.callService("number", "set_value", {entity_id: currentEntityId, value: level});
-        this.scheduleRefresh();
+        if (!zoneContext?.zone) this.scheduleRefresh();
       });
       options.appendChild(button);
     });
