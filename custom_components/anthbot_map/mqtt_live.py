@@ -546,7 +546,10 @@ class AnthbotLiveShadowListener:
                                     probe,
                                 )
 
-                        if not topic.endswith("/get/accepted"):
+                        if (
+                            "/service/" in topic
+                            and not topic.endswith("/get/accepted")
+                        ):
                             setting_patch = _visual_setting_patch_from_service_payload(
                                 payload
                             )
