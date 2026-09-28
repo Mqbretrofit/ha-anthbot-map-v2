@@ -197,10 +197,20 @@ class M9CleanSettingsRebuildTests(unittest.TestCase):
         runtime = _read(
             "custom_components/anthbot_map/frontend/anthbot-map-card.js"
         )
+        resolver = _read(
+            "custom_components/anthbot_map/frontend/serial-entity-resolver.js"
+        )
         self.assertIn("this.openSettingsSections = new Set();", runtime)
         self.assertIn("this.openZoneSettings = new Set();", runtime)
         self.assertIn("this.openSettingsSections.has(key)", runtime)
         self.assertIn("this.openZoneSettings.has(zoneKey)", runtime)
+        self.assertIn("readPanelSessionState(config.entity)", runtime)
+        self.assertIn("this.savePanelSessionState();", runtime)
+        self.assertIn("this.refreshOpenPanelValues?.();", resolver)
+        availability_refresh = resolver.split(
+            "const originalUpdateRenderer = proto.updateRenderer;", 1
+        )[1]
+        self.assertNotIn("this.renderAppPanel?.();", availability_refresh)
         self.assertGreaterEqual(
             runtime.count("if (!zoneContext?.zone) this.scheduleRefresh();"),
             5,

@@ -5,7 +5,7 @@
 // the exact Home Assistant duplicate ordinal of this card's map entity. This
 // keeps Genie / M-series isolated without making valid legacy settings vanish.
 
-const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-19-control-v13";
+const ANTHBOT_CONTROL_ROUTER_VERSION = "2026-09-28-control-v14";
 
 const disableLegacyCommandRouter = () => {
   if (typeof window === "undefined" || typeof document === "undefined") return;
@@ -522,13 +522,12 @@ if (typeof customElements !== "undefined") {
         const result = originalUpdateRenderer.apply(this, args);
         const signature = availabilitySignature(this);
         if (signature !== this.__anthbotAvailabilitySignature) {
-          const hadSignature = this.__anthbotAvailabilitySignature !== undefined;
           this.__anthbotAvailabilitySignature = signature;
-          if (hadSignature && this.shadowRoot?.querySelector?.('[data-role="panel-body"]')) {
-            this.renderAppPanel?.();
-          } else {
-            syncPanelTabs(this);
-          }
+          // Availability changes are normal HA state pushes. Rebuilding the
+          // panel here destroys the active details tree and closes controls.
+          // Controls resolve their current entity again in the in-place path.
+          syncPanelTabs(this);
+          this.refreshOpenPanelValues?.();
         }
         return result;
       };

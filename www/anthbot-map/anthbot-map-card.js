@@ -11,7 +11,7 @@ import {
   readMowingPathCalibration,
   readRobotCalibration,
   resetCalibration,
-} from "./calibration.js?v=2493-m9zones1";
+} from "./calibration.js?v=2493-m9zones2";
 
 const ENTITY_MAP = {
   battery: ["sensor", ["battery_level"]],
@@ -160,6 +160,16 @@ class AnthbotMapCard extends HTMLElement {
     this.floatingMenuOpen = typeof config.menu_open === "boolean"
       ? config.menu_open
       : typeof config.menuOpen === "boolean" ? config.menuOpen : false;
+    const savedPanelState = this.readPanelSessionState(config.entity);
+    if (validPanels.has(savedPanelState.activePanel)) {
+      this.activePanel = savedPanelState.activePanel;
+    }
+    if (typeof savedPanelState.floatingMenuOpen === "boolean") {
+      this.floatingMenuOpen = savedPanelState.floatingMenuOpen;
+    }
+    if (typeof savedPanelState.classicMobileSheetOpen === "boolean") {
+      this.classicMobileSheetOpen = savedPanelState.classicMobileSheetOpen;
+    }
     this.defaultSubmenu = String(config.default_submenu ?? config.defaultSubmenu ?? "").trim();
     this.mowingZoneGroupsOpen = this.defaultSubmenu === "auto-zone-set"
       ? { "zone-set": false, "auto-zone-set": true }
@@ -3017,7 +3027,6 @@ class AnthbotMapCard extends HTMLElement {
     } else if (this.frontendLayout === "classic") {
       topSlot?.appendChild(appShell);
       sideSlot?.appendChild(appPanel);
-      if (this.isClassicMobilePortrait()) this.classicMobileSheetOpen = false;
       this.syncClassicMobileSheet(root);
       this.setupClassicLandscapePanelNavigation(root);
     } else if (this.frontendLayout === "compact") {
@@ -3105,12 +3114,14 @@ class AnthbotMapCard extends HTMLElement {
         event.stopPropagation();
         this.floatingMenuOpen = button.dataset.floatingMenu === "close" ? false : !this.floatingMenuOpen;
         drawer?.classList.toggle("open", this.floatingMenuOpen);
+        this.savePanelSessionState();
       });
     });    root.querySelector("[data-classic-mobile-close]")?.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
       this.classicMobileSheetOpen = false;
       sideSlot?.classList.remove("mobile-sheet-open");
+      this.savePanelSessionState();
     });
 
 
@@ -4037,6 +4048,7 @@ class AnthbotMapCard extends HTMLElement {
   setPanel(panel) {
     this.activePanel = panel;
     this.optionalPanelStructureDirty = false;
+    this.savePanelSessionState();
     const calibration = this.shadowRoot?.querySelector('[data-role="calibration-overlay"]');
     if (calibration) calibration.hidden = panel !== "calibration";
     if (panel === "calibration") {
@@ -4758,6 +4770,32 @@ class AnthbotMapCard extends HTMLElement {
     return `anthbot-map-open-settings-${this.entityBase()}`;
   }
 
+  panelSessionStorageKey(entityId = this.config?.entity) {
+    return `anthbot-map-panel-state-${String(entityId || "unknown")}`;
+  }
+
+  readPanelSessionState(entityId = this.config?.entity) {
+    try {
+      const raw = window.sessionStorage?.getItem(this.panelSessionStorageKey(entityId));
+      const parsed = raw ? JSON.parse(raw) : null;
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (_error) {
+      return {};
+    }
+  }
+
+  savePanelSessionState() {
+    try {
+      window.sessionStorage?.setItem(this.panelSessionStorageKey(), JSON.stringify({
+        activePanel: this.activePanel,
+        floatingMenuOpen: this.floatingMenuOpen,
+        classicMobileSheetOpen: this.classicMobileSheetOpen,
+      }));
+    } catch (_error) {
+      // UI persistence is best-effort and must never block a mower control.
+    }
+  }
+
   readOpenSettingsKey() {
     return window.localStorage.getItem(this.settingsStorageKey()) || "global";
   }
@@ -4768,14 +4806,19 @@ class AnthbotMapCard extends HTMLElement {
     details.dataset.settingsKey = key;
     const configuredOpen = this.defaultSubmenu === key
       || ((key === "manual" || key === "auto") && this.defaultSubmenu.startsWith(`${key}-`));
-    details.open = this.openSettingsSections.has(key) || configuredOpen || (
-      !this.defaultSubmenu
-      && (this.readOpenSettingsKey() === key || (defaultOpen && !window.localStorage.getItem(this.settingsStorageKey())))
-    );
+    const rememberedKey = window.localStorage.getItem(this.settingsStorageKey());
+    details.open = this.openSettingsSections.size
+      ? this.openSettingsSections.has(key)
+      : rememberedKey
+        ? rememberedKey === key
+        : configuredOpen || defaultOpen;
     details.innerHTML = `<summary>${title}</summary><div class="settings-section-body"></div>`;
     details.addEventListener("toggle", () => {
       if (!details.open) {
         this.openSettingsSections.delete(key);
+        if (window.localStorage.getItem(this.settingsStorageKey()) === key) {
+          window.localStorage.removeItem(this.settingsStorageKey());
+        }
         return;
       }
       this.openSettingsSections.add(key);
@@ -4801,14 +4844,19 @@ class AnthbotMapCard extends HTMLElement {
         const zoneKey = `${kind}-${zone.id}`;
         const details = document.createElement("details");
         details.className = "zone-settings";
-        details.open = this.openZoneSettings.has(zoneKey) || this.defaultSubmenu === zoneKey || (
-          !this.defaultSubmenu
-          && window.localStorage.getItem(`${this.settingsStorageKey()}-zone`) === zoneKey
-        );
+        const rememberedZoneKey = window.localStorage.getItem(`${this.settingsStorageKey()}-zone`);
+        details.open = this.openZoneSettings.size
+          ? this.openZoneSettings.has(zoneKey)
+          : rememberedZoneKey
+            ? rememberedZoneKey === zoneKey
+            : this.defaultSubmenu === zoneKey;
         details.innerHTML = `<summary>${zone.name ? String(zone.name) : `${kind === "auto" ? this.t("autoZone") : this.t("zone")} ${zone.id}`}</summary><div class="zone-settings-body"></div>`;
         details.addEventListener("toggle", () => {
           if (!details.open) {
             this.openZoneSettings.delete(zoneKey);
+            if (window.localStorage.getItem(`${this.settingsStorageKey()}-zone`) === zoneKey) {
+              window.localStorage.removeItem(`${this.settingsStorageKey()}-zone`);
+            }
             return;
           }
           this.openZoneSettings.add(zoneKey);

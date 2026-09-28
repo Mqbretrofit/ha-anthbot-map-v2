@@ -26,9 +26,10 @@ class TestDefaultMenuLayout(unittest.TestCase):
         self.assertIn("config.default_submenu ?? config.defaultSubmenu", self.source)
         self.assertIn("this.defaultSubmenu === key", self.source)
 
-    def test_existing_local_storage_behavior_remains_without_yaml_override(self) -> None:
-        self.assertIn("!this.defaultSubmenu", self.source)
-        self.assertIn("this.readOpenSettingsKey() === key", self.source)
+    def test_remembered_open_section_survives_yaml_default_and_rerender(self) -> None:
+        self.assertIn("const rememberedKey = window.localStorage.getItem", self.source)
+        self.assertIn("rememberedKey === key", self.source)
+        self.assertIn("rememberedZoneKey === zoneKey", self.source)
 
     def test_zone_submenu_can_open_its_parent(self) -> None:
         self.assertIn('key === "manual" || key === "auto"', self.source)
