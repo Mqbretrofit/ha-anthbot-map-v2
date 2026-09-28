@@ -1749,6 +1749,29 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         param_set["mow_count"] = mow_count_value
                         state["mow_count"] = mow_count_value
 
+                    raw_cutter_height = property_update.get("cutter_height")
+                    if raw_cutter_height is None:
+                        raw_cutter_height = property_update.get(
+                            "cutter_ctl_cutter_lift"
+                        )
+                    if (
+                        raw_cutter_height is None
+                        and isinstance(incoming_param, dict)
+                    ):
+                        raw_cutter_height = incoming_param.get("cutter_height")
+                        if raw_cutter_height is None:
+                            raw_cutter_height = incoming_param.get(
+                                "cutter_ctl_cutter_lift"
+                            )
+                    if isinstance(raw_cutter_height, (int, float)):
+                        cutter_height_value = int(raw_cutter_height)
+                        if (
+                            30 <= cutter_height_value <= 70
+                            and cutter_height_value % 5 == 0
+                        ):
+                            param_set["cutter_height"] = cutter_height_value
+                            state["cutter_height"] = cutter_height_value
+
                     if device_config:
                         state["device_config"] = device_config
                     if pobctl:
