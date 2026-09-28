@@ -1655,7 +1655,39 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     merged_service.update(service_update)
                     state["_service_reported"] = merged_service
                 if property_update:
-                    state.update(property_update)
+                    # Settings shadows are frequently partial. Preserve sibling
+                    # fields (for example pobctl.level while only switch
+                    # changes) instead of replacing the whole nested object.
+                    for nested_key in (
+                        "device_config",
+                        "pobctl",
+                        "param_set",
+                        "nest_param_set",
+                    ):
+                        patch_value = property_update.get(nested_key)
+                        if not isinstance(patch_value, dict):
+                            continue
+                        existing_value = state.get(nested_key)
+                        merged_value = (
+                            dict(existing_value)
+                            if isinstance(existing_value, dict)
+                            else {}
+                        )
+                        merged_value.update(patch_value)
+                        state[nested_key] = merged_value
+                    state.update(
+                        {
+                            key: value
+                            for key, value in property_update.items()
+                            if key
+                            not in {
+                                "device_config",
+                                "pobctl",
+                                "param_set",
+                                "nest_param_set",
+                            }
+                        }
+                    )
                     state["_robot_online"] = is_robot_online(state)
                     selection = select_map_archive(state)
                     state["_map_archive_selection"] = map_archive_diagnostics(
