@@ -132,6 +132,10 @@ class AnthbotMapCard extends HTMLElement {
     this.lastRendererOptionsSignature = "";
     this.lastRendererVisualSignature = "";
     this.optionalPanelStructureDirty = false;
+    this.settingStateUnsubscribe = null;
+    this.settingStateSubscriptionPending = false;
+    this.settingStateSubscriptionToken = 0;
+    this.settingStateConnection = null;
     this.fullscreenChangeHandler = () => {
       this.updateTrueFullscreenButton();
       this.scheduleViewportFillSync();
@@ -242,6 +246,7 @@ class AnthbotMapCard extends HTMLElement {
     const previousVoicePackSignature = this.voicePackSignature;
     const previousNonVoiceOptionalSignature = this.nonVoiceOptionalEntitySignature;
     this._hass = hass;
+    this.ensureSettingStateSubscription();
     this._activeEntityId = this.resolveMapEntityId();
     this.entity = hass.states[this._activeEntityId];
 
@@ -352,7 +357,174 @@ class AnthbotMapCard extends HTMLElement {
     return translate(this.language, key);
   }
 
+  ensureSettingStateSubscription() {
+    const connection = this._hass?.connection;
+    if (!connection?.subscribeEvents) return;
+    if (
+      this.settingStateConnection === connection
+      && (this.settingStateUnsubscribe || this.settingStateSubscriptionPending)
+    ) {
+      return;
+    }
+
+    this.stopSettingStateSubscription();
+    this.settingStateConnection = connection;
+    this.settingStateSubscriptionPending = true;
+    const token = ++this.settingStateSubscriptionToken;
+
+    const onStateChanged = (event) => {
+      const entityId = String(event?.data?.entity_id || "");
+      const newState = event?.data?.new_state;
+      if (!entityId || !newState) return;
+
+      const setting = String(newState.attributes?.setting || "");
+      if (![
+        "mow_height_setting",
+        "mow_count_setting",
+        "visual_obstacle_detection_enabled",
+        "visual_obstacle_level_setting",
+      ].includes(setting)) {
+        return;
+      }
+
+      const activeState = this._hass?.states?.[this._activeEntityId] || this.entity;
+      const activeSerial = String(
+        activeState?.attributes?.serial_number
+        || activeState?.attributes?.sn
+        || ""
+      ).trim();
+      const entitySerial = String(
+        newState.attributes?.serial_number
+        || newState.attributes?.sn
+        || ""
+      ).trim();
+      if (activeSerial && entitySerial && activeSerial !== entitySerial) return;
+
+      this.applyLiveSettingState(setting, newState);
+    };
+
+    try {
+      const result = connection.subscribeEvents(onStateChanged, "state_changed");
+      Promise.resolve(result)
+        .then((unsubscribe) => {
+          this.settingStateSubscriptionPending = false;
+          if (token !== this.settingStateSubscriptionToken) {
+            if (typeof unsubscribe === "function") unsubscribe();
+            return;
+          }
+          this.settingStateUnsubscribe =
+            typeof unsubscribe === "function" ? unsubscribe : null;
+        })
+        .catch((error) => {
+          if (token === this.settingStateSubscriptionToken) {
+            this.settingStateSubscriptionPending = false;
+            this.settingStateUnsubscribe = null;
+          }
+          console.warn("Anthbot setting state subscription failed", error);
+        });
+    } catch (error) {
+      this.settingStateSubscriptionPending = false;
+      console.warn("Anthbot setting state subscription failed", error);
+    }
+  }
+
+  stopSettingStateSubscription() {
+    this.settingStateSubscriptionToken += 1;
+    const unsubscribe = this.settingStateUnsubscribe;
+    this.settingStateUnsubscribe = null;
+    this.settingStateSubscriptionPending = false;
+    this.settingStateConnection = null;
+    if (typeof unsubscribe === "function") {
+      try {
+        unsubscribe();
+      } catch (_error) {
+        // Best-effort cleanup only.
+      }
+    }
+  }
+
+  applyLiveSettingState(setting, newState) {
+    const root = this.shadowRoot;
+    if (!root || !newState) return;
+    const rawState = newState.state;
+
+    if (setting === "mow_count_setting") {
+      const reported = Number(rawState);
+      if (!Number.isFinite(reported)) return;
+      const normalized = Math.max(1, Math.min(2, Math.round(reported)));
+      this.optimisticSettings.delete("mowCount");
+      root.querySelectorAll('[data-number-kind="mowCount"]').forEach((tile) => {
+        const input = tile.querySelector('input[type="range"]');
+        if (input) input.value = String(normalized);
+        const value = tile.querySelector(".control-head strong");
+        if (value) value.textContent = `${normalized} ×`;
+      });
+      return;
+    }
+
+    if (setting === "mow_height_setting") {
+      const reported = Number(rawState);
+      if (!Number.isFinite(reported)) return;
+      const normalized = Math.max(
+        30,
+        Math.min(70, Math.round(reported / 5) * 5),
+      );
+      this.optimisticSettings.delete("mowHeight");
+      root.querySelectorAll('[data-number-kind="mowHeight"]').forEach((tile) => {
+        const value = tile.querySelector(".control-head strong");
+        if (value) value.textContent = `${normalized} mm`;
+        tile.querySelectorAll(".height-option").forEach((button) => {
+          button.classList.toggle(
+            "active",
+            Number(button.textContent) === normalized,
+          );
+        });
+      });
+      return;
+    }
+
+    if (setting === "visual_obstacle_detection_enabled") {
+      const enabled = rawState === "on";
+      root.querySelectorAll('[data-global-visual-obstacle="true"]').forEach((tile) => {
+        delete tile.dataset.pendingVisualSwitch;
+        delete tile.dataset.pendingVisualSwitchUntil;
+        tile.dataset.visualEnabled = enabled ? "on" : "off";
+        tile.classList.toggle("disabled", !enabled);
+        const toggle = tile.querySelector("[data-global-visual-toggle]");
+        const knob = tile.querySelector("[data-global-visual-knob]");
+        if (toggle) {
+          toggle.setAttribute("aria-checked", enabled ? "true" : "false");
+          toggle.style.background = enabled
+            ? "var(--mf-accent,#2f9e63)"
+            : "rgba(127,127,127,.30)";
+        }
+        if (knob) knob.style.left = enabled ? "23px" : "3px";
+      });
+      return;
+    }
+
+    if (setting === "visual_obstacle_level_setting") {
+      const reported = Number(rawState);
+      if (!Number.isFinite(reported)) return;
+      const level = Math.max(0, Math.min(2, Math.round(reported)));
+      const labels = [this.t("low"), this.t("medium"), this.t("high")];
+      root.querySelectorAll('[data-global-visual-obstacle="true"]').forEach((tile) => {
+        delete tile.dataset.pendingVisualLevel;
+        delete tile.dataset.pendingVisualLevelUntil;
+        const label = tile.querySelector("[data-global-visual-level-label]");
+        if (label) label.textContent = labels[level];
+        tile.querySelectorAll("[data-global-visual-level]").forEach((button) => {
+          button.classList.toggle(
+            "active",
+            Number(button.dataset.globalVisualLevel) === level,
+          );
+        });
+      });
+    }
+  }
+
   disconnectedCallback() {
+    this.stopSettingStateSubscription();
     this.stopRefreshTimer();
     this.stopRainCountdownTimer();
     window.clearTimeout(this.pendingRefreshTimer);
