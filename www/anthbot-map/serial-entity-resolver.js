@@ -149,7 +149,17 @@ if (typeof customElements !== "undefined") {
       const wantedKind = kind === "auto" ? "auto" : "manual";
       const wantedZoneId = zone?.id == null ? "" : String(zone.id);
       if (!wantedZoneId) return null;
-      const key = {
+      const requestedSetting = String(settingLabel || "").trim().toLowerCase();
+      const exactSettingKeys = new Set([
+        "mow_count",
+        "cutter_height",
+        "obstacle_avoid_level",
+        "mow_head",
+        "visual_obstacle",
+        "custom_direction",
+        "mowing_mode",
+      ]);
+      const key = exactSettingKeys.has(requestedSetting) ? requestedSetting : ({
         "mowing passes": "mow_count",
         "cutting height": "cutter_height",
         "obstacle sensitivity": "obstacle_avoid_level",
@@ -157,7 +167,7 @@ if (typeof customElements !== "undefined") {
         "visual obstacle detection": "visual_obstacle",
         "custom mowing direction": "custom_direction",
         "mowing mode": "mowing_mode",
-      }[String(settingLabel || "").trim().toLowerCase()] || "";
+      }[requestedSetting] || "");
       if (!key) return null;
       for (const [entityId, state] of Object.entries(states)) {
         if (!entityId.startsWith(`${domain}.`) || !state) continue;
@@ -399,11 +409,11 @@ if (typeof customElements !== "undefined") {
 
     const originalDirectObstacle = proto.createDirectObstacleControl;
     if (typeof originalDirectObstacle === "function") {
-      proto.createDirectObstacleControl = function (switchEntityId, levelEntityId) {
+      proto.createDirectObstacleControl = function (switchEntityId, levelEntityId, ...rest) {
         if (!entityIdAvailable(this, switchEntityId) || !entityIdAvailable(this, levelEntityId)) {
           return emptyFragment();
         }
-        return originalDirectObstacle.call(this, switchEntityId, levelEntityId);
+        return originalDirectObstacle.call(this, switchEntityId, levelEntityId, ...rest);
       };
     }
 

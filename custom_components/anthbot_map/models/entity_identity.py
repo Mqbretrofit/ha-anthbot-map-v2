@@ -60,6 +60,7 @@ def _zone_select_identity(entity: AnthbotZoneMowingModeSelect) -> dict[str, Any]
         "zone_kind": entity._zone_kind,
         "zone_id": entity._zone_id,
         "zone_name": name,
+        "setting": "mowing_mode",
         "raw_mow_mode": value,
     }
 

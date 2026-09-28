@@ -74,6 +74,37 @@ class M9CleanSettingsRebuildTests(unittest.TestCase):
         self.assertEqual(patch["param_set"]["mow_count"], 2)
         self.assertEqual(patch["param_set"]["cutter_height"], 45)
 
+    def test_app_zone_command_mirrors_manual_and_automatic_zone_settings(self) -> None:
+        namespace = _load_functions(
+            INTEGRATION / "mqtt_live.py",
+            {
+                "_coerce_small_int",
+                "_find_nested_setting",
+                "_setting_patch_from_service_payload",
+            },
+        )
+        extract = namespace["_setting_patch_from_service_payload"]
+        patch = extract(
+            {
+                "state": {
+                    "desired": {
+                        "cmd": "area_set",
+                        "data": {
+                            "custom_areas": [
+                                {"id": 1, "mow_count": 2, "cutter_height": 45}
+                            ],
+                            "region_areas": [
+                                {"id": 7, "mow_count": 1, "obstacle_avoid_level": 2}
+                            ],
+                        },
+                    }
+                }
+            }
+        )
+        zones = patch["_app_zone_definition_mirror"]
+        self.assertEqual(zones["custom_areas"][0]["mow_count"], 2)
+        self.assertEqual(zones["region_areas"][0]["obstacle_avoid_level"], 2)
+
     def test_m9_device_config_is_authoritative_and_nested_state_is_preserved(self) -> None:
         namespace = _load_functions(
             INTEGRATION / "coordinator.py",
@@ -139,6 +170,28 @@ class M9CleanSettingsRebuildTests(unittest.TestCase):
         self.assertIn("&& !attrs.zone_kind", runtime)
         self.assertIn("&& attrs.zone_id === undefined", runtime)
         self.assertIn("this.refreshOpenPanelValues();", runtime)
+
+    def test_frontend_scopes_both_zone_kinds_by_stable_metadata(self) -> None:
+        runtime = _read(
+            "custom_components/anthbot_map/frontend/anthbot-map-card.js"
+        )
+        identity = _read(
+            "custom_components/anthbot_map/models/entity_identity.py"
+        )
+        coordinator = _read("custom_components/anthbot_map/coordinator.py")
+        resolver = _read(
+            "custom_components/anthbot_map/frontend/serial-entity-resolver.js"
+        )
+        self.assertIn('String(attrs.zone_kind || "") === kind', runtime)
+        self.assertIn("Number(attrs.zone_id) === zoneId", runtime)
+        self.assertIn('String(attrs.setting || "") === setting', runtime)
+        self.assertIn('data-zone-control="number"', runtime)
+        self.assertIn('data-zone-obstacle="true"', runtime)
+        self.assertIn('"setting": "mowing_mode"', identity)
+        self.assertIn('reported["_area_definition"] = self._area_definition', coordinator)
+        self.assertIn("retries=3", coordinator)
+        self.assertIn("exactSettingKeys.has(requestedSetting)", resolver)
+        self.assertIn("function (switchEntityId, levelEntityId, ...rest)", resolver)
 
 
 if __name__ == "__main__":

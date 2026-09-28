@@ -242,6 +242,7 @@ def _setting_patch_from_service_payload(
     search_root: Any = data if isinstance(data, (dict, list)) else desired
     mirror: dict[str, int] = {}
     patch: dict[str, Any] = {}
+    zone_definition: dict[str, list[dict[str, Any]]] = {}
 
     raw_switch = _find_nested_setting(search_root, ("pobctl_switch",))
     if raw_switch is None:
@@ -288,9 +289,20 @@ def _setting_patch_from_service_payload(
         patch.setdefault("param_set", {})["cutter_height"] = cutter_height
         patch["cutter_height"] = cutter_height
 
-    if not mirror:
+    if cmd == "area_set" and isinstance(data, dict):
+        for key in ("custom_areas", "region_areas"):
+            zones = data.get(key)
+            if isinstance(zones, list):
+                zone_definition[key] = [
+                    dict(zone) for zone in zones if isinstance(zone, dict)
+                ]
+
+    if not mirror and not zone_definition:
         return None
-    patch["_app_setting_mirror"] = mirror
+    if mirror:
+        patch["_app_setting_mirror"] = mirror
+    if zone_definition:
+        patch["_app_zone_definition_mirror"] = zone_definition
     return patch
 
 

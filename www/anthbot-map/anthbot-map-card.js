@@ -11,7 +11,7 @@ import {
   readMowingPathCalibration,
   readRobotCalibration,
   resetCalibration,
-} from "./calibration.js?v=2482-voice-select-unknown1";
+} from "./calibration.js?v=2493-m9zones1";
 
 const ENTITY_MAP = {
   battery: ["sensor", ["battery_level"]],
@@ -3478,6 +3478,96 @@ class AnthbotMapCard extends HTMLElement {
       });
     });
 
+    root.querySelectorAll('[data-zone-control="number"]').forEach((tile) => {
+      const entityId = this.resolveZoneControlEntity(tile, "number") || "";
+      tile.dataset.zoneEntityId = entityId;
+      const entity = entityId ? this._hass?.states?.[entityId] : null;
+      const reported = Number(entity?.state);
+      const input = tile.querySelector('input[type="range"]');
+      const userIsEditing = Boolean(input && root.activeElement === input);
+      if (input) {
+        input.disabled = !entityId;
+        if (Number.isFinite(reported) && !userIsEditing) {
+          input.value = String(reported);
+        }
+      }
+      const value = tile.querySelector(".control-head strong");
+      if (value && Number.isFinite(reported) && !userIsEditing) {
+        const unit = tile.dataset.zoneUnit || "";
+        value.textContent = `${reported}${unit ? ` ${unit}` : ""}`;
+      }
+    });
+
+    root.querySelectorAll('[data-zone-control="switch"]').forEach((tile) => {
+      const entityId = this.resolveZoneControlEntity(tile, "switch") || "";
+      tile.dataset.zoneEntityId = entityId;
+      const input = tile.querySelector('input[type="checkbox"]');
+      if (!input) return;
+      input.disabled = !entityId;
+      input.checked = entityId
+        ? this._hass?.states?.[entityId]?.state === "on"
+        : false;
+    });
+
+    root.querySelectorAll('[data-zone-control="select"]').forEach((tile) => {
+      const entityId = this.resolveZoneControlEntity(tile, "select") || "";
+      tile.dataset.zoneEntityId = entityId;
+      const current = String(
+        entityId ? this._hass?.states?.[entityId]?.state || "" : ""
+      );
+      const value = tile.querySelector(".control-head strong");
+      tile.querySelectorAll('[data-zone-select-option]').forEach((button) => {
+        button.disabled = !entityId;
+        const active = button.dataset.zoneSelectOption === current;
+        button.classList.toggle("active", active);
+        if (active && value) {
+          value.textContent = button.dataset.zoneSelectLabel || current;
+        }
+      });
+    });
+
+    root.querySelectorAll('[data-zone-obstacle="true"]').forEach((tile) => {
+      const kind = tile.dataset.zoneKind;
+      const zone = {
+        id: Number(tile.dataset.zoneId),
+        name: tile.dataset.zoneName,
+      };
+      const switchEntityId = this.findZoneSettingEntity(
+        "switch", kind, zone, "visual_obstacle"
+      ) || "";
+      const levelEntityId = this.findZoneSettingEntity(
+        "number", kind, zone, "obstacle_avoid_level"
+      ) || "";
+      tile.dataset.visualSwitchEntityId = switchEntityId;
+      tile.dataset.visualLevelEntityId = levelEntityId;
+
+      const input = tile.querySelector('[data-global-visual-toggle]');
+      const enabled = switchEntityId
+        ? this._hass?.states?.[switchEntityId]?.state === "on"
+        : false;
+      if (input) {
+        input.disabled = !switchEntityId;
+        input.checked = enabled;
+      }
+      tile.classList.toggle("disabled", !enabled);
+
+      const rawLevel = Number(
+        levelEntityId ? this._hass?.states?.[levelEntityId]?.state : NaN
+      );
+      if (!Number.isFinite(rawLevel)) return;
+      const level = Math.max(0, Math.min(2, Math.round(rawLevel)));
+      const labels = [this.t("low"), this.t("medium"), this.t("high")];
+      const label = tile.querySelector('[data-global-visual-level-label]');
+      if (label) label.textContent = labels[level];
+      tile.querySelectorAll('[data-global-visual-level]').forEach((button) => {
+        button.disabled = !levelEntityId;
+        button.classList.toggle(
+          "active",
+          Number(button.dataset.globalVisualLevel) === level,
+        );
+      });
+    });
+
     if (this.activePanel === "control") {
       const current = root.querySelector('[data-primary-mowing-action]');
       const nextAction = this.primaryMowingAction();
@@ -4718,15 +4808,15 @@ class AnthbotMapCard extends HTMLElement {
           });
         });
         const grid = this.createPanelGrid();
-        const obstacleSwitch = this.findZoneSettingEntity("switch", kind, zone, "Visual obstacle detection");
-        const obstacleLevel = this.findZoneSettingEntity("number", kind, zone, "Obstacle sensitivity");
+        const obstacleSwitch = this.findZoneSettingEntity("switch", kind, zone, "visual_obstacle");
+        const obstacleLevel = this.findZoneSettingEntity("number", kind, zone, "obstacle_avoid_level");
         grid.append(
-          this.createDirectNumberControl(this.t("mowCount"), this.findZoneSettingEntity("number", kind, zone, "Mowing passes"), 1, 2, 1, "×"),
-          this.createDirectNumberControl(this.t("cutHeight"), this.findZoneSettingEntity("number", kind, zone, "Cutting height"), 30, 70, 5, "mm"),
-          this.createDirectObstacleControl(obstacleSwitch, obstacleLevel),
-          this.createDirectSelectControl(this.t("mowingMode"), this.findZoneSettingEntity("select", kind, zone, "Mowing mode"), [this.t("mowingModeNormal"), this.t("mowingModeEfficient")]),
-          this.createDirectSwitchControl(this.t("customCutDirection"), this.findZoneSettingEntity("switch", kind, zone, "Custom mowing direction")),
-          this.createDirectNumberControl(this.t("customDirection"), this.findZoneSettingEntity("number", kind, zone, "Mowing direction"), 0, 180, 1, "deg"),
+          this.createDirectNumberControl(this.t("mowCount"), this.findZoneSettingEntity("number", kind, zone, "mow_count"), 1, 2, 1, "×", { kind, zone, setting: "mow_count" }),
+          this.createDirectNumberControl(this.t("cutHeight"), this.findZoneSettingEntity("number", kind, zone, "cutter_height"), 30, 70, 5, "mm", { kind, zone, setting: "cutter_height" }),
+          this.createDirectObstacleControl(obstacleSwitch, obstacleLevel, { kind, zone }),
+          this.createDirectSelectControl(this.t("mowingMode"), this.findZoneSettingEntity("select", kind, zone, "mowing_mode"), [this.t("mowingModeNormal"), this.t("mowingModeEfficient")], { kind, zone, setting: "mowing_mode" }),
+          this.createDirectSwitchControl(this.t("customCutDirection"), this.findZoneSettingEntity("switch", kind, zone, "custom_direction"), { kind, zone, setting: "custom_direction" }),
+          this.createDirectNumberControl(this.t("customDirection"), this.findZoneSettingEntity("number", kind, zone, "mow_head"), 0, 180, 1, "deg", { kind, zone, setting: "mow_head" }),
         );
         details.querySelector(".zone-settings-body").appendChild(grid);
         sectionBody.appendChild(details);
@@ -4742,22 +4832,74 @@ class AnthbotMapCard extends HTMLElement {
     return [];
   }
 
-  findZoneSettingEntity(domain, kind, zone, settingLabel) {
+  findZoneSettingEntity(domain, kind, zone, setting) {
+    const states = this._hass?.states || {};
+    const activeState = states[this._activeEntityId] || this.entity;
+    const serial = String(
+      activeState?.attributes?.serial_number
+      || activeState?.attributes?.sn
+      || ""
+    ).trim();
+    const zoneId = Number(zone?.id);
+    const exact = Object.entries(states)
+      .filter(([entityId, state]) => {
+        const attrs = state?.attributes || {};
+        return entityId.startsWith(`${domain}.`)
+          && state?.state !== "unavailable"
+          && String(attrs.serial_number || attrs.sn || "").trim() === serial
+          && String(attrs.zone_kind || "") === kind
+          && Number(attrs.zone_id) === zoneId
+          && String(attrs.setting || "") === setting;
+      })
+      .sort(([leftId], [rightId]) => leftId.localeCompare(rightId));
+    if (exact.length) return exact[0][0];
+
+    const fallbackLabels = {
+      mow_count: "mowing passes",
+      cutter_height: "cutting height",
+      obstacle_avoid_level: "obstacle sensitivity",
+      mowing_mode: "mowing mode",
+      visual_obstacle: "visual obstacle detection",
+      custom_direction: "custom mowing direction",
+      mow_head: "mowing direction",
+    };
     const kindLabel = kind === "auto" ? "auto zone" : "zone";
     const zoneLabel = String(zone.name || zone.id).toLowerCase();
-    const setting = settingLabel.toLowerCase();
-    for (const [entityId, state] of Object.entries(this._hass.states || {})) {
+    const settingLabel = fallbackLabels[setting] || setting.replaceAll("_", " ");
+    for (const [entityId, state] of Object.entries(states)) {
       if (!entityId.startsWith(`${domain}.`) || state.state === "unavailable") continue;
       const name = String(state.attributes?.friendly_name || "").toLowerCase();
-      if (name.includes(kindLabel) && name.includes(zoneLabel) && name.includes(setting)) return entityId;
+      if (name.includes(kindLabel) && name.includes(zoneLabel) && name.includes(settingLabel)) return entityId;
     }
     return null;
   }
 
-  createDirectNumberControl(label, entityId, min, max, step, unit) {
+  markZoneControl(tile, domain, context) {
+    if (!context?.zone || !context?.setting) return;
+    tile.dataset.zoneControl = domain;
+    tile.dataset.zoneKind = context.kind;
+    tile.dataset.zoneId = String(context.zone.id);
+    tile.dataset.zoneName = String(context.zone.name || "");
+    tile.dataset.zoneSetting = context.setting;
+  }
+
+  resolveZoneControlEntity(tile, domain = tile?.dataset?.zoneControl) {
+    if (!tile || !domain || !tile.dataset.zoneKind || !tile.dataset.zoneSetting) return null;
+    return this.findZoneSettingEntity(
+      domain,
+      tile.dataset.zoneKind,
+      { id: Number(tile.dataset.zoneId), name: tile.dataset.zoneName },
+      tile.dataset.zoneSetting,
+    );
+  }
+
+  createDirectNumberControl(label, entityId, min, max, step, unit, zoneContext = null) {
     const value = Number(entityId ? this._hass.states[entityId]?.state : NaN);
     const tile = document.createElement("div");
     tile.className = "panel-tile control-tile";
+    this.markZoneControl(tile, "number", zoneContext);
+    tile.dataset.zoneUnit = unit || "";
+    tile.dataset.zoneEntityId = entityId || "";
     tile.innerHTML = `
       <div class="control-head"><span>${label}</span><strong>${Number.isFinite(value) ? value : "-"} ${unit}</strong></div>
       <input type="range" min="${min}" max="${max}" step="${step}" value="${Number.isFinite(value) ? value : min}" ${entityId ? "" : "disabled"}>
@@ -4767,13 +4909,16 @@ class AnthbotMapCard extends HTMLElement {
       tile.querySelector("strong").textContent = `${input.value} ${unit}`;
     });
     input.addEventListener("change", async () => {
-      await this._hass.callService("number", "set_value", {entity_id: entityId, value: Number(input.value)});
+      const currentEntityId = this.resolveZoneControlEntity(tile, "number") || tile.dataset.zoneEntityId || entityId;
+      if (!currentEntityId) return;
+      await this._hass.callService("number", "set_value", {entity_id: currentEntityId, value: Number(input.value)});
       this.scheduleRefresh();
     });
+    input.addEventListener("blur", () => this.refreshOpenPanelValues());
     return tile;
   }
 
-  createDirectSelectControl(label, entityId, translatedOptions = []) {
+  createDirectSelectControl(label, entityId, translatedOptions = [], zoneContext = null) {
     const entity = entityId ? this._hass.states[entityId] : null;
     const current = String(entity?.state || "");
     const rawOptions = Array.isArray(entity?.attributes?.options)
@@ -4781,6 +4926,8 @@ class AnthbotMapCard extends HTMLElement {
       : ["Normal", "Efficient"];
     const tile = document.createElement("div");
     tile.className = "panel-tile control-tile mowing-mode-tile";
+    this.markZoneControl(tile, "select", zoneContext);
+    tile.dataset.zoneEntityId = entityId || "";
     tile.innerHTML = `
       <div class="control-head">
         <span>${label} <button type="button" class="mowing-mode-info" aria-label="${this.t("mowingModeInfoTitle")}">ⓘ</button></span>
@@ -4798,17 +4945,20 @@ class AnthbotMapCard extends HTMLElement {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "height-option";
+      button.dataset.zoneSelectOption = option;
+      button.dataset.zoneSelectLabel = translatedOptions[index] || option;
       button.textContent = translatedOptions[index] || option;
       button.classList.toggle("active", option === current);
       button.disabled = !entityId;
       button.addEventListener("click", async () => {
-        if (!entityId) return;
+        const currentEntityId = this.resolveZoneControlEntity(tile, "select") || tile.dataset.zoneEntityId || entityId;
+        if (!currentEntityId) return;
         options.querySelectorAll(".height-option").forEach((item) => {
           item.classList.toggle("active", item === button);
         });
         tile.querySelector(".control-head strong").textContent = translatedOptions[index] || option;
         await this._hass.callService("select", "select_option", {
-          entity_id: entityId,
+          entity_id: currentEntityId,
           option,
         });
         this.scheduleRefresh();
@@ -4866,24 +5016,35 @@ class AnthbotMapCard extends HTMLElement {
     this.shadowRoot.appendChild(overlay);
   }
 
-  createDirectSwitchControl(label, entityId) {
+  createDirectSwitchControl(label, entityId, zoneContext = null) {
     const checked = entityId && this._hass.states[entityId]?.state === "on";
     const tile = document.createElement("label");
     tile.className = "panel-tile switch-tile";
+    this.markZoneControl(tile, "switch", zoneContext);
+    tile.dataset.zoneEntityId = entityId || "";
     tile.innerHTML = `<span>${label}</span><input type="checkbox" ${checked ? "checked" : ""} ${entityId ? "" : "disabled"}>`;
     const input = tile.querySelector("input");
     input.addEventListener("change", async () => {
-      await this._hass.callService("switch", input.checked ? "turn_on" : "turn_off", {entity_id: entityId});
+      const currentEntityId = this.resolveZoneControlEntity(tile, "switch") || tile.dataset.zoneEntityId || entityId;
+      if (!currentEntityId) return;
+      await this._hass.callService("switch", input.checked ? "turn_on" : "turn_off", {entity_id: currentEntityId});
       this.scheduleRefresh();
     });
     return tile;
   }
 
-  createDirectObstacleControl(switchEntityId, levelEntityId) {
+  createDirectObstacleControl(switchEntityId, levelEntityId, zoneContext = null) {
     const enabled = switchEntityId && this._hass.states[switchEntityId]?.state === "on";
     const tile = document.createElement("div");
     tile.className = `panel-tile obstacle-combined ${enabled ? "" : "disabled"}`;
-    tile.dataset.globalVisualObstacle = "true";
+    if (zoneContext?.zone) {
+      tile.dataset.zoneObstacle = "true";
+      tile.dataset.zoneKind = zoneContext.kind;
+      tile.dataset.zoneId = String(zoneContext.zone.id);
+      tile.dataset.zoneName = String(zoneContext.zone.name || "");
+    } else {
+      tile.dataset.globalVisualObstacle = "true";
+    }
     tile.dataset.visualSwitchEntityId = switchEntityId || "";
     tile.dataset.visualLevelEntityId = levelEntityId || "";
     const row = document.createElement("label");
@@ -4891,12 +5052,16 @@ class AnthbotMapCard extends HTMLElement {
     row.innerHTML = `<span>${this.t("visualObstacle")}</span><input data-global-visual-toggle type="checkbox" ${enabled ? "checked" : ""} ${switchEntityId ? "" : "disabled"}>`;
     const levels = document.createElement("div");
     levels.className = "obstacle-levels";
-    levels.appendChild(this.createDirectObstacleLevelControl(levelEntityId));
+    levels.appendChild(this.createDirectObstacleLevelControl(levelEntityId, zoneContext));
     const input = row.querySelector("input");
     input.addEventListener("change", async () => {
-      const currentEntityId = this.getSwitchEntity("visualObstacle")
-        || tile.dataset.visualSwitchEntityId
-        || switchEntityId;
+      const currentEntityId = zoneContext?.zone
+        ? this.findZoneSettingEntity("switch", zoneContext.kind, zoneContext.zone, "visual_obstacle")
+          || tile.dataset.visualSwitchEntityId
+          || switchEntityId
+        : this.getSwitchEntity("visualObstacle")
+          || tile.dataset.visualSwitchEntityId
+          || switchEntityId;
       if (!currentEntityId) return;
       await this._hass.callService("switch", input.checked ? "turn_on" : "turn_off", {entity_id: currentEntityId});
       tile.classList.toggle("disabled", !input.checked);
@@ -4906,7 +5071,7 @@ class AnthbotMapCard extends HTMLElement {
     return tile;
   }
 
-  createDirectObstacleLevelControl(entityId) {
+  createDirectObstacleLevelControl(entityId, zoneContext = null) {
     const value = Number(entityId ? this._hass.states[entityId]?.state : 1);
     const selected = Number.isFinite(value) ? Math.max(0, Math.min(2, Math.round(value))) : 1;
     const labels = [this.t("low"), this.t("medium"), this.t("high")];
@@ -4927,8 +5092,11 @@ class AnthbotMapCard extends HTMLElement {
       button.addEventListener("click", async () => {
         options.querySelectorAll(".height-option").forEach((item) => item.classList.toggle("active", item === button));
         tile.querySelector("strong").textContent = label;
-        const currentEntityId = this.getNumberEntity("visualObstacleLevel")
-          || entityId;
+        const currentEntityId = zoneContext?.zone
+          ? this.findZoneSettingEntity("number", zoneContext.kind, zoneContext.zone, "obstacle_avoid_level")
+            || entityId
+          : this.getNumberEntity("visualObstacleLevel")
+            || entityId;
         if (!currentEntityId) return;
         await this._hass.callService("number", "set_value", {entity_id: currentEntityId, value: level});
         this.scheduleRefresh();

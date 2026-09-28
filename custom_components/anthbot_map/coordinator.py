@@ -311,7 +311,6 @@ def _normalize_status(value: str) -> str:
     return value.lower().replace("-", "").replace("_", "").replace(" ", "")
 
 
-_area_definition_content = definition_content
 _map_definition_content = definition_content
 
 
@@ -394,6 +393,8 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._last_error_signature: str | None = None
         self._last_area_time: str | None = None
         self._last_area_download_monotonic = 0.0
+        self._area_definition_refresh_lock = asyncio.Lock()
+        self._app_zone_definition_override_until = 0.0
         self._last_ridable_area_time: str | None = None
         self._last_ridable_area_download_monotonic = 0.0
         self._ridable_area_refresh_lock = asyncio.Lock()
@@ -1820,6 +1821,18 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "cutter_height",
                 }:
                     self._app_setting_overrides[key] = (value, expires_at)
+        app_zone_definition = reported.pop("_app_zone_definition_mirror", None)
+        if isinstance(app_zone_definition, dict):
+            merged_definition = dict(self._area_definition)
+            for key in ("custom_areas", "region_areas"):
+                zones = app_zone_definition.get(key)
+                if isinstance(zones, list):
+                    merged_definition[key] = [
+                        dict(zone) for zone in zones if isinstance(zone, dict)
+                    ]
+            self._area_definition = merged_definition
+            self._app_zone_definition_override_until = time.monotonic() + 20.0
+            reported["_area_definition"] = self._area_definition
         if shadow_name == "service":
             self._pending_live_service.update(reported)
         else:
@@ -1889,6 +1902,20 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     from .native_schedule import async_refresh_native_plan
 
                     await async_refresh_native_plan(self)
+                live_area_time = property_update.get("area_time")
+                if (
+                    isinstance(live_area_time, str)
+                    and live_area_time
+                    and live_area_time != self._last_area_time
+                ):
+                    area_refreshed = await self._async_refresh_area_definition(
+                        live_area_time,
+                        retries=3,
+                    )
+                    if area_refreshed:
+                        refreshed_state = dict(self.reported_state)
+                        refreshed_state["_area_definition"] = self._area_definition
+                        self.async_set_updated_data(refreshed_state)
                 live_ridable_area_time = property_update.get("ridable_area_time")
                 if (
                     isinstance(live_ridable_area_time, str)
@@ -2050,6 +2077,71 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return diagnostics, True
 
+    async def _async_refresh_area_definition(
+        self,
+        area_time: str | None,
+        *,
+        retries: int = 1,
+    ) -> bool:
+        """Reload manual and automatic zone definitions from the cloud file."""
+        async with self._area_definition_refresh_lock:
+            if (
+                area_time is not None
+                and area_time == self._last_area_time
+                and self._area_definition
+            ):
+                return False
+
+            attempts = max(1, retries)
+            previous_content = definition_content(self._area_definition)
+            for attempt in range(attempts):
+                self._last_area_download_monotonic = time.monotonic()
+                try:
+                    refreshed_definition = (
+                        await self.account_client.async_get_device_area_definition(
+                            self.client.serial_number
+                        )
+                    )
+                    refreshed_content = definition_content(refreshed_definition)
+                    override_active = (
+                        time.monotonic()
+                        < self._app_zone_definition_override_until
+                    )
+                    file_is_stale = (
+                        override_active
+                        and refreshed_content != previous_content
+                    ) or (
+                        attempts > 1
+                        and area_time != self._last_area_time
+                        and refreshed_content == previous_content
+                    )
+                    if file_is_stale:
+                        if attempt + 1 < attempts:
+                            await asyncio.sleep(1)
+                            continue
+                        return False
+
+                    if refreshed_content != previous_content:
+                        _LOGGER.info(
+                            "Anthbot area definition changed for %s; refreshing zones",
+                            self.client.serial_number,
+                        )
+                    self._area_definition = refreshed_definition
+                    self._last_area_time = area_time
+                    self._app_zone_definition_override_until = 0.0
+                    return True
+                except AnthbotGenieApiError as err:
+                    _LOGGER.debug(
+                        "Anthbot area definition unavailable for %s: %s",
+                        self.client.serial_number,
+                        err,
+                    )
+                    if attempt + 1 < attempts:
+                        await asyncio.sleep(1)
+            if not self._area_definition:
+                self._area_definition = {}
+            return False
+
     async def _async_refresh_ridable_area_definition(
         self,
         ridable_area_time: str | None,
@@ -2134,32 +2226,7 @@ class AnthbotGenieDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 last_download=self._last_area_download_monotonic,
             )
             if should_refresh_area:
-                # Record the attempt as well as successful downloads so a
-                # temporary cloud error cannot cause a request on every poll.
-                self._last_area_download_monotonic = now
-                try:
-                    refreshed_area_definition = (
-                        await self.account_client.async_get_device_area_definition(
-                            self.client.serial_number
-                        )
-                    )
-                    if _area_definition_content(
-                        refreshed_area_definition
-                    ) != _area_definition_content(self._area_definition):
-                        _LOGGER.info(
-                            "Anthbot area definition changed for %s; refreshing boundary",
-                            self.client.serial_number,
-                        )
-                        self._area_definition = refreshed_area_definition
-
-                    _LOGGER.debug(
-                        "ANTHBOT AREA DEFINITION:\n%s",
-                        self._area_definition,
-                    )
-                    self._last_area_time = area_time
-                except AnthbotGenieApiError:
-                    if not self._area_definition:
-                        self._area_definition = {}
+                await self._async_refresh_area_definition(area_time)
 
             should_refresh_ridable_area = (
                 self._last_ridable_area_download_monotonic == 0
