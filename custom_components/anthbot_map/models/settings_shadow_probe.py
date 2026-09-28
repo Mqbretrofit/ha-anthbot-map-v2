@@ -1,9 +1,9 @@
 """Temporary safe live diagnostics for ANTHBOT settings persistence tests.
 
-For M-series property updates this probe also records the complete *safe scalar
-shape* of the shadow so previously unknown setting names can be discovered.
-Credentials, URLs, map/path/position payloads, identifiers and large values are
-excluded. Genie keeps the narrower selected-settings probe.
+M-series property updates can be partial. The discovery probe therefore merges
+safe scalar fragments into its previous snapshot before diffing, so omitted
+keys are not falsely reported as deleted. Credentials, URLs, map/path/position
+payloads, identifiers and large values remain excluded.
 """
 
 from __future__ import annotations
@@ -27,10 +27,6 @@ _WANTED_PARAM_FIELDS = (
     "pobctl_switch", "obstacle_avoid_level", "visual_obstacle_level",
     "enable_adaptive_head", "mow_head", "mow_mode", "nest_switch", "rid_switch",
 )
-
-# Never log these families from the broad discovery probe. Matching is
-# intentionally conservative because this is diagnostic code running on a
-# user's real mower/account.
 _BLOCKED_KEY_PARTS = (
     "token", "secret", "credential", "password", "passwd", "auth", "sign",
     "cert", "key", "url", "uri", "endpoint", "host", "account", "email",
@@ -71,7 +67,6 @@ def _selected(state: Any) -> dict[str, Any]:
 
 
 def _safe_scalar_shape(value: Any, *, depth: int = 0) -> Any:
-    """Keep safe scalar leaves and small nested dicts; discard bulk payloads."""
     if depth > 3:
         return None
     if isinstance(value, bool):
@@ -79,8 +74,6 @@ def _safe_scalar_shape(value: Any, *, depth: int = 0) -> Any:
     if isinstance(value, (int, float)):
         return value
     if isinstance(value, str):
-        # Settings are normally short enums/strings. Avoid dumping arbitrary
-        # text or encoded payloads.
         return value if len(value) <= 80 else None
     if isinstance(value, dict):
         out: dict[str, Any] = {}
@@ -93,8 +86,6 @@ def _safe_scalar_shape(value: Any, *, depth: int = 0) -> Any:
             if safe is not None and (not isinstance(safe, dict) or safe):
                 out[key] = safe
         return out or None
-    # Lists/tuples are deliberately excluded: mower geometry and paths are
-    # commonly represented as arrays.
     return None
 
 
@@ -105,8 +96,22 @@ def _safe_m_series_property(state: Any) -> dict[str, Any]:
     return safe if isinstance(safe, dict) else {}
 
 
+def _deep_merge(base: Any, patch: Any) -> dict[str, Any]:
+    """Merge a partial shadow fragment without treating omissions as deletes."""
+    result = dict(base) if isinstance(base, dict) else {}
+    if not isinstance(patch, dict):
+        return result
+    for key, value in patch.items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _deep_merge(result[key], value)
+        elif isinstance(value, dict):
+            result[key] = _deep_merge({}, value)
+        else:
+            result[key] = value
+    return result
+
+
 def _diff(previous: Any, current: Any, prefix: str = "") -> dict[str, dict[str, Any]]:
-    """Return leaf changes between two dictionaries."""
     before = previous if isinstance(previous, dict) else {}
     after = current if isinstance(current, dict) else {}
     changes: dict[str, dict[str, Any]] = {}
@@ -128,7 +133,6 @@ def _diff(previous: Any, current: Any, prefix: str = "") -> dict[str, dict[str, 
 
 
 def install_settings_shadow_probe() -> None:
-    """Attach safe setting diagnostics to each coordinator's live callback."""
     global _INSTALLED
     if _INSTALLED:
         return
@@ -156,29 +160,41 @@ def install_settings_shadow_probe() -> None:
             if selected:
                 cache = dict(getattr(self, "_settings_probe_last", {}))
                 previous = cache.get(name)
-                if selected != previous:
-                    changes = _diff(previous, selected) if previous is not None else {}
+                # Selected settings can also arrive as partial fragments. Merge
+                # them before diffing for the same reason as the broad probe.
+                merged_selected = _deep_merge(previous, selected) if previous is not None else selected
+                if merged_selected != previous:
+                    changes = _diff(previous, merged_selected) if previous is not None else {}
                     _LOGGER.warning(
                         "ANTHBOT SETTINGS PROBE sn=%s model=%s shadow=%s values=%s changes=%s",
-                        self.client.serial_number, model, name, selected, changes,
+                        self.client.serial_number, model, name, merged_selected, changes,
                     )
-                    cache[name] = selected
+                    cache[name] = merged_selected
                     setattr(self, "_settings_probe_last", cache)
 
-            # M9/M5 discovery mode: inspect every safe scalar property field,
-            # allowing us to learn an unknown official-app setting name without
-            # logging map/path/position/account/auth data.
             if name == "property" and _is_m_series(model):
-                broad = _safe_m_series_property(reported)
+                fragment = _safe_m_series_property(reported)
                 broad_cache = dict(getattr(self, "_settings_probe_broad_last", {}))
                 previous_broad = broad_cache.get(name)
-                if broad and broad != previous_broad:
-                    broad_changes = _diff(previous_broad, broad) if previous_broad is not None else {}
-                    _LOGGER.warning(
-                        "ANTHBOT M-SERIES PROPERTY DIFF sn=%s model=%s changes=%s",
-                        self.client.serial_number, model, broad_changes,
+                merged_broad = (
+                    _deep_merge(previous_broad, fragment)
+                    if previous_broad is not None
+                    else fragment
+                )
+                if merged_broad and merged_broad != previous_broad:
+                    broad_changes = (
+                        _diff(previous_broad, merged_broad)
+                        if previous_broad is not None
+                        else {}
                     )
-                    broad_cache[name] = broad
+                    # Initial snapshot establishes the baseline and is not
+                    # useful as a giant list of <missing> -> value changes.
+                    if previous_broad is not None and broad_changes:
+                        _LOGGER.warning(
+                            "ANTHBOT M-SERIES PROPERTY DIFF sn=%s model=%s changes=%s",
+                            self.client.serial_number, model, broad_changes,
+                        )
+                    broad_cache[name] = merged_broad
                     setattr(self, "_settings_probe_broad_last", broad_cache)
 
             await original(name, reported)
