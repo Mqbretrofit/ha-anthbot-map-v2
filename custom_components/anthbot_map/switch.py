@@ -216,12 +216,27 @@ class AnthbotSwitchEntity(
         if self.entity_description.key == "rain_perception_enabled":
             return _coerce_enabled_value(state.get("rain_switch"))
         if self.entity_description.key == "visual_obstacle_detection_enabled":
+            model = str(getattr(self.coordinator.device, "model", "") or "").upper()
             pobctl = state.get("pobctl")
-            if isinstance(pobctl, dict):
-                return _coerce_enabled_value(pobctl.get("switch"))
             device_config = state.get("device_config")
-            if isinstance(device_config, dict):
-                return _coerce_enabled_value(device_config.get("pobctl_switch"))
+            top_level = state.get("pobctl_switch")
+
+            # M9 reports the authoritative global visual switch in
+            # device_config; Genie reports it in pobctl.
+            if "M9" in model:
+                if isinstance(device_config, dict) and device_config.get("pobctl_switch") is not None:
+                    return _coerce_enabled_value(device_config.get("pobctl_switch"))
+                if top_level is not None:
+                    return _coerce_enabled_value(top_level)
+                if isinstance(pobctl, dict):
+                    return _coerce_enabled_value(pobctl.get("switch"))
+            else:
+                if isinstance(pobctl, dict) and pobctl.get("switch") is not None:
+                    return _coerce_enabled_value(pobctl.get("switch"))
+                if top_level is not None:
+                    return _coerce_enabled_value(top_level)
+                if isinstance(device_config, dict):
+                    return _coerce_enabled_value(device_config.get("pobctl_switch"))
             return False
 
         param_set = state.get("param_set")
