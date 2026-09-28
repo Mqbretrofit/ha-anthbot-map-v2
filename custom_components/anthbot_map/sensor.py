@@ -1467,6 +1467,18 @@ class AnthbotNextMowSensor(
                     "_native_schedule_probe"
                 ),
             }
+        param_set = state.get("param_set")
+        mow_count_value = (
+            param_set.get("mow_count")
+            if isinstance(param_set, dict) and param_set.get("mow_count") is not None
+            else state.get("mow_count")
+        )
+        mow_height_value = (
+            param_set.get("cutter_height")
+            if isinstance(param_set, dict) and param_set.get("cutter_height") is not None
+            else state.get("cutter_height")
+        )
+
         return {
             "serial_number": self.coordinator.client.serial_number,
             "source": event.get("source"),
@@ -1744,24 +1756,47 @@ class AnthbotMapSensorEntity(
 
         pobctl = state.get("pobctl")
         device_config = state.get("device_config")
-        visual_switch = (
-            pobctl.get("switch")
-            if isinstance(pobctl, dict) and "switch" in pobctl
-            else (
+        model_name = str(getattr(self.coordinator.device, "model", "") or "").upper()
+        if "M9" in model_name:
+            visual_switch = (
                 device_config.get("pobctl_switch")
                 if isinstance(device_config, dict)
-                else None
+                and "pobctl_switch" in device_config
+                else (
+                    pobctl.get("switch")
+                    if isinstance(pobctl, dict)
+                    else None
+                )
             )
-        )
-        visual_level = (
-            pobctl.get("level")
-            if isinstance(pobctl, dict) and "level" in pobctl
-            else (
+            visual_level = (
                 device_config.get("pobctl_level")
                 if isinstance(device_config, dict)
-                else None
+                and "pobctl_level" in device_config
+                else (
+                    pobctl.get("level")
+                    if isinstance(pobctl, dict)
+                    else None
+                )
             )
-        )
+        else:
+            visual_switch = (
+                pobctl.get("switch")
+                if isinstance(pobctl, dict) and "switch" in pobctl
+                else (
+                    device_config.get("pobctl_switch")
+                    if isinstance(device_config, dict)
+                    else None
+                )
+            )
+            visual_level = (
+                pobctl.get("level")
+                if isinstance(pobctl, dict) and "level" in pobctl
+                else (
+                    device_config.get("pobctl_level")
+                    if isinstance(device_config, dict)
+                    else None
+                )
+            )
         visual_enabled = (
             visual_switch in (1, "1", True, "true", "on")
             if visual_switch is not None
@@ -1799,6 +1834,8 @@ class AnthbotMapSensorEntity(
             "visual_obstacle_level_entity_id": visual_level_entity_id,
             "mow_count_entity_id": mow_count_entity_id,
             "mow_height_entity_id": mow_height_entity_id,
+            "mow_count_setting_value": mow_count_value,
+            "mow_height_setting_value": mow_height_value,
             "pose": state.get("pose"),
             "mower_status": _general_mower_status(state),
             "robot_status_raw": _raw_robot_status(state),
