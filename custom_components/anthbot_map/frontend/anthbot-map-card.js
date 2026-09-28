@@ -3661,20 +3661,14 @@ class AnthbotMapCard extends HTMLElement {
     root.querySelectorAll('[data-global-visual-obstacle="true"]').forEach((tile) => {
       const attrs = this.entity?.attributes || {};
       const switchEntityId = String(
-        this.findSettingEntity(
-          "switch",
-          "visual_obstacle_detection_enabled",
-        )
-        || attrs.visual_obstacle_switch_entity_id
+        attrs.visual_obstacle_switch_entity_id
+        || this.getSwitchEntity("visualObstacle")
         || tile.dataset.visualSwitchEntityId
         || ""
       );
       const levelEntityId = String(
-        this.findSettingEntity(
-          "number",
-          "visual_obstacle_level_setting",
-        )
-        || attrs.visual_obstacle_level_entity_id
+        attrs.visual_obstacle_level_entity_id
+        || this.getNumberEntity("visualObstacleLevel")
         || tile.dataset.visualLevelEntityId
         || ""
       );
@@ -5170,20 +5164,12 @@ class AnthbotMapCard extends HTMLElement {
     const attrs = this.entity?.attributes || {};
     const serialNumber = String(attrs.serial_number || "").trim();
     const switchEntityId = String(
-      this.findSettingEntity(
-        "switch",
-        "visual_obstacle_detection_enabled",
-      )
-      || attrs.visual_obstacle_switch_entity_id
+      attrs.visual_obstacle_switch_entity_id
       || this.getSwitchEntity("visualObstacle")
       || ""
     );
     const levelEntityId = String(
-      this.findSettingEntity(
-        "number",
-        "visual_obstacle_level_setting",
-      )
-      || attrs.visual_obstacle_level_entity_id
+      attrs.visual_obstacle_level_entity_id
       || this.getNumberEntity("visualObstacleLevel")
       || ""
     );
@@ -8641,6 +8627,18 @@ class AnthbotMapCard extends HTMLElement {
     if (this.isEntityAvailable(configured)) {
       return configured;
     }
+
+    const exactAttrByKind = {
+      mowHeight: "mow_height_entity_id",
+      mowCount: "mow_count_entity_id",
+      visualObstacleLevel: "visual_obstacle_level_entity_id",
+    };
+    const exactAttr = exactAttrByKind[kind];
+    if (exactAttr) {
+      const exactEntityId = String(this.entity?.attributes?.[exactAttr] || "");
+      if (this.isEntityAvailable(exactEntityId)) return exactEntityId;
+    }
+
     const settingByKind = {
       mowHeight: "mow_height_setting",
       mowCount: "mow_count_setting",
@@ -8651,12 +8649,8 @@ class AnthbotMapCard extends HTMLElement {
     };
     const setting = settingByKind[kind];
     if (setting) {
-      const exactSettingEntity = this.findSettingEntity("number", setting);
-      if (exactSettingEntity) return exactSettingEntity;
-    }
-    if (kind === "visualObstacleLevel") {
-      const exact = String(this.entity?.attributes?.visual_obstacle_level_entity_id || "");
-      if (this.isEntityAvailable(exact)) return exact;
+      const settingEntity = this.findSettingEntity("number", setting);
+      if (settingEntity) return settingEntity;
     }
     return this.findEntity("number", NUMBER_MAP[kind] || []);
   }
@@ -8683,13 +8677,15 @@ class AnthbotMapCard extends HTMLElement {
       return configured;
     }
     if (kind === "visualObstacle") {
-      const exactSettingEntity = this.findSettingEntity(
+      const exact = String(
+        this.entity?.attributes?.visual_obstacle_switch_entity_id || ""
+      );
+      if (this.isEntityAvailable(exact)) return exact;
+      const settingEntity = this.findSettingEntity(
         "switch",
         "visual_obstacle_detection_enabled",
       );
-      if (exactSettingEntity) return exactSettingEntity;
-      const exact = String(this.entity?.attributes?.visual_obstacle_switch_entity_id || "");
-      if (this.isEntityAvailable(exact)) return exact;
+      if (settingEntity) return settingEntity;
     }
     return this.findEntity("switch", SWITCH_MAP[kind] || []);
   }
@@ -8718,7 +8714,7 @@ class AnthbotMapCard extends HTMLElement {
       .sort(([leftId], [rightId]) => {
         const leftSuffix = Number(leftId.match(/_(\d+)$/)?.[1] || 0);
         const rightSuffix = Number(rightId.match(/_(\d+)$/)?.[1] || 0);
-        return rightSuffix - leftSuffix;
+        return leftSuffix - rightSuffix;
       });
     return matches[0]?.[0] || null;
   }
