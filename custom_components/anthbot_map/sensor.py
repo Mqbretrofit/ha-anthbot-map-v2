@@ -23,6 +23,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.event import async_track_time_interval
@@ -1767,11 +1768,25 @@ class AnthbotMapSensorEntity(
             else None
         )
 
+        registry = er.async_get(self.coordinator.hass)
+        visual_switch_entity_id = registry.async_get_entity_id(
+            "switch",
+            DOMAIN,
+            f"{self.coordinator.client.serial_number}_visual_obstacle_detection_enabled",
+        )
+        visual_level_entity_id = registry.async_get_entity_id(
+            "number",
+            DOMAIN,
+            f"{self.coordinator.client.serial_number}_visual_obstacle_level_setting",
+        )
+
         return {
             "serial_number": self.coordinator.client.serial_number,
             "model": self.coordinator.device.model,
             "visual_obstacle_enabled": visual_enabled,
             "visual_obstacle_level": visual_level,
+            "visual_obstacle_switch_entity_id": visual_switch_entity_id,
+            "visual_obstacle_level_entity_id": visual_level_entity_id,
             "pose": state.get("pose"),
             "mower_status": _general_mower_status(state),
             "robot_status_raw": _raw_robot_status(state),
