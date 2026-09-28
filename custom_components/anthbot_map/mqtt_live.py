@@ -169,93 +169,122 @@ def _reported_state(payload: dict[str, Any]) -> dict[str, Any] | None:
     return reported if isinstance(reported, dict) else None
 
 
+def _coerce_small_int(value: Any, allowed: tuple[int, ...]) -> int | None:
+    if isinstance(value, bool):
+        number = int(value)
+    elif isinstance(value, int):
+        number = value
+    elif isinstance(value, float) and value.is_integer():
+        number = int(value)
+    elif isinstance(value, str):
+        try:
+            number = int(value.strip())
+        except ValueError:
+            return None
+    else:
+        return None
+    return number if number in allowed else None
+
+
+def _find_nested_setting(value: Any, names: tuple[str, ...], *, depth: int = 0) -> Any:
+    if depth > 5:
+        return None
+    if isinstance(value, dict):
+        for name in names:
+            if name in value:
+                return value[name]
+        for child in value.values():
+            found = _find_nested_setting(child, names, depth=depth + 1)
+            if found is not None:
+                return found
+    elif isinstance(value, list):
+        for child in value[:20]:
+            found = _find_nested_setting(child, names, depth=depth + 1)
+            if found is not None:
+                return found
+    return None
+
+
 def _visual_setting_patch_from_service_payload(
     payload: dict[str, Any],
 ) -> dict[str, Any] | None:
-    """Translate verified app-side settings commands into property-style state.
+    """Mirror app-originated mower settings into HA immediately.
 
-    The ANTHBOT app writes some settings through the service shadow. Mirror
-    those command values immediately so Home Assistant entities follow the app
-    without waiting for a later full property refresh. A real property report
-    still remains authoritative and can overwrite these mirrored values.
+    The mobile app writes these settings through desired shadow commands.
+    Different firmware revisions nest the same verified fields differently,
+    therefore extract the concrete setting names recursively instead of
+    depending on one exact command shape.
     """
-    document: dict[str, Any] = payload
+    documents: list[dict[str, Any]] = []
     current = payload.get("current")
     if isinstance(current, dict):
-        document = current
-    state = document.get("state")
-    if not isinstance(state, dict):
-        return None
-    desired = state.get("desired")
-    if not isinstance(desired, dict):
+        documents.append(current)
+    documents.append(payload)
+
+    desired: dict[str, Any] | None = None
+    for document in documents:
+        state = document.get("state")
+        candidate = state.get("desired") if isinstance(state, dict) else None
+        if isinstance(candidate, dict) and candidate:
+            desired = candidate
+            break
+    if desired is None:
         return None
 
-    cmd = str(desired.get("cmd") or desired.get("command") or "").strip()
+    cmd = str(desired.get("cmd") or desired.get("command") or "").strip().lower()
     data = desired.get("data")
-    if not isinstance(data, dict):
-        data = {}
+    search_root: Any = data if isinstance(data, (dict, list)) else desired
 
-    # Some firmware/app combinations wrap the actual command data once more.
-    nested_device = data.get("device_config")
-    nested_pobctl = data.get("pobctl")
-    nested_param = data.get("param_set")
-    device_data = nested_device if isinstance(nested_device, dict) else data
-    pobctl_data = nested_pobctl if isinstance(nested_pobctl, dict) else data
-    param_data = nested_param if isinstance(nested_param, dict) else data
-
+    mirror: dict[str, int] = {}
     patch: dict[str, Any] = {}
 
-    if cmd == "device_config":
-        config: dict[str, Any] = {}
-        pobctl: dict[str, Any] = {}
-        switch = device_data.get("pobctl_switch")
-        if switch in (0, 1, False, True):
-            value = int(bool(switch))
-            config["pobctl_switch"] = value
-            pobctl["switch"] = value
-        level = device_data.get("pobctl_level")
-        if level in (0, 1, 2):
-            value = int(level)
-            config["pobctl_level"] = value
-            pobctl["level"] = value
-        if config:
-            patch["device_config"] = config
-        if pobctl:
-            patch["pobctl"] = pobctl
+    raw_visual_switch = _find_nested_setting(
+        search_root, ("pobctl_switch",)
+    )
+    if raw_visual_switch is None and cmd == "perception_obstacle_ctl":
+        raw_visual_switch = _find_nested_setting(search_root, ("switch",))
+    visual_switch = _coerce_small_int(raw_visual_switch, (0, 1))
+    if visual_switch is not None:
+        mirror["visual_switch"] = visual_switch
+        patch.setdefault("device_config", {})["pobctl_switch"] = visual_switch
+        patch.setdefault("pobctl", {})["switch"] = visual_switch
+        patch["pobctl_switch"] = visual_switch
 
-    elif cmd == "perception_obstacle_ctl":
-        pobctl: dict[str, Any] = {}
-        switch = pobctl_data.get("switch", pobctl_data.get("pobctl_switch"))
-        if switch in (0, 1, False, True):
-            pobctl["switch"] = int(bool(switch))
-        level = pobctl_data.get("level", pobctl_data.get("pobctl_level"))
-        if level in (0, 1, 2):
-            pobctl["level"] = int(level)
-        if pobctl:
-            patch["pobctl"] = pobctl
+    raw_visual_level = _find_nested_setting(
+        search_root, ("pobctl_level",)
+    )
+    if raw_visual_level is None and cmd == "perception_obstacle_ctl":
+        raw_visual_level = _find_nested_setting(search_root, ("level",))
+    visual_level = _coerce_small_int(raw_visual_level, (0, 1, 2))
+    if visual_level is not None:
+        mirror["visual_level"] = visual_level
+        patch.setdefault("device_config", {})["pobctl_level"] = visual_level
+        patch.setdefault("pobctl", {})["level"] = visual_level
+        patch["pobctl_level"] = visual_level
 
-    elif cmd == "param_set":
-        param_patch: dict[str, Any] = {}
+    raw_mow_count = _find_nested_setting(search_root, ("mow_count",))
+    mow_count = _coerce_small_int(raw_mow_count, (1, 2))
+    if mow_count is not None:
+        mirror["mow_count"] = mow_count
+        patch.setdefault("param_set", {})["mow_count"] = mow_count
+        patch["mow_count"] = mow_count
 
-        mow_count = param_data.get("mow_count")
-        if mow_count in (1, 2):
-            mow_count_value = int(mow_count)
-            param_patch["mow_count"] = mow_count_value
-            patch["mow_count"] = mow_count_value
+    raw_cutter_height = _find_nested_setting(
+        search_root, ("cutter_height", "cutter_ctl_cutter_lift")
+    )
+    cutter_height = _coerce_small_int(
+        raw_cutter_height, tuple(range(30, 71, 5))
+    )
+    if cutter_height is not None:
+        mirror["cutter_height"] = cutter_height
+        patch.setdefault("param_set", {})["cutter_height"] = cutter_height
+        patch["cutter_height"] = cutter_height
 
-        cutter_height = param_data.get("cutter_height")
-        if cutter_height is None:
-            cutter_height = param_data.get("cutter_ctl_cutter_lift")
-        if isinstance(cutter_height, (int, float)):
-            cutter_height_value = int(cutter_height)
-            if 30 <= cutter_height_value <= 70 and cutter_height_value % 5 == 0:
-                param_patch["cutter_height"] = cutter_height_value
-                patch["cutter_height"] = cutter_height_value
+    if not mirror:
+        return None
+    patch["_app_setting_mirror"] = mirror
+    return patch
 
-        if param_patch:
-            patch["param_set"] = param_patch
-
-    return patch or None
 
 
 def _safe_probe_value(value: Any, *, depth: int = 0) -> Any:
@@ -505,16 +534,19 @@ class AnthbotLiveShadowListener:
                                     topic.rsplit("/", 2)[-2] + "/" + topic.rsplit("/", 1)[-1],
                                     probe,
                                 )
-                            visual_patch = _visual_setting_patch_from_service_payload(
+
+                        if not topic.endswith("/get/accepted"):
+                            setting_patch = _visual_setting_patch_from_service_payload(
                                 payload
                             )
-                            if visual_patch:
-                                _LOGGER.debug(
-                                    "ANTHBOT visual app sync sn=%s patch=%s",
+                            if setting_patch:
+                                _LOGGER.warning(
+                                    "ANTHBOT APP SETTING SYNC sn=%s topic=%s patch=%s",
                                     serial,
-                                    visual_patch,
+                                    topic.rsplit("/", 2)[-2] + "/" + topic.rsplit("/", 1)[-1],
+                                    setting_patch.get("_app_setting_mirror"),
                                 )
-                                await self._on_shadow("property", visual_patch)
+                                await self._on_shadow("property", setting_patch)
 
                         reported = _reported_state(payload)
                         if reported is None:
