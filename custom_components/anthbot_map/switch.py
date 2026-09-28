@@ -135,6 +135,15 @@ class AnthbotBatterySaverSwitchEntity(
         )
 
     @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        """Expose stable metadata used by the bundled frontend."""
+        return {
+            "serial_number": self.coordinator.client.serial_number,
+            "model": self.coordinator.device.model,
+            "setting": self.entity_description.key,
+        }
+
+    @property
     def is_on(self) -> bool:
         """Return the persisted local mode state."""
         return self.coordinator.battery_saver_enabled
