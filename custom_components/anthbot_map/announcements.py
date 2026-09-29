@@ -41,7 +41,7 @@ _LANGUAGES = {
     "ro", "da", "sv", "no", "fi", "zh-CN", "zh-TW", "tr", "th", "vi",
     "ko", "km",
 }
-_CATEGORIES = {"news", "release", "maintenance", "outage", "voice"}
+_CATEGORIES = {"news", "release", "maintenance", "outage", "voice", "personal"}
 _PRIORITIES = {"normal", "important", "critical"}
 
 _GET_SCHEMA = vol.Schema(

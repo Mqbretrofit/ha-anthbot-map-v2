@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.9.5-beta3 — 2026-09-29
+
+- Adds the **Personal message** announcement category and localized labels in all 23 supported card languages.
+- Works with Reporting Server 1.0.38, whose message editor adds the personal-message type and an **Összes kijelölése** action for all currently available target models.
+- Preserves beta2 per-installation targeting and the stable 2.4.9.4 mower-control path.
+
 ## 2.4.9.5-beta2 — 2026-09-29
 
 - Adds exact announcement targeting for one or more installations using the existing random minimal-presence installation ID.

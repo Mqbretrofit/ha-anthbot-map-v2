@@ -16,7 +16,7 @@ class AnnouncementsBetaTests(unittest.TestCase):
     def test_beta_version_is_consistent(self) -> None:
         manifest = json.loads((INTEGRATION / "manifest.json").read_text(encoding="utf-8"))
         version = manifest["version"]
-        self.assertEqual("2.4.9.5-beta2", version)
+        self.assertEqual("2.4.9.5-beta3", version)
         self.assertIn(
             f'INTEGRATION_VERSION = "{version}"',
             (INTEGRATION / "const.py").read_text(encoding="utf-8"),
@@ -68,6 +68,11 @@ class AnnouncementsBetaTests(unittest.TestCase):
         for language in languages:
             key = f'"{language}"' if "-" in language else language
             self.assertRegex(block, rf"(?m)^  {re.escape(key)}: \{{ announcements:")
+            line = next(
+                candidate for candidate in block.splitlines()
+                if candidate.startswith(f"  {key}: ")
+            )
+            self.assertIn("announcementCategory_personal:", line)
 
     def test_frontend_mirrors_match(self) -> None:
         for name in ("anthbot-map-card.js", "i18n.js"):
