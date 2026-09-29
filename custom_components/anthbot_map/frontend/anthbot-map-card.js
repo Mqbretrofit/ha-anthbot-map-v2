@@ -88,6 +88,7 @@ class AnthbotMapCard extends HTMLElement {
     this.announcementsLoading = false;
     this.announcementsAvailable = true;
     this.announcementPollTimer = null;
+    this.announcementFocusHandler = null;
     this.refreshTimer = null;
     this.mowingInfoTimer = null;
     this.rainCountdownTimer = null;
@@ -376,6 +377,15 @@ class AnthbotMapCard extends HTMLElement {
 
   t(key) {
     return translate(this.language, key);
+  }
+
+  connectedCallback() {
+    // Home Assistant may detach and later reuse the same card instance while
+    // switching views. disconnectedCallback stops timers, so explicitly
+    // restore announcement polling instead of waiting for a browser reload.
+    if (!this._hass) return;
+    this.startAnnouncementPollTimer();
+    void this.loadAnnouncements(true);
   }
 
   disconnectedCallback() {
@@ -4702,26 +4712,23 @@ class AnthbotMapCard extends HTMLElement {
     style.textContent = `
       :host { position:fixed; inset:0; z-index:2147483000; display:block; font-family:var(--paper-font-body1_-_font-family,Roboto,Arial,sans-serif); }
       *,*::before,*::after { box-sizing:border-box; }
-      .overlay { position:absolute; inset:0; display:grid; place-items:center; padding:14px; background:rgba(5,7,15,.72); backdrop-filter:blur(7px); -webkit-backdrop-filter:blur(7px); }
-      .dialog { width:min(560px,calc(100vw - 28px)); max-height:calc(100vh - 28px); overflow:auto; border:1px solid rgba(167,139,250,.50); border-radius:24px; color:#f8f7ff; background:radial-gradient(circle at 88% 6%,rgba(139,92,246,.33),transparent 42%),linear-gradient(145deg,#17122b 0%,#211843 55%,#111827 100%); box-shadow:0 30px 100px rgba(8,5,20,.70),0 0 0 1px rgba(255,255,255,.05) inset; }
-      .dialog.priority-important,.dialog.priority-critical { border-color:rgba(255,76,95,.72); box-shadow:0 30px 100px rgba(8,5,20,.72),0 0 42px rgba(255,45,75,.20); }
-      .head { display:grid; grid-template-columns:58px minmax(0,1fr) 40px; align-items:center; gap:13px; padding:18px 18px 15px; border-bottom:1px solid rgba(255,255,255,.10); background:linear-gradient(90deg,rgba(124,88,214,.20),rgba(255,255,255,.02)); }
-      .logo { width:58px; height:58px; border-radius:16px; filter:drop-shadow(0 9px 18px rgba(0,0,0,.28)); }
-      .brand { display:grid; gap:3px; min-width:0; }
-      .brand strong { font-size:17px; line-height:1.1; letter-spacing:.08em; }
-      .brand span { color:#c9bafd; font-size:11px; font-weight:850; letter-spacing:.10em; text-transform:uppercase; }
-      .top-close { width:38px; height:38px; display:grid; place-items:center; padding:0; border:1px solid rgba(255,255,255,.13); border-radius:12px; background:rgba(255,255,255,.07); color:#fff; font:inherit; font-size:25px; cursor:pointer; }
-      .body { display:grid; gap:12px; padding:20px; }
+      .overlay { position:absolute; inset:0; display:grid; place-items:center; padding:14px; background:rgba(5,9,12,.54); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); }
+      .dialog { width:min(430px,calc(100vw - 28px)); max-height:calc(100vh - 28px); overflow:auto; border:1px solid rgba(90,190,111,.34); border-radius:18px; color:#f3f7f4; background:linear-gradient(150deg,#18221d 0%,#111a17 58%,#101820 100%); box-shadow:0 22px 64px rgba(0,0,0,.54),0 0 0 1px rgba(255,255,255,.035) inset; }
+      .dialog.priority-important,.dialog.priority-critical { border-color:rgba(239,68,89,.62); box-shadow:0 22px 64px rgba(0,0,0,.56),0 0 24px rgba(239,45,68,.13); }
+      .head { display:grid; grid-template-columns:minmax(0,1fr) 34px; align-items:center; gap:12px; padding:11px 13px 10px 15px; border-bottom:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.018); }
+      .logo { width:176px; max-width:72%; height:auto; display:block; filter:drop-shadow(0 5px 11px rgba(0,0,0,.24)); }
+      .top-close { width:32px; height:32px; display:grid; place-items:center; padding:0; border:1px solid rgba(255,255,255,.11); border-radius:9px; background:rgba(255,255,255,.045); color:#e9efeb; font:inherit; font-size:21px; cursor:pointer; }
+      .body { display:grid; gap:10px; padding:14px 16px 16px; }
       .meta { display:flex; align-items:center; flex-wrap:wrap; gap:7px; }
-      .meta span { padding:4px 8px; border:1px solid rgba(255,255,255,.13); border-radius:999px; background:rgba(255,255,255,.07); color:#ddd5ff; font-size:10px; font-weight:850; letter-spacing:.06em; text-transform:uppercase; }
+      .meta span { padding:3px 7px; border:1px solid rgba(255,255,255,.11); border-radius:999px; background:rgba(255,255,255,.05); color:#cbd8cf; font-size:9px; font-weight:800; letter-spacing:.055em; text-transform:uppercase; }
       .priority-important .meta span:last-child,.priority-critical .meta span:last-child { border-color:rgba(255,76,95,.50); background:rgba(255,45,75,.18); color:#ffd8de; }
       h2,p { margin:0; }
-      h2 { font-size:clamp(21px,4vw,28px); line-height:1.18; }
-      p { color:#e5e1f2; white-space:pre-wrap; line-height:1.58; }
+      h2 { font-size:clamp(18px,3.6vw,21px); line-height:1.22; }
+      p { color:#d8e0da; white-space:pre-wrap; font-size:13.5px; line-height:1.48; }
       .actions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; padding-top:4px; }
-      .actions button,.actions a { min-height:42px; display:inline-flex; align-items:center; justify-content:center; padding:8px 15px; border:1px solid rgba(255,255,255,.14); border-radius:12px; background:rgba(255,255,255,.08); color:#fff; font:inherit; font-weight:850; text-decoration:none; cursor:pointer; }
-      .actions a { border-color:transparent; background:linear-gradient(135deg,#8b5cf6,#6d4bd4); box-shadow:0 8px 22px rgba(109,75,212,.30); }
-      @media (max-width:720px) { .head{grid-template-columns:50px minmax(0,1fr) 38px;padding:15px}.logo{width:50px;height:50px;border-radius:14px}.body{padding:17px} }
+      .actions button,.actions a { min-height:36px; display:inline-flex; align-items:center; justify-content:center; padding:7px 12px; border:1px solid rgba(255,255,255,.12); border-radius:10px; background:rgba(255,255,255,.055); color:#f4f7f5; font:inherit; font-size:13px; font-weight:800; text-decoration:none; cursor:pointer; }
+      .actions a { border-color:rgba(67,190,91,.25); background:linear-gradient(135deg,#2dae4b,#168737); box-shadow:0 6px 16px rgba(22,135,55,.20); }
+      @media (max-width:720px) { .dialog{width:min(400px,calc(100vw - 24px))}.head{padding:10px 11px 9px 13px}.logo{width:158px}.body{padding:13px 14px 14px} }
     `;
     const overlay = document.createElement("div");
     overlay.className = "overlay";
@@ -4736,21 +4743,14 @@ class AnthbotMapCard extends HTMLElement {
     header.className = "head";
     const logo = document.createElement("img");
     logo.className = "logo";
-    logo.src = this.resolveAsset("logo.png?v=2495-beta7");
+    logo.src = this.resolveAsset("anthbotmap-logo.png?v=2495-beta8");
     logo.alt = "Anthbot Map";
-    const brand = document.createElement("div");
-    brand.className = "brand";
-    const brandName = document.createElement("strong");
-    brandName.textContent = "ANTHBOT MAP";
-    const brandLabel = document.createElement("span");
-    brandLabel.textContent = this.t("announcements");
-    brand.append(brandName, brandLabel);
     const topClose = document.createElement("button");
     topClose.type = "button";
     topClose.className = "top-close";
     topClose.setAttribute("aria-label", this.t("close"));
     topClose.textContent = "×";
-    header.append(logo, brand, topClose);
+    header.append(logo, topClose);
     const popupBody = document.createElement("div");
     popupBody.className = "body";
     const meta = document.createElement("div");
@@ -8308,7 +8308,16 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   startAnnouncementPollTimer() {
-    if (!this._hass || this.announcementPollTimer) return;
+    if (!this._hass) return;
+    if (!this.announcementFocusHandler) {
+      this.announcementFocusHandler = () => {
+        if (!this.isConnected || document.visibilityState === "hidden") return;
+        void this.loadAnnouncements(true);
+      };
+      window.addEventListener("focus", this.announcementFocusHandler);
+      document.addEventListener("visibilitychange", this.announcementFocusHandler);
+    }
+    if (this.announcementPollTimer) return;
     this.announcementPollTimer = window.setInterval(() => {
       if (!this.isConnected || document.visibilityState === "hidden") return;
       void this.loadAnnouncements(false);
@@ -8316,9 +8325,15 @@ class AnthbotMapCard extends HTMLElement {
   }
 
   stopAnnouncementPollTimer() {
-    if (!this.announcementPollTimer) return;
-    window.clearInterval(this.announcementPollTimer);
-    this.announcementPollTimer = null;
+    if (this.announcementPollTimer) {
+      window.clearInterval(this.announcementPollTimer);
+      this.announcementPollTimer = null;
+    }
+    if (this.announcementFocusHandler) {
+      window.removeEventListener("focus", this.announcementFocusHandler);
+      document.removeEventListener("visibilitychange", this.announcementFocusHandler);
+      this.announcementFocusHandler = null;
+    }
   }
 
   startMowingInfoTimer() {
