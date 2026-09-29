@@ -3495,6 +3495,7 @@ class AnthbotMapCard extends HTMLElement {
         sideSlot?.classList.add("mobile-sheet-open");
       }
       this.setPanel("announcements");
+      this.markCurrentlyVisibleAnnouncementsRead();
     });
     root.querySelector("ha-card")?.addEventListener("click", (event) => {
       if (infoPopover && !infoPopover.hidden && !event.composedPath().includes(infoControl)) {
@@ -4525,6 +4526,7 @@ class AnthbotMapCard extends HTMLElement {
           this.shadowRoot?.querySelector(".frontend-drawer")?.classList.remove("open");
         }
         this.setPanel(panel);
+        if (panel === "announcements") this.markCurrentlyVisibleAnnouncementsRead();
       });
       list.appendChild(button);
     }
@@ -4615,6 +4617,13 @@ class AnthbotMapCard extends HTMLElement {
     };
   }
 
+  markCurrentlyVisibleAnnouncementsRead() {
+    const unread = this.announcements
+      .filter((item) => !this.announcementReadIds.has(item.id))
+      .map((item) => item.id);
+    if (unread.length) void this.markAnnouncementsRead(unread, false);
+  }
+
   renderAnnouncementsPanel(body) {
     body.innerHTML = "";
     const wrapper = document.createElement("div");
@@ -4671,29 +4680,66 @@ class AnthbotMapCard extends HTMLElement {
         }
         wrapper.appendChild(card);
       }
-      const unread = this.announcements.filter((item) => !this.announcementReadIds.has(item.id)).map((item) => item.id);
-      if (unread.length) void this.markAnnouncementsRead(unread, false);
     }
     body.appendChild(wrapper);
   }
 
   maybeShowAnnouncementPopup() {
     const item = this.announcements.find((candidate) => candidate.show_popup && !this.announcementPopupSeenIds.has(candidate.id));
-    window.__anthbotAnnouncementPopupIds ||= new Set();
-    if (!item || window.__anthbotAnnouncementPopupIds.has(item.id) || this.shadowRoot?.querySelector(".anthbot-announcement-dialog")) return;
-    window.__anthbotAnnouncementPopupIds.add(item.id);
-    const dialog = document.createElement("dialog");
-    dialog.className = `anthbot-announcement-dialog priority-${item.priority || "normal"}`;
+    window.__anthbotAnnouncementPopupIdsBeta6 ||= new Set();
+    const displayedPopupIds = window.__anthbotAnnouncementPopupIdsBeta6;
+    if (!item || displayedPopupIds.has(item.id) || !document.body) return;
+
+    // Render outside the card so a second card instance, a hidden Lovelace view,
+    // or an ancestor with overflow clipping cannot swallow the popup. The host
+    // has its own shadow root, so dashboard themes cannot turn it into a plain
+    // white native dialog.
+    const host = document.createElement("div");
+    host.className = "anthbot-announcement-popup-host";
+    host.dataset.announcementId = item.id;
+    const popupRoot = host.attachShadow({ mode: "open" });
+    const style = document.createElement("style");
+    style.textContent = `
+      :host { position:fixed; inset:0; z-index:2147483000; display:block; font-family:var(--paper-font-body1_-_font-family,Roboto,Arial,sans-serif); }
+      *,*::before,*::after { box-sizing:border-box; }
+      .overlay { position:absolute; inset:0; display:grid; place-items:center; padding:14px; background:rgba(5,7,15,.72); backdrop-filter:blur(7px); -webkit-backdrop-filter:blur(7px); }
+      .dialog { width:min(560px,calc(100vw - 28px)); max-height:calc(100vh - 28px); overflow:auto; border:1px solid rgba(167,139,250,.50); border-radius:24px; color:#f8f7ff; background:radial-gradient(circle at 88% 6%,rgba(139,92,246,.33),transparent 42%),linear-gradient(145deg,#17122b 0%,#211843 55%,#111827 100%); box-shadow:0 30px 100px rgba(8,5,20,.70),0 0 0 1px rgba(255,255,255,.05) inset; }
+      .dialog.priority-important,.dialog.priority-critical { border-color:rgba(255,76,95,.72); box-shadow:0 30px 100px rgba(8,5,20,.72),0 0 42px rgba(255,45,75,.20); }
+      .head { display:grid; grid-template-columns:58px minmax(0,1fr) 40px; align-items:center; gap:13px; padding:18px 18px 15px; border-bottom:1px solid rgba(255,255,255,.10); background:linear-gradient(90deg,rgba(124,88,214,.20),rgba(255,255,255,.02)); }
+      .logo { width:58px; height:58px; border-radius:16px; filter:drop-shadow(0 9px 18px rgba(0,0,0,.28)); }
+      .brand { display:grid; gap:3px; min-width:0; }
+      .brand strong { font-size:17px; line-height:1.1; letter-spacing:.08em; }
+      .brand span { color:#c9bafd; font-size:11px; font-weight:850; letter-spacing:.10em; text-transform:uppercase; }
+      .top-close { width:38px; height:38px; display:grid; place-items:center; padding:0; border:1px solid rgba(255,255,255,.13); border-radius:12px; background:rgba(255,255,255,.07); color:#fff; font:inherit; font-size:25px; cursor:pointer; }
+      .body { display:grid; gap:12px; padding:20px; }
+      .meta { display:flex; align-items:center; flex-wrap:wrap; gap:7px; }
+      .meta span { padding:4px 8px; border:1px solid rgba(255,255,255,.13); border-radius:999px; background:rgba(255,255,255,.07); color:#ddd5ff; font-size:10px; font-weight:850; letter-spacing:.06em; text-transform:uppercase; }
+      .priority-important .meta span:last-child,.priority-critical .meta span:last-child { border-color:rgba(255,76,95,.50); background:rgba(255,45,75,.18); color:#ffd8de; }
+      h2,p { margin:0; }
+      h2 { font-size:clamp(21px,4vw,28px); line-height:1.18; }
+      p { color:#e5e1f2; white-space:pre-wrap; line-height:1.58; }
+      .actions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; padding-top:4px; }
+      .actions button,.actions a { min-height:42px; display:inline-flex; align-items:center; justify-content:center; padding:8px 15px; border:1px solid rgba(255,255,255,.14); border-radius:12px; background:rgba(255,255,255,.08); color:#fff; font:inherit; font-weight:850; text-decoration:none; cursor:pointer; }
+      .actions a { border-color:transparent; background:linear-gradient(135deg,#8b5cf6,#6d4bd4); box-shadow:0 8px 22px rgba(109,75,212,.30); }
+      @media (max-width:720px) { .head{grid-template-columns:50px minmax(0,1fr) 38px;padding:15px}.logo{width:50px;height:50px;border-radius:14px}.body{padding:17px} }
+    `;
+    const overlay = document.createElement("div");
+    overlay.className = "overlay";
+    const dialog = document.createElement("section");
+    dialog.className = `dialog priority-${item.priority || "normal"}`;
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.tabIndex = -1;
     const content = document.createElement("div");
-    content.className = "anthbot-announcement-dialog-content";
+    content.className = "content";
     const header = document.createElement("div");
-    header.className = "anthbot-announcement-dialog-head";
+    header.className = "head";
     const logo = document.createElement("img");
-    logo.className = "anthbot-announcement-dialog-logo";
-    logo.src = this.resolveAsset("logo.png?v=2495-beta5");
+    logo.className = "logo";
+    logo.src = this.resolveAsset("logo.png?v=2495-beta6");
     logo.alt = "Anthbot Map";
     const brand = document.createElement("div");
-    brand.className = "anthbot-announcement-dialog-brand";
+    brand.className = "brand";
     const brandName = document.createElement("strong");
     brandName.textContent = "ANTHBOT MAP";
     const brandLabel = document.createElement("span");
@@ -4701,15 +4747,14 @@ class AnthbotMapCard extends HTMLElement {
     brand.append(brandName, brandLabel);
     const topClose = document.createElement("button");
     topClose.type = "button";
-    topClose.className = "anthbot-announcement-dialog-close";
+    topClose.className = "top-close";
     topClose.setAttribute("aria-label", this.t("close"));
     topClose.textContent = "×";
-    topClose.addEventListener("click", () => dialog.close());
     header.append(logo, brand, topClose);
     const popupBody = document.createElement("div");
-    popupBody.className = "anthbot-announcement-dialog-body";
+    popupBody.className = "body";
     const meta = document.createElement("div");
-    meta.className = "anthbot-announcement-dialog-meta";
+    meta.className = "meta";
     const category = document.createElement("span");
     category.textContent = this.t(`announcementCategory_${item.category}`);
     meta.appendChild(category);
@@ -4720,10 +4765,13 @@ class AnthbotMapCard extends HTMLElement {
     }
     const title = document.createElement("h2");
     title.textContent = item.title || "";
+    const titleId = `anthbot-announcement-title-${Math.random().toString(36).slice(2)}`;
+    title.id = titleId;
+    dialog.setAttribute("aria-labelledby", titleId);
     const text = document.createElement("p");
     text.textContent = item.body || "";
     const actions = document.createElement("div");
-    actions.className = "anthbot-announcement-dialog-actions";
+    actions.className = "actions";
     if (item.link) {
       const link = document.createElement("a");
       link.href = item.link;
@@ -4735,17 +4783,40 @@ class AnthbotMapCard extends HTMLElement {
     const close = document.createElement("button");
     close.type = "button";
     close.textContent = this.t("close");
-    close.addEventListener("click", () => dialog.close());
     actions.appendChild(close);
     popupBody.append(meta, title, text, actions);
     content.append(header, popupBody);
     dialog.appendChild(content);
-    dialog.addEventListener("close", () => {
-      dialog.remove();
+
+    let closed = false;
+    const closePopup = () => {
+      if (closed) return;
+      closed = true;
+      document.removeEventListener("keydown", onKeyDown, true);
+      host.remove();
       void this.markAnnouncementsRead([item.id], true);
-    }, { once: true });
-    this.shadowRoot.appendChild(dialog);
-    dialog.showModal();
+    };
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closePopup();
+      }
+    };
+    topClose.addEventListener("click", closePopup);
+    close.addEventListener("click", closePopup);
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) closePopup();
+    });
+    document.addEventListener("keydown", onKeyDown, true);
+    overlay.appendChild(dialog);
+    popupRoot.append(style, overlay);
+    document.body.appendChild(host);
+    displayedPopupIds.add(item.id);
+    try {
+      dialog.focus({ preventScroll: true });
+    } catch (_error) {
+      dialog.focus();
+    }
   }
 
   prependSecondaryPanelHeader(body, title) {
