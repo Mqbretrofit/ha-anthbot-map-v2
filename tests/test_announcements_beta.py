@@ -16,7 +16,7 @@ class AnnouncementsBetaTests(unittest.TestCase):
     def test_beta_version_is_consistent(self) -> None:
         manifest = json.loads((INTEGRATION / "manifest.json").read_text(encoding="utf-8"))
         version = manifest["version"]
-        self.assertEqual("2.4.9.5-beta5", version)
+        self.assertEqual("2.4.9.5-beta6", version)
         self.assertIn(
             f'INTEGRATION_VERSION = "{version}"',
             (INTEGRATION / "const.py").read_text(encoding="utf-8"),
@@ -49,10 +49,10 @@ class AnnouncementsBetaTests(unittest.TestCase):
             'this.activePanel === "announcements"',
             "data-announcement-badge",
             "candidate.show_popup",
-            "anthbot-announcement-dialog",
+            "anthbot-announcement-popup-host",
             "data-announcement-bell",
             "startAnnouncementPollTimer",
-            'this.resolveAsset("logo.png?v=2495-beta5")',
+            'this.resolveAsset("logo.png?v=2495-beta6")',
         ):
             self.assertIn(marker, card)
         self.assertIn(
@@ -60,6 +60,9 @@ class AnnouncementsBetaTests(unittest.TestCase):
             card,
         )
         self.assertIn("_INTERVAL = timedelta(minutes=1)", (INTEGRATION / "announcements.py").read_text(encoding="utf-8"))
+        self.assertIn('document.body.appendChild(host)', card)
+        self.assertIn('if (panel === "announcements") this.markCurrentlyVisibleAnnouncementsRead();', card)
+        self.assertNotIn('if (unread.length) void this.markAnnouncementsRead(unread, false);\n    }\n    body.appendChild(wrapper);', card)
         self.assertTrue((INTEGRATION / "frontend" / "logo.png").is_file())
         self.assertTrue((ROOT / "www" / "anthbot-map" / "logo.png").is_file())
 
