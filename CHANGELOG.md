@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.4.9.5-beta1 — 2026-09-29
+
+- Adds a separately testable **Újdonságok / News** panel and unread badge to the Anthbot Map Card without changing the stable 2.4.9.4 mower-control path.
+- Adds a cached, best-effort announcement receiver. Feed failures keep the last valid messages and never block mower setup, commands, map rendering or settings synchronization.
+- Supports remotely published news, releases, maintenance notices, service notices and voice-pack messages, with optional version/model targeting, expiry, links and one-time important popups.
+- Keeps normal messages inside the News panel; only messages explicitly marked for popup display can open a one-time dialog.
+- Stores read and popup-seen state locally in Home Assistant and updates notification badges without rebuilding or closing an open robot/zone settings panel.
+- Sends only the installed Anthbot Map version, selected card language and mower model names when retrieving the feed; no mower serial, map, account data, credentials or installation identifier is included.
+- Adds localized News UI text for all 23 supported card languages.
+
 ## 2.4.9.4 — 2026-09-28
 
 - Rebuilds the M9/M9 Pro settings synchronization on the stable 2.4.9.3 base without replacing the existing Genie command path.

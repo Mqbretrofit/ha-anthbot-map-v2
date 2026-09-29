@@ -2,7 +2,7 @@ import { AnthbotMapRenderer } from "./renderer.js?v=2474-genie-heading-test2";
 import { getZones, getZonePoints, createGeometry, getWorldBounds, getBoundaryPaths } from "./geometry.js?v=2411";
 import { renderAnthbotEdgeSettings } from "./edge-settings.js?v=2411";
 import { renderAnthbotSchedulePanel, anthbotScheduleText } from "./schedule-panel.js?v=2480-test4";
-import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=2492b2-info-height";
+import { LANGUAGES, resolveLanguage, translate } from "./i18n.js?v=2495b1-announcements";
 import {
   adjustCalibration,
   cardToYaml,
@@ -80,6 +80,13 @@ class AnthbotMapCard extends HTMLElement {
     this.decodedBoundaryCalibration = resetCalibration();
     this.renderer = null;
     this.activePanel = "control";
+    this.announcements = [];
+    this.announcementReadIds = new Set();
+    this.announcementPopupSeenIds = new Set();
+    this.announcementUnreadCount = 0;
+    this.announcementsLoaded = false;
+    this.announcementsLoading = false;
+    this.announcementsAvailable = true;
     this.refreshTimer = null;
     this.mowingInfoTimer = null;
     this.rainCountdownTimer = null;
@@ -155,7 +162,7 @@ class AnthbotMapCard extends HTMLElement {
     }
 
     this.config = config;
-    const validPanels = new Set(["control", "schedule", "settings", "more", "interface", "status", "maintenance", "diagnostics", "calibration"]);
+    const validPanels = new Set(["control", "schedule", "settings", "more", "announcements", "interface", "status", "maintenance", "diagnostics", "calibration"]);
     const configuredPanel = String(config.default_panel ?? config.defaultPanel ?? "control").trim();
     this.activePanel = validPanels.has(configuredPanel) ? configuredPanel : "control";
     this.floatingMenuOpen = typeof config.menu_open === "boolean"
@@ -304,6 +311,9 @@ class AnthbotMapCard extends HTMLElement {
       // Render the initial panel once when `hass` arrives; later state pushes
       // keep the stable in-place refresh path from v14.
       if (!hadHass) this.renderAppPanel();
+    }
+    if (!hadHass || previousLanguage !== this.language) {
+      void this.loadAnnouncements(previousLanguage !== this.language);
     }
   }
 
@@ -472,11 +482,14 @@ class AnthbotMapCard extends HTMLElement {
 
   frontendTabsMarkup() {
     if (this.frontendLayout === "origin") {
-      const item = (panel, label) => `<button type="button" data-panel="${panel}">${escapeHtml(label)}</button>`;
+      const item = (panel, label) => panel === "announcements"
+        ? `<button type="button" data-panel="${panel}"><span>${escapeHtml(label)}</span><span class="anthbot-announcement-badge" data-announcement-badge ${this.announcementUnreadCount ? "" : "hidden"}>${this.announcementUnreadCount || ""}</span></button>`
+        : `<button type="button" data-panel="${panel}">${escapeHtml(label)}</button>`;
       return [
         item("control", this.t("control")),
         item("schedule", anthbotScheduleText(this, "schedule")),
         item("settings", this.t("robotSettings")),
+        item("announcements", this.t("announcements")),
         item("interface", this.t("interfaceSettings")),
         item("status", this.t("status")),
         item("maintenance", this.t("maintenance")),
@@ -1792,6 +1805,28 @@ class AnthbotMapCard extends HTMLElement {
           .anthbot-menu-row > ha-icon:first-child { --mdc-icon-size:23px; opacity:.92; }
           .anthbot-menu-row strong { font-size:15px; font-weight:800; }
           .anthbot-menu-chevron { --mdc-icon-size:21px; justify-self:end; opacity:.55; }
+          .anthbot-announcement-badge { min-width:20px; height:20px; padding:0 6px; display:inline-grid; place-items:center; justify-self:end; border-radius:999px; background:var(--mf-accent,#2e8b57); color:#fff; font-size:11px; font-weight:900; }
+          .anthbot-announcements { display:grid; gap:10px; }
+          .anthbot-announcements-toolbar { display:flex; justify-content:flex-end; margin:-4px 0 2px; }
+          .anthbot-announcements-refresh { display:flex; align-items:center; gap:7px; min-height:38px; padding:7px 11px; border:1px solid rgba(127,127,127,.22); border-radius:11px; background:rgba(127,127,127,.07); color:inherit; font:inherit; cursor:pointer; }
+          .anthbot-announcement-card { display:grid; gap:8px; padding:14px; border:1px solid rgba(127,127,127,.20); border-radius:14px; background:rgba(127,127,127,.05); }
+          .anthbot-announcement-card.unread { border-color:var(--mf-accent,#2e8b57); box-shadow:inset 3px 0 0 var(--mf-accent,#2e8b57); }
+          .anthbot-announcement-meta { display:flex; align-items:center; flex-wrap:wrap; gap:7px; font-size:11px; opacity:.75; text-transform:uppercase; letter-spacing:.04em; }
+          .anthbot-announcement-priority { padding:3px 7px; border-radius:999px; background:rgba(127,127,127,.15); }
+          .anthbot-announcement-priority.important { background:#f5a623; color:#201500; }
+          .anthbot-announcement-priority.critical { background:#d32f2f; color:#fff; }
+          .anthbot-announcement-card h3 { margin:0; font-size:17px; line-height:1.3; }
+          .anthbot-announcement-card p { margin:0; white-space:pre-wrap; line-height:1.45; }
+          .anthbot-announcement-link { width:max-content; color:var(--primary-color,#2e8b57); font-weight:800; text-decoration:none; }
+          .anthbot-announcements-empty { padding:28px 12px; text-align:center; opacity:.7; }
+          .anthbot-announcement-dialog { width:min(520px,calc(100vw - 32px)); padding:0; border:0; border-radius:18px; color:var(--primary-text-color,#222); background:var(--card-background-color,#fff); box-shadow:0 20px 70px rgba(0,0,0,.35); }
+          .anthbot-announcement-dialog::backdrop { background:rgba(0,0,0,.45); }
+          .anthbot-announcement-dialog-content { display:grid; gap:12px; padding:20px; }
+          .anthbot-announcement-dialog h2,.anthbot-announcement-dialog p { margin:0; }
+          .anthbot-announcement-dialog p { white-space:pre-wrap; line-height:1.5; }
+          .anthbot-announcement-dialog-actions { display:flex; justify-content:flex-end; gap:8px; }
+          .anthbot-announcement-dialog-actions button,.anthbot-announcement-dialog-actions a { min-height:40px; display:inline-flex; align-items:center; padding:8px 14px; border:0; border-radius:11px; background:rgba(127,127,127,.13); color:inherit; font:inherit; font-weight:800; text-decoration:none; cursor:pointer; }
+          .anthbot-announcement-dialog-actions a { background:var(--mf-accent,#2e8b57); color:#fff; }
           .secondary-panel-head { position:sticky; top:0; z-index:7; display:flex; align-items:center; gap:10px; min-height:52px; margin:0 0 10px; padding:4px 2px 8px; background:inherit; }
           .secondary-panel-head button { width:40px; height:40px; display:grid; place-items:center; border:1px solid rgba(127,127,127,.22); border-radius:12px; background:rgba(127,127,127,.08); color:inherit; cursor:pointer; }
           .secondary-panel-head strong { font-size:18px; }
@@ -4370,7 +4405,7 @@ class AnthbotMapCard extends HTMLElement {
     const body = this.shadowRoot.querySelector('[data-role="panel-body"]');
     if (!body || !this._hass) return;
 
-    const secondaryPanels = new Set(["more", "interface", "status", "maintenance", "diagnostics", "calibration"]);
+    const secondaryPanels = new Set(["more", "announcements", "interface", "status", "maintenance", "diagnostics", "calibration"]);
     this.shadowRoot.querySelectorAll("button[data-panel]").forEach((button) => {
       const selectedPanel = button.dataset.panel;
       button.classList.toggle("active", selectedPanel === this.activePanel || (selectedPanel === "more" && secondaryPanels.has(this.activePanel)));
@@ -4393,6 +4428,9 @@ class AnthbotMapCard extends HTMLElement {
       this.renderSettingsPanel(body);
     } else if (this.activePanel === "more") {
       this.renderMorePanel(body);
+    } else if (this.activePanel === "announcements") {
+      this.renderAnnouncementsPanel(body);
+      this.prependSecondaryPanelHeader(body, this.t("announcements"));
     } else if (this.activePanel === "interface") {
       this.renderInterfacePanel(body);
       this.prependSecondaryPanelHeader(body, this.t("interfaceSettings"));
@@ -4418,6 +4456,7 @@ class AnthbotMapCard extends HTMLElement {
     const list = document.createElement("div");
     list.className = "anthbot-more-list";
     const items = [
+      ["announcements", this.t("announcements"), "mdi:bell-outline"],
       ["status", this.t("status"), "mdi:heart-pulse"],
       ["maintenance", this.t("maintenance"), "mdi:wrench-outline"],
       ["diagnostics", this.t("diagnostics"), "mdi:chart-box-outline"],
@@ -4428,7 +4467,10 @@ class AnthbotMapCard extends HTMLElement {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "anthbot-menu-row";
-      button.innerHTML = `<ha-icon icon="${mdi}"></ha-icon><strong>${escapeHtml(label)}</strong><ha-icon class="anthbot-menu-chevron" icon="mdi:chevron-right"></ha-icon>`;
+      const trailing = panel === "announcements" && this.announcementUnreadCount
+        ? `<span class="anthbot-announcement-badge" data-announcement-badge>${this.announcementUnreadCount}</span>`
+        : `<ha-icon class="anthbot-menu-chevron" icon="mdi:chevron-right"></ha-icon>`;
+      button.innerHTML = `<ha-icon icon="${mdi}"></ha-icon><strong>${escapeHtml(label)}</strong>${trailing}`;
       button.addEventListener("click", () => {
         if (panel === "calibration") {
           this.floatingMenuOpen = false;
@@ -4439,6 +4481,172 @@ class AnthbotMapCard extends HTMLElement {
       list.appendChild(button);
     }
     body.append(title, list);
+  }
+
+  async callAnnouncementService(service, serviceData = {}) {
+    if (!this._hass?.connection) throw new Error("Home Assistant connection unavailable");
+    const result = await this._hass.connection.sendMessagePromise({
+      type: "call_service",
+      domain: "anthbot_map",
+      service,
+      service_data: serviceData,
+      return_response: true,
+    });
+    return result?.response || {};
+  }
+
+  applyAnnouncementResponse(response) {
+    if (!response || response.schema !== "anthbot-map-announcements-v1") return;
+    this.announcements = Array.isArray(response.items) ? response.items : [];
+    this.announcementReadIds = new Set(Array.isArray(response.read_ids) ? response.read_ids : []);
+    this.announcementPopupSeenIds = new Set(Array.isArray(response.popup_seen_ids) ? response.popup_seen_ids : []);
+    this.announcementUnreadCount = Number(response.unread_count) || 0;
+    this.announcementsAvailable = response.available !== false;
+    this.announcementsLoaded = true;
+  }
+
+  async loadAnnouncements(refresh = false) {
+    if (this.announcementsLoading || !this._hass) return;
+    this.announcementsLoading = true;
+    if (this.activePanel === "announcements") this.renderAppPanel();
+    try {
+      const response = await this.callAnnouncementService("announcements_get", {
+        language: this.language,
+        refresh: Boolean(refresh),
+      });
+      this.applyAnnouncementResponse(response);
+      this.updateAnnouncementBadges();
+      if (this.activePanel === "announcements" || this.activePanel === "more") this.renderAppPanel();
+      this.maybeShowAnnouncementPopup();
+    } catch (_error) {
+      this.announcementsAvailable = false;
+      this.announcementsLoaded = true;
+      if (this.activePanel === "announcements") this.renderAppPanel();
+    } finally {
+      this.announcementsLoading = false;
+      if (this.activePanel === "announcements") this.renderAppPanel();
+    }
+  }
+
+  async markAnnouncementsRead(ids, popupSeen = false) {
+    const selected = [...new Set(ids.filter(Boolean))];
+    if (!selected.length) return;
+    try {
+      const response = await this.callAnnouncementService("announcements_mark_read", {
+        announcement_ids: selected,
+        popup_seen: Boolean(popupSeen),
+      });
+      this.applyAnnouncementResponse(response);
+      this.updateAnnouncementBadges();
+      if (this.activePanel === "announcements" || this.activePanel === "more") this.renderAppPanel();
+    } catch (_error) {
+      // Read markers are convenience state and must never disturb the card.
+    }
+  }
+
+  updateAnnouncementBadges() {
+    this.shadowRoot?.querySelectorAll("[data-announcement-badge]").forEach((badge) => {
+      badge.textContent = String(this.announcementUnreadCount || "");
+      badge.hidden = !this.announcementUnreadCount;
+    });
+  }
+
+  renderAnnouncementsPanel(body) {
+    body.innerHTML = "";
+    const wrapper = document.createElement("div");
+    wrapper.className = "anthbot-announcements";
+    const toolbar = document.createElement("div");
+    toolbar.className = "anthbot-announcements-toolbar";
+    const refresh = document.createElement("button");
+    refresh.type = "button";
+    refresh.className = "anthbot-announcements-refresh";
+    refresh.disabled = this.announcementsLoading;
+    refresh.innerHTML = `<ha-icon icon="mdi:refresh"></ha-icon><span>${escapeHtml(this.t("announcementRefresh"))}</span>`;
+    refresh.addEventListener("click", () => void this.loadAnnouncements(true));
+    toolbar.appendChild(refresh);
+    wrapper.appendChild(toolbar);
+
+    if (this.announcementsLoading && !this.announcementsLoaded) {
+      const state = document.createElement("div");
+      state.className = "anthbot-announcements-empty";
+      state.textContent = this.t("announcementLoading");
+      wrapper.appendChild(state);
+    } else if (!this.announcements.length) {
+      const state = document.createElement("div");
+      state.className = "anthbot-announcements-empty";
+      state.textContent = this.announcementsAvailable ? this.t("announcementEmpty") : this.t("announcementUnavailable");
+      wrapper.appendChild(state);
+    } else {
+      for (const item of this.announcements) {
+        const card = document.createElement("article");
+        card.className = `anthbot-announcement-card${this.announcementReadIds.has(item.id) ? "" : " unread"}`;
+        const meta = document.createElement("div");
+        meta.className = "anthbot-announcement-meta";
+        const category = document.createElement("span");
+        category.textContent = this.t(`announcementCategory_${item.category}`);
+        meta.appendChild(category);
+        if (item.priority !== "normal") {
+          const priority = document.createElement("span");
+          priority.className = `anthbot-announcement-priority ${item.priority}`;
+          priority.textContent = this.t(`announcementPriority_${item.priority}`);
+          meta.appendChild(priority);
+        }
+        const title = document.createElement("h3");
+        title.textContent = item.title || "";
+        const text = document.createElement("p");
+        text.textContent = item.body || "";
+        card.append(meta, title, text);
+        if (item.link) {
+          const link = document.createElement("a");
+          link.className = "anthbot-announcement-link";
+          link.href = item.link;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = item.link_label || this.t("announcementOpenLink");
+          card.appendChild(link);
+        }
+        wrapper.appendChild(card);
+      }
+      const unread = this.announcements.filter((item) => !this.announcementReadIds.has(item.id)).map((item) => item.id);
+      if (unread.length) void this.markAnnouncementsRead(unread, false);
+    }
+    body.appendChild(wrapper);
+  }
+
+  maybeShowAnnouncementPopup() {
+    const item = this.announcements.find((candidate) => candidate.show_popup && !this.announcementPopupSeenIds.has(candidate.id));
+    window.__anthbotAnnouncementPopupIds ||= new Set();
+    if (!item || window.__anthbotAnnouncementPopupIds.has(item.id) || this.shadowRoot?.querySelector(".anthbot-announcement-dialog")) return;
+    window.__anthbotAnnouncementPopupIds.add(item.id);
+    const dialog = document.createElement("dialog");
+    dialog.className = "anthbot-announcement-dialog";
+    const content = document.createElement("div");
+    content.className = "anthbot-announcement-dialog-content";
+    const title = document.createElement("h2");
+    title.textContent = item.title || "";
+    const text = document.createElement("p");
+    text.textContent = item.body || "";
+    const actions = document.createElement("div");
+    actions.className = "anthbot-announcement-dialog-actions";
+    if (item.link) {
+      const link = document.createElement("a");
+      link.href = item.link;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = item.link_label || this.t("announcementOpenLink");
+      actions.appendChild(link);
+    }
+    const close = document.createElement("button");
+    close.type = "button";
+    close.textContent = this.t("close");
+    close.addEventListener("click", () => dialog.close());
+    actions.appendChild(close);
+    content.append(title, text, actions);
+    dialog.appendChild(content);
+    dialog.addEventListener("close", () => dialog.remove(), { once: true });
+    this.shadowRoot.appendChild(dialog);
+    dialog.showModal();
+    void this.markAnnouncementsRead([item.id], true);
   }
 
   prependSecondaryPanelHeader(body, title) {

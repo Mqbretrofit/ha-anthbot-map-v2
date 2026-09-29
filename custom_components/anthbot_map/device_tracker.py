@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
@@ -20,6 +21,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .announcements import async_register_announcements
 from .cloud_error_reporting import async_register_cloud_error_reporting
 from .const import (
     CONF_AREA_CODE,
@@ -36,6 +38,8 @@ from .developer_reporting import async_send_anonymous_usage_report
 from .location_recorder import location_snapshot, should_write_location_state
 from .presence import async_start_presence_heartbeat
 from .robot_error_reporting import async_register_robot_error_reporting
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _safe_get(data: dict[str, Any], *path: str) -> Any:
@@ -119,6 +123,10 @@ async def async_setup_entry(
     await async_register_developer_agent_optin(hass)
     await async_register_developer_agent(hass, entry)
     await async_start_presence_heartbeat(hass)
+    try:
+        await async_register_announcements(hass)
+    except Exception as err:  # noqa: BLE001 - news must never block mower setup
+        _LOGGER.debug("Announcement setup failed: %s", err)
 
     coordinators: list[AnthbotGenieDataUpdateCoordinator] = hass.data[DOMAIN][
         entry.entry_id
