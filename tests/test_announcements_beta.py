@@ -16,7 +16,7 @@ class AnnouncementsBetaTests(unittest.TestCase):
     def test_beta_version_is_consistent(self) -> None:
         manifest = json.loads((INTEGRATION / "manifest.json").read_text(encoding="utf-8"))
         version = manifest["version"]
-        self.assertEqual("2.4.9.5-beta3", version)
+        self.assertEqual("2.4.9.5-beta4", version)
         self.assertIn(
             f'INTEGRATION_VERSION = "{version}"',
             (INTEGRATION / "const.py").read_text(encoding="utf-8"),
@@ -50,12 +50,18 @@ class AnnouncementsBetaTests(unittest.TestCase):
             "data-announcement-badge",
             "candidate.show_popup",
             "anthbot-announcement-dialog",
+            "data-announcement-bell",
+            "startAnnouncementPollTimer",
+            'this.resolveAsset("logo.png?v=2495-beta4")',
         ):
             self.assertIn(marker, card)
         self.assertIn(
             'if (this.activePanel === "announcements" || this.activePanel === "more") this.renderAppPanel();',
             card,
         )
+        self.assertIn("_INTERVAL = timedelta(minutes=1)", (INTEGRATION / "announcements.py").read_text(encoding="utf-8"))
+        self.assertTrue((INTEGRATION / "frontend" / "logo.png").is_file())
+        self.assertTrue((ROOT / "www" / "anthbot-map" / "logo.png").is_file())
 
     def test_all_card_languages_have_announcement_labels(self) -> None:
         source = (INTEGRATION / "frontend" / "i18n.js").read_text(encoding="utf-8")
@@ -75,7 +81,7 @@ class AnnouncementsBetaTests(unittest.TestCase):
             self.assertIn("announcementCategory_personal:", line)
 
     def test_frontend_mirrors_match(self) -> None:
-        for name in ("anthbot-map-card.js", "i18n.js"):
+        for name in ("anthbot-map-card.js", "i18n.js", "logo.png"):
             self.assertEqual(
                 (INTEGRATION / "frontend" / name).read_bytes(),
                 (ROOT / "www" / "anthbot-map" / name).read_bytes(),

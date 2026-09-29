@@ -34,7 +34,7 @@ _SCHEMA = "anthbot-map-announcements-v1"
 _STORAGE_VERSION = 1
 _STORAGE_KEY = "anthbot_map.announcements"
 _RUNTIME_KEY = "_announcements_runtime"
-_INTERVAL = timedelta(hours=6)
+_INTERVAL = timedelta(minutes=1)
 _MAX_ITEMS = 50
 _LANGUAGES = {
     "en", "hu", "de", "fr", "es", "it", "pt", "nl", "pl", "cs", "sk",

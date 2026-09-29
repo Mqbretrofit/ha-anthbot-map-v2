@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.4.9.5-beta4 — 2026-09-29
+
+- Automatically checks for new announcements in the background, so popup-enabled messages appear without manually opening the News panel or pressing Refresh.
+- Replaces the plain announcement dialog with an ANTHBOT Map branded dark-gradient popup using the bundled logo and priority styling.
+- Adds a flashing bell beside the Information button while unread messages exist: red for important or critical messages and orange for normal messages.
+- Keeps the bell visible until the message is read or its popup is closed, and opens the News panel directly when the bell is pressed.
+- Preserves beta3 personal/per-installation targeting and the stable 2.4.9.4 mower-control path.
+
 ## 2.4.9.5-beta3 — 2026-09-29
 
 - Adds the **Personal message** announcement category and localized labels in all 23 supported card languages.
