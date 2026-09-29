@@ -16,7 +16,7 @@ class AnnouncementsBetaTests(unittest.TestCase):
     def test_beta_version_is_consistent(self) -> None:
         manifest = json.loads((INTEGRATION / "manifest.json").read_text(encoding="utf-8"))
         version = manifest["version"]
-        self.assertEqual("2.4.9.5-beta7", version)
+        self.assertEqual("2.4.9.5-beta8", version)
         self.assertIn(
             f'INTEGRATION_VERSION = "{version}"',
             (INTEGRATION / "const.py").read_text(encoding="utf-8"),
@@ -52,7 +52,9 @@ class AnnouncementsBetaTests(unittest.TestCase):
             "anthbot-announcement-popup-host",
             "data-announcement-bell",
             "startAnnouncementPollTimer",
-            'this.resolveAsset("logo.png?v=2495-beta7")',
+            'this.resolveAsset("anthbotmap-logo.png?v=2495-beta8")',
+            "connectedCallback()",
+            "announcementFocusHandler",
         ):
             self.assertIn(marker, card)
         self.assertIn(
@@ -63,8 +65,8 @@ class AnnouncementsBetaTests(unittest.TestCase):
         self.assertIn('document.body.appendChild(host)', card)
         self.assertIn('if (panel === "announcements") this.markCurrentlyVisibleAnnouncementsRead();', card)
         self.assertNotIn('if (unread.length) void this.markAnnouncementsRead(unread, false);\n    }\n    body.appendChild(wrapper);', card)
-        self.assertTrue((INTEGRATION / "frontend" / "logo.png").is_file())
-        self.assertTrue((ROOT / "www" / "anthbot-map" / "logo.png").is_file())
+        self.assertTrue((INTEGRATION / "frontend" / "anthbotmap-logo.png").is_file())
+        self.assertTrue((ROOT / "www" / "anthbot-map" / "anthbotmap-logo.png").is_file())
 
     def test_edited_message_resets_read_and_popup_acknowledgements(self) -> None:
         source = (INTEGRATION / "announcements.py").read_text(encoding="utf-8")
@@ -101,7 +103,7 @@ class AnnouncementsBetaTests(unittest.TestCase):
             self.assertIn("announcementCategory_personal:", line)
 
     def test_frontend_mirrors_match(self) -> None:
-        for name in ("anthbot-map-card.js", "i18n.js", "logo.png"):
+        for name in ("anthbot-map-card.js", "i18n.js", "logo.png", "anthbotmap-logo.png"):
             self.assertEqual(
                 (INTEGRATION / "frontend" / name).read_bytes(),
                 (ROOT / "www" / "anthbot-map" / name).read_bytes(),
