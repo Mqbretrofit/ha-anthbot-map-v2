@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.9.5-beta6 — 2026-09-29
+
+- Fixes announcement popups being swallowed by a hidden or clipped Anthbot Map card instance by rendering one branded overlay at document level.
+- Prevents merely rendering a previously open News panel from silently marking a new message as read and hiding its bell.
+- Marks messages as read only after the user explicitly opens News or closes the popup; the red/orange flashing bell therefore remains visible until a real read action.
+
 ## 2.4.9.5-beta5 — 2026-09-29
 
 - Fixes the missing announcement backend registration that made the beta4 card silently hide both the notification bell and the branded automatic popup.
