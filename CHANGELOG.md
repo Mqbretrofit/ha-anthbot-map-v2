@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.9.5-beta7 — 2026-09-29
+
+- Fixes read and popup acknowledgements being permanently tied to a reusable announcement ID.
+- Treats an edited or republished message as new when its delivered content, priority or popup setting changes, so its bell and one-time popup can appear again.
+- Migrates the old ID-only acknowledgement state once, making the currently published test message unread and popup-eligible again without changing Reporting Server 1.0.39.
+
 ## 2.4.9.5-beta6 — 2026-09-29
 
 - Fixes announcement popups being swallowed by a hidden or clipped Anthbot Map card instance by rendering one branded overlay at document level.
