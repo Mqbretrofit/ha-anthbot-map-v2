@@ -16,7 +16,7 @@ class AnnouncementsBetaTests(unittest.TestCase):
     def test_beta_version_is_consistent(self) -> None:
         manifest = json.loads((INTEGRATION / "manifest.json").read_text(encoding="utf-8"))
         version = manifest["version"]
-        self.assertEqual("2.4.9.5-beta4", version)
+        self.assertEqual("2.4.9.5-beta5", version)
         self.assertIn(
             f'INTEGRATION_VERSION = "{version}"',
             (INTEGRATION / "const.py").read_text(encoding="utf-8"),
@@ -52,7 +52,7 @@ class AnnouncementsBetaTests(unittest.TestCase):
             "anthbot-announcement-dialog",
             "data-announcement-bell",
             "startAnnouncementPollTimer",
-            'this.resolveAsset("logo.png?v=2495-beta4")',
+            'this.resolveAsset("logo.png?v=2495-beta5")',
         ):
             self.assertIn(marker, card)
         self.assertIn(
@@ -62,6 +62,14 @@ class AnnouncementsBetaTests(unittest.TestCase):
         self.assertIn("_INTERVAL = timedelta(minutes=1)", (INTEGRATION / "announcements.py").read_text(encoding="utf-8"))
         self.assertTrue((INTEGRATION / "frontend" / "logo.png").is_file())
         self.assertTrue((ROOT / "www" / "anthbot-map" / "logo.png").is_file())
+
+    def test_announcement_backend_is_registered_during_entry_setup(self) -> None:
+        source = (INTEGRATION / "__init__.py").read_text(encoding="utf-8")
+        self.assertIn(
+            "from .announcements import async_register_announcements",
+            source,
+        )
+        self.assertIn("await async_register_announcements(hass)", source)
 
     def test_all_card_languages_have_announcement_labels(self) -> None:
         source = (INTEGRATION / "frontend" / "i18n.js").read_text(encoding="utf-8")

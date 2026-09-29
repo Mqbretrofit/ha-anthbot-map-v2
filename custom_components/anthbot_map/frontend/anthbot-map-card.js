@@ -4690,7 +4690,7 @@ class AnthbotMapCard extends HTMLElement {
     header.className = "anthbot-announcement-dialog-head";
     const logo = document.createElement("img");
     logo.className = "anthbot-announcement-dialog-logo";
-    logo.src = this.resolveAsset("logo.png?v=2495-beta4");
+    logo.src = this.resolveAsset("logo.png?v=2495-beta5");
     logo.alt = "Anthbot Map";
     const brand = document.createElement("div");
     brand.className = "anthbot-announcement-dialog-brand";

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.4.9.5-beta5 — 2026-09-29
+
+- Fixes the missing announcement backend registration that made the beta4 card silently hide both the notification bell and the branded automatic popup.
+- Keeps the beta4 live polling, one-time popup behavior, red/orange flashing bell, personal/install/model targeting and all stable 2.4.9.4 mower controls unchanged.
+
 ## 2.4.9.5-beta4 — 2026-09-29
 
 - Automatically checks for new announcements in the background, so popup-enabled messages appear without manually opening the News panel or pressing Refresh.
