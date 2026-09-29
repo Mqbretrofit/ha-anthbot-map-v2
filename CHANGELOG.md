@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.9.5-beta8 — 2026-09-29
+
+- Uses the actual anthbotmap.com ANTHBOT MAP logo in the announcement popup.
+- Reworks the popup into a smaller, calmer dark-green notification with more compact typography and actions.
+- Restarts announcement polling whenever Home Assistant reattaches an existing card and refreshes immediately when the browser tab becomes visible or focused, so new popups no longer require a browser refresh.
+
 ## 2.4.9.5-beta7 — 2026-09-29
 
 - Fixes read and popup acknowledgements being permanently tied to a reusable announcement ID.
