@@ -4686,8 +4686,8 @@ class AnthbotMapCard extends HTMLElement {
 
   maybeShowAnnouncementPopup() {
     const item = this.announcements.find((candidate) => candidate.show_popup && !this.announcementPopupSeenIds.has(candidate.id));
-    window.__anthbotAnnouncementPopupIdsBeta6 ||= new Set();
-    const displayedPopupIds = window.__anthbotAnnouncementPopupIdsBeta6;
+    window.__anthbotAnnouncementPopupIdsBeta7 ||= new Set();
+    const displayedPopupIds = window.__anthbotAnnouncementPopupIdsBeta7;
     if (!item || displayedPopupIds.has(item.id) || !document.body) return;
 
     // Render outside the card so a second card instance, a hidden Lovelace view,
@@ -4736,7 +4736,7 @@ class AnthbotMapCard extends HTMLElement {
     header.className = "head";
     const logo = document.createElement("img");
     logo.className = "logo";
-    logo.src = this.resolveAsset("logo.png?v=2495-beta6");
+    logo.src = this.resolveAsset("logo.png?v=2495-beta7");
     logo.alt = "Anthbot Map";
     const brand = document.createElement("div");
     brand.className = "brand";
