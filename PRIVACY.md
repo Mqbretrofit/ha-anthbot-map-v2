@@ -50,7 +50,8 @@ The request contains:
 - the installed Anthbot Map version, for version-specific notices;
 - the selected card language, so the server can return localized text;
 - discovered mower model names, for model-specific notices.
+- the random minimal-presence installation identifier, so the administrator can send a support or test message to one specific installation.
 
-It does **not** contain a mower serial number, mower alias, ANTHBOT account information, map or mowing data, credentials, the developer-reporting installation identifier or the Community Voice Store robot fingerprint. Read and popup-seen state stays in Home Assistant and is not reported back to the announcement server.
+The announcement request reuses the same random identifier already sent by the minimal installation-presence heartbeat; it does not create a new identity. It does **not** contain a mower serial number, mower alias, ANTHBOT account information, map or mowing data, credentials, the opt-in developer-reporting installation identifier or the Community Voice Store robot fingerprint. Read and popup-seen state stays in Home Assistant and is not reported back to the announcement server.
 
 The last valid feed response is cached locally. A network or server failure does not affect mower control and does not erase cached messages. As with any HTTPS request, network infrastructure necessarily processes connection metadata such as the source IP address.

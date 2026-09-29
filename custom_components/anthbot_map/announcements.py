@@ -1,8 +1,9 @@
 """Best-effort Anthbot Map announcements for the bundled frontend.
 
 The feed is deliberately isolated from mower control.  It sends only the
-integration version, selected display language and mower model names.  A
-failed request always falls back to the last locally cached response.
+integration version, selected display language, mower model names and the
+random minimal-presence installation ID.  A failed request always falls back
+to the last locally cached response.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN, INTEGRATION_VERSION
+from .presence import async_get_presence_installation_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -180,14 +182,17 @@ class AnnouncementsRuntime:
 
     async def async_refresh(self, language: str) -> None:
         async with self.lock:
-            params = {
-                "version": INTEGRATION_VERSION,
-                "language": language,
-            }
-            models = _models(self.hass)
-            if models:
-                params["models"] = ",".join(models)
             try:
+                params = {
+                    "version": INTEGRATION_VERSION,
+                    "language": language,
+                    "installation_id": await async_get_presence_installation_id(
+                        self.hass
+                    ),
+                }
+                models = _models(self.hass)
+                if models:
+                    params["models"] = ",".join(models)
                 session = async_get_clientsession(self.hass)
                 async with session.get(
                     ANNOUNCEMENTS_ENDPOINT, params=params, timeout=8

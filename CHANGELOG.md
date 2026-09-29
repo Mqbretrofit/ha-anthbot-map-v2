@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.4.9.5-beta2 — 2026-09-29
+
+- Adds exact announcement targeting for one or more installations using the existing random minimal-presence installation ID.
+- Keeps the identifier privacy-preserving: no mower serial number, account data, map, credentials or Voice Store robot fingerprint is sent with the feed request.
+- Works with Reporting Server 1.0.37, whose message editor dynamically lists the currently reported mower models and installations and supports multiple selections.
+- Preserves all 2.4.9.5-beta1 message caching, unread badges, one-time popup behavior, 23 languages and the stable 2.4.9.4 mower-control path.
+
 ## 2.4.9.5-beta1 — 2026-09-29
 
 - Adds a separately testable **Újdonságok / News** panel and unread badge to the Anthbot Map Card without changing the stable 2.4.9.4 mower-control path.
