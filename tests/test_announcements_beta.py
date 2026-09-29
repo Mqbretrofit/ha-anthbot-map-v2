@@ -16,7 +16,7 @@ class AnnouncementsBetaTests(unittest.TestCase):
     def test_beta_version_is_consistent(self) -> None:
         manifest = json.loads((INTEGRATION / "manifest.json").read_text(encoding="utf-8"))
         version = manifest["version"]
-        self.assertEqual("2.4.9.5-beta6", version)
+        self.assertEqual("2.4.9.5-beta7", version)
         self.assertIn(
             f'INTEGRATION_VERSION = "{version}"',
             (INTEGRATION / "const.py").read_text(encoding="utf-8"),
@@ -52,7 +52,7 @@ class AnnouncementsBetaTests(unittest.TestCase):
             "anthbot-announcement-popup-host",
             "data-announcement-bell",
             "startAnnouncementPollTimer",
-            'this.resolveAsset("logo.png?v=2495-beta6")',
+            'this.resolveAsset("logo.png?v=2495-beta7")',
         ):
             self.assertIn(marker, card)
         self.assertIn(
@@ -65,6 +65,15 @@ class AnnouncementsBetaTests(unittest.TestCase):
         self.assertNotIn('if (unread.length) void this.markAnnouncementsRead(unread, false);\n    }\n    body.appendChild(wrapper);', card)
         self.assertTrue((INTEGRATION / "frontend" / "logo.png").is_file())
         self.assertTrue((ROOT / "www" / "anthbot-map" / "logo.png").is_file())
+
+    def test_edited_message_resets_read_and_popup_acknowledgements(self) -> None:
+        source = (INTEGRATION / "announcements.py").read_text(encoding="utf-8")
+        self.assertIn("_ACK_STATE_VERSION = 2", source)
+        self.assertIn("def _announcement_state_key", source)
+        self.assertIn('data.get("ack_state_version") == _ACK_STATE_VERSION', source)
+        self.assertIn('"show_popup",', source)
+        self.assertIn('"read_keys": sorted(self.read_keys & active_keys)', source)
+        self.assertNotIn('self.read_ids.update(selected)', source)
 
     def test_announcement_backend_is_registered_during_entry_setup(self) -> None:
         source = (INTEGRATION / "__init__.py").read_text(encoding="utf-8")
