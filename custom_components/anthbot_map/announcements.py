@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+import hashlib
+import json
 import logging
 from typing import Any
 
@@ -33,6 +35,7 @@ SERVICE_MARK_ANNOUNCEMENTS_READ = "announcements_mark_read"
 _SCHEMA = "anthbot-map-announcements-v1"
 _STORAGE_VERSION = 1
 _STORAGE_KEY = "anthbot_map.announcements"
+_ACK_STATE_VERSION = 2
 _RUNTIME_KEY = "_announcements_runtime"
 _INTERVAL = timedelta(minutes=1)
 _MAX_ITEMS = 50
@@ -43,6 +46,21 @@ _LANGUAGES = {
 }
 _CATEGORIES = {"news", "release", "maintenance", "outage", "voice", "personal"}
 _PRIORITIES = {"normal", "important", "critical"}
+
+
+def _announcement_state_key(item: dict[str, Any]) -> str:
+    """Key acknowledgements to the delivered message, not only its reusable ID."""
+    payload = {
+        key: item.get(key)
+        for key in (
+            "id", "title", "body", "category", "priority", "show_popup",
+            "published_at", "expires_at", "link", "link_label",
+        )
+    }
+    digest = hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()[:24]
+    return f"{item.get('id', '')}:{digest}"
 
 _GET_SCHEMA = vol.Schema(
     {
@@ -138,8 +156,8 @@ class AnnouncementsRuntime:
             hass, _STORAGE_VERSION, _STORAGE_KEY
         )
         self.items: list[dict[str, Any]] = []
-        self.read_ids: set[str] = set()
-        self.popup_seen_ids: set[str] = set()
+        self.read_keys: set[str] = set()
+        self.popup_seen_keys: set[str] = set()
         self.language = "en"
         self.fetched_at: datetime | None = None
         self.last_error: str | None = None
@@ -152,26 +170,32 @@ class AnnouncementsRuntime:
             for item in data.get("items", [])[:_MAX_ITEMS]
             if (cleaned := _clean_item(item)) is not None
         ]
-        self.read_ids = {
-            value for value in data.get("read_ids", []) if isinstance(value, str)
-        }
-        self.popup_seen_ids = {
-            value
-            for value in data.get("popup_seen_ids", [])
-            if isinstance(value, str)
-        }
+        # v1 stored only the reusable announcement ID. That meant editing the
+        # same message (for example enabling its popup) could never make it new
+        # again. Intentionally start v2 acknowledgement state clean once, then
+        # persist content-bound keys for subsequent loads.
+        if data.get("ack_state_version") == _ACK_STATE_VERSION:
+            self.read_keys = {
+                value for value in data.get("read_keys", []) if isinstance(value, str)
+            }
+            self.popup_seen_keys = {
+                value
+                for value in data.get("popup_seen_keys", [])
+                if isinstance(value, str)
+            }
         language = data.get("language")
         if language in _LANGUAGES:
             self.language = language
         self.fetched_at = _parse_datetime(data.get("fetched_at"))
 
     async def async_save(self) -> None:
-        active_ids = {item["id"] for item in self.items}
+        active_keys = {_announcement_state_key(item) for item in self.items}
         await self.store.async_save(
             {
                 "items": self.items,
-                "read_ids": sorted(self.read_ids & active_ids),
-                "popup_seen_ids": sorted(self.popup_seen_ids & active_ids),
+                "ack_state_version": _ACK_STATE_VERSION,
+                "read_keys": sorted(self.read_keys & active_keys),
+                "popup_seen_keys": sorted(self.popup_seen_keys & active_keys),
                 "language": self.language,
                 "fetched_at": self.fetched_at.isoformat() if self.fetched_at else None,
             }
@@ -219,14 +243,22 @@ class AnnouncementsRuntime:
                 _LOGGER.debug("Announcement refresh failed: %s", err)
 
     def response(self) -> dict[str, Any]:
-        active_ids = {item["id"] for item in self.items}
-        read_ids = self.read_ids & active_ids
+        read_ids = {
+            item["id"]
+            for item in self.items
+            if _announcement_state_key(item) in self.read_keys
+        }
+        popup_seen_ids = {
+            item["id"]
+            for item in self.items
+            if _announcement_state_key(item) in self.popup_seen_keys
+        }
         return {
             "schema": _SCHEMA,
             "items": self.items,
             "read_ids": sorted(read_ids),
-            "popup_seen_ids": sorted(self.popup_seen_ids & active_ids),
-            "unread_count": len(active_ids - read_ids),
+            "popup_seen_ids": sorted(popup_seen_ids),
+            "unread_count": len(self.items) - len(read_ids),
             "fetched_at": self.fetched_at.isoformat() if self.fetched_at else None,
             "stale": self._stale(),
             "available": self.last_error is None or bool(self.items),
@@ -240,11 +272,15 @@ class AnnouncementsRuntime:
     async def async_mark_read(
         self, announcement_ids: list[str], popup_seen: bool
     ) -> dict[str, Any]:
-        active_ids = {item["id"] for item in self.items}
-        selected = set(announcement_ids) & active_ids
-        self.read_ids.update(selected)
+        selected_ids = set(announcement_ids)
+        selected_keys = {
+            _announcement_state_key(item)
+            for item in self.items
+            if item["id"] in selected_ids
+        }
+        self.read_keys.update(selected_keys)
         if popup_seen:
-            self.popup_seen_ids.update(selected)
+            self.popup_seen_keys.update(selected_keys)
         await self.async_save()
         return self.response()
 
