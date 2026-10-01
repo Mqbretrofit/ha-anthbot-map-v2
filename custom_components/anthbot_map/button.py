@@ -36,6 +36,7 @@ from .firmware_diagnostics import (
     report_filename,
     write_firmware_diagnostics_report,
 )
+from .models.base import model_family
 from .models.n8_control import is_n8_model
 from .zones import active_manual_zone_ids, auto_zones, manual_zones
 
@@ -102,6 +103,14 @@ N8_BUTTONS: tuple[AnthbotButtonDescription, ...] = (
     ),
 )
 
+GENIE_ERROR_CLEAR_TEST_BUTTONS: tuple[AnthbotButtonDescription, ...] = (
+    AnthbotButtonDescription(
+        key="clear_error_code_test",
+        name="E700 / MOW+OK reset test",
+        icon="mdi:alert-circle-check-outline",
+    ),
+)
+
 
 def _entry_option_enabled(entry: ConfigEntry, key: str) -> bool:
     """Return the current option, with config-entry data as initial fallback."""
@@ -120,6 +129,17 @@ def _unwrap_simple_value(value: Any) -> Any:
         seen.add(identity)
         value = value.get("value")
     return value
+
+
+def _error_clear_test_snapshot(state: dict[str, Any]) -> dict[str, Any]:
+    """Return the raw recovery fields needed to validate the Genie clear command."""
+    return {
+        "safety_trigger": _unwrap_simple_value(state.get("safety_trigger")),
+        "err_code": _unwrap_simple_value(state.get("err_code")),
+        "event_code": _unwrap_simple_value(state.get("event_code")),
+        "robot_sta": _unwrap_simple_value(state.get("robot_sta")),
+        "mode": _unwrap_simple_value(state.get("mode")),
+    }
 
 
 def _automatic_diagnostics_trigger(
@@ -228,6 +248,11 @@ async def async_setup_entry(
     ]
 
     for coordinator in coordinators:
+        if model_family(getattr(coordinator.device, "model", "")) == "genie":
+            entities.extend(
+                AnthbotButtonEntity(coordinator, description, entry)
+                for description in GENIE_ERROR_CLEAR_TEST_BUTTONS
+            )
         if is_n8_model(getattr(coordinator.device, "model", None)):
             entities.extend(
                 AnthbotButtonEntity(coordinator, description, entry)
@@ -291,6 +316,7 @@ class AnthbotButtonEntity(
             name=coordinator.device.alias,
         )
         self._last_diagnostics_export: dict[str, Any] | None = None
+        self._last_error_clear_test: dict[str, Any] | None = None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -303,6 +329,22 @@ class AnthbotButtonEntity(
             and isinstance(self._last_diagnostics_export, dict)
         ):
             attrs.update(self._last_diagnostics_export)
+        if self.entity_description.key == "clear_error_code_test":
+            attrs.update(
+                {
+                    "current_safety_trigger": _unwrap_simple_value(
+                        self.coordinator.reported_state.get("safety_trigger")
+                    ),
+                    "current_err_code": _unwrap_simple_value(
+                        self.coordinator.reported_state.get("err_code")
+                    ),
+                    "current_event_code": _unwrap_simple_value(
+                        self.coordinator.reported_state.get("event_code")
+                    ),
+                }
+            )
+            if isinstance(self._last_error_clear_test, dict):
+                attrs.update(self._last_error_clear_test)
         return attrs
 
     async def _async_export_firmware_diagnostics(self) -> None:
@@ -418,6 +460,40 @@ class AnthbotButtonEntity(
                 raise AnthbotGenieApiError(
                     "The mower did not confirm its cloud connection"
                 )
+        elif key == "clear_error_code_test":
+            if model_family(getattr(self.coordinator.device, "model", "")) != "genie":
+                raise AnthbotGenieApiError(
+                    "The E700 / MOW+OK reset test is only enabled for Genie mowers"
+                )
+            before = _error_clear_test_snapshot(self.coordinator.reported_state)
+            if not await async_prepare_cloud_connection(
+                self.coordinator, attempts=3, wait_seconds=5
+            ):
+                raise AnthbotGenieApiError(
+                    "The mower did not confirm its cloud connection"
+                )
+            # Confirmed from the official ANTHBOT Android app (2.15.15/2.15.16).
+            # This only asks the mower to clear its reported error state; it
+            # deliberately does not send mow_start, mow_continue or any task command.
+            await self.coordinator.client.async_publish_service_command(
+                cmd="clear_err_code", data=1
+            )
+            await self.coordinator.client.async_request_all_properties()
+            await asyncio.sleep(1)
+            await self.coordinator.async_request_refresh()
+            after = _error_clear_test_snapshot(self.coordinator.reported_state)
+            self._last_error_clear_test = {
+                "last_test_before": before,
+                "last_test_after": after,
+                "last_test_safety_trigger_changed": (
+                    before.get("safety_trigger") != after.get("safety_trigger")
+                ),
+                "last_test_err_code_changed": (
+                    before.get("err_code") != after.get("err_code")
+                ),
+            }
+            self.async_write_ha_state()
+            return
         elif key == "start_full_mow":
             if await async_start_mowing(self.coordinator, app_state=1):
                 self.coordinator.remember_mowing_task("full")
