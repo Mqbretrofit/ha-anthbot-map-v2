@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.4.9.5 — 2026-10-03
+
+- Promotes the user-tested 2.4.9.5-beta8 announcement system to a stable release.
+- Adds the localized **News / Újdonságok** panel for news, releases, maintenance notices, service notices, voice-pack updates and personal messages.
+- Supports announcements for all installations, selected mower models or specific installation IDs. Leaving model, installation and version filters empty reaches all compatible installations, including new installations while the message remains published and unexpired.
+- Checks for new messages automatically in the background and when the card or browser tab becomes active, without requiring a browser refresh.
+- Shows a flashing unread-message bell beside Information: orange for normal messages and red for important or critical messages.
+- Displays popup-enabled messages in a compact notification with the actual anthbotmap.com logo, and stores read/popup acknowledgements locally. Edited or republished messages can be shown again.
+- Provides announcement UI labels in all 23 supported card languages and retains the last valid feed if the server is temporarily unavailable.
+- Requires an announcement-capable integration version to receive messages; stable 2.4.9.4 installations gain this feature after updating.
+- Preserves the tested beta8 runtime and the existing stable 2.4.9.4 mower controls, settings synchronization, map processing, calibration, scheduling, firmware and voice-pack behavior.
+
 ## 2.4.9.5-beta8 — 2026-09-29
 
 - Uses the actual anthbotmap.com ANTHBOT MAP logo in the announcement popup.

@@ -1,4 +1,4 @@
-"""Regression checks for the isolated announcements beta."""
+"""Regression checks for the announcements release."""
 
 from __future__ import annotations
 
@@ -13,10 +13,10 @@ INTEGRATION = ROOT / "custom_components" / "anthbot_map"
 
 
 class AnnouncementsBetaTests(unittest.TestCase):
-    def test_beta_version_is_consistent(self) -> None:
+    def test_release_version_is_consistent(self) -> None:
         manifest = json.loads((INTEGRATION / "manifest.json").read_text(encoding="utf-8"))
         version = manifest["version"]
-        self.assertEqual("2.4.9.5-beta8", version)
+        self.assertEqual("2.4.9.5", version)
         self.assertIn(
             f'INTEGRATION_VERSION = "{version}"',
             (INTEGRATION / "const.py").read_text(encoding="utf-8"),
