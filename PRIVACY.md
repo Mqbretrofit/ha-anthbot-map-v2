@@ -40,3 +40,18 @@ Both reporting options are independent. They can be disabled later from the ANTH
 Anonymous usage statistics are used to understand how many installations use the integration and which ANTHBOT models, countries and Home Assistant versions need support. Diagnostics are used to reproduce integration or firmware-related problems and improve compatibility.
 
 No developer reporting option is required for normal mower control or map functionality.
+
+## News and service announcements
+
+Starting with the optional 2.4.9.5 beta, the bundled card can retrieve project news and service announcements from `anthbotmap.com`. This request is independent of the optional developer-reporting settings because it only downloads a public feed.
+
+The request contains:
+
+- the installed Anthbot Map version, for version-specific notices;
+- the selected card language, so the server can return localized text;
+- discovered mower model names, for model-specific notices.
+- the random minimal-presence installation identifier, so the administrator can send a support or test message to one specific installation.
+
+The announcement request reuses the same random identifier already sent by the minimal installation-presence heartbeat; it does not create a new identity. It does **not** contain a mower serial number, mower alias, ANTHBOT account information, map or mowing data, credentials, the opt-in developer-reporting installation identifier or the Community Voice Store robot fingerprint. Read and popup-seen state stays in Home Assistant and is not reported back to the announcement server.
+
+The last valid feed response is cached locally. A network or server failure does not affect mower control and does not erase cached messages. As with any HTTPS request, network infrastructure necessarily processes connection metadata such as the source IP address.

@@ -25,6 +25,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.util import slugify
 
 from .api import AnthbotCloudApiClient, AnthbotGenieApiError, AnthbotShadowApiClient
+from .announcements import async_register_announcements
 from .const import (
     ATTR_AUTO_ZONES,
     ATTR_ENABLE_CUSTOM_DIRECTION,
@@ -108,7 +109,7 @@ PLATFORMS = [
 _LOGGER = logging.getLogger(__name__)
 VALID_MOW_HEIGHTS = list(range(30, 75, 5))
 FRONTEND_RESOURCE_PATH = "/anthbot-map-v2/anthbot-map-card.js"
-FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.9.4"
+FRONTEND_RESOURCE_URL = f"{FRONTEND_RESOURCE_PATH}?v=2.4.9.5"
 LEGACY_ENTITY_SUFFIXES: tuple[str, ...] = (
     "enable_custom_mowing_direction",
     "custom_mowing_direction_enable",
@@ -1344,6 +1345,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         coordinators.append(coordinator)
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinators
+    await async_register_announcements(hass)
     await _async_register_services(hass)
     await async_setup_schedule(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

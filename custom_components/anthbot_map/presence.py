@@ -37,6 +37,11 @@ async def _installation_id(hass: HomeAssistant) -> str:
     return str(install_id)
 
 
+async def async_get_presence_installation_id(hass: HomeAssistant) -> str:
+    """Return the stable random ID already used by the minimal heartbeat."""
+    return await _installation_id(hass)
+
+
 def _models(hass: HomeAssistant) -> set[str]:
     models: set[str] = set()
     domain_data = hass.data.get("anthbot_map", {})
@@ -57,7 +62,7 @@ async def _send(hass: HomeAssistant) -> None:
     models = _models(hass)
     if not models:
         return
-    install_id = await _installation_id(hass)
+    install_id = await async_get_presence_installation_id(hass)
     session = async_get_clientsession(hass)
     for model in sorted(models):
         payload = {

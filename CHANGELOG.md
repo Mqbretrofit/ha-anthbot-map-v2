@@ -1,5 +1,71 @@
 # Changelog
 
+## 2.4.9.5 — 2026-10-03
+
+- Promotes the user-tested 2.4.9.5-beta8 announcement system to a stable release.
+- Adds the localized **News / Újdonságok** panel for news, releases, maintenance notices, service notices, voice-pack updates and personal messages.
+- Supports announcements for all installations, selected mower models or specific installation IDs. Leaving model, installation and version filters empty reaches all compatible installations, including new installations while the message remains published and unexpired.
+- Checks for new messages automatically in the background and when the card or browser tab becomes active, without requiring a browser refresh.
+- Shows a flashing unread-message bell beside Information: orange for normal messages and red for important or critical messages.
+- Displays popup-enabled messages in a compact notification with the actual anthbotmap.com logo, and stores read/popup acknowledgements locally. Edited or republished messages can be shown again.
+- Provides announcement UI labels in all 23 supported card languages and retains the last valid feed if the server is temporarily unavailable.
+- Requires an announcement-capable integration version to receive messages; stable 2.4.9.4 installations gain this feature after updating.
+- Preserves the tested beta8 runtime and the existing stable 2.4.9.4 mower controls, settings synchronization, map processing, calibration, scheduling, firmware and voice-pack behavior.
+
+## 2.4.9.5-beta8 — 2026-09-29
+
+- Uses the actual anthbotmap.com ANTHBOT MAP logo in the announcement popup.
+- Reworks the popup into a smaller, calmer dark-green notification with more compact typography and actions.
+- Restarts announcement polling whenever Home Assistant reattaches an existing card and refreshes immediately when the browser tab becomes visible or focused, so new popups no longer require a browser refresh.
+
+## 2.4.9.5-beta7 — 2026-09-29
+
+- Fixes read and popup acknowledgements being permanently tied to a reusable announcement ID.
+- Treats an edited or republished message as new when its delivered content, priority or popup setting changes, so its bell and one-time popup can appear again.
+- Migrates the old ID-only acknowledgement state once, making the currently published test message unread and popup-eligible again without changing Reporting Server 1.0.39.
+
+## 2.4.9.5-beta6 — 2026-09-29
+
+- Fixes announcement popups being swallowed by a hidden or clipped Anthbot Map card instance by rendering one branded overlay at document level.
+- Prevents merely rendering a previously open News panel from silently marking a new message as read and hiding its bell.
+- Marks messages as read only after the user explicitly opens News or closes the popup; the red/orange flashing bell therefore remains visible until a real read action.
+
+## 2.4.9.5-beta5 — 2026-09-29
+
+- Fixes the missing announcement backend registration that made the beta4 card silently hide both the notification bell and the branded automatic popup.
+- Keeps the beta4 live polling, one-time popup behavior, red/orange flashing bell, personal/install/model targeting and all stable 2.4.9.4 mower controls unchanged.
+
+## 2.4.9.5-beta4 — 2026-09-29
+
+- Automatically checks for new announcements in the background, so popup-enabled messages appear without manually opening the News panel or pressing Refresh.
+- Replaces the plain announcement dialog with an ANTHBOT Map branded dark-gradient popup using the bundled logo and priority styling.
+- Adds a flashing bell beside the Information button while unread messages exist: red for important or critical messages and orange for normal messages.
+- Keeps the bell visible until the message is read or its popup is closed, and opens the News panel directly when the bell is pressed.
+- Preserves beta3 personal/per-installation targeting and the stable 2.4.9.4 mower-control path.
+
+## 2.4.9.5-beta3 — 2026-09-29
+
+- Adds the **Personal message** announcement category and localized labels in all 23 supported card languages.
+- Works with Reporting Server 1.0.38, whose message editor adds the personal-message type and an **Összes kijelölése** action for all currently available target models.
+- Preserves beta2 per-installation targeting and the stable 2.4.9.4 mower-control path.
+
+## 2.4.9.5-beta2 — 2026-09-29
+
+- Adds exact announcement targeting for one or more installations using the existing random minimal-presence installation ID.
+- Keeps the identifier privacy-preserving: no mower serial number, account data, map, credentials or Voice Store robot fingerprint is sent with the feed request.
+- Works with Reporting Server 1.0.37, whose message editor dynamically lists the currently reported mower models and installations and supports multiple selections.
+- Preserves all 2.4.9.5-beta1 message caching, unread badges, one-time popup behavior, 23 languages and the stable 2.4.9.4 mower-control path.
+
+## 2.4.9.5-beta1 — 2026-09-29
+
+- Adds a separately testable **Újdonságok / News** panel and unread badge to the Anthbot Map Card without changing the stable 2.4.9.4 mower-control path.
+- Adds a cached, best-effort announcement receiver. Feed failures keep the last valid messages and never block mower setup, commands, map rendering or settings synchronization.
+- Supports remotely published news, releases, maintenance notices, service notices and voice-pack messages, with optional version/model targeting, expiry, links and one-time important popups.
+- Keeps normal messages inside the News panel; only messages explicitly marked for popup display can open a one-time dialog.
+- Stores read and popup-seen state locally in Home Assistant and updates notification badges without rebuilding or closing an open robot/zone settings panel.
+- Sends only the installed Anthbot Map version, selected card language and mower model names when retrieving the feed; no mower serial, map, account data, credentials or installation identifier is included.
+- Adds localized News UI text for all 23 supported card languages.
+
 ## 2.4.9.4 — 2026-09-28
 
 - Rebuilds the M9/M9 Pro settings synchronization on the stable 2.4.9.3 base without replacing the existing Genie command path.
