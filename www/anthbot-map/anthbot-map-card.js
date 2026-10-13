@@ -440,9 +440,24 @@ class AnthbotMapCard extends HTMLElement {
 
     // getBoundingClientRect() is layout-viewport based while VisualViewport can
     // move independently on tablets/mobile when browser chrome opens/closes.
-    const cardTopInsideVisibleViewport = Math.max(0, rect.top - viewportTop);
-    const bottomGap = Math.max(2, Math.min(8, Math.round(viewportHeight * 0.008)));
-    const availableHeight = Math.max(240, Math.floor(viewportHeight - cardTopInsideVisibleViewport - bottomGap));
+    // #71: Freeze the dashboard card's viewport geometry across scrolling.
+    // On mobile, browser toolbar/visualViewport changes must not resize the card.
+    // Recalculate after an orientation/width change or a fullscreen transition.
+    const mobile = window.matchMedia("(max-width: 720px)").matches;
+    const fullscreen = this.isTrueFullscreenActive();
+    const geometryKey = `${Math.round(viewportWidth)}:${mobile}:${fullscreen}`;
+    if (!this.issue71Geometry || this.issue71Geometry.key !== geometryKey) {
+      this.issue71Geometry = {
+        key: geometryKey,
+        top: fullscreen ? 0 : Math.max(0, rect.top - viewportTop),
+        height: viewportHeight,
+      };
+    }
+    // Desktop can react to genuine window resizing, but never scroll position.
+    const stableViewportHeight = mobile ? this.issue71Geometry.height : viewportHeight;
+    const cardTopInsideVisibleViewport = fullscreen ? 0 : this.issue71Geometry.top;
+    const bottomGap = Math.max(2, Math.min(8, Math.round(stableViewportHeight * 0.008)));
+    const availableHeight = Math.max(240, Math.floor(stableViewportHeight - cardTopInsideVisibleViewport - bottomGap));
     const availableWidth = Math.max(280, Math.floor(Math.min(rect.width || viewportWidth, viewportWidth)));
 
     // UI scale follows the actual visible screen, not a fixed desktop/tablet breakpoint.
@@ -3524,6 +3539,9 @@ class AnthbotMapCard extends HTMLElement {
     this.updateTrueFullscreenButton();
 
     const canvas = root.querySelector("canvas");
+    // Wheel scrolls the HA dashboard, not the map. Do not change touch gestures.
+    canvas?.addEventListener("wheel", (event) => event.stopImmediatePropagation(),
+      { capture: true, passive: true });
     const canvasWrap = root.querySelector(".canvas-wrap");
     this.applyAutomaticMapSize(canvasWrap);
     this.setupMapLiveStatusDrag(canvasWrap);
@@ -8249,9 +8267,30 @@ class AnthbotMapCard extends HTMLElement {
     const mobileRotation = originLayout
       ? (mobileViewport && portraitViewport ? 90 : 0)
       : (mobileViewport ? Number(this.config.mobile_map_rotation ?? this.config.mobileMapRotation ?? 90) || 0 : 0);
+    // #71: Choose a desktop map fit from the actual Lovelace view type.
+    // Traverse shadow-root hosts too: HA cards are usually nested in shadow DOM.
+    let viewType = null;
+    let ancestor = this;
+    for (let depth = 0; ancestor && depth < 35; depth += 1) {
+      const tag = String(ancestor.localName || "").toLowerCase();
+      if (tag === "hui-panel-view" || tag === "hui-panel-view$" || tag === "hui-panel-view-container") {
+        viewType = "panel";
+        break;
+      }
+      if (tag === "hui-sections-view" || tag === "hui-sections-view-container") {
+        viewType = "sections";
+        break;
+      }
+      ancestor = ancestor.parentNode || ancestor.getRootNode?.()?.host || null;
+    }
+    // An explicitly configured per-card fit is respected for other view types.
+    // The mobile fit remains unchanged and takes precedence on phones.
+    const desktopFit = viewType === "sections" ? "contain"
+      : viewType === "panel" ? "cover"
+      : (this.config.fit || "cover");
     const mapFit = originLayout
       ? (mobileViewport ? "cover" : (this.config.fit || "contain"))
-      : (mobileViewport ? this.config.mobile_map_fit || this.config.mobileMapFit || "contain" : this.config.fit || "cover");
+      : (mobileViewport ? this.config.mobile_map_fit || this.config.mobileMapFit || "contain" : desktopFit);
     return {
       image: this.config.image,
       bounds: this.config.bounds,
