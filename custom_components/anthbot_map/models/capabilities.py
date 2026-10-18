@@ -6,9 +6,9 @@ from typing import Any
 
 from .base import model_family
 
-# M9/M9 Pro have audible beeps and support volume control, but do not expose
-# spoken voice-package playback.
-_VOICE_PACK_DENY_FAMILIES = frozenset({"m9", "m9_pro"})
+# M-series models do not support spoken voice-package playback.
+# M9/M9 Pro can still expose audible beep volume separately.
+_VOICE_PACK_DENY_FAMILIES = frozenset({"m5", "m9", "m9_pro"})
 
 
 def _normalized_model(model: object) -> str:
