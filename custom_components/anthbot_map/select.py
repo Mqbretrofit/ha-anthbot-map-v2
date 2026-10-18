@@ -155,11 +155,11 @@ class AnthbotVoicePackSelect(
         self._voice_store_entitlement_count = 0
 
     def _handle_coordinator_update(self) -> None:
-        """Avoid Recorder writes for unrelated mower telemetry updates.
+        """Only publish voice-relevant coordinator changes.
 
-        The coordinator refreshes frequently, but the selected voice and its
-        installation diagnostics only depend on the reported voice fields.
-        Explicit catalogue/store/installation writes remain unaffected.
+        The common mower coordinator updates far more often than the voice
+        state. Keep the live voice diagnostics fresh when relevant values
+        change, without publishing unrelated telemetry as voice states.
         """
         signature = (
             tuple(sorted(self._reported_voice().items())),
@@ -170,6 +170,22 @@ class AnthbotVoicePackSelect(
             return
         self._last_voice_coordinator_signature = signature
         super()._handle_coordinator_update()
+
+    def async_write_ha_state(self) -> None:
+        """Suppress identical HA state writes from catalog and store refreshes.
+
+        Live attributes and options are still published whenever they change;
+        repeated refreshes with an identical effective state are skipped.
+        """
+        if not self.hass or not self.entity_id:
+            return super().async_write_ha_state()
+        option = self.current_option
+        attributes = self.extra_state_attributes
+        signature = (option, tuple(sorted((key, repr(value)) for key, value in attributes.items())), tuple(self.options))
+        if signature == getattr(self, "_last_voice_written_signature", None):
+            return
+        self._last_voice_written_signature = signature
+        return super().async_write_ha_state()
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
