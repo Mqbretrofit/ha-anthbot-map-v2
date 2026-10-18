@@ -858,6 +858,18 @@ class AnthbotVoicePackSelect(
                 self.async_write_ha_state()
 
                 retry_pack = pack
+                if pack.source == "community" and pack.access == "paid":
+                    try:
+                        retry_pack = await self._async_fresh_paid_community_pack(pack)
+                    except HomeAssistantError as err:
+                        self._requested_pack["command_status"] = "retry_failed"
+                        self._requested_pack["last_command_error"] = str(err)[:240]
+                        await self._async_save_requested_pack()
+                        self.async_write_ha_state()
+                        _LOGGER.warning("Community voice URL refresh failed: %s", err)
+                        return
+                    self._requested_pack["music_url"] = retry_pack.music_url
+                    self._requested_pack["music_md5"] = retry_pack.music_md5
                 if pack.source == "anthbot":
                     refreshed = await self._async_refresh_official_catalog()
                     fresh_pack = self._catalog_by_label.get(pack.label)
@@ -916,6 +928,38 @@ class AnthbotVoicePackSelect(
             await self._async_save_requested_pack()
             self.async_write_ha_state()
 
+    async def _async_fresh_paid_community_pack(self, pack: VoicePack) -> VoicePack:
+        """Get a new short-lived download URL immediately before voice_set.
+
+        Never send a cached paid URL when entitlement refresh fails: the server
+        issues download tokens with a five-minute lifetime.
+        """
+        if pack.source != "community" or pack.access != "paid":
+            return pack
+        purchased = await async_get_purchased_voice_packs(
+            self.coordinator.account_client._session,
+            self._store_client_token,
+        )
+        if purchased is None:
+            raise HomeAssistantError(
+                "Could not refresh Community voice download authorization; "
+                "installation was not sent"
+            )
+        fresh = next(
+            (
+                item for item in purchased
+                if item.community_id and item.community_id == pack.community_id
+                and not item.locked
+            ),
+            None,
+        )
+        if fresh is None or not fresh.music_url:
+            raise HomeAssistantError(
+                "Community voice is no longer available to this account; "
+                "installation was not sent"
+            )
+        return fresh
+
     async def async_select_option(self, option: str) -> None:
         pack = self._catalog_by_label.get(option)
         if pack is None:
@@ -928,6 +972,11 @@ class AnthbotVoicePackSelect(
                 "This Community voice pack must be purchased in the "
                 "Community voice store before it can be installed"
             )
+
+        # Paid Community URLs expire after five minutes on the Reporting Server.
+        # Refresh on demand instead of reusing the periodically cached URL.
+        if pack.source == "community" and pack.access == "paid":
+            pack = await self._async_fresh_paid_community_pack(pack)
 
         factory_cache_used = False
         factory_cache_error: str | None = None
