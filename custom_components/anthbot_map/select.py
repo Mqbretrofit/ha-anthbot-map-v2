@@ -182,8 +182,20 @@ class AnthbotVoicePackSelect(
         option = self.current_option
         attributes = self.extra_state_attributes
         signature = (option, tuple(sorted((key, repr(value)) for key, value in attributes.items())), tuple(self.options))
-        if signature == getattr(self, "_last_voice_written_signature", None):
+        previous = getattr(self, "_last_voice_written_signature", None)
+        if signature == previous:
             return
+        if previous is not None:
+            before = dict(previous[1])
+            after = dict(signature[1])
+            changed_keys = sorted(key for key in before.keys() | after.keys() if before.get(key) != after.get(key))
+            _LOGGER.debug(
+                "Voice Pack state publish for %s: option_changed=%s options_changed=%s attribute_keys_changed=%s",
+                self.entity_id,
+                previous[0] != option,
+                previous[2] != signature[2],
+                changed_keys,
+            )
         self._last_voice_written_signature = signature
         return super().async_write_ha_state()
 
