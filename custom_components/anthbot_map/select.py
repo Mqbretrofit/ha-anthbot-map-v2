@@ -145,6 +145,7 @@ class AnthbotVoicePackSelect(
         )
         self._catalog_by_label: dict[str, VoicePack] = {}
         self._ambiguous_community_verification_keys: set[str] = set()
+        self._community_labels_by_verification_key: dict[object, list[str]] = {}
         self._attr_options = []
         self._catalog_refresh_lock = asyncio.Lock()
         self._requested_pack: dict[str, object] | None = None
@@ -370,6 +371,9 @@ class AnthbotVoicePackSelect(
             or ambiguous != self._ambiguous_community_verification_keys
         )
         self._catalog_by_label = new_catalog
+        # Build once per catalogue refresh rather than scanning all ~300 packs
+        # on every coordinator tick and UI state read.
+        self._community_labels_by_verification_key = community_keys
         self._ambiguous_community_verification_keys = ambiguous
         self._attr_options = list(new_catalog)
         if changed:
@@ -467,13 +471,9 @@ class AnthbotVoicePackSelect(
         ):
             return None
 
-        candidates = [
-            label
-            for label, pack in self._catalog_by_label.items()
-            if pack.source == "community"
-            and not pack.locked
-            and voice_pack_verification_key(pack) == verification_key
-        ]
+        candidates = self._community_labels_by_verification_key.get(
+            verification_key, []
+        )
         return candidates[0] if len(candidates) == 1 else None
 
     def _community_id_for_label(self, label: object) -> str | None:
