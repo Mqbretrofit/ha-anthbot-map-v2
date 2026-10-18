@@ -341,7 +341,9 @@ class AnthbotVoicePackSelect(
             (
                 pack.label,
                 pack.key,
-                pack.music_url,
+                # Signed download URLs rotate without changing the selected voice.
+                # Keep the fresh URL in the live catalogue, but do not treat
+                # its renewal as a Home Assistant state change.
                 pack.music_md5,
                 pack.access,
                 pack.locked,
@@ -354,7 +356,9 @@ class AnthbotVoicePackSelect(
             (
                 pack.label,
                 pack.key,
-                pack.music_url,
+                # Signed download URLs rotate without changing the selected voice.
+                # Keep the fresh URL in the live catalogue, but do not treat
+                # its renewal as a Home Assistant state change.
                 pack.music_md5,
                 pack.access,
                 pack.locked,
