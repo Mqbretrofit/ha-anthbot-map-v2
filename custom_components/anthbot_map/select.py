@@ -154,6 +154,23 @@ class AnthbotVoicePackSelect(
         self._voice_store_error: str | None = None
         self._voice_store_entitlement_count = 0
 
+    def _handle_coordinator_update(self) -> None:
+        """Avoid Recorder writes for unrelated mower telemetry updates.
+
+        The coordinator refreshes frequently, but the selected voice and its
+        installation diagnostics only depend on the reported voice fields.
+        Explicit catalogue/store/installation writes remain unaffected.
+        """
+        signature = (
+            tuple(sorted(self._reported_voice().items())),
+            self.current_option,
+            self._voice_verification()["status"],
+        )
+        if signature == getattr(self, "_last_voice_coordinator_signature", None):
+            return
+        self._last_voice_coordinator_signature = signature
+        super()._handle_coordinator_update()
+
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         serial = self.coordinator.client.serial_number
