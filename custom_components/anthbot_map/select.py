@@ -155,6 +155,18 @@ class AnthbotVoicePackSelect(
         self._voice_store_error: str | None = None
         self._voice_store_entitlement_count = 0
 
+    def _handle_coordinator_update(self) -> None:
+        """Avoid publishing unrelated mower telemetry as voice state changes.
+
+        Do not suppress explicit state writes: installation requests, progress,
+        verification and catalogue changes must remain immediately visible.
+        """
+        signature = tuple(sorted(self._reported_voice().items()))
+        if signature == getattr(self, "_last_voice_reported_signature", None):
+            return
+        self._last_voice_reported_signature = signature
+        super()._handle_coordinator_update()
+
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         serial = self.coordinator.client.serial_number
