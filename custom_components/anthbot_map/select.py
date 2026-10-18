@@ -154,51 +154,6 @@ class AnthbotVoicePackSelect(
         self._voice_store_error: str | None = None
         self._voice_store_entitlement_count = 0
 
-    def _handle_coordinator_update(self) -> None:
-        """Only publish voice-relevant coordinator changes.
-
-        The common mower coordinator updates far more often than the voice
-        state. Keep the live voice diagnostics fresh when relevant values
-        change, without publishing unrelated telemetry as voice states.
-        """
-        signature = (
-            tuple(sorted(self._reported_voice().items())),
-            self.current_option,
-            self._voice_verification()["status"],
-        )
-        if signature == getattr(self, "_last_voice_coordinator_signature", None):
-            return
-        self._last_voice_coordinator_signature = signature
-        super()._handle_coordinator_update()
-
-    def async_write_ha_state(self) -> None:
-        """Suppress identical HA state writes from catalog and store refreshes.
-
-        Live attributes and options are still published whenever they change;
-        repeated refreshes with an identical effective state are skipped.
-        """
-        if not self.hass or not self.entity_id:
-            return super().async_write_ha_state()
-        option = self.current_option
-        attributes = self.extra_state_attributes
-        signature = (option, tuple(sorted((key, repr(value)) for key, value in attributes.items())), tuple(self.options))
-        previous = getattr(self, "_last_voice_written_signature", None)
-        if signature == previous:
-            return
-        if previous is not None:
-            before = dict(previous[1])
-            after = dict(signature[1])
-            changed_keys = sorted(key for key in before.keys() | after.keys() if before.get(key) != after.get(key))
-            _LOGGER.debug(
-                "Voice Pack state publish for %s: option_changed=%s options_changed=%s attribute_keys_changed=%s",
-                self.entity_id,
-                previous[0] != option,
-                previous[2] != signature[2],
-                changed_keys,
-            )
-        self._last_voice_written_signature = signature
-        return super().async_write_ha_state()
-
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         serial = self.coordinator.client.serial_number
@@ -386,9 +341,8 @@ class AnthbotVoicePackSelect(
             (
                 pack.label,
                 pack.key,
-                # Signed download URLs rotate without changing the selected voice.
-                # Keep the fresh URL in the live catalogue, but do not treat
-                # its renewal as a Home Assistant state change.
+                # Ignore rotating signed URLs when comparing catalogue revisions.
+                # The live catalogue still retains the current download URL.
                 pack.music_md5,
                 pack.access,
                 pack.locked,
@@ -401,9 +355,8 @@ class AnthbotVoicePackSelect(
             (
                 pack.label,
                 pack.key,
-                # Signed download URLs rotate without changing the selected voice.
-                # Keep the fresh URL in the live catalogue, but do not treat
-                # its renewal as a Home Assistant state change.
+                # Ignore rotating signed URLs when comparing catalogue revisions.
+                # The live catalogue still retains the current download URL.
                 pack.music_md5,
                 pack.access,
                 pack.locked,
@@ -456,10 +409,8 @@ class AnthbotVoicePackSelect(
             ),
             "install_progress": progress_value,
             "install_time": status.get("time"),
-            # The robot can alternate this transient transport/job id even
-            # after installation has succeeded. It is only meaningful while
-            # a voice installation is in progress; do not churn HA state
-            # history for an otherwise unchanged installed voice.
+            # Completed installation IDs are transient and can oscillate on
+            # coordinator refresh without representing a voice change.
             "install_id": (
                 status.get("id")
                 if str(status.get("state") or "").strip().lower()
