@@ -456,7 +456,16 @@ class AnthbotVoicePackSelect(
             ),
             "install_progress": progress_value,
             "install_time": status.get("time"),
-            "install_id": status.get("id"),
+            # The robot can alternate this transient transport/job id even
+            # after installation has succeeded. It is only meaningful while
+            # a voice installation is in progress; do not churn HA state
+            # history for an otherwise unchanged installed voice.
+            "install_id": (
+                status.get("id")
+                if str(status.get("state") or "").strip().lower()
+                not in {"success", "succeeded", "completed", "complete"}
+                else None
+            ),
         }
 
     def _reported_official_label(self) -> str | None:
